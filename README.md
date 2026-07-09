@@ -1,12 +1,10 @@
 <div align="center">
   <img src="docs/images/banner.svg" alt="SunReactor Logo" width="100%">
-
-`☀ -> 🖥 -> 💡`
 </div>
 
 ---
 
-**SunReactor** is a headless Rust daemon that automates your monitor brightness. By calculating the sun's exact elevation for your city and the current date, the brightness curve adapts to seasonal daylight shifts and dynamically dims based on real-time cloud cover. You set your hardware limits via the built-in terminal UI, and the daemon orchestrates your displays in the background.
+**SunReactor** is a headless Rust daemon that completely automates your monitor brightness. By calculating the sun's exact elevation for your city and the current date, the brightness curve naturally adapts to seasonal daylight shifts and even dynamically dims based on real-time cloud cover. You set your hardware limits once via the built-in terminal UI, and the daemon quietly orchestrates all your displays in the background.
 
 ## // PREVIEW
 
@@ -22,30 +20,30 @@
 
 ## // THE AUTOMATION
 
-Static brightness schedules fail because daylight shifts with the seasons. SunReactor uses the sun's physical elevation above the horizon to drive a fully automated pipeline.
+Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses the sun's actual elevation above the horizon to calculate brightness.
 
 ```text
-        ☀ (Solar Noon) ──▶ Max Brightness
+        ☀ (Solar Noon) --> Max Brightness
        /  \
      /      \ (Smoothly dimming via gamma curve)
    /          \
-─ 0° (Horizon) ──────────────────────────────
+- 0° (Horizon) ------------------------------
                 \
-                  \ ☾ (Night) ──▶ Min Brightness
+                  \ ☾ (Night) --> Min Brightness
 ```
 
-- **Offline City Database:** SunReactor includes a built-in, offline database of thousands of cities. Select your city in the TUI, and the daemon calculates the solar math entirely locally.
-- **Multi-Monitor Orchestration:** 50% brightness on a VA panel does not look the same as 50% on an OLED or IPS screen. You can set distinct minimum, maximum, and gain values for each display independently. The daemon calculates the global solar progression and maps it to each monitor's unique hardware curve.
+- **Offline City Database:** SunReactor includes a built-in database of cities. Pick yours in the TUI, and the daemon handles the math locally without needing the internet.
+- **Multi-Monitor Support:** 50% brightness on a VA panel looks different than 50% on an OLED. You can set distinct minimum, maximum, and gain values for each display. The daemon applies the same solar calculation to each monitor's specific hardware curve.
 
 ## // ARCHITECTURE & CONSTRAINTS
 
-SunReactor operates with strict boundaries to remain predictable and lightweight:
+SunReactor is built to be predictable and stay out of the way:
 
-- **Hardware Level Control:** Adjusts actual hardware backlight via `ddcutil` (external displays) and `sysfs` / `brightnessctl` (internal screens). No artificial color filters.
-- **Deterministic Math Core:** The policy engine calculates solar math offline. Zero network calls, zero state mutations, zero subprocesses.
-- **Synchronous & Lightweight:** Wakes up, computes the math, writes to the hardware, and sleeps. No heavy async runtime.
-- **Unprivileged Execution:** Runs as an isolated systemd user service. No root access or dbus integration is required.
-- **Dynamic Weather Modifier:** You can add a free OpenWeather API key. The system reads real-time cloud cover and dims your displays on overcast days, acting strictly as a multiplier over the base solar logic.
+- **Hardware Control:** Adjusts the actual backlight via `ddcutil` (external) and `sysfs` / `brightnessctl` (internal). No software color filters.
+- **Pure Logic:** The math engine runs completely offline with no network calls, state mutations, or subprocesses.
+- **Synchronous:** Wakes up, computes the math, writes to the hardware, and sleeps. It does not use an async runtime.
+- **Unprivileged:** Runs as a systemd user service. No root access or dbus required.
+- **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover and slightly dims your displays on overcast days. This acts only as a multiplier over the base calculation. Plus, it gives you a nice excuse to track live weather and sunrise/sunset times right in the TUI :)
 
 ## // INSTALLATION
 
@@ -78,14 +76,15 @@ systemctl --user enable --now sunreactord.service
 
 ## // INTERFACE & CONTROL
 
-Configuration and monitoring are handled entirely through the built-in terminal interface (`ratatui`). It functions as a thin client over a secure local IPC socket.
+You can configure and monitor the daemon using the built-in terminal interface (`ratatui`). It connects to the daemon over a local IPC socket.
 
 ```bash
 sunreactorctl tui
 ```
-The TUI provides 24 themes, real-time monitoring, dynamic weather charts, and full control over your monitor limits and city selection.
 
-For scripting or quick overrides, the CLI provides direct commands:
+The TUI includes real-time monitoring, weather charts, theme options, and config management.
+
+The CLI also provides direct commands for scripting or quick overrides:
 ```bash
 sunreactorctl status               # View current solar state and monitor levels
 sunreactorctl suspend --minutes 60 # Temporarily pause automation
@@ -95,7 +94,7 @@ sunreactorctl clear-override       # Resume automatic solar policy
 
 ## // UNDER THE HOOD
 
-While you configure everything via the TUI, the resulting state is cleanly saved in `~/.config/sunreactor/config.toml`. Example structure:
+The TUI writes your settings to a standard TOML file at `~/.config/sunreactor/config.toml`. Here is an example:
 
 ```toml
 [location]

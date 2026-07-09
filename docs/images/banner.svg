@@ -15,7 +15,7 @@
     <tspan x="50%" dy="1.2em" fill="#FFE082">            .  *  .  . *     ˚ · . .  *  .</tspan>
   </text>
   
-  <text x="50%" y="260" font-family="'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif" font-size="18" font-weight="600" font-style="italic" fill="#FFB300" letter-spacing="1.5px" text-anchor="middle">
-    Automated Monitor Brightness, Synced with the Sun.
+  <text x="50%" y="260" font-family="'Courier New', Courier, monospace" font-size="13" font-weight="bold" fill="#FFB300" letter-spacing="2px" text-anchor="middle">
+    [ AUTOMATED MONITOR BRIGHTNESS, SYNCED WITH THE SUN ]
   </text>
 </svg>
