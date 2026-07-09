@@ -9,6 +9,18 @@ A headless daemon that adjusts monitor brightness based on the sun's actual posi
 
 Built in Rust. ~19k lines across 67 source files.
 
+## // PREVIEW
+
+<div align="center">
+  <img src="docs/images/SunReactor_1.png" alt="Dashboard" width="48%" style="margin: 0.5%;" />
+  <img src="docs/images/SunReactor_2.png" alt="Monitor Focus" width="48%" style="margin: 0.5%;" />
+  <br/>
+  <img src="docs/images/SunReactor_3.png" alt="Theme Menu" width="31%" style="margin: 0.5%;" />
+  <img src="docs/images/SunReactor_4.png" alt="Weather Chart" width="31%" style="margin: 0.5%;" />
+  <img src="docs/images/SunReactor_5.png" alt="Settings" width="31%" style="margin: 0.5%;" />
+</div>
+<br/>
+
 ## // HOW IT WORKS
 
 Most brightness tools use fixed clock schedules ("dim at 22:00"). That drifts with seasons, latitude, and DST. SunReactor uses **solar elevation** — the sun's angle above the horizon at your coordinates — as the primary signal.
@@ -231,5 +243,5 @@ make fmt && make clippy && make test
 ## // CREDITS
 
 - **Developer:** arcanorca
-- **License:** MIT
+- **License:** GPL-3.0-or-later
 - **Stack:** Rust | ratatui | chrono | serde | toml | systemd (user) | ddcutil | brightnessctl
