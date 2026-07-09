@@ -33,9 +33,12 @@
 Static brightness schedules fail because daylight shifts with the seasons. SunReactor uses the sun's physical elevation above the horizon to drive a fully automated pipeline.
 
 ```text
-dawn -> sunrise -> solar noon -> sunset -> dusk
- ↑                                        ↑
- brightness ramps up              brightness ramps down
+     [Astronomical State]            [Hardware Backlight]
+      +90° (Solar Noon)  ──────────▶  100% (Customizable Max)
+             ...                               ...
+        0° (Horizon)     ──────────▶  Interpolated Curve (Gamma-Aware)
+             ...                               ...
+      -18° (Night/Dusk)  ──────────▶    5% (Customizable Min)
 ```
 
 - **Offline City Database:** SunReactor includes a built-in, offline database of thousands of cities. Select your city in the TUI, and the daemon calculates the solar math entirely locally.
