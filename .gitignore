@@ -1,0 +1,33 @@
+# Build artifacts
+/target/
+
+# Cargo lock is committed for binary crates
+# Cargo.lock
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Dev scratch files
+*.py
+check_errors.txt
+test_tz.rs
+*.tar.gz
+*.zip
+
+# Large data files (bundled at build or fetched)
+cities15000.txt
+cities15000.zip
+
+# Agent metadata
+.agents/
+AGENTS.md
+OPTIMIZATIONS.md
+.github/

@@ -1,0 +1,38 @@
+[Unit]
+Description=sunreactor adaptive brightness daemon
+Documentation=file:%h/.config/sunreactor/config.toml
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# sunreactor uses its default XDG paths, pinned here to the documented defaults.
+Environment=XDG_CONFIG_HOME=%h/.config
+Environment=XDG_STATE_HOME=%h/.local/state
+Environment=XDG_CACHE_HOME=%h/.cache
+ExecStart=/usr/bin/sunreactord
+ExecReload=/usr/bin/sunreactorctl reload-config
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+WorkingDirectory=%h
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sunreactord
+
+[Install]
+WantedBy=default.target
