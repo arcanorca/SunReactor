@@ -14,9 +14,7 @@
 
 ---
 
-**SunReactor** isn't another software gamma filter that tints your screen red. It is a headless, zero-root Rust daemon that uses astronomical trigonometry to physically adjust your monitor's backlight voltage based on the true solar elevation at your exact coordinates.
-
-No `dbus` bloat. No async runtime overhead. Just mechanical sympathy and circadian awareness.
+**SunReactor** is a headless Rust daemon that automates your monitor brightness. By calculating the sun's exact elevation for your city and the current date, the brightness curve naturally adapts to seasonal daylight shifts and even dynamically dims based on real-time cloud cover. You set your hardware limits via the built-in terminal UI, and the daemon orchestrates all your displays in the background.
 
 ## // PREVIEW
 
