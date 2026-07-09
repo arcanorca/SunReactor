@@ -15,7 +15,6 @@
 
 **Automated Monitor Brightness, Synced with the Sun.**
 
-`☀ -> 🖥 -> 💡`
 </div>
 
 ---
