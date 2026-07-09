@@ -1,6 +1,4 @@
-<div align="center">
-  <img src="docs/images/banner.svg" alt="SunReactor Logo" width="100%">
-</div>
+<img src="docs/images/banner.svg" alt="SunReactor Logo" width="100%">
 
 ---
 
