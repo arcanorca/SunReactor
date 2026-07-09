@@ -4,7 +4,7 @@
 
 ---
 
-**SunReactor** is a headless Rust daemon that completely automates your monitor brightness. By calculating the sun's exact elevation for your city and the current date, the brightness curve naturally adapts to seasonal daylight shifts and even dynamically dims based on real-time cloud cover. You set your hardware limits once via the built-in terminal UI, and the daemon quietly orchestrates all your displays in the background.
+**SunReactor** is a headless Rust daemon that automates your monitor's hardware brightness. By calculating the sun's exact elevation for your city and the current date, the brightness curve naturally adapts to seasonal daylight shifts and even dynamically dims based on real-time cloud cover. You set your hardware limits once via the built-in terminal UI, and the daemon orchestrates your displays in the background.
 
 ## // PREVIEW
 
@@ -20,7 +20,7 @@
 
 ## // THE AUTOMATION
 
-Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses the sun's actual elevation above the horizon to calculate brightness.
+Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses the sun's actual elevation above the horizon to calculate brightness change.
 
 ```text
         ☀ (Solar Noon) --> Max Brightness
@@ -39,11 +39,11 @@ Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses
 
 SunReactor is built to be predictable and stay out of the way:
 
-- **Hardware Control:** Adjusts the actual backlight via `ddcutil` (external) and `sysfs` / `brightnessctl` (internal). No software color filters.
-- **Pure Logic:** The math engine runs completely offline with no network calls, state mutations, or subprocesses.
+- **Hardware Control:** Adjusts the actual backlight via `ddcutil` (external) and `sysfs` / `brightnessctl` (internal).
+- **Pure Logic:** The math engine runs offline with no network calls, state mutations, or subprocesses.
 - **Synchronous:** Wakes up, computes the math, writes to the hardware, and sleeps. It does not use an async runtime.
 - **Unprivileged:** Runs as a systemd user service. No root access or dbus required.
-- **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover and slightly dims your displays on overcast days. This acts only as a multiplier over the base calculation. Plus, it gives you a nice excuse to track live weather and sunrise/sunset times right in the TUI :)
+- **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover and slightly dims your displays on overcast days. This acts only as a multiplier over the base calculation. Plus, it gives you an excuse to track live weather and sunrise/sunset times right in the TUI :)
 
 ## // INSTALLATION
 
