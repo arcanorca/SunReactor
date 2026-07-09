@@ -51,14 +51,15 @@ You aren't locked into a rigid algorithm. SunReactor is designed for extreme fin
 * **Curve Sensitivity (Gamma/Gain):** Adjust how aggressively the brightness ramps up or down as the sun moves. You control the mathematical curve, not just the endpoints.
 * **Weather Modifier:** Optional cloud cover data (via OpenWeather) dynamically dims the screen on overcast days, but acts strictly as a bounded multiplier that never violates your minimum floor.
 
-## // THE ANTI-FEATURES (WHY IT'S DIFFERENT)
+## // HOW IT'S BUILT
 
-We hate bloated daemons as much as you do. SunReactor is built on extreme minimalism paired with a luxurious TUI.
+I hate bloated daemons, so SunReactor is designed to be as predictable and dumb as possible:
 
-* **Hardware-First:** We don't tint pixels. We command the actual hardware via DDC/CI (external monitors) and `sysfs` (laptop panels) to save power and preserve contrast.
-* **Offline Pure Math:** The core policy engine is a pure mathematical function. Zero network requests, zero state mutations, zero subprocesses. It just works.
-* **No `Tokio` / Async Bloat:** A daemon that wakes up every 60 seconds, does trigonometry, writes to an `i2c` bus, and sleeps. A synchronous loop is deterministic and takes 0 idle CPU cycles.
-* **No `dbus` or `root`:** Everything runs as an isolated systemd user service. Control happens via a secure (`0600`) local Unix socket.
+- **Real hardware dimming.** It doesn't slap a red filter over your pixels like f.lux. It uses `ddcutil` and `sysfs` to physically lower the backlight voltage.
+- **Offline math.** The core logic doesn't need the internet. It just uses your GPS coordinates and the system clock to calculate solar angles.
+- **Zero async bloat.** No `tokio`. The daemon wakes up every 60 seconds, does the math, writes to the `i2c` bus, and goes back to sleep. Zero idle CPU.
+- **No root, no dbus.** Runs entirely as a systemd user service. Everything communicates over a simple local unix socket (`0600`).
+- **Optional weather.** If you drop in an OpenWeather key, it dynamically dims the screen on cloudy days. But it acts strictly as a dumb multiplier on top of the base math.
 
 ## // CLI & TUI CONTROL
 
