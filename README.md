@@ -1,8 +1,7 @@
 <div align="center">
   <img src="docs/images/banner.svg" alt="SunReactor Logo" width="100%">
 
-**Automated Monitor Brightness, Synced with the Sun.**
-
+`☀ -> 🖥 -> 💡`
 </div>
 
 ---
