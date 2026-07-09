@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 250" width="800" height="250">
+  <rect width="800" height="250" fill="transparent"/>
+  <text x="50%" y="20" font-family="'Courier New', Courier, monospace" font-size="16" font-weight="bold" text-anchor="middle" xml:space="preserve">
+    <tspan x="50%" dy="1.2em" fill="#FFCA28">            ✧ · ⋆ . ˚ ·  .  *  .            </tspan>
+    <tspan x="50%" dy="1.2em" fill="#FFB300">         *   \  |  /   *   · ⋆  .       </tspan>
+    <tspan x="50%" dy="1.2em" fill="#FF8F00">       .  -   \ | /   -  .      .      *</tspan>
+    <tspan x="50%" dy="1.2em" fill="#D84315">          _____                ____                  __           </tspan>
+    <tspan x="50%" dy="1.2em" fill="#9B111E">      *  / ___/__  ______     / __ \___  ____ ______/ /_____  _____ .</tspan>
+    <tspan x="50%" dy="1.2em" fill="#C21F24">         \__ \/ / / / __ \   / /_/ / _ \/ __ `/ ___/ __/ __ \/ ___/ *</tspan>
+    <tspan x="50%" dy="1.2em" fill="#E13B29">     .  ___/ / /_/ / / / /  / _, _/  __/ /_/ / /__/ /_/ /_/ / /     .</tspan>
+    <tspan x="50%" dy="1.2em" fill="#F8791D">       /____/\__,_/_/ /_/  /_/ |_|\___/\__,_/\___/\__/\____/_/   *</tspan>
+    <tspan x="50%" dy="1.2em" fill="#FFB300">       .  -   / | \   -  .      *      .</tspan>
+    <tspan x="50%" dy="1.2em" fill="#FFCA28">         *   /  |  \   *   .  ⋆ .   *   .</tspan>
+    <tspan x="50%" dy="1.2em" fill="#FFE082">            .  *  .  . *     ˚ · . .  *  .</tspan>
+  </text>
+</svg>

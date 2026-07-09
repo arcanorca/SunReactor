@@ -1,17 +1,5 @@
 <div align="center">
-  <pre style="background: transparent; border: none; font-weight: bold; line-height: 1.2;">
-<span style="color: #FFCA28">            ✧ · ⋆ . ˚ ·  .  *  .            </span>
-<span style="color: #FFB300">         *   \  |  /   *   · ⋆  .       </span>
-<span style="color: #FF8F00">       .  -   \ | /   -  .      .      *</span>
-<span style="color: #D84315">          _____                ____                  __           </span>
-<span style="color: #9B111E">      *  / ___/__  ______     / __ \___  ____ ______/ /_____  _____ .</span>
-<span style="color: #C21F24">         \__ \/ / / / __ \   / /_/ / _ \/ __ `/ ___/ __/ __ \/ ___/ *</span>
-<span style="color: #E13B29">     .  ___/ / /_/ / / / /  / _, _/  __/ /_/ / /__/ /_/ /_/ / /     .</span>
-<span style="color: #F8791D">       /____/\__,_/_/ /_/  /_/ |_|\___/\__,_/\___/\__/\____/_/   *</span>
-<span style="color: #FFB300">       .  -   / | \   -  .      *      .</span>
-<span style="color: #FFCA28">         *   /  |  \   *   .  ⋆ .   *   .</span>
-<span style="color: #FFE082">            .  *  .  . *     ˚ · . .  *  .</span>
-  </pre>
+  <img src="docs/images/banner.svg" alt="SunReactor Logo" width="100%">
 
 **Automated Monitor Brightness, Synced with the Sun.**
 
