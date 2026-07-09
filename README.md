@@ -28,7 +28,7 @@
 </div>
 <br/>
 
-## // THE AHA! MOMENT
+## // HOW IT WORKS
 
 Most brightness tools (and OS night lights) rely on arbitrary clock schedules ("dim at 22:00"). But clock schedules are fundamentally flawed—they drift with seasons, daylight saving time, and geographical latitude.
 
