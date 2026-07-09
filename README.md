@@ -10,14 +10,11 @@
                                                          
 ```
 **Adaptive Hardware Brightness Driven by Pure Solar Mathematics.**
-
-`☀ → 🖥 → 💡`
-
 </div>
 
 ---
 
-**SunReactor** isn't another software gamma filter that tints your screen red. It is a headless, zero-root Rust daemon that uses pure astronomical trigonometry to physically adjust your monitor's backlight voltage based on the actual sun's angle hitting your window.
+**SunReactor** isn't another software gamma filter that tints your screen red. It is a headless, zero-root Rust daemon that uses astronomical trigonometry to physically adjust your monitor's backlight voltage based on the true solar elevation at your exact coordinates.
 
 No `dbus` bloat. No async runtime overhead. Just mechanical sympathy and circadian awareness.
 
@@ -35,58 +32,37 @@ No `dbus` bloat. No async runtime overhead. Just mechanical sympathy and circadi
 
 ## // THE AHA! MOMENT
 
-Most brightness tools (and OS night lights) use arbitrary clock schedules ("dim at 22:00"). But the world isn't static. Clock schedules drift with seasons, daylight saving time, and geographical latitude.
+Most brightness tools (and OS night lights) rely on arbitrary clock schedules ("dim at 22:00"). But clock schedules are fundamentally flawed—they drift with seasons, daylight saving time, and geographical latitude.
 
-SunReactor ditches the clock entirely. Instead, it computes **Solar Elevation**:
+SunReactor ditches the clock. It continuously computes **Solar Elevation** (the physical angle of the sun relative to your horizon) and maps it to a highly tunable brightness curve:
+
 ```text
-dawn → sunrise → solar noon → sunset → dusk
- ↑                                        ↑
- brightness ramps up              brightness ramps down
+     [Astronomical State]            [Hardware Backlight]
+      +90° (Solar Noon)  ──────────▶  100% (Customizable Max)
+             ...                               ...
+        0° (Horizon)     ──────────▶  Interpolated Curve (Gamma-Aware)
+             ...                               ...
+      -18° (Night/Dusk)  ──────────▶    5% (Customizable Min)
 ```
-When the sun physically sets at your exact GPS coordinates, your backlight physically dims. 
 
-## // WHY IT'S DIFFERENT (THE ANTI-FEATURES)
+**Absolute Control & Fine-Tuning:**
+You aren't locked into a rigid algorithm. SunReactor is designed for extreme fine-tuning per monitor:
+* **Floor & Ceiling:** Set absolute `min_pct` and `max_pct` boundaries. The daemon will never blind you or turn the screen entirely black.
+* **Curve Sensitivity (Gamma/Gain):** Adjust how aggressively the brightness ramps up or down as the sun moves. You control the mathematical curve, not just the endpoints.
+* **Weather Modifier:** Optional cloud cover data (via OpenWeather) dynamically dims the screen on overcast days, but acts strictly as a bounded multiplier that never violates your minimum floor.
 
-We hate bloated daemons as much as you do. SunReactor is built on a philosophy of extreme minimalism paired with a ridiculously luxurious TUI.
+## // THE ANTI-FEATURES (WHY IT'S DIFFERENT)
+
+We hate bloated daemons as much as you do. SunReactor is built on extreme minimalism paired with a luxurious TUI.
 
 * **Hardware-First:** We don't tint pixels. We command the actual hardware via DDC/CI (external monitors) and `sysfs` (laptop panels) to save power and preserve contrast.
 * **Offline Pure Math:** The core policy engine is a pure mathematical function. Zero network requests, zero state mutations, zero subprocesses. It just works.
-* **No `Tokio` / Async Bloat:** It's a daemon that wakes up every 60 seconds, does some trig, writes to an `i2c` bus, and goes back to sleep. A synchronous loop is deterministic and takes 0 idle CPU cycles.
-* **No `dbus` or `root`:** Everything runs as an isolated systemd user service. Control happens via a secure (`0600`) local Unix socket using JSON payloads.
-* **Weather as a Bounded Modifier:** Optional cloud cover data (via OpenWeather) dynamically dims the screen on overcast days, but *never* overrides the base solar policy.
-
-## // INSTALLATION (Arch / CachyOS)
-
-**Dependencies:** `ddcutil` (for external displays) and `brightnessctl` (for laptops).
-
-```bash
-sudo pacman -S ddcutil brightnessctl
-
-# Clone and install
-git clone https://github.com/arcanorca/SunReactor.git
-cd SunReactor
-cargo install --path .
-```
-
-Generate a starter config and probe your hardware:
-```bash
-sunreactorctl config init
-sunreactorctl discover
-```
-
-Copy the discovered monitors into your config (`~/.config/sunreactor/config.toml`), set your coordinates, and enable the daemon:
-```bash
-mkdir -p ~/.config/systemd/user
-cp contrib/systemd/sunreactord.service ~/.config/systemd/user/
-
-systemctl --user daemon-reload
-systemctl --user enable --now sunreactord.service
-```
-*(Note: If installed via Cargo, edit `ExecStart` in the unit file to point to `%h/.cargo/bin/sunreactord`)*
+* **No `Tokio` / Async Bloat:** A daemon that wakes up every 60 seconds, does trigonometry, writes to an `i2c` bus, and sleeps. A synchronous loop is deterministic and takes 0 idle CPU cycles.
+* **No `dbus` or `root`:** Everything runs as an isolated systemd user service. Control happens via a secure (`0600`) local Unix socket.
 
 ## // CLI & TUI CONTROL
 
-SunReactor ships with a built-in `ratatui` terminal interface. It's a thin client over the local IPC socket.
+SunReactor ships with a built-in `ratatui` terminal interface acting as a thin client over the local IPC socket.
 
 ```bash
 # Launch the mesmerizing interface:
@@ -102,10 +78,30 @@ sunreactorctl set desk 50         # Manual brightness override
 sunreactorctl reload-config       # Hot-reload config.toml
 ```
 
-## // CONFIGURATION
+## // INSTALLATION & CONFIGURATION (Arch / CachyOS)
+
+**Dependencies:** `ddcutil` (for external displays) and `brightnessctl` (for laptops).
+
+```bash
+sudo pacman -S ddcutil brightnessctl
+git clone https://github.com/arcanorca/SunReactor.git
+cd SunReactor
+cargo install --path .
+```
+
+Generate a starter config, discover your monitors, and start the daemon:
+```bash
+sunreactorctl config init
+sunreactorctl discover
+
+# Enable the systemd user service
+mkdir -p ~/.config/systemd/user
+cp contrib/systemd/sunreactord.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now sunreactord.service
+```
 
 Everything lives in `~/.config/sunreactor/config.toml`:
-
 ```toml
 [location]
 latitude = 41.0
@@ -117,6 +113,7 @@ logical_id = "desk"
 backend = "ddc"
 min_pct = 20
 max_pct = 90
+# gain = 1.0 (Optional curve tuning)
 
 [[monitors]]
 logical_id = "laptop"
@@ -127,7 +124,6 @@ sysfs_path = "/sys/class/backlight/amdgpu_bl1"
 ```
 
 ## // CREDITS & LICENSE
-
 - **Developer:** arcanorca
 - **License:** GPL-3.0-or-later
 - **Stack:** Rust | ratatui | systemd (user) | Unix IPC | ddcutil | brightnessctl
