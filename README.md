@@ -49,15 +49,15 @@ You aren't locked into a rigid algorithm. SunReactor is designed for extreme fin
 * **Curve Sensitivity (Gamma/Gain):** Adjust how aggressively the brightness ramps up or down as the sun moves. You control the mathematical curve, not just the endpoints.
 * **Weather Modifier:** Optional cloud cover data (via OpenWeather) dynamically dims the screen on overcast days, but acts strictly as a bounded multiplier that never violates your minimum floor.
 
-## // HOW IT'S BUILT
+## // ARCHITECTURE & CONSTRAINTS
 
-I hate bloated daemons, so SunReactor is designed to be as predictable and dumb as possible:
+SunReactor operates with strict boundaries to remain predictable and lightweight:
 
-- **Real hardware dimming.** It doesn't slap a red filter over your pixels like f.lux. It uses `ddcutil` and `sysfs` to physically lower the backlight voltage.
-- **Offline math.** The core logic doesn't need the internet. It just uses your GPS coordinates and the system clock to calculate solar angles.
-- **Zero async bloat.** No `tokio`. The daemon wakes up every 60 seconds, does the math, writes to the `i2c` bus, and goes back to sleep. Zero idle CPU.
-- **No root, no dbus.** Runs entirely as a systemd user service. Everything communicates over a simple local unix socket (`0600`).
-- **Optional weather.** If you drop in an OpenWeather key, it dynamically dims the screen on cloudy days. But it acts strictly as a dumb multiplier on top of the base math.
+- **Hardware Level Control:** Adjusts actual hardware backlight via `ddcutil` (external displays) and `sysfs` / `brightnessctl` (internal screens). No artificial color filters.
+- **Deterministic Math Core:** The policy engine calculates solar math offline. Zero network calls, zero state mutations, zero subprocesses.
+- **Synchronous & Lightweight:** Wakes up, computes the math, writes to the hardware, and sleeps. No heavy async runtime.
+- **Unprivileged Execution:** Runs as an isolated systemd user service. No root access or dbus integration is required.
+- **Dynamic Weather Modifier:** You can add a free OpenWeather API key. The system reads real-time cloud cover and automatically dims your displays on overcast days, acting strictly as a multiplier over the base solar logic.
 
 ## // CLI & TUI CONTROL
 
