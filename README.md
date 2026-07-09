@@ -1,15 +1,21 @@
 <div align="center">
+  <pre style="background: transparent; border: none; font-weight: bold; line-height: 1.2;">
+<span style="color: #FFCA28">            ✧ · ⋆ . ˚ ·  .  *  .            </span>
+<span style="color: #FFB300">         *   \  |  /   *   · ⋆  .       </span>
+<span style="color: #FF8F00">       .  -   \ | /   -  .      .      *</span>
+<span style="color: #D84315">          _____                ____                  __           </span>
+<span style="color: #9B111E">      *  / ___/__  ______     / __ \___  ____ ______/ /_____  _____ .</span>
+<span style="color: #C21F24">         \__ \/ / / / __ \   / /_/ / _ \/ __ `/ ___/ __/ __ \/ ___/ *</span>
+<span style="color: #E13B29">     .  ___/ / /_/ / / / /  / _, _/  __/ /_/ / /__/ /_/ /_/ / /     .</span>
+<span style="color: #F8791D">       /____/\__,_/_/ /_/  /_/ |_|\___/\__,_/\___/\__/\____/_/   *</span>
+<span style="color: #FFB300">       .  -   / | \   -  .      *      .</span>
+<span style="color: #FFCA28">         *   /  |  \   *   .  ⋆ .   *   .</span>
+<span style="color: #FFE082">            .  *  .  . *     ˚ · . .  *  .</span>
+  </pre>
 
-```text
-   _____             _____                 _             
-  / ____|           |  __ \               | |            
- | (___  _   _ _ __ | |__) |___  __ _  ___| |_ ___  _ __ 
-  \___ \| | | | '_ \|  _  // _ \/ _` |/ __| __/ _ \| '__|
-  ____) | |_| | | | | | \ \  __/ (_| | (__| || (_) | |   
- |_____/ \__,_|_| |_|_|  \_\___|\__,_|\___|\__\___/|_|   
-                                                         
-```
-**Adaptive Hardware Brightness Driven by Pure Solar Mathematics.**
+**Automated Monitor Brightness, Synced with the Sun.**
+
+`☀ -> 🖥 -> 💡`
 </div>
 
 ---
@@ -33,12 +39,13 @@
 Static brightness schedules fail because daylight shifts with the seasons. SunReactor uses the sun's physical elevation above the horizon to drive a fully automated pipeline.
 
 ```text
-     [Astronomical State]            [Hardware Backlight]
-      +90° (Solar Noon)  ──────────▶  100% (Customizable Max)
-             ...                               ...
-        0° (Horizon)     ──────────▶  Interpolated Curve (Gamma-Aware)
-             ...                               ...
-      -18° (Night/Dusk)  ──────────▶    5% (Customizable Min)
+        ☀ (Solar Noon) ──▶ Max Brightness
+       /  \
+     /      \ (Smoothly dimming via gamma curve)
+   /          \
+─ 0° (Horizon) ──────────────────────────────
+                \
+                  \ ☾ (Night) ──▶ Min Brightness
 ```
 
 - **Offline City Database:** SunReactor includes a built-in, offline database of thousands of cities. Select your city in the TUI, and the daemon calculates the solar math entirely locally.
