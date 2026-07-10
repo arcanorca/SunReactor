@@ -40,11 +40,25 @@ fn render_weather_config(f: &mut Frame, app: &Model, area: Rect) {
 
 fn render_weather_panel(f: &mut Frame, app: &Model, area: Rect) {
     let palette = app.config.tui.theme.palette();
+    
+    let state = weather_panel_state(
+        app.status.as_ref(),
+        app.config.tui.use_12h_time,
+        &app.config.location.timezone,
+        app.config.tui.temperature_unit,
+        &palette,
+    );
+
+    let title = match state {
+        WeatherPanelState::Message(_) => " Weather Status ",
+        WeatherPanelState::Ready(_) => " Sky Condition & 24h Forecast ",
+    };
+
     let weather_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.border_inactive))
         .title(Span::styled(
-            " Sky Condition & 24h Forecast ",
+            title,
             Style::default()
                 .fg(palette.fg)
                 .add_modifier(Modifier::BOLD),
@@ -53,13 +67,7 @@ fn render_weather_panel(f: &mut Frame, app: &Model, area: Rect) {
     f.render_widget(weather_block, area);
 
     let weather_layout = padded_weather_layout(inner);
-    match weather_panel_state(
-        app.status.as_ref(),
-        app.config.tui.use_12h_time,
-        &app.config.location.timezone,
-        app.config.tui.temperature_unit,
-        &palette,
-    ) {
+    match state {
         WeatherPanelState::Message(message) => render_weather_message(f, inner, &message, &palette),
         WeatherPanelState::Ready(panel) => {
             render_weather_header(f, &panel, weather_layout[0], &palette);

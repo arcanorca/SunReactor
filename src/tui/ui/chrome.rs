@@ -19,7 +19,7 @@ pub(super) fn render_header(f: &mut Frame, app: &Model, area: Rect) {
         } else if status.desktop_idle_dimmed {
             "idle dimmed"
         } else if status.daemon_alive {
-            "online"
+            "active"
         } else {
             "offline"
         };
@@ -283,7 +283,7 @@ pub(super) fn render_help(f: &mut Frame, palette: &Palette) {
 
 fn style_daemon_status(status: &str, palette: &Palette) -> Style {
     match status {
-        "online" => Style::default().fg(palette.success),
+        "active" => Style::default().fg(palette.success),
         "idle dimmed" => Style::default()
             .fg(palette.warning)
             .add_modifier(Modifier::BOLD),
