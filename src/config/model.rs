@@ -173,7 +173,7 @@ impl MonitorSelector {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct WeatherConfig {
     pub enabled: bool,

@@ -1494,6 +1494,23 @@ impl DaemonRuntime {
                 return Err(error);
             }
         }
+
+        if self.config.weather != previous_config.weather || self.config.location != previous_config.location {
+            self._weather_shutdown_tx.take();
+            if let Some(handle) = self._weather_thread.take() {
+                let _ = handle.join();
+            }
+            let (weather_tx, weather_rx) = std::sync::mpsc::channel();
+            self._weather_thread = weather::start_fetch_loop(
+                self.config.weather.clone(),
+                self.config.location.clone(),
+                self.weather_cache.clone(),
+                None,
+                weather_rx,
+            );
+            self._weather_shutdown_tx = Some(weather_tx);
+        }
+
         Ok(())
     }
 }
