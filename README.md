@@ -31,7 +31,7 @@ Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses
 ```
 
 - **Offline City Database:** SunReactor includes a built-in database of cities. Pick yours in the TUI, and the daemon handles the math locally without needing the internet.
-- **Multi-Monitor Support:** 50% brightness on a VA panel looks different than 50% on an OLED. You can set distinct minimum, maximum, and gain values for each display. The daemon applies the same solar calculation to each monitor's specific hardware curve.
+- **Multi-Monitor Support:** 50% brightness on an IPS panel looks different than 50% on a VA or OLED. You can set distinct minimum, maximum, gamma curvature, and gain values for each display. The daemon calculates each monitor's brightness independently.
 
 ## // ARCHITECTURE & CONSTRAINTS
 
