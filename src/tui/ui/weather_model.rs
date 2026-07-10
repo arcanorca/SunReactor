@@ -188,7 +188,7 @@ fn build_header(
             "Current Temp: {}",
             format_temperature(f64::from(weather.temperature.unwrap_or(0.0)), unit)
         ),
-        cloud_label: format!("Cloudness: {cloud_pct}%"),
+        cloud_label: format!("Cloudiness: {cloud_pct}%"),
         sunrise_label,
         sunset_label,
     }
@@ -484,7 +484,7 @@ mod tests {
         };
 
         assert_eq!(panel.header.temperature_label, "Current Temp: 21.5°C");
-        assert_eq!(panel.header.cloud_label, "Cloudness: 42%");
+        assert_eq!(panel.header.cloud_label, "Cloudiness: 42%");
         assert_eq!(panel.forecast_rows.len(), 1);
         assert_eq!(panel.temperature_chart.points.len(), 2);
     }
