@@ -30,7 +30,7 @@ where
     if !config.enabled {
         return WeatherResolution {
             modifier: None,
-            snapshot: cached.cloned(),
+            snapshot: None,
             next_refresh_at_epoch_s: None,
             error: None,
             refresh_attempted: false,
@@ -56,7 +56,12 @@ where
                 }
                 Err(refresh_error) => error = Some(refresh_error),
             },
-            Err(refresh_error) => error = Some(refresh_error),
+            Err(refresh_error) => {
+                if matches!(refresh_error, WeatherError::MissingApiKey { .. }) {
+                    snapshot = None;
+                }
+                error = Some(refresh_error);
+            }
         }
     }
 

@@ -69,21 +69,12 @@ pub(super) fn render_header(f: &mut Frame, app: &Model, area: Rect) {
         }
     };
 
-    let live_badge = Span::styled(
-        " LIVE ",
-        Style::default()
-            .fg(palette.bg)
-            .bg(palette.success)
-            .add_modifier(Modifier::BOLD),
-    );
-
     let status_line = Line::from(vec![
         Span::styled(
             format!(" daemon:{daemon} "),
             style_daemon_status(&daemon, &palette),
         ),
-        Span::raw(format!(" {time_str}  wthr:{weather}  ")),
-        live_badge,
+        Span::raw(format!(" {time_str}  wthr:{weather} ")),
     ]);
 
     // ── Large logo (tall terminal ≥ 30 rows) ────────────────────────────────
