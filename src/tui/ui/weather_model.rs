@@ -62,21 +62,27 @@ pub(super) fn weather_panel_state(
     let Some(status) = status else {
         return WeatherPanelState::Message(String::from(AWAITING_DAEMON_MESSAGE));
     };
-    let Some(weather) = &status.weather else {
-        return WeatherPanelState::Message(String::from(WEATHER_INACTIVE_MESSAGE));
-    };
-    if !weather.active {
-        return WeatherPanelState::Message(inactive_weather_message(
-            weather,
-            use_12h_time,
-            timezone,
-        ));
-    }
-
+    let is_weather_active = status.weather.as_ref().is_some_and(|w| w.active);
+    
     WeatherPanelState::Ready(Box::new(WeatherPanelData {
         header: build_header(status, use_12h_time, timezone, unit, palette),
-        forecast_rows: build_forecast_rows(weather, use_12h_time, timezone, unit, palette),
-        temperature_chart: build_temperature_chart(weather, unit),
+        forecast_rows: if is_weather_active {
+            build_forecast_rows(status.weather.as_ref().unwrap(), use_12h_time, timezone, unit, palette)
+        } else {
+            vec![]
+        },
+        temperature_chart: if is_weather_active {
+            build_temperature_chart(status.weather.as_ref().unwrap(), unit)
+        } else {
+            TemperatureChart {
+                points: vec![],
+                min_label: String::new(),
+                mid_label: String::new(),
+                max_label: String::new(),
+                min_temp: 0.0,
+                max_temp: 0.0,
+            }
+        },
     }))
 }
 
@@ -151,20 +157,19 @@ fn build_header(
     unit: crate::config::TemperatureUnit,
     palette: &Palette,
 ) -> WeatherHeader {
-    let Some(weather) = status.weather.as_ref() else {
-        return WeatherHeader {
-            art: "",
-            art_color: palette.fg,
-            temperature_label: String::from("N/A"),
-            cloud_label: String::from("N/A"),
-            sunrise_label: String::from("N/A"),
-            sunset_label: String::from("N/A"),
-        };
-    };
-    let cloud_pct = weather.cloud_cover_percent.unwrap_or(0);
     let is_night = status
         .solar_elevation
         .is_some_and(|elevation| elevation < 0.0);
+
+    let (cloud_pct, temp_str, cloud_str) = match status.weather.as_ref() {
+        Some(weather) if weather.active => {
+            let pct = weather.cloud_cover_percent.unwrap_or(0);
+            let t_str = format_temperature(f64::from(weather.temperature.unwrap_or(0.0)), unit);
+            (pct, t_str, format!("{pct}%"))
+        }
+        _ => (0, String::from("--"), String::from("--")),
+    };
+
     let (art, art_color) = weather_art(cloud_pct, is_night, status.lunar_phase, palette);
 
     let sunrise_label = status.sunrise_epoch_s.map_or_else(
@@ -184,11 +189,8 @@ fn build_header(
     WeatherHeader {
         art,
         art_color,
-        temperature_label: format!(
-            "Current Temp: {}",
-            format_temperature(f64::from(weather.temperature.unwrap_or(0.0)), unit)
-        ),
-        cloud_label: format!("Cloudiness: {cloud_pct}%"),
+        temperature_label: format!("Current Temp: {temp_str}"),
+        cloud_label: format!("Cloudiness: {cloud_str}"),
         sunrise_label,
         sunset_label,
     }
