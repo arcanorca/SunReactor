@@ -56,19 +56,11 @@ pub struct DaemonRuntime {
     pub persisted_state_snapshot: RuntimeState,
     pub last_solar_elevation: Option<f64>,
     pub fade_engine: fade::FadeEngine,
-    pub weather_cache:
-        std::sync::Arc<std::sync::RwLock<Option<crate::state::WeatherSnapshotMetadata>>>,
-    pub _weather_shutdown_tx: Option<std::sync::mpsc::Sender<()>>,
-    pub _weather_thread: Option<std::thread::JoinHandle<()>>,
+    pub weather_engine: weather::WeatherEngine,
 }
 
 impl Drop for DaemonRuntime {
-    fn drop(&mut self) {
-        self._weather_shutdown_tx.take();
-        if let Some(handle) = self._weather_thread.take() {
-            let _ = handle.join();
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 #[derive(Debug, Clone)]
@@ -856,8 +848,8 @@ impl DaemonRuntime {
             return None;
         }
 
-        if let Ok(guard) = self.weather_cache.try_read() {
-            self.state.weather = guard.clone();
+        if let Ok(snapshot_opt) = self.weather_engine.latest_snapshot() {
+            self.state.weather = snapshot_opt;
             if let Some(snapshot) = &self.state.weather {
                 return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
             }
@@ -928,15 +920,12 @@ impl DaemonRuntime {
         let socket = ControlSocket { path: socket_path };
         let config = RuntimeConfig::from_report(config)?;
         let persisted_state_snapshot = state.normalized_for_persistence();
-        let weather_cache = std::sync::Arc::new(std::sync::RwLock::new(state.weather.clone()));
+        let initial_weather = state.weather.clone();
 
-        let (weather_tx, weather_rx) = std::sync::mpsc::channel();
-        let weather_handle = weather::start_fetch_loop(
+        let weather_engine = weather::WeatherEngine::new(
             config.weather.clone(),
             config.location.clone(),
-            weather_cache.clone(),
-            None,
-            weather_rx,
+            initial_weather,
         );
 
         let mut runtime = Self {
@@ -948,9 +937,7 @@ impl DaemonRuntime {
             persisted_state_snapshot,
             last_solar_elevation: None,
             fade_engine: FadeEngine::new(),
-            weather_cache,
-            _weather_shutdown_tx: Some(weather_tx),
-            _weather_thread: weather_handle,
+            weather_engine,
         };
 
         runtime.prepare_apply_resync(false);
@@ -1222,7 +1209,7 @@ impl DaemonRuntime {
     fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
         let control = self.state.effective_control(now_epoch_s);
         let weather = if self.config.weather.enabled {
-            let cached_snapshot = self.weather_cache.try_read().ok().map(|g| g.clone());
+            let cached_snapshot = self.weather_engine.latest_snapshot().ok();
             let snapshot_owned = cached_snapshot.unwrap_or_else(|| self.state.weather.clone());
             let snapshot = snapshot_owned.as_ref();
             let snapshot_state =
@@ -1497,21 +1484,7 @@ impl DaemonRuntime {
             }
         }
 
-        if self.config.weather != previous_config.weather || self.config.location != previous_config.location {
-            self._weather_shutdown_tx.take();
-            if let Some(handle) = self._weather_thread.take() {
-                let _ = handle.join();
-            }
-            let (weather_tx, weather_rx) = std::sync::mpsc::channel();
-            self._weather_thread = weather::start_fetch_loop(
-                self.config.weather.clone(),
-                self.config.location.clone(),
-                self.weather_cache.clone(),
-                None,
-                weather_rx,
-            );
-            self._weather_shutdown_tx = Some(weather_tx);
-        }
+        self.weather_engine.sync_config(&self.config.weather, &self.config.location);
 
         Ok(())
     }

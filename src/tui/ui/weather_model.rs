@@ -7,7 +7,6 @@ use crate::config::TemperatureUnit;
 use crate::tui::theme::Palette;
 
 const AWAITING_DAEMON_MESSAGE: &str = "Awaiting daemon sync...";
-const WEATHER_INACTIVE_MESSAGE: &str = "Weather module inactive.\nNo sky data available.";
 
 pub(super) enum WeatherPanelState {
     Message(String),
@@ -102,53 +101,6 @@ fn format_temperature(celsius: f64, unit: crate::config::TemperatureUnit) -> Str
     format!("{converted:.1}°{symbol}")
 }
 
-fn inactive_weather_message(weather: &WeatherStatus, use_12h_time: bool, timezone: &str) -> String {
-    if let Some(error) = weather.last_error.as_deref() {
-        let headline = if weather.stale {
-            "Weather data stale."
-        } else {
-            "Weather refresh failed."
-        };
-        let retry_line = retry_line(weather.next_refresh_at_epoch_s, use_12h_time, timezone);
-        return format!("{headline}\n{}\n{retry_line}", truncate_message(error, 54));
-    }
-
-    if weather.stale {
-        return format!(
-            "Weather data stale.\n{}",
-            retry_line(weather.next_refresh_at_epoch_s, use_12h_time, timezone)
-        );
-    }
-
-    if weather.observed_at_epoch_s.is_some() {
-        return String::from("Weather data incomplete.\nNo usable cloud sample available.");
-    }
-
-    String::from(WEATHER_INACTIVE_MESSAGE)
-}
-
-fn retry_line(next_refresh_at_epoch_s: Option<u64>, use_12h_time: bool, timezone: &str) -> String {
-    match next_refresh_at_epoch_s {
-        Some(next_refresh_at_epoch_s) => format!(
-            "Retry scheduled at {}.",
-            forecast_time_label(next_refresh_at_epoch_s, use_12h_time, timezone)
-        ),
-        None => String::from("Retry scheduled on next daemon tick."),
-    }
-}
-
-fn truncate_message(message: &str, max_chars: usize) -> String {
-    let normalized = message.replace('\n', " ");
-    if normalized.chars().count() <= max_chars {
-        return normalized;
-    }
-
-    let truncated: String = normalized
-        .chars()
-        .take(max_chars.saturating_sub(1))
-        .collect();
-    format!("{truncated}…")
-}
 
 fn build_header(
     status: &StatusResponse,

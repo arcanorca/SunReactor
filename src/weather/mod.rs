@@ -3,11 +3,13 @@ use crate::solar::Location;
 use crate::state::WeatherSnapshotMetadata;
 
 pub mod client;
+pub mod engine;
 pub mod openweather;
 pub mod smoothing;
 pub mod types;
 
 pub(crate) use client::*;
+pub use engine::*;
 pub use openweather::*;
 pub use smoothing::*;
 pub use types::*;
@@ -107,60 +109,7 @@ where
     }
 }
 
-pub fn start_fetch_loop(
-    config: WeatherConfig,
-    location: Location,
-    cache: std::sync::Arc<std::sync::RwLock<Option<WeatherSnapshotMetadata>>>,
-    mut next_refresh_at_epoch_s: Option<u64>,
-    shutdown_rx: std::sync::mpsc::Receiver<()>,
-) -> Option<std::thread::JoinHandle<()>> {
-    if !config.enabled {
-        return None;
-    }
-    Some(std::thread::spawn(move || {
-        let provider = OpenWeatherProvider;
-        let mut consecutive_failures = 0;
 
-        loop {
-            let now_epoch_s = chrono::Utc::now().timestamp().max(0) as u64;
-            let current_cache = cache.read().unwrap().clone();
-
-            let resolution = resolve_modifier_with_provider(
-                &config,
-                &location,
-                current_cache.as_ref(),
-                now_epoch_s,
-                next_refresh_at_epoch_s,
-                false,
-                consecutive_failures,
-                &provider,
-                &ProcessEnvironment,
-            );
-
-            if let Some(error) = &resolution.error {
-                tracing::error!(error=%error, "weather_fetch_failed");
-                consecutive_failures += 1;
-            } else if resolution.refresh_attempted {
-                consecutive_failures = 0;
-            }
-
-            if resolution.snapshot != current_cache {
-                *cache.write().unwrap() = resolution.snapshot;
-            }
-
-            next_refresh_at_epoch_s = resolution.next_refresh_at_epoch_s;
-
-            match shutdown_rx.recv_timeout(std::time::Duration::from_secs(30)) {
-                Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    break;
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Timeout is expected, continue to next iteration
-                }
-            }
-        }
-    }))
-}
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
