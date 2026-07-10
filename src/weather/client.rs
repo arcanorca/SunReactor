@@ -6,7 +6,7 @@ use std::time::Duration;
 
 const WEATHER_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const WEATHER_FAILURE_RETRY_BASE_SECONDS: u64 = 60;
-const WEATHER_FAILURE_RETRY_MAX_SECONDS: u64 = 300;
+pub(crate) const WEATHER_FAILURE_RETRY_MAX_SECONDS: u64 = 300;
 
 pub(crate) fn next_refresh_delay(
     config: &WeatherConfig,

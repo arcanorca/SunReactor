@@ -39,27 +39,47 @@ where
 
     let mut snapshot = cached.cloned();
     let mut error = None;
+
+    let request = match provider_request(config, location, now_epoch_s, environment) {
+        Ok(req) => req,
+        Err(err) => {
+            if matches!(err, WeatherError::MissingApiKey { .. }) {
+                return WeatherResolution {
+                    modifier: None,
+                    snapshot: None,
+                    next_refresh_at_epoch_s: None,
+                    error: Some(err),
+                    refresh_attempted: false,
+                };
+            }
+            error = Some(err);
+            // We can't build a request, but we might still use the cached snapshot
+            // We'll proceed so the logic can use the old snapshot
+            return WeatherResolution {
+                modifier: snapshot.as_ref().and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
+                snapshot,
+                next_refresh_at_epoch_s: next_refresh_at_epoch_s.or(Some(now_epoch_s + WEATHER_FAILURE_RETRY_MAX_SECONDS)),
+                error,
+                refresh_attempted: false,
+            };
+        }
+    };
+
     let refresh_due = force_refresh
         || next_refresh_at_epoch_s
             .is_none_or(|refresh_at_epoch_s| now_epoch_s >= refresh_at_epoch_s);
 
     if refresh_due {
-        match provider_request(config, location, now_epoch_s, environment) {
-            Ok(request) => match provider.fetch_snapshot(&request) {
-                Ok(fresh_snapshot) => {
-                    snapshot = Some(merge_snapshot(
-                        config,
-                        snapshot.as_ref(),
-                        fresh_snapshot,
-                        now_epoch_s,
-                    ));
-                }
-                Err(refresh_error) => error = Some(refresh_error),
-            },
+        match provider.fetch_snapshot(&request) {
+            Ok(fresh_snapshot) => {
+                snapshot = Some(merge_snapshot(
+                    config,
+                    snapshot.as_ref(),
+                    fresh_snapshot,
+                    now_epoch_s,
+                ));
+            }
             Err(refresh_error) => {
-                if matches!(refresh_error, WeatherError::MissingApiKey { .. }) {
-                    snapshot = None;
-                }
                 error = Some(refresh_error);
             }
         }

@@ -69,12 +69,31 @@ pub(super) fn render_header(f: &mut Frame, app: &Model, area: Rect) {
         }
     };
 
+    let (badge_text, badge_bg) = if let Some(status) = app.status.as_ref() {
+        if status.weather.as_ref().is_some_and(|w| w.active) {
+            (" LIVE ", palette.success)
+        } else {
+            (" OFFLINE ", palette.error)
+        }
+    } else {
+        (" OFFLINE ", palette.error)
+    };
+
+    let api_badge = Span::styled(
+        badge_text,
+        Style::default()
+            .fg(palette.bg)
+            .bg(badge_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+
     let status_line = Line::from(vec![
         Span::styled(
             format!(" daemon:{daemon} "),
             style_daemon_status(&daemon, &palette),
         ),
-        Span::raw(format!(" {time_str}  wthr:{weather} ")),
+        Span::raw(format!(" {time_str}  wthr:{weather}  ")),
+        api_badge,
     ]);
 
     // ── Large logo (tall terminal ≥ 30 rows) ────────────────────────────────
