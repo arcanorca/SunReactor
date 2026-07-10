@@ -857,8 +857,8 @@ impl DaemonRuntime {
         }
 
         if let Ok(guard) = self.weather_cache.try_read() {
-            if let Some(snapshot) = &*guard {
-                self.state.weather = Some(snapshot.clone());
+            self.state.weather = guard.clone();
+            if let Some(snapshot) = &self.state.weather {
                 return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
             }
         } else {
@@ -1222,7 +1222,9 @@ impl DaemonRuntime {
     fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
         let control = self.state.effective_control(now_epoch_s);
         let weather = if self.config.weather.enabled {
-            let snapshot = self.state.weather.as_ref();
+            let cached_snapshot = self.weather_cache.try_read().ok().map(|g| g.clone());
+            let snapshot_owned = cached_snapshot.unwrap_or_else(|| self.state.weather.clone());
+            let snapshot = snapshot_owned.as_ref();
             let snapshot_state =
                 weather::snapshot_state(&self.config.weather, snapshot, now_epoch_s);
             Some(ipc::WeatherStatus {
