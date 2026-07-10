@@ -2,7 +2,7 @@
 
 ---
 
-**SunReactor** is a headless Rust daemon that automates your monitor's hardware brightness. By calculating the sun's elevation for your city and the current date, the brightness curve adapts to seasonal daylight shifts and dynamically dims based on real-time cloud cover. You set min and max brightness limits via the built-in terminal UI, and the daemon orchestrates your displays in the background.
+**SunReactor** is a headless Rust daemon that automates your monitor's hardware brightness. By calculating the sun's elevation for your city and the current date, the brightness curve adapts to seasonal daylight shifts and dynamically dims based on real-time cloud cover. You set min and max brightness limits via the terminal UI, and the daemon orchestrates your displays in the background.
 
 ## // PREVIEW
 
