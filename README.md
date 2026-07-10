@@ -32,7 +32,7 @@ Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses
                   \ ☾ (Night) --> Min Brightness
 ```
 
-- **Offline City Database & Pinpoint Precision:** SunReactor includes a built-in database of cities for zero-dependency, offline solar math. Alternatively, input your exact coordinates for pinpoint accuracy and hyper-local microclimate weather reactions.
+- **Built-in Cities & Custom Locations:** Pick a city from the offline database for a quick setup. Want it even more precise? Enter your exact coordinates via the TUI so the sun and cloud data match the exact sky outside your window, not just the general city area.
 - **Multi-Monitor Support:** 50% brightness on an IPS panel looks different than 50% on a VA or OLED. You can set distinct minimum, maximum, gamma curvature, and gain values for each display. The daemon calculates each monitor's brightness independently.
 
 ## // ARCHITECTURE & CONSTRAINTS
