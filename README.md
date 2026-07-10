@@ -33,6 +33,7 @@ Static clock schedules don't adapt to seasonal daylight changes. SunReactor uses
 ```
 
 - **Built-in Cities & Custom Locations:** Pick a city from the offline database for a quick setup. Want it even more precise? Enter your exact coordinates via the TUI so the sun and cloud data match the exact sky outside your window, not just the general city area.
+- **Local by Default:** SunReactor does all the daylight math locally. Getting weather data is optional. If you want cloud adjustments, the daemon will connect directly to the OpenWeather API to fetch what it needs. Turn this off, and the program remains completely offline.
 - **Multi-Monitor Support:** 50% brightness on an IPS panel looks different than 50% on a VA or OLED. You can set distinct minimum, maximum, gamma curvature, and gain values for each display. The daemon calculates each monitor's brightness independently.
 
 ## // ARCHITECTURE & CONSTRAINTS
