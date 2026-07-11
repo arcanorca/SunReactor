@@ -85,10 +85,18 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 <details>
 <summary><b>View Manual Installation Steps</b></summary>
 
-1. Download the latest pre-built binary from Releases:
+1. Download the latest pre-built binary from [Releases](https://github.com/arcanorca/SunReactor/releases). Make sure to check for the latest version tag (e.g., `v0.1.0`) and choose the correct architecture (`x86_64` or `aarch64`):
+
+**For x86_64 (Intel/AMD):**
 ```bash
 curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-x86_64.tar.gz
 tar xzf sunreactor-v0.1.0-linux-x86_64.tar.gz
+```
+
+**For ARM64 (aarch64):**
+```bash
+curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-aarch64.tar.gz
+tar xzf sunreactor-v0.1.0-linux-aarch64.tar.gz
 ```
 
 2. Move the binaries to your local PATH:
