@@ -1,0 +1,69 @@
+[daemon]
+tick_seconds = 60
+dry_run = false
+# Keep this enabled if you want sunreactor to suspend itself while the desktop
+# dims/locks and re-sync brightness after wake. Disable it if your desktop power
+# manager should keep full control over idle/wake brightness behavior.
+desktop_idle_sync = true
+log_level = "info"
+
+[location]
+# Set your coordinates for accurate solar brightness.
+# Default (0, 0, UTC) uses an equatorial fallback.
+latitude = 0.0
+longitude = 0.0
+timezone = "UTC"
+
+[solar_policy]
+twilight_elevation_start = -6.0
+day_elevation_full = 20.0
+
+
+# Optional local time when monitors should finally reach their configured
+# minimum brightness. Omit this or set it to "auto" to use sunreactor's
+# delayed evening default after local sunset.
+# Legacy `sleep_start_local` is still accepted only as a migration alias until
+# June 1, 2026. Rewrite old configs to `minimum_brightness_start_local`.
+# minimum_brightness_start_local = "23:00"
+max_step_pct_per_tick = 6
+min_write_delta_pct = 1
+
+# Add zero or more monitor entries below. Keep logical_id values unique.
+# DDC example:
+# [[monitors]]
+# logical_id = "desk"
+# backend = "ddc"
+# enabled = true
+# min_pct = 15
+# max_pct = 60
+# gain = 1.0
+# connector = "DP-1"
+# ddc_bus = 6
+# ddc_address = 55
+# [[monitors.milestone_adjustments]]
+# milestone = "fall_50"
+# minutes_offset = 10
+#
+# Backlight example:
+# [[monitors]]
+# logical_id = "internal"
+# backend = "backlight"
+# enabled = true
+# min_pct = 15
+# max_pct = 100
+# gain = 1.0
+# sysfs_path = "/sys/class/backlight/intel_backlight"
+# [[monitors.milestone_adjustments]]
+# milestone = "rise_25"
+# minutes_offset = -5
+
+[weather]
+enabled = false
+provider = "openweather"
+api_key_env = "OPENWEATHER_API_KEY"
+# api_key = "set-only-if-you-accept-storing-a-secret-in-config"
+refresh_minutes = 30
+min_multiplier = 0.75
+
+[tui]
+fps = 8
