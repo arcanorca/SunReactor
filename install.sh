@@ -26,6 +26,7 @@ UNINSTALL=0
 cleanup() {
     rm -rf "$TMP_DIR"
 }
+trap 'cleanup; exit 1' INT TERM
 trap cleanup EXIT
 
 parse_args() {
@@ -46,6 +47,12 @@ check_dependencies() {
             exit 1
         fi
     done
+
+    # JSON parsing for auto-discovery
+    if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
+        log_error "Missing dependency: 'python3' or 'jq' is required for auto-discovery setup."
+        exit 1
+    fi
 }
 
 # ==========================================
@@ -81,13 +88,30 @@ fetch_latest_version() {
 
 download_release() {
     local version="$1"
-    local tarball="sunreactor-${version}-linux-x86_64.tar.gz"
+    local arch
+    local target
+    
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)
+            target="x86_64"
+            ;;
+        aarch64|arm64)
+            target="aarch64"
+            ;;
+        *)
+            log_error "Unsupported architecture: $arch"
+            exit 1
+            ;;
+    esac
+
+    local tarball="sunreactor-${version}-linux-${target}.tar.gz"
     local url="https://github.com/$REPO/releases/download/${version}/${tarball}"
     local dest="$TMP_DIR/$tarball"
 
-    log_info "Downloading SunReactor ${version}..."
+    log_info "Downloading SunReactor ${version} for ${target}..."
     if ! curl -# -L "$url" -o "$dest"; then
-        log_error "Download failed."
+        log_error "Download failed. Check your connection or the release asset existence."
         exit 1
     fi
     echo "$dest"
@@ -115,8 +139,8 @@ setup_systemd() {
     log_info "Setting up systemd service..."
     
     # Defensive replacement to ensure systemd uses the correct local binary path
-    sed -i "s|/usr/bin/sunreactor|$BIN_DIR/sunreactor|g" "$TMP_DIR/sunreactord.service"
-    sed -i "s|/usr/local/bin/sunreactor|$BIN_DIR/sunreactor|g" "$TMP_DIR/sunreactord.service"
+    sed -i "s|/usr/bin/sunreactord|$BIN_DIR/sunreactord|g" "$TMP_DIR/sunreactord.service"
+    sed -i "s|/usr/local/bin/sunreactord|$BIN_DIR/sunreactord|g" "$TMP_DIR/sunreactord.service"
     
     mkdir -p "$SYSTEMD_DIR"
     cp "$TMP_DIR/sunreactord.service" "$SYSTEMD_DIR/"
@@ -186,10 +210,10 @@ launch_dashboard() {
     if [[ $needs_setup -eq 1 && $QUIET -eq 0 && -t 1 ]]; then
         log_info "No monitors configured. Auto-discovering displays..."
         
-        # Use Python to safely extract the config_snippet from the JSON output
+        # Safely extract the config_snippet from the JSON output
         local snippet=""
         if command -v python3 >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet", ""))' 2>/dev/null || true)
+            snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet") or "")' 2>/dev/null || true)
         elif command -v jq >/dev/null 2>&1; then
             snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | jq -r '.config_snippet' || true)
         fi
