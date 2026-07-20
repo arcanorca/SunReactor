@@ -46,7 +46,7 @@ pub(super) fn render_header(f: &mut Frame, app: &Model, area: Rect) {
         .or_else(|| tz::TimeZone::from_posix_tz(timezone_str).ok())
         .and_then(|tz| {
             tz.find_local_time_type(now_utc.timestamp())
-                .map(|lt| lt.ut_offset())
+                .map(tz::LocalTimeType::ut_offset)
                 .ok()
         })
         .map(|offset| chrono::FixedOffset::east_opt(offset).unwrap());

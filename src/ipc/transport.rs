@@ -108,8 +108,7 @@ fn read_bounded_message(stream: &mut UnixStream, path: &Path) -> Result<Vec<u8>,
     if bytes.len() > MAX_IPC_MESSAGE_BYTES {
         return Err(IpcError::Protocol {
             message: format!(
-                "payload exceeds maximum allowed size of {} bytes",
-                MAX_IPC_MESSAGE_BYTES
+                "payload exceeds maximum allowed size of {MAX_IPC_MESSAGE_BYTES} bytes"
             ),
         });
     }

@@ -89,7 +89,7 @@ impl DesktopIdleSync {
             Some(watcher) => !watcher.is_alive(),
             None => self
                 .last_spawn_attempt
-                .is_none_or(|last| last.elapsed() > Duration::from_secs(60)),
+                .is_none_or(|last| last.elapsed() > Duration::from_mins(1)),
         };
 
         if needs_restart {

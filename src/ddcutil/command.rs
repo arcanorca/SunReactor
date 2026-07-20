@@ -17,10 +17,10 @@ pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabil
         Duration::from_secs(2),
     ) {
         if version_output.success() {
-            caps.version_string = version_output
-                .stdout
+            let combined = format!("{}\n{}", version_output.stdout, version_output.stderr);
+            caps.version_string = combined
                 .lines()
-                .next()
+                .find(|l| l.contains("ddcutil"))
                 .unwrap_or("")
                 .trim()
                 .to_string();
@@ -30,7 +30,7 @@ pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabil
     if let Ok(help_output) = runner.run("ddcutil", &["--help".to_string()], Duration::from_secs(2))
     {
         if help_output.success() {
-            let help_text = help_output.stdout;
+            let help_text = format!("{}\n{}", help_output.stdout, help_output.stderr);
             caps.supports_noconfig = help_text.contains("--noconfig");
             caps.supports_noverify = help_text.contains("--noverify");
             caps.supports_terse = help_text.contains("--terse");
@@ -74,15 +74,15 @@ pub(crate) fn build_getvcp_args(
     vcp: &str,
 ) -> Vec<String> {
     let mut args = build_base_args(caps);
-    args.push("--display".to_string());
-    args.push(display.to_string());
-    args.push("getvcp".to_string());
-    args.push(vcp.to_string());
     if caps.supports_terse {
         args.push("--terse".to_string());
     } else if caps.supports_brief {
         args.push("--brief".to_string());
     }
+    args.push("--display".to_string());
+    args.push(display.to_string());
+    args.push("getvcp".to_string());
+    args.push(vcp.to_string());
     args
 }
 

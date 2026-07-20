@@ -10,13 +10,16 @@ use super::{
 const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
 const DEFAULT_DDC_ADDRESS: u16 = 0x37;
 
-pub fn apply(monitor: &MonitorConfig, percent: u8, profile: Option<&crate::ddcutil::DdcutilProfile>) -> Result<BackendWrite, BackendError> {
+use std::sync::OnceLock;
+
+static DDC_CAPABILITIES: OnceLock<crate::ddcutil::DdcutilCapabilities> = OnceLock::new();
+
+pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
     apply_with_runner(
         &RealProcessRunner,
         monitor,
         percent,
         Duration::from_secs(10),
-        profile,
     )
 }
 
@@ -25,53 +28,29 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
     monitor: &MonitorConfig,
     percent: u8,
     timeout: Duration,
-    profile: Option<&crate::ddcutil::DdcutilProfile>,
 ) -> Result<BackendWrite, BackendError> {
     let percent = clamp_percent(percent);
     let selection = build_selector(&monitor.selector)?;
 
     let mut attempts = 0u8;
 
+    let ddc_caps =
+        DDC_CAPABILITIES.get_or_init(|| crate::ddcutil::command::probe_capabilities(runner));
+
     loop {
         attempts += 1;
-        
-        let args = if let Some(caps) = profile {
-            // New way: Use the provided profile to build args
-            let ddc_caps = crate::ddcutil::DdcutilCapabilities {
-                version_string: caps.version_string.clone(),
-                supports_noconfig: caps.supports_noconfig,
-                supports_noverify: caps.supports_noverify,
-                supports_terse: caps.supports_terse,
-                supports_brief: caps.supports_brief,
-            };
-            crate::ddcutil::command::build_setvcp_args(
-                &ddc_caps,
-                &selection.args,
-                DDC_BRIGHTNESS_VCP_CODE,
-                &percent.to_string(),
-            )
-        } else {
-            // Fallback for tests: just use default assumptions or probe (legacy)
-            let ddc_caps = crate::ddcutil::DdcutilCapabilities {
-                version_string: String::new(),
-                supports_noconfig: true,
-                supports_noverify: true,
-                supports_terse: true,
-                supports_brief: false,
-            };
-            crate::ddcutil::command::build_setvcp_args(
-                &ddc_caps,
-                &selection.args,
-                DDC_BRIGHTNESS_VCP_CODE,
-                &percent.to_string(),
-            )
-        };
 
+        let args = crate::ddcutil::command::build_setvcp_args(
+            ddc_caps,
+            &selection.args,
+            DDC_BRIGHTNESS_VCP_CODE,
+            &percent.to_string(),
+        );
 
         #[cfg(unix)]
         let _lock = {
             let uid = unsafe { libc::geteuid() };
-            let lock_path = format!("/run/user/{}/sunreactor_i2c.lock", uid);
+            let lock_path = format!("/run/user/{uid}/sunreactor_i2c.lock");
             let lock_file = std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -279,7 +258,7 @@ mod tests {
                 "",
             );
 
-        let result = apply_with_runner(&runner, &monitor, 64, Duration::from_secs(10), None)
+        let result = apply_with_runner(&runner, &monitor, 64, Duration::from_secs(10))
             .expect("ddc write should succeed");
 
         assert_eq!(result.applied_percent, 64);
@@ -318,7 +297,7 @@ mod tests {
                 "",
             );
 
-        let result = apply_with_runner(&runner, &monitor, 42, Duration::from_secs(10), None)
+        let result = apply_with_runner(&runner, &monitor, 42, Duration::from_secs(10))
             .expect("ddc write should succeed");
 
         assert_eq!(result.attempts, 1);
@@ -338,7 +317,7 @@ mod tests {
         });
         let runner = FakeRunner::new();
 
-        let error = apply_with_runner(&runner, &monitor, 50, Duration::from_secs(4), None)
+        let error = apply_with_runner(&runner, &monitor, 50, Duration::from_secs(4))
             .expect_err("connector-only selector must fail");
 
         assert!(error
@@ -388,7 +367,7 @@ mod tests {
                 "timed out again",
             );
 
-        let error = apply_with_runner(&runner, &monitor, 55, Duration::from_secs(10), None)
+        let error = apply_with_runner(&runner, &monitor, 55, Duration::from_secs(10))
             .expect_err("second timeout should fail");
 
         assert!(error.to_string().contains("timed out"));

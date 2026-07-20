@@ -853,10 +853,8 @@ impl DaemonRuntime {
             if let Some(snapshot) = &self.state.weather {
                 return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
             }
-        } else {
-            if let Some(snapshot) = &self.state.weather {
-                return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
-            }
+        } else if let Some(snapshot) = &self.state.weather {
+            return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
         }
 
         None
@@ -1177,14 +1175,16 @@ impl DaemonRuntime {
         runner: &R,
     ) -> ipc::ResponseEnvelope {
         self.run_once_at_with_runner(now_utc, runner, true)
-            .map(|report| immediate_apply_response(success_message.clone(), &report))
-            .unwrap_or_else(|error| {
-                tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
-                ipc::ResponseEnvelope::error(
-                    ipc::ErrorCode::InternalError,
-                    format!("{success_message}, but immediate apply failed: {error}"),
-                )
-            })
+            .map_or_else(
+                |error| {
+                    tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
+                    ipc::ResponseEnvelope::error(
+                        ipc::ErrorCode::InternalError,
+                        format!("{success_message}, but immediate apply failed: {error}"),
+                    )
+                },
+                |report| immediate_apply_response(success_message.clone(), &report),
+            )
     }
 
     fn respond_after_resync<R: ProcessRunner + Sync>(
@@ -1196,14 +1196,16 @@ impl DaemonRuntime {
         clear_backoff: bool,
     ) -> ipc::ResponseEnvelope {
         self.run_resync_at_with_runner(now_utc, runner, clear_backoff)
-            .map(|report| immediate_apply_response(success_message.clone(), &report))
-            .unwrap_or_else(|error| {
-                tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
-                ipc::ResponseEnvelope::error(
-                    ipc::ErrorCode::InternalError,
-                    format!("{success_message}, but immediate apply failed: {error}"),
-                )
-            })
+            .map_or_else(
+                |error| {
+                    tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
+                    ipc::ResponseEnvelope::error(
+                        ipc::ErrorCode::InternalError,
+                        format!("{success_message}, but immediate apply failed: {error}"),
+                    )
+                },
+                |report| immediate_apply_response(success_message.clone(), &report),
+            )
     }
 
     fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
@@ -1484,7 +1486,8 @@ impl DaemonRuntime {
             }
         }
 
-        self.weather_engine.sync_config(&self.config.weather, &self.config.location);
+        self.weather_engine
+            .sync_config(&self.config.weather, &self.config.location);
 
         Ok(())
     }
@@ -2159,7 +2162,9 @@ mod tests {
             temperature: Some(0.0),
             forecast: vec![],
         });
-        runtime.weather_engine.inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
+        runtime
+            .weather_engine
+            .inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
         runtime.weather_refresh.last_attempted_at_epoch_s = Some(1_800_000_020);
         runtime.weather_refresh.next_refresh_at_epoch_s = Some(1_800_001_800);
         runtime.weather_refresh.consecutive_failures = 2;

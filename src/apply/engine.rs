@@ -360,7 +360,7 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
     // -------------------------------------------------------------------------
     let mut summary = ApplySummary::default();
 
-    for (item, dispatch_result) in work.into_iter().zip(dispatch_results.into_iter()) {
+    for (item, dispatch_result) in work.into_iter().zip(dispatch_results) {
         match item {
             WorkItem::Skip(record) => {
                 summary.push(record);
@@ -735,18 +735,18 @@ mod tests {
         let runner = FakeRunner::new()
             .with_success("ddcutil", &["--help"], "--noconfig --noverify")
             .with_success(
-            "brightnessctl",
-            &[
-                "--quiet",
-                "--class",
-                "backlight",
-                "--device",
-                "panel",
-                "set",
-                "50%",
-            ],
-            "",
-        );
+                "brightnessctl",
+                &[
+                    "--quiet",
+                    "--class",
+                    "backlight",
+                    "--device",
+                    "panel",
+                    "set",
+                    "50%",
+                ],
+                "",
+            );
         let mut state = RuntimeState::default();
 
         let start = Instant::now();

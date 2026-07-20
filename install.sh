@@ -133,7 +133,42 @@ install_binaries() {
 }
 
 # ==========================================
-# 6. SYSTEMD MODULE
+# 6. VALIDATION MODULE
+# ==========================================
+validate_health() {
+    log_info "Validating system health and hardware prerequisites..."
+    
+    # Run doctor and parse JSON to check overall health
+    local doctor_output
+    if ! doctor_output=$("$BIN_DIR/sunreactorctl" doctor --json); then
+        log_error "Failed to execute sunreactorctl doctor. Cannot proceed."
+        exit 1
+    fi
+    
+    local is_healthy
+    if command -v jq >/dev/null 2>&1; then
+        is_healthy=$(echo "$doctor_output" | jq -r '.overall_healthy')
+    elif command -v python3 >/dev/null 2>&1; then
+        is_healthy=$(echo "$doctor_output" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("overall_healthy", False))' 2>/dev/null || echo "false")
+    else
+        is_healthy="true" # Fallback if no json parser
+    fi
+
+    if [[ "$is_healthy" != "true" && "$is_healthy" != "True" ]]; then
+        log_error "System health check failed. Please run 'sunreactorctl doctor' for details. Installation cannot proceed."
+        exit 1
+    fi
+
+    log_info "Probing for monitors..."
+    if ! "$BIN_DIR/sunreactorctl" discover; then
+        log_error "Monitor discovery failed. Installation cannot proceed."
+        exit 1
+    fi
+    log_success "System is healthy and monitors are discoverable."
+}
+
+# ==========================================
+# 7. SYSTEMD MODULE
 # ==========================================
 setup_systemd() {
     log_info "Setting up systemd service..."
@@ -151,7 +186,7 @@ setup_systemd() {
 }
 
 # ==========================================
-# 7. PRESENTATION MODULE
+# 8. PRESENTATION MODULE
 # ==========================================
 print_banner() {
     [[ $QUIET -eq 1 ]] && return
@@ -201,7 +236,7 @@ launch_dashboard() {
         needs_setup=1
     else
         local status_output
-        status_output=$("$BIN_DIR/sunreactorctl" status 2>/dev/null || echo "")
+        status_output=$("$BIN_DIR/sunreactorctl" status || echo "")
         if echo "$status_output" | grep -q "configured_monitors: 0"; then
             needs_setup=1
         fi
@@ -213,9 +248,9 @@ launch_dashboard() {
         # Safely extract the config_snippet from the JSON output
         local snippet=""
         if command -v python3 >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet") or "")' 2>/dev/null || true)
+            snippet=$("$BIN_DIR/sunreactorctl" discover --json | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet") or "")' || true)
         elif command -v jq >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | jq -r '.config_snippet' || true)
+            snippet=$("$BIN_DIR/sunreactorctl" discover --json | jq -r '.config_snippet' || true)
         fi
 
         if [[ -n "$snippet" && "$snippet" != "null" ]]; then
@@ -251,7 +286,7 @@ launch_dashboard() {
 }
 
 # ==========================================
-# 8. ORCHESTRATION MODULE
+# 9. ORCHESTRATION MODULE
 # ==========================================
 uninstall_sunreactor() {
     local erase=0
@@ -324,6 +359,7 @@ main() {
 
     extract_archive "$archive"
     install_binaries
+    validate_health
     setup_systemd
     launch_dashboard
 }

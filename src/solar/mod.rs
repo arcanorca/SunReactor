@@ -222,7 +222,7 @@ pub(crate) fn resolve_local_datetime(
     let local_type_1 = tz
         .find_local_time_type(fake_utc_ts)
         .map_err(|_| SolarError::DateOutOfRange)?;
-    let approx_utc_ts = fake_utc_ts - local_type_1.ut_offset() as i64;
+    let approx_utc_ts = fake_utc_ts - i64::from(local_type_1.ut_offset());
 
     let local_type_2 = tz
         .find_local_time_type(approx_utc_ts)
@@ -249,7 +249,7 @@ pub(crate) fn resolve_date_boundary(
                 datetime: midnight,
                 timezone: timezone_label.to_owned(),
             })?;
-    let approx_utc_ts = fake_utc_ts - local_type_1.ut_offset() as i64;
+    let approx_utc_ts = fake_utc_ts - i64::from(local_type_1.ut_offset());
 
     let local_type_2 =
         tz.find_local_time_type(approx_utc_ts)

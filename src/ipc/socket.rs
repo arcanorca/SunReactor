@@ -119,7 +119,7 @@ impl BoundControlSocket {
                         }
                         Err(e) => {
                             return Err(IpcError::Protocol {
-                                message: format!("Failed to read SO_PEERCRED: {}", e),
+                                message: format!("Failed to read SO_PEERCRED: {e}"),
                             });
                         }
                     }

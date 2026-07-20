@@ -1,6 +1,6 @@
-use crate::ddcutil::version::DdcutilVersion;
+use crate::backends::{CommandError, ProcessRunner, RealProcessRunner};
 use serde::Serialize;
-use std::process::Command;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
@@ -25,68 +25,66 @@ pub enum CheckStatus {
 
 pub fn run_diagnostics() -> DoctorReport {
     let mut checks = Vec::new();
-
-    use crate::backends::{RealProcessRunner, ProcessRunner, CommandError};
-    use std::time::Duration;
-
     let runner = RealProcessRunner;
 
-    // Check ddcutil version
-    match runner.run("ddcutil", &["--version".to_string()], Duration::from_secs(5)) {
-        Ok(output) if output.success() => {
-            if let Some(version) = DdcutilVersion::parse(&output.stdout) {
-                if version.major < 1 || (version.major == 1 && version.minor < 4) {
-                    checks.push(CheckResult {
-                        code: String::from("SR-DDCUTIL-VERSION-WARN"),
-                        status: CheckStatus::Warn,
-                        message: format!("ddcutil version {}.{}.{} is older than 1.4.0. Compatibility layer will be used.", version.major, version.minor, version.patch),
-                    });
-                } else {
-                    checks.push(CheckResult {
-                        code: String::from("SR-DDCUTIL-VERSION-OK"),
-                        status: CheckStatus::Pass,
-                        message: format!(
-                            "ddcutil version {}.{}.{} is fully supported.",
-                            version.major, version.minor, version.patch
-                        ),
-                    });
-                }
-            } else {
+    // Check ddcutil version via capability probe
+    let caps = crate::ddcutil::command::probe_capabilities(&runner);
+    if caps.version_string.is_empty() {
+        match runner.run(
+            "ddcutil",
+            &["--version".to_string()],
+            Duration::from_secs(2),
+        ) {
+            Err(CommandError::Missing { .. }) => {
+                checks.push(CheckResult {
+                    code: String::from("SR-DDCUTIL-MISSING-ERR"),
+                    status: CheckStatus::Error,
+                    message: String::from("ddcutil is not installed or not in PATH."),
+                });
+            }
+            Err(e) => {
+                checks.push(CheckResult {
+                    code: String::from("SR-DDCUTIL-ERR"),
+                    status: CheckStatus::Error,
+                    message: format!("ddcutil execution error: {e}"),
+                });
+            }
+            Ok(_) => {
                 checks.push(CheckResult {
                     code: String::from("SR-DDCUTIL-PARSE-WARN"),
                     status: CheckStatus::Warn,
-                    message: String::from("Failed to parse ddcutil version."),
+                    message: String::from(
+                        "Failed to parse ddcutil capabilities or version string.",
+                    ),
                 });
             }
         }
-        Ok(_) => {
+    } else {
+        if caps.supports_noconfig && caps.supports_terse && caps.supports_noverify {
             checks.push(CheckResult {
-                code: String::from("SR-DDCUTIL-ERR"),
-                status: CheckStatus::Error,
-                message: String::from("ddcutil command failed."),
+                code: String::from("SR-DDCUTIL-CAPS-OK"),
+                status: CheckStatus::Pass,
+                message: format!(
+                    "ddcutil is installed ({}) and supports all required flags.",
+                    caps.version_string
+                ),
             });
-        }
-        Err(CommandError::Missing { .. }) => {
+        } else {
             checks.push(CheckResult {
-                code: String::from("SR-DDCUTIL-MISSING-ERR"),
-                status: CheckStatus::Error,
-                message: String::from("ddcutil is not installed or not in PATH."),
-            });
-        }
-        Err(err) => {
-            checks.push(CheckResult {
-                code: String::from("SR-DDCUTIL-ERR"),
-                status: CheckStatus::Error,
-                message: format!("ddcutil command error: {}", err),
+                code: String::from("SR-DDCUTIL-CAPS-WARN"),
+                status: CheckStatus::Warn,
+                message: format!(
+                    "ddcutil is installed ({}) but may be lacking required capabilities (noconfig: {}, terse: {}, noverify: {}). Compatibility mode active.",
+                    caps.version_string, caps.supports_noconfig, caps.supports_terse, caps.supports_noverify
+                ),
             });
         }
     }
 
     // Check I2C group
-    let has_i2c_group = if let Ok(output) = Command::new("groups").output() {
-        String::from_utf8_lossy(&output.stdout).contains("i2c")
-    } else {
-        false
+    let has_i2c_group = match runner.run("groups", &[], Duration::from_secs(2)) {
+        Ok(output) => output.stdout.contains("i2c"),
+        Err(_) => false,
     };
 
     // Check access to /dev/i2c-*
@@ -133,14 +131,17 @@ pub fn run_diagnostics() -> DoctorReport {
     }
 
     // Check daemon path
-    if Command::new("sunreactord")
-        .arg("--version")
-        .output()
+    if runner
+        .run(
+            "sunreactord",
+            &["--version".to_string()],
+            Duration::from_secs(2),
+        )
         .is_err()
     {
         let exe_dir = std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
         let mut found_next_to_cli = false;
         if let Some(dir) = exe_dir {
             if dir.join("sunreactord").exists() {
@@ -172,8 +173,8 @@ pub fn run_diagnostics() -> DoctorReport {
     // GLIBC Check (if applicable on Linux)
     #[cfg(target_os = "linux")]
     {
-        if let Ok(output) = Command::new("ldd").arg("--version").output() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(output) = runner.run("ldd", &["--version".to_string()], Duration::from_secs(2)) {
+            let stdout = output.stdout;
             if let Some(line) = stdout.lines().next() {
                 if let Some(version_str) = line.split_whitespace().last() {
                     let parts: Vec<&str> = version_str.split('.').collect();
@@ -185,16 +186,13 @@ pub fn run_diagnostics() -> DoctorReport {
                                 checks.push(CheckResult {
                                     code: String::from("SR-GLIBC-WARN"),
                                     status: CheckStatus::Warn,
-                                    message: format!("GLIBC version {}.{} is older than 2.31, some features may not work.", major, minor),
+                                    message: format!("GLIBC version {major}.{minor} is older than 2.31, some features may not work."),
                                 });
                             } else {
                                 checks.push(CheckResult {
                                     code: String::from("SR-GLIBC-OK"),
                                     status: CheckStatus::Pass,
-                                    message: format!(
-                                        "GLIBC version {}.{} is supported.",
-                                        major, minor
-                                    ),
+                                    message: format!("GLIBC version {major}.{minor} is supported."),
                                 });
                             }
                         }

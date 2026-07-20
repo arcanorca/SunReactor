@@ -1,5 +1,5 @@
+use crate::backends::{CommandError, CommandOutput, ProcessRunner};
 use std::time::Duration;
-use crate::backends::{ProcessRunner, CommandError, CommandOutput};
 
 #[derive(Debug, Clone)]
 pub struct DdcutilProfile {
@@ -49,7 +49,11 @@ pub enum DdcutilError {
 
 impl<R: ProcessRunner> DdcutilClient<R> {
     pub fn new(runner: R, profile: DdcutilProfile, timeouts: DdcutilTimeouts) -> Self {
-        Self { runner, profile, timeouts }
+        Self {
+            runner,
+            profile,
+            timeouts,
+        }
     }
 
     pub fn probe_profile(runner: &R) -> DdcutilProfile {
@@ -80,9 +84,8 @@ impl<R: ProcessRunner> DdcutilClient<R> {
         if !output.success() {
             if let Some(code) = output.exit_code {
                 return Err(DdcutilError::ExecutionFailed(code, output.stderr.clone()));
-            } else {
-                return Err(DdcutilError::Terminated);
             }
+            return Err(DdcutilError::Terminated);
         }
         Ok(output)
     }
@@ -110,10 +113,15 @@ impl<R: ProcessRunner> DdcutilClient<R> {
         };
         let args = crate::ddcutil::command::build_capabilities_args(&caps, display);
         let output = self.execute(&args, self.timeouts.capabilities)?;
-        Ok(crate::ddcutil::parser::parse_brightness_vcp_support(&output.stdout))
+        Ok(crate::ddcutil::parser::parse_brightness_vcp_support(
+            &output.stdout,
+        ))
     }
 
-    pub fn getvcp_brightness(&self, display: u32) -> Result<bool, DdcutilError> {
+    pub fn getvcp_brightness(
+        &self,
+        display: u32,
+    ) -> Result<crate::ddcutil::parser::BrightnessValue, DdcutilError> {
         let caps = crate::ddcutil::DdcutilCapabilities {
             version_string: self.profile.version_string.clone(),
             supports_noconfig: self.profile.supports_noconfig,
@@ -123,10 +131,16 @@ impl<R: ProcessRunner> DdcutilClient<R> {
         };
         let args = crate::ddcutil::command::build_getvcp_args(&caps, display, "10");
         let output = self.execute(&args, self.timeouts.getvcp)?;
-        Ok(crate::ddcutil::parser::parse_getvcp_brightness(&output.stdout))
+        crate::ddcutil::parser::parse_getvcp_brightness(&output.stdout)
+            .map_err(|e| DdcutilError::Parse(e.to_string()))
     }
 
-    pub fn setvcp(&self, selection_args: &[String], vcp: &str, value: &str) -> Result<(), DdcutilError> {
+    pub fn setvcp(
+        &self,
+        selection_args: &[String],
+        vcp: &str,
+        value: &str,
+    ) -> Result<(), DdcutilError> {
         let caps = crate::ddcutil::DdcutilCapabilities {
             version_string: self.profile.version_string.clone(),
             supports_noconfig: self.profile.supports_noconfig,

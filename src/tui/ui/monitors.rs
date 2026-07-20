@@ -95,9 +95,7 @@ pub(super) fn render_monitors(f: &mut Frame, app: &Model, area: Rect) {
             .border_style(panel_border(true, &palette))
             .title(ratatui::text::Span::styled(
                 header_line,
-                Style::default()
-                    .fg(palette.fg)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(list, columns[0]);
@@ -119,9 +117,7 @@ fn render_monitor_detail(
         .border_style(panel_border(false, palette))
         .title(ratatui::text::Span::styled(
             format!(" {} ", monitor.logical_id),
-            Style::default()
-                .fg(palette.fg)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
         ));
     f.render_widget(detail_block.clone(), area);
     let inner = detail_block.inner(area);
@@ -264,9 +260,7 @@ fn render_monitor_advanced(
         .border_style(panel_border(false, palette))
         .title(ratatui::text::Span::styled(
             " Automation Milestones ",
-            Style::default()
-                .fg(palette.fg)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
         ));
     f.render_widget(block.clone(), area);
     let inner = block.inner(area);
@@ -361,10 +355,9 @@ fn render_monitor_advanced(
     state.select(Some(selected_index));
     f.render_stateful_widget(List::new(items), rows[0], &mut state);
 
-    let footer = schedule
-        .milestones
-        .get(selected_index)
-        .map(|milestone| {
+    let footer = schedule.milestones.get(selected_index).map_or_else(
+        || String::from(" \u{2190}\u{2192} select  |  +/- 1m  |  r reset"),
+        |milestone| {
             if milestone.minutes_offset == 0 {
                 String::from(" \u{2190}\u{2192} select  |  +/- 1m  |  r reset")
             } else {
@@ -375,8 +368,8 @@ fn render_monitor_advanced(
                 };
                 format!(" base {base_time_str}  |  \u{2190}\u{2192} select  |  +/- 1m  |  r reset")
             }
-        })
-        .unwrap_or_else(|| String::from(" \u{2190}\u{2192} select  |  +/- 1m  |  r reset"));
+        },
+    );
     f.render_widget(
         Paragraph::new(footer)
             .style(Style::default().fg(palette.text_muted))

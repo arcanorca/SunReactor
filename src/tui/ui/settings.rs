@@ -173,9 +173,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                     .border_style(Style::default().fg(palette.border_inactive))
                     .title(Span::styled(
                         " Daemon Control ",
-                        Style::default()
-                            .fg(palette.fg)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
                     )),
             ),
         rows[1],
@@ -322,9 +320,7 @@ pub(super) fn render_settings_layout(
         .border_style(Style::default().fg(palette.border_inactive))
         .title(Span::styled(
             title,
-            Style::default()
-                .fg(palette.fg)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
         ));
     f.render_widget(block.clone(), area);
     let inner = block.inner(area);

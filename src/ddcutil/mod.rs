@@ -3,7 +3,7 @@ pub mod command;
 pub mod parser;
 pub mod version;
 
-pub use client::{DdcutilClient, DdcutilProfile, DdcutilTimeouts, DdcutilError};
+pub use client::{DdcutilClient, DdcutilError, DdcutilProfile, DdcutilTimeouts};
 
 // We keep DdcutilCapabilities around because command.rs uses it, but we can deprecate it later.
 #[derive(Debug, Clone)]
@@ -14,4 +14,3 @@ pub(crate) struct DdcutilCapabilities {
     pub supports_terse: bool,
     pub supports_brief: bool,
 }
-

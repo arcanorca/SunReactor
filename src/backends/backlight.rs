@@ -191,7 +191,7 @@ pub(crate) fn apply_sysfs_fallback(
     let device_dir = sysfs_device_dir(&device_name);
 
     let max_brightness = read_max_brightness(&device_dir, &device_name)?;
-    let raw_value = (percent as u64 * max_brightness) / 100;
+    let raw_value = (u64::from(percent) * max_brightness) / 100;
     write_brightness(&device_dir, &device_name, raw_value)?;
 
     Ok(BackendWrite {

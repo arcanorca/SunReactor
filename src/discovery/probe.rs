@@ -86,14 +86,14 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                         note = Some(format!("capabilities probe timed out after {}s", after.as_secs()));
                     }
                     Err(error) => {
-                        note = Some(format!("capabilities probe failed: {}", error));
+                        note = Some(format!("capabilities probe failed: {error}"));
                     }
                 }
 
                 // Fallback to getvcp 10 if capabilities failed or didn't report it
                 if !vcp10_confirmed {
                     match client.getvcp_brightness(monitor.display_number) {
-                        Ok(supported) if supported => {
+                        Ok(_) => {
                             vcp10_confirmed = true;
                             if note.is_some() {
                                 note = Some(format!("{} (recovered via getvcp)", note.unwrap()));
@@ -101,8 +101,12 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                                 note = Some(String::from("recovered via getvcp"));
                             }
                         }
-                        Ok(_) | Err(_) => {
-                            // Keep the original capabilities error if getvcp also fails
+                        Err(e) => {
+                            if note.is_none() {
+                                note = Some(format!("getvcp fallback failed: {e}"));
+                            } else {
+                                note = Some(format!("{}; getvcp fallback also failed: {}", note.unwrap(), e));
+                            }
                             probe_failures += 1;
                         }
                     }
@@ -164,13 +168,13 @@ fn discover_ddc_monitors<R: ProcessRunner>(
         Err(error) => {
             let error_msg = error.to_string();
             let is_permission_error = error_msg.contains("Permission denied");
-            
+
             (
                 BackendStatus {
                     backend: String::from("ddcutil"),
                     status: BackendStatusKind::Error,
                     available: true,
-                    message: format!("ddcutil detect failed: {}", error_msg),
+                    message: format!("ddcutil detect failed: {error_msg}"),
                     guidance: Some(if is_permission_error {
                         String::from("Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.")
                     } else {

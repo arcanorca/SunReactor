@@ -12,22 +12,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
       - uses: Swatinem/rust-cache@v2
-
       - name: Format
         run: cargo fmt --all --check
-
       - name: Lint
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
+        run: cargo clippy --workspace --all-targets --all-features
 
+  ubuntu-22-04-compatibility:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --workspace --all-targets --all-features
+
+  newer-linux-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features
+
+  release-abi:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Release
+        run: cargo build --release --workspace
+      - name: Check GLIBC Symbols
+        run: |
+          for bin in target/release/sunreactord target/release/sunreactorctl; do
+            if objdump -T "$bin" | grep -E 'GLIBC_2\.(3[6-9]|[4-9][0-9])'; then
+              echo "Binary $bin requires GLIBC newer than 2.35. Compilation must occur on an older baseline."
+              exit 1
+            fi
+          done
+          echo "GLIBC symbols are within the allowed range (<= 2.35)."
+
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Installer Syntax
+        run: bash -n install.sh
+

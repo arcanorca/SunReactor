@@ -114,7 +114,7 @@ impl WeatherEngine {
                 next_refresh_at_epoch_s = resolution.next_refresh_at_epoch_s;
 
                 match rx.recv_timeout(Duration::from_secs(30)) {
-                    Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                         break;
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {

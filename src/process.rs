@@ -1,7 +1,4 @@
 use std::io;
-use std::process::Command;
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,9 +17,7 @@ impl CommandOutput {
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum CommandError {
     #[error("{program} is not installed")]
-    Missing {
-        program: String,
-    },
+    Missing { program: String },
     #[error("{program} timed out after {after:?}")]
     Timeout {
         program: String,
@@ -31,13 +26,8 @@ pub enum CommandError {
         stderr: String,
     },
     #[error("{program}: {message}")]
-    Io {
-        program: String,
-        message: String,
-    },
+    Io { program: String, message: String },
 }
-
-
 
 pub trait ProcessRunner {
     fn run(
@@ -62,92 +52,94 @@ impl<T: ProcessRunner + ?Sized> ProcessRunner for &T {
 pub(crate) struct RealProcessRunner;
 
 impl ProcessRunner for RealProcessRunner {
-    /// Runs `program` with `args`, enforcing a wall-clock `timeout`.
-    ///
-    /// # Thread budget: exactly ONE background thread per call.
-    ///
-    /// The old implementation spawned two reader threads (stdout + stderr) plus
-    /// polled `try_wait()` in a busy loop with 25 ms sleeps.  On ARM devices and
-    /// old laptops that meant 2 OS threads + polling overhead for every single
-    /// brightness command.
-    ///
-    /// The new implementation:
-    ///   1. Spawns **one** thread that calls `Command::output()`.  The OS kernel
-    ///      buffers stdout/stderr internally; `output()` reads both pipes after
-    ///      the child exits.  No reader threads are needed.
-    ///   2. The caller thread waits on an `mpsc` channel with `recv_timeout`.
-    ///      When the timeout fires the child is killed via SIGTERM→SIGKILL
-    ///      (Unix) or `kill()` (all platforms) and the background thread is left
-    ///      to join on its own — it will exit shortly after the child dies.
     fn run(
         &self,
         program: &str,
         args: &[String],
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        // Build the child process but do not spawn yet — we need to record the
-        // program name for error messages before ownership moves into the thread.
+        use std::io::Read;
+        use std::process::{Command, Stdio};
+        use wait_timeout::ChildExt;
+
         let program_owned = program.to_owned();
-        let args_owned: Vec<String> = args.to_vec();
 
-        // Spawn the child and collect output inside a single background thread.
-        // `Command::output()` spawns the child, reads both pipes to EOF, and
-        // waits for the process — all blocking, all in one place, zero extra
-        // threads.
-        let (tx, rx) = mpsc::channel::<Result<CommandOutput, CommandError>>();
-
-        let program_thread = program_owned.clone();
-        thread::spawn(move || {
-            let result = Command::new(&program_thread)
-                .args(&args_owned)
-                .output()
-                .map_err(|err| {
-                    if err.kind() == io::ErrorKind::NotFound {
-                        CommandError::Missing {
-                            program: program_thread.clone(),
-                        }
-                    } else {
-                        CommandError::Io {
-                            program: program_thread.clone(),
-                            message: err.to_string(),
-                        }
+        let mut child = Command::new(&program_owned)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| {
+                if err.kind() == io::ErrorKind::NotFound {
+                    CommandError::Missing {
+                        program: program_owned.clone(),
                     }
-                })
-                .map(|out| CommandOutput {
-                    stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-                    stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-                    exit_code: out.status.code(),
-                });
+                } else {
+                    CommandError::Io {
+                        program: program_owned.clone(),
+                        message: err.to_string(),
+                    }
+                }
+            })?;
 
-            // Send result back; ignore send error if the receiver already timed
-            // out and dropped the channel — the thread will exit cleanly.
-            let _ = tx.send(result);
+        let mut stdout_pipe = child.stdout.take().unwrap();
+        let mut stderr_pipe = child.stderr.take().unwrap();
+
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+
+        let timeout_res = std::thread::scope(|s| {
+            s.spawn(|| {
+                let _ = stdout_pipe.read_to_end(&mut stdout_buf);
+            });
+            s.spawn(|| {
+                let _ = stderr_pipe.read_to_end(&mut stderr_buf);
+            });
+
+            let res = child.wait_timeout(timeout);
+            match res {
+                Ok(None) => {
+                    let _ = child.kill();
+                }
+                Err(_) => {
+                    let _ = child.kill();
+                }
+                _ => {}
+            }
+            res
         });
 
-        // Block until the background thread delivers a result or the timeout
-        // expires.  This is a single blocking call with no polling loop.
-        match rx.recv_timeout(timeout) {
-            Ok(result) => result,
-            Err(_elapsed) => {
-                // Timeout: we cannot easily get the child PID from the thread
-                // since `Command::output()` owns the child.  The background
-                // thread will unblock once the child's pipes close (i.e. after
-                // the OS kills it on parent exit, or naturally).  For an
-                // immediate kill we use a second best-effort spawn of the same
-                // command with SIGKILL via rustix on Unix.  In practice the
-                // daemon's per-backend timeout (2–5 s) is large enough that a
-                // genuine hanging ddcutil process will be reaped by the OS when
-                // the daemon exits.
-                //
-                // The empty stdout/stderr here is intentional: we timed out
-                // before receiving any output.
-                Err(CommandError::Timeout {
-                    program: program_owned,
-                    after: timeout,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                })
+        let status_opt = match timeout_res {
+            Ok(Some(status)) => Some(status),
+            Ok(None) => {
+                let _ = child.wait();
+                None
             }
+            Err(e) => {
+                let _ = child.wait();
+                return Err(CommandError::Io {
+                    program: program_owned,
+                    message: format!("wait error: {e}"),
+                });
+            }
+        };
+
+        let stdout_str = String::from_utf8_lossy(&stdout_buf).into_owned();
+        let stderr_str = String::from_utf8_lossy(&stderr_buf).into_owned();
+
+        if let Some(status) = status_opt {
+            Ok(CommandOutput {
+                stdout: stdout_str,
+                stderr: stderr_str,
+                exit_code: status.code(),
+            })
+        } else {
+            Err(CommandError::Timeout {
+                program: program_owned,
+                after: timeout,
+                stdout: stdout_str,
+                stderr: stderr_str,
+            })
         }
     }
 }
@@ -170,4 +162,63 @@ fn first_non_empty_line(value: &str) -> Option<String> {
             Some(trimmed.to_owned())
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn test_process_runner_timeout_kills_child_and_reaps() {
+        let runner = RealProcessRunner;
+
+        for _ in 0..3 {
+            let start = Instant::now();
+            let result = runner.run("sleep", &["30".to_string()], Duration::from_millis(150));
+
+            let elapsed = start.elapsed();
+
+            // Should finish reasonably close to the timeout (150ms)
+            assert!(
+                elapsed >= Duration::from_millis(100),
+                "Finished too fast: {:?}",
+                elapsed
+            );
+            assert!(elapsed < Duration::from_secs(2)); // well under 30s
+
+            match result {
+                Err(CommandError::Timeout { program, after, .. }) => {
+                    assert_eq!(program, "sleep");
+                    assert_eq!(after, Duration::from_millis(150));
+                }
+                other => panic!("Expected Timeout error, got {:?}", other),
+            }
+
+            // Verify child no longer exists
+            // We can't directly check the PID because RealProcessRunner hides it,
+            // but we can check if `sleep 30` is running.
+            let check_output = Command::new("pgrep")
+                .arg("-x")
+                .arg("sleep")
+                .output()
+                .expect("Failed to run pgrep");
+
+            // It's possible other sleep processes are running on the system,
+            // but the specific one we launched should be dead.
+            // A more robust check is whether any `sleep 30` processes spawned by our test exist.
+            let check_output_full = Command::new("pgrep")
+                .arg("-f")
+                .arg("sleep 30")
+                .output()
+                .expect("Failed to run pgrep");
+            let pgrep_stdout_full = String::from_utf8_lossy(&check_output_full.stdout);
+            assert!(
+                !pgrep_stdout_full.contains("sleep 30"),
+                "Child process leaked! pgrep output:\n{}",
+                pgrep_stdout_full
+            );
+        }
+    }
 }
