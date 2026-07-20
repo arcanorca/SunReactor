@@ -9,7 +9,6 @@ pub(crate) fn apply_monitor_target<R: ProcessRunner>(
     target: &PerMonitorTarget,
     applied_percent: u8,
     settings: &ApplySettings,
-    ddcutil_profile: Option<&crate::ddcutil::DdcutilProfile>,
 ) -> Result<BackendWrite, BackendError> {
     debug_assert_eq!(monitor.logical_id, target.logical_id);
 
@@ -21,7 +20,7 @@ pub(crate) fn apply_monitor_target<R: ProcessRunner>(
             settings.backlight_timeout,
         ),
         BackendKind::Ddc => {
-            backends::ddc::apply_with_runner(runner, monitor, applied_percent, settings.ddc_timeout, ddcutil_profile)
+            backends::ddc::apply_with_runner(runner, monitor, applied_percent, settings.ddc_timeout)
         }
     }
 }

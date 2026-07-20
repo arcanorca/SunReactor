@@ -380,7 +380,7 @@ impl DaemonRuntime {
                         };
                         let settings = self.config.apply;
                         match crate::apply::apply_monitor_target(
-                            runner, monitor, &target, percent, &settings, None
+                            runner, monitor, &target, percent, &settings,
                         ) {
                             Ok(_) => {
                                 self.state.record_apply_success(
@@ -785,7 +785,6 @@ impl DaemonRuntime {
                 self.config.apply,
                 &computed.policy,
                 &mut self.state,
-                None,
                 Some(&mut self.fade_engine),
                 runner,
                 computed.inputs.now_epoch_s,
@@ -1485,8 +1484,7 @@ impl DaemonRuntime {
             }
         }
 
-        self.weather_engine
-            .sync_config(&self.config.weather, &self.config.location);
+        self.weather_engine.sync_config(&self.config.weather, &self.config.location);
 
         Ok(())
     }
@@ -2161,9 +2159,7 @@ mod tests {
             temperature: Some(0.0),
             forecast: vec![],
         });
-        runtime
-            .weather_engine
-            .inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
+        runtime.weather_engine.inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
         runtime.weather_refresh.last_attempted_at_epoch_s = Some(1_800_000_020);
         runtime.weather_refresh.next_refresh_at_epoch_s = Some(1_800_001_800);
         runtime.weather_refresh.consecutive_failures = 2;

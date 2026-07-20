@@ -672,7 +672,7 @@ mod tests {
     }
 
     impl TestPolicyInput {
-        fn as_context(&self) -> PolicyContext<'_> {
+        fn as_context(&self) -> PolicyContext {
             PolicyContext {
                 now_utc: self.now_utc,
                 location: &self.location,

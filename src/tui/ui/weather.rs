@@ -40,7 +40,7 @@ fn render_weather_config(f: &mut Frame, app: &Model, area: Rect) {
 
 fn render_weather_panel(f: &mut Frame, app: &Model, area: Rect) {
     let palette = app.config.tui.theme.palette();
-
+    
     let state = weather_panel_state(
         app.status.as_ref(),
         app.config.tui.use_12h_time,
@@ -59,7 +59,9 @@ fn render_weather_panel(f: &mut Frame, app: &Model, area: Rect) {
         .border_style(Style::default().fg(palette.border_inactive))
         .title(Span::styled(
             title,
-            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette.fg)
+                .add_modifier(Modifier::BOLD),
         ));
     let inner = weather_block.inner(area);
     f.render_widget(weather_block, area);
@@ -186,7 +188,9 @@ fn render_forecast_list(f: &mut Frame, panel: &WeatherPanelData, area: Rect, pal
             .border_style(Style::default().fg(palette.border_inactive))
             .title(Span::styled(
                 " 24h Forecast ",
-                Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette.fg)
+                    .add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(forecast_list, area);
@@ -209,7 +213,9 @@ fn render_temperature_chart(
             Block::default()
                 .title(Span::styled(
                     " 24h Temperature Trend ",
-                    Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(palette.fg)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::LEFT)
                 .border_style(Style::default().fg(palette.border_inactive)),

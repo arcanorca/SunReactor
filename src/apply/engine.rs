@@ -11,30 +11,27 @@ pub fn apply_policy(
     config: &Config,
     policy: &PolicyOutput,
     state: &mut RuntimeState,
-    ddcutil_profile: Option<&crate::ddcutil::DdcutilProfile>,
 ) -> ApplySummary {
-    apply_policy_at(config, policy, state, ddcutil_profile, state::current_epoch_s())
+    apply_policy_at(config, policy, state, state::current_epoch_s())
 }
 
 pub fn apply_policy_at(
     config: &Config,
     policy: &PolicyOutput,
     state: &mut RuntimeState,
-    ddcutil_profile: Option<&crate::ddcutil::DdcutilProfile>,
     now_epoch_s: u64,
 ) -> ApplySummary {
-    apply_policy_with_runner(config, policy, state, ddcutil_profile, &RealProcessRunner, now_epoch_s)
+    apply_policy_with_runner(config, policy, state, &RealProcessRunner, now_epoch_s)
 }
 
 pub(crate) fn apply_policy_with_runner<R: ProcessRunner + Sync>(
     config: &Config,
     policy: &PolicyOutput,
     state: &mut RuntimeState,
-    ddcutil_profile: Option<&crate::ddcutil::DdcutilProfile>,
     runner: &R,
     now_epoch_s: u64,
 ) -> ApplySummary {
-    apply_policy_with_runner_settings(config, policy, state, ddcutil_profile, None, runner, now_epoch_s, None)
+    apply_policy_with_runner_settings(config, policy, state, None, runner, now_epoch_s, None)
 }
 
 /// Apply policy with an optional settings override. When `settings_override`
@@ -46,7 +43,6 @@ pub(crate) fn apply_policy_with_runner_settings<R: ProcessRunner + Sync>(
     config: &Config,
     policy: &PolicyOutput,
     state: &mut RuntimeState,
-    ddcutil_profile: Option<&crate::ddcutil::DdcutilProfile>,
     fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
     runner: &R,
     now_epoch_s: u64,
@@ -57,7 +53,6 @@ pub(crate) fn apply_policy_with_runner_settings<R: ProcessRunner + Sync>(
         ApplySettings::from_config(config),
         policy,
         state,
-        ddcutil_profile,
         fade_engine,
         runner,
         now_epoch_s,
@@ -70,7 +65,6 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
     default_settings: ApplySettings,
     policy: &PolicyOutput,
     state: &mut RuntimeState,
-    ddcutil_profile: Option<&crate::ddcutil::DdcutilProfile>,
     mut fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
     runner: &R,
     now_epoch_s: u64,
@@ -332,14 +326,7 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
                 } = item
                 {
                     let handle = scope.spawn(move || {
-                        apply_monitor_target(
-                            runner,
-                            monitor,
-                            target,
-                            *applied_percent,
-                            &settings,
-                            ddcutil_profile,
-                        )
+                        apply_monitor_target(runner, monitor, target, *applied_percent, &settings)
                     });
                     Some((i, handle))
                 } else {
@@ -604,7 +591,6 @@ mod tests {
             &policy,
             &mut state,
             None,
-            None,
             &runner,
             1000,
             None,
@@ -691,7 +677,6 @@ mod tests {
             &policy,
             &mut state,
             None,
-            None,
             &runner,
             2000,
             None,
@@ -750,18 +735,18 @@ mod tests {
         let runner = FakeRunner::new()
             .with_success("ddcutil", &["--help"], "--noconfig --noverify")
             .with_success(
-                "brightnessctl",
-                &[
-                    "--quiet",
-                    "--class",
-                    "backlight",
-                    "--device",
-                    "panel",
-                    "set",
-                    "50%",
-                ],
-                "",
-            );
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "panel",
+                "set",
+                "50%",
+            ],
+            "",
+        );
         let mut state = RuntimeState::default();
 
         let start = Instant::now();
@@ -771,7 +756,6 @@ mod tests {
                 fast_settings(),
                 &policy,
                 &mut state,
-                None,
                 None,
                 &runner,
                 // Advance epoch each tick to avoid minimum-interval skip.

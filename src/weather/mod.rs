@@ -47,9 +47,7 @@ where
         Err(err) => {
             if matches!(err, WeatherError::MissingApiKey { .. }) {
                 return WeatherResolution {
-                    modifier: snapshot
-                        .as_ref()
-                        .and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
+                    modifier: snapshot.as_ref().and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
                     snapshot,
                     next_refresh_at_epoch_s: None,
                     error: Some(err),
@@ -60,12 +58,9 @@ where
             // We can't build a request, but we might still use the cached snapshot
             // We'll proceed so the logic can use the old snapshot
             return WeatherResolution {
-                modifier: snapshot
-                    .as_ref()
-                    .and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
+                modifier: snapshot.as_ref().and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
                 snapshot,
-                next_refresh_at_epoch_s: next_refresh_at_epoch_s
-                    .or(Some(now_epoch_s + WEATHER_FAILURE_RETRY_MAX_SECONDS)),
+                next_refresh_at_epoch_s: next_refresh_at_epoch_s.or(Some(now_epoch_s + WEATHER_FAILURE_RETRY_MAX_SECONDS)),
                 error,
                 refresh_attempted: false,
             };
@@ -113,6 +108,7 @@ where
         refresh_attempted: refresh_due,
     }
 }
+
 
 #[cfg(test)]
 mod tests {

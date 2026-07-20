@@ -367,6 +367,7 @@ mod tests {
         assert_eq!(events.sunrise.offset().local_minus_utc(), -4 * 60 * 60);
     }
     #[test]
+    #[test]
     fn sample_at_utc_classifies_phase_from_elevation_thresholds() {
         let location =
             Location::from_timezone_name(0.0, 0.0, "UTC").expect("timezone should parse");

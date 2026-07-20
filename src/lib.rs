@@ -19,8 +19,8 @@
 pub mod apply;
 pub mod backends;
 pub mod config;
-pub mod ddcutil;
 pub mod discovery;
+pub mod ddcutil;
 pub mod doctor;
 pub mod ipc;
 pub mod paths;

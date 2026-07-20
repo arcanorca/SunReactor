@@ -24,6 +24,7 @@ ureq = "2.10"
 rustix = { version = "0.38", features = ["fs", "net", "process"] }
 tz-rs = "0.6.14"
 tempfile = "3.10.1"
+wait-timeout = "0.2.1"
 
 [features]
 default = ["tui"]

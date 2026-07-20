@@ -64,8 +64,7 @@ pub(super) fn weather_panel_state(
 
     if let Some(weather) = status.weather.as_ref() {
         if weather.stale && weather.last_error.is_some() {
-            let retry_str = weather
-                .next_refresh_at_epoch_s
+            let retry_str = weather.next_refresh_at_epoch_s
                 .map(|s| forecast_time_label(s, use_12h_time, timezone))
                 .unwrap_or_default();
             let msg = format!(
@@ -78,17 +77,11 @@ pub(super) fn weather_panel_state(
     }
 
     let is_weather_active = status.weather.as_ref().is_some_and(|w| w.active);
-
+    
     WeatherPanelState::Ready(Box::new(WeatherPanelData {
         header: build_header(status, use_12h_time, timezone, unit, palette),
         forecast_rows: if is_weather_active {
-            build_forecast_rows(
-                status.weather.as_ref().unwrap(),
-                use_12h_time,
-                timezone,
-                unit,
-                palette,
-            )
+            build_forecast_rows(status.weather.as_ref().unwrap(), use_12h_time, timezone, unit, palette)
         } else {
             vec![]
         },
@@ -122,6 +115,7 @@ fn format_temperature(celsius: f64, unit: crate::config::TemperatureUnit) -> Str
     };
     format!("{converted:.1}°{symbol}")
 }
+
 
 fn build_header(
     status: &StatusResponse,

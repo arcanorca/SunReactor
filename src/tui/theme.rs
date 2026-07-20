@@ -94,9 +94,9 @@ impl Theme {
     pub fn palette(self) -> Palette {
         match self {
             Self::Amber => Palette {
-                bg: Color::Rgb(15, 10, 5),                 // Deep warm black
-                fg: Color::Rgb(255, 210, 150),             // Bright amber-white for primary text
-                accent: Color::Rgb(255, 176, 0),           // Pure amber for highlights
+                bg: Color::Rgb(15, 10, 5),          // Deep warm black
+                fg: Color::Rgb(255, 210, 150),      // Bright amber-white for primary text
+                accent: Color::Rgb(255, 176, 0),    // Pure amber for highlights
                 secondary_accent: Color::Rgb(220, 140, 0), // Deep amber
                 border_active: Color::Rgb(255, 176, 0),
                 border_inactive: Color::Rgb(120, 80, 20),
@@ -106,9 +106,9 @@ impl Theme {
                 error: Color::Rgb(255, 60, 60),
             },
             Self::Terminal => Palette {
-                bg: Color::Rgb(26, 26, 26),        // #1a1a1a
-                fg: Color::Rgb(80, 200, 120),      // Emerald primary text (#50c878)
-                accent: Color::Rgb(140, 255, 170), // Bright green for highlights
+                bg: Color::Rgb(26, 26, 26),         // #1a1a1a
+                fg: Color::Rgb(80, 200, 120),       // Emerald primary text (#50c878)
+                accent: Color::Rgb(140, 255, 170),  // Bright green for highlights
                 secondary_accent: Color::Rgb(60, 180, 100),
                 border_active: Color::Rgb(80, 200, 120),
                 border_inactive: Color::Rgb(40, 100, 60), // Dim green, readable against bg
@@ -160,10 +160,10 @@ impl Theme {
                 secondary_accent: Color::Rgb(203, 166, 247), // Mauve
                 border_active: Color::Rgb(137, 180, 250),
                 border_inactive: Color::Rgb(100, 105, 125), // Surface2
-                text_muted: Color::Rgb(166, 173, 200),      // Subtext0
-                success: Color::Rgb(166, 227, 161),         // Green
-                warning: Color::Rgb(249, 226, 175),         // Yellow
-                error: Color::Rgb(243, 139, 168),           // Red
+                text_muted: Color::Rgb(166, 173, 200),   // Subtext0
+                success: Color::Rgb(166, 227, 161),      // Green
+                warning: Color::Rgb(249, 226, 175),      // Yellow
+                error: Color::Rgb(243, 139, 168),        // Red
             },
             Self::Nord => Palette {
                 bg: Color::Rgb(46, 52, 64),
