@@ -149,7 +149,7 @@ validate_health() {
     if command -v jq >/dev/null 2>&1; then
         is_healthy=$(echo "$doctor_output" | jq -r '.overall_healthy')
     elif command -v python3 >/dev/null 2>&1; then
-        is_healthy=$(echo "$doctor_output" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("overall_healthy", False))' 2>/dev/null || echo "false")
+        is_healthy=$(echo "$doctor_output" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("overall_healthy", False))')
     else
         is_healthy="true" # Fallback if no json parser
     fi
@@ -248,22 +248,22 @@ launch_dashboard() {
         # Safely extract the config_snippet from the JSON output
         local snippet=""
         if command -v python3 >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet") or "")' || true)
+            snippet=$("$BIN_DIR/sunreactorctl" discover --json | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet") or "")')
         elif command -v jq >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json | jq -r '.config_snippet' || true)
+            snippet=$("$BIN_DIR/sunreactorctl" discover --json | jq -r '.config_snippet')
         fi
 
         if [[ -n "$snippet" && "$snippet" != "null" ]]; then
             # Ensure the config directory exists and initialize default settings
             if [[ ! -f "$CFG_DIR/config.toml" ]]; then
                 mkdir -p "$CFG_DIR"
-                "$BIN_DIR/sunreactorctl" config init >/dev/null 2>&1 || true
+                "$BIN_DIR/sunreactorctl" config init
             fi
 
             # Adjust default bounds based on user preference
             snippet=$(echo "$snippet" | sed 's/min_pct = 0/min_pct = 15/g' | sed 's/max_pct = 100/max_pct = 60/g')
             echo -e "\n$snippet" >> "$CFG_DIR/config.toml"
-            systemctl --user reload sunreactord.service || true
+            systemctl --user reload sunreactord.service
             log_success "Successfully detected and configured your monitors!"
             sleep 1
         else

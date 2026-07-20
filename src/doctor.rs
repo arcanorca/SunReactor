@@ -1,4 +1,5 @@
 use crate::backends::{CommandError, ProcessRunner, RealProcessRunner};
+use crate::ddcutil::client::{DdcutilClient, DdcutilTimeouts};
 use serde::Serialize;
 use std::time::Duration;
 
@@ -27,10 +28,58 @@ pub fn run_diagnostics() -> DoctorReport {
     let mut checks = Vec::new();
     let runner = RealProcessRunner;
 
-    // Check ddcutil version via capability probe
-    let caps = crate::ddcutil::command::probe_capabilities(&runner);
-    if caps.version_string.is_empty() {
-        match runner.run(
+    // Check ddcutil capabilities and run detect
+    let profile = DdcutilClient::<RealProcessRunner>::probe_profile(&runner);
+    if !profile.version_string.is_empty() {
+        if profile.supports_noconfig && profile.supports_terse && profile.supports_noverify {
+            checks.push(CheckResult {
+                code: String::from("SR-DDCUTIL-CAPS-OK"),
+                status: CheckStatus::Pass,
+                message: format!(
+                    "ddcutil is installed ({}) and supports all required flags.",
+                    profile.version_string
+                ),
+            });
+        } else {
+            checks.push(CheckResult {
+                code: String::from("SR-DDCUTIL-CAPS-WARN"),
+                status: CheckStatus::Warn,
+                message: format!(
+                    "ddcutil is installed ({}) but lacks some capabilities (noconfig: {}, terse: {}, noverify: {}). Compatibility mode active.",
+                    profile.version_string, profile.supports_noconfig, profile.supports_terse, profile.supports_noverify
+                ),
+            });
+        }
+
+        let client = DdcutilClient::new(RealProcessRunner, profile, DdcutilTimeouts::default());
+        match client.detect() {
+            Ok(monitors) => {
+                if monitors.is_empty() {
+                    checks.push(CheckResult {
+                        code: String::from("SR-DDCUTIL-DETECT-WARN"),
+                        status: CheckStatus::Warn,
+                        message: String::from(
+                            "ddcutil detect ran successfully, but no DDC/CI monitors were found.",
+                        ),
+                    });
+                } else {
+                    checks.push(CheckResult {
+                        code: String::from("SR-DDCUTIL-DETECT-OK"),
+                        status: CheckStatus::Pass,
+                        message: format!("ddcutil detect found {} monitor(s).", monitors.len()),
+                    });
+                }
+            }
+            Err(e) => {
+                checks.push(CheckResult {
+                    code: String::from("SR-DDCUTIL-DETECT-ERR"),
+                    status: CheckStatus::Error,
+                    message: format!("ddcutil detect failed: {}", e),
+                });
+            }
+        }
+    } else {
+        match RealProcessRunner.run(
             "ddcutil",
             &["--version".to_string()],
             Duration::from_secs(2),
@@ -46,7 +95,7 @@ pub fn run_diagnostics() -> DoctorReport {
                 checks.push(CheckResult {
                     code: String::from("SR-DDCUTIL-ERR"),
                     status: CheckStatus::Error,
-                    message: format!("ddcutil execution error: {e}"),
+                    message: format!("ddcutil execution error: {}", e),
                 });
             }
             Ok(_) => {
@@ -58,26 +107,6 @@ pub fn run_diagnostics() -> DoctorReport {
                     ),
                 });
             }
-        }
-    } else {
-        if caps.supports_noconfig && caps.supports_terse && caps.supports_noverify {
-            checks.push(CheckResult {
-                code: String::from("SR-DDCUTIL-CAPS-OK"),
-                status: CheckStatus::Pass,
-                message: format!(
-                    "ddcutil is installed ({}) and supports all required flags.",
-                    caps.version_string
-                ),
-            });
-        } else {
-            checks.push(CheckResult {
-                code: String::from("SR-DDCUTIL-CAPS-WARN"),
-                status: CheckStatus::Warn,
-                message: format!(
-                    "ddcutil is installed ({}) but may be lacking required capabilities (noconfig: {}, terse: {}, noverify: {}). Compatibility mode active.",
-                    caps.version_string, caps.supports_noconfig, caps.supports_terse, caps.supports_noverify
-                ),
-            });
         }
     }
 
@@ -139,35 +168,42 @@ pub fn run_diagnostics() -> DoctorReport {
         )
         .is_err()
     {
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
-        let mut found_next_to_cli = false;
-        if let Some(dir) = exe_dir {
-            if dir.join("sunreactord").exists() {
-                found_next_to_cli = true;
-            }
-        }
-
-        if found_next_to_cli {
-            checks.push(CheckResult {
-                code: String::from("SR-DAEMON-PATH-WARN"),
-                status: CheckStatus::Warn,
-                message: String::from("sunreactord is not in PATH, but was found in the same directory as sunreactorctl."),
-            });
-        } else {
-            checks.push(CheckResult {
-                code: String::from("SR-DAEMON-PATH-ERR"),
-                status: CheckStatus::Error,
-                message: String::from("sunreactord is not in PATH and not next to sunreactorctl."),
-            });
-        }
+        checks.push(CheckResult {
+            code: String::from("SR-DAEMON-PATH-WARN"),
+            status: CheckStatus::Warn,
+            message: String::from(
+                "sunreactord is not in PATH. Ensure ~/.cargo/bin or ~/.local/bin is in PATH.",
+            ),
+        });
     } else {
         checks.push(CheckResult {
             code: String::from("SR-DAEMON-PATH-OK"),
             status: CheckStatus::Pass,
             message: String::from("sunreactord is in PATH."),
         });
+    }
+
+    // Check IPC
+    if let Ok(output) = runner.run(
+        "sunreactorctl",
+        &["status".to_string()],
+        Duration::from_secs(2),
+    ) {
+        if output.success() {
+            checks.push(CheckResult {
+                code: String::from("SR-IPC-OK"),
+                status: CheckStatus::Pass,
+                message: String::from("IPC with sunreactord is functioning normally."),
+            });
+        } else {
+            checks.push(CheckResult {
+                code: String::from("SR-IPC-WARN"),
+                status: CheckStatus::Warn,
+                message: String::from(
+                    "sunreactord does not appear to be running or IPC is failing.",
+                ),
+            });
+        }
     }
 
     // GLIBC Check (if applicable on Linux)
@@ -186,13 +222,16 @@ pub fn run_diagnostics() -> DoctorReport {
                                 checks.push(CheckResult {
                                     code: String::from("SR-GLIBC-WARN"),
                                     status: CheckStatus::Warn,
-                                    message: format!("GLIBC version {major}.{minor} is older than 2.31, some features may not work."),
+                                    message: format!("GLIBC version {}.{} is older than 2.31, some features may not work.", major, minor),
                                 });
                             } else {
                                 checks.push(CheckResult {
                                     code: String::from("SR-GLIBC-OK"),
                                     status: CheckStatus::Pass,
-                                    message: format!("GLIBC version {major}.{minor} is supported."),
+                                    message: format!(
+                                        "GLIBC version {}.{} is supported.",
+                                        major, minor
+                                    ),
                                 });
                             }
                         }
