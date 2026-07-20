@@ -30,3 +30,5 @@ cities15000.zip
 .agents/
 AGENTS.md
 OPTIMIZATIONS.md
+*.orig
+*.rej

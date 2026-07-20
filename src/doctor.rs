@@ -1,7 +1,6 @@
+use crate::ddcutil::version::DdcutilVersion;
 use serde::Serialize;
 use std::process::Command;
-use crate::ddcutil::version::DdcutilVersion;
-
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
@@ -27,11 +26,15 @@ pub enum CheckStatus {
 pub fn run_diagnostics() -> DoctorReport {
     let mut checks = Vec::new();
 
+    use crate::backends::{RealProcessRunner, ProcessRunner, CommandError};
+    use std::time::Duration;
+
+    let runner = RealProcessRunner;
+
     // Check ddcutil version
-    if let Ok(output) = Command::new("ddcutil").arg("--version").output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(version) = DdcutilVersion::parse(&stdout) {
+    match runner.run("ddcutil", &["--version".to_string()], Duration::from_secs(5)) {
+        Ok(output) if output.success() => {
+            if let Some(version) = DdcutilVersion::parse(&output.stdout) {
                 if version.major < 1 || (version.major == 1 && version.minor < 4) {
                     checks.push(CheckResult {
                         code: String::from("SR-DDCUTIL-VERSION-WARN"),
@@ -42,7 +45,10 @@ pub fn run_diagnostics() -> DoctorReport {
                     checks.push(CheckResult {
                         code: String::from("SR-DDCUTIL-VERSION-OK"),
                         status: CheckStatus::Pass,
-                        message: format!("ddcutil version {}.{}.{} is fully supported.", version.major, version.minor, version.patch),
+                        message: format!(
+                            "ddcutil version {}.{}.{} is fully supported.",
+                            version.major, version.minor, version.patch
+                        ),
                     });
                 }
             } else {
@@ -52,19 +58,28 @@ pub fn run_diagnostics() -> DoctorReport {
                     message: String::from("Failed to parse ddcutil version."),
                 });
             }
-        } else {
+        }
+        Ok(_) => {
             checks.push(CheckResult {
                 code: String::from("SR-DDCUTIL-ERR"),
                 status: CheckStatus::Error,
                 message: String::from("ddcutil command failed."),
             });
         }
-    } else {
-        checks.push(CheckResult {
-            code: String::from("SR-DDCUTIL-MISSING-ERR"),
-            status: CheckStatus::Error,
-            message: String::from("ddcutil is not installed or not in PATH."),
-        });
+        Err(CommandError::Missing { .. }) => {
+            checks.push(CheckResult {
+                code: String::from("SR-DDCUTIL-MISSING-ERR"),
+                status: CheckStatus::Error,
+                message: String::from("ddcutil is not installed or not in PATH."),
+            });
+        }
+        Err(err) => {
+            checks.push(CheckResult {
+                code: String::from("SR-DDCUTIL-ERR"),
+                status: CheckStatus::Error,
+                message: format!("ddcutil command error: {}", err),
+            });
+        }
     }
 
     // Check I2C group
@@ -73,7 +88,7 @@ pub fn run_diagnostics() -> DoctorReport {
     } else {
         false
     };
-    
+
     // Check access to /dev/i2c-*
     let mut i2c_access = false;
     let mut i2c_exists = false;
@@ -82,7 +97,12 @@ pub fn run_diagnostics() -> DoctorReport {
             let name = entry.file_name();
             if name.to_string_lossy().starts_with("i2c-") {
                 i2c_exists = true;
-                if std::fs::OpenOptions::new().read(true).write(true).open(entry.path()).is_ok() {
+                if std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(entry.path())
+                    .is_ok()
+                {
                     i2c_access = true;
                     break;
                 }
@@ -100,7 +120,9 @@ pub fn run_diagnostics() -> DoctorReport {
         checks.push(CheckResult {
             code: String::from("SR-I2C-PERMS-ERR"),
             status: CheckStatus::Error,
-            message: String::from("User does not have read/write access to /dev/i2c-* and is not in the i2c group."),
+            message: String::from(
+                "User does not have read/write access to /dev/i2c-* and is not in the i2c group.",
+            ),
         });
     } else {
         checks.push(CheckResult {
@@ -111,7 +133,11 @@ pub fn run_diagnostics() -> DoctorReport {
     }
 
     // Check daemon path
-    if Command::new("sunreactord").arg("--version").output().is_err() {
+    if Command::new("sunreactord")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()));
@@ -121,9 +147,9 @@ pub fn run_diagnostics() -> DoctorReport {
                 found_next_to_cli = true;
             }
         }
-        
+
         if found_next_to_cli {
-             checks.push(CheckResult {
+            checks.push(CheckResult {
                 code: String::from("SR-DAEMON-PATH-WARN"),
                 status: CheckStatus::Warn,
                 message: String::from("sunreactord is not in PATH, but was found in the same directory as sunreactorctl."),
@@ -152,7 +178,9 @@ pub fn run_diagnostics() -> DoctorReport {
                 if let Some(version_str) = line.split_whitespace().last() {
                     let parts: Vec<&str> = version_str.split('.').collect();
                     if parts.len() >= 2 {
-                        if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                        if let (Ok(major), Ok(minor)) =
+                            (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+                        {
                             if major < 2 || (major == 2 && minor < 31) {
                                 checks.push(CheckResult {
                                     code: String::from("SR-GLIBC-WARN"),
@@ -163,7 +191,10 @@ pub fn run_diagnostics() -> DoctorReport {
                                 checks.push(CheckResult {
                                     code: String::from("SR-GLIBC-OK"),
                                     status: CheckStatus::Pass,
-                                    message: format!("GLIBC version {}.{} is supported.", major, minor),
+                                    message: format!(
+                                        "GLIBC version {}.{} is supported.",
+                                        major, minor
+                                    ),
                                 });
                             }
                         }

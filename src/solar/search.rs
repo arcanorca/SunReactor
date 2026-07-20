@@ -231,7 +231,7 @@ pub(crate) fn safe_find_event_crossing(
 mod tests {
     use super::*;
     use crate::solar::get_sun_events;
-    use chrono::{NaiveDate, TimeZone};
+    use chrono::NaiveDate;
     #[test]
     fn polar_day_night_edge_cases_are_structured_errors() {
         let location =

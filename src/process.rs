@@ -1,4 +1,3 @@
-use std::fmt;
 use std::io;
 use std::process::Command;
 use std::sync::mpsc;
@@ -6,66 +5,58 @@ use std::thread;
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CommandOutput {
-    pub(crate) stdout: String,
-    pub(crate) stderr: String,
-    pub(crate) exit_code: Option<i32>,
+pub struct CommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
 }
 
 impl CommandOutput {
-    pub(crate) fn success(&self) -> bool {
+    pub fn success(&self) -> bool {
         self.exit_code == Some(0)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CommandError {
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum CommandError {
+    #[error("{program} is not installed")]
     Missing {
         program: String,
     },
+    #[error("{program} timed out after {after:?}")]
     Timeout {
         program: String,
         after: Duration,
         stdout: String,
         stderr: String,
     },
+    #[error("{program}: {message}")]
     Io {
         program: String,
         message: String,
     },
 }
 
-impl fmt::Display for CommandError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Missing { program } => write!(f, "{program} is not installed"),
-            Self::Timeout {
-                program,
-                after,
-                stdout,
-                stderr,
-            } => {
-                let detail = first_non_empty_line(stderr)
-                    .or_else(|| first_non_empty_line(stdout))
-                    .unwrap_or_else(|| String::from("process timed out"));
-                write!(
-                    f,
-                    "{program} timed out after {}s: {detail}",
-                    after.as_secs()
-                )
-            }
-            Self::Io { program, message } => write!(f, "{program}: {message}"),
-        }
-    }
-}
 
-pub(crate) trait ProcessRunner {
+
+pub trait ProcessRunner {
     fn run(
         &self,
         program: &str,
         args: &[String],
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError>;
+}
+
+impl<T: ProcessRunner + ?Sized> ProcessRunner for &T {
+    fn run(
+        &self,
+        program: &str,
+        args: &[String],
+        timeout: Duration,
+    ) -> Result<CommandOutput, CommandError> {
+        (**self).run(program, args, timeout)
+    }
 }
 
 pub(crate) struct RealProcessRunner;

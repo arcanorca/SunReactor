@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_summer_plateau_is_respected() {
-        let zenith = 73.0; // The adaptive zenith ensures effective plateau is 15.0.
+        let _zenith = 73.0; // The adaptive zenith ensures effective plateau is 15.0.
                            // Here we test daylight_factor_from_elevation assuming the plateau has already been resolved to 15.0 by compute_adaptive_zenith.
         let plateau = 15.0;
         let twilight = -6.0;

@@ -54,56 +54,51 @@ pub(crate) fn discover_with_runner<R: ProcessRunner>(
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,
 ) -> (BackendStatus, Vec<DdcMonitorDiscovery>) {
-    let ctx = crate::ddcutil::DdcContext::new(runner);
-    let caps = ctx.capabilities();
+    let profile = crate::ddcutil::DdcutilClient::<&R>::probe_profile(&runner);
+    let timeouts = crate::ddcutil::DdcutilTimeouts {
+        detect: DDCUTIL_DETECT_TIMEOUT,
+        capabilities: DDCUTIL_CAPABILITIES_TIMEOUT,
+        getvcp: DDCUTIL_GETVCP_TIMEOUT,
+        setvcp: Duration::from_secs(10),
+    };
+    let client = crate::ddcutil::DdcutilClient::new(runner, profile, timeouts);
 
-    let args = crate::ddcutil::command::build_detect_args(&caps);
-
-    match runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT) {
-        Ok(output) if output.success() => {
-            let raw_monitors = crate::ddcutil::parser::parse_ddc_detect(&output.stdout);
+    match client.detect() {
+        Ok(raw_monitors) => {
             let mut monitors = Vec::new();
             let mut probe_failures = 0usize;
 
             for raw_monitor in raw_monitors {
                 let mut monitor = raw_monitor.into_discovery();
-                
-                let capability_args = crate::ddcutil::command::build_capabilities_args(&caps, monitor.display_number);
+
                 let mut vcp10_confirmed = false;
                 let mut note = None;
 
-                match runner.run("ddcutil", &capability_args, DDCUTIL_CAPABILITIES_TIMEOUT) {
-                    Ok(capabilities) if capabilities.success() => {
-                        let supported = crate::ddcutil::parser::parse_brightness_vcp_support(&capabilities.stdout);
+                match client.capabilities(monitor.display_number) {
+                    Ok(supported) => {
                         if supported {
                             vcp10_confirmed = true;
                         } else {
                             note = Some(String::from("capabilities probe succeeded but omitted VCP 10"));
                         }
                     }
-                    Ok(capabilities) => {
-                        note = Some(format!("capabilities probe failed: {}", command_failure_detail(&capabilities)));
-                    }
-                    Err(CommandError::Timeout { after, .. }) => {
+                    Err(crate::ddcutil::DdcutilError::Command(CommandError::Timeout { after, .. })) => {
                         note = Some(format!("capabilities probe timed out after {}s", after.as_secs()));
                     }
                     Err(error) => {
-                        note = Some(error.to_string());
+                        note = Some(format!("capabilities probe failed: {}", error));
                     }
                 }
 
                 // Fallback to getvcp 10 if capabilities failed or didn't report it
                 if !vcp10_confirmed {
-                    let getvcp_args = crate::ddcutil::command::build_getvcp_args(&caps, monitor.display_number, "10");
-                    match runner.run("ddcutil", &getvcp_args, DDCUTIL_GETVCP_TIMEOUT) {
-                        Ok(getvcp) if getvcp.success() => {
-                            if crate::ddcutil::parser::parse_getvcp_brightness(&getvcp.stdout) {
-                                vcp10_confirmed = true;
-                                if note.is_some() {
-                                    note = Some(format!("{} (recovered via getvcp)", note.unwrap()));
-                                } else {
-                                    note = Some(String::from("recovered via getvcp"));
-                                }
+                    match client.getvcp_brightness(monitor.display_number) {
+                        Ok(supported) if supported => {
+                            vcp10_confirmed = true;
+                            if note.is_some() {
+                                note = Some(format!("{} (recovered via getvcp)", note.unwrap()));
+                            } else {
+                                note = Some(String::from("recovered via getvcp"));
                             }
                         }
                         Ok(_) | Err(_) => {
@@ -142,28 +137,7 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                 monitors,
             )
         }
-        Ok(output) => {
-            let error_msg = command_failure_detail(&output);
-            let status = if error_msg.contains("Permission denied") || output.stderr.contains("Permission denied") {
-                BackendStatusKind::Error
-            } else {
-                BackendStatusKind::Error
-            };
-            
-            (
-                BackendStatus {
-                    backend: String::from("ddcutil"),
-                    status,
-                    available: true,
-                    message: format!("ddcutil detect failed: {}", error_msg),
-                    guidance: Some(String::from(
-                        "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.",
-                    )),
-                },
-                Vec::new(),
-            )
-        }
-        Err(CommandError::Missing { .. }) => (
+        Err(crate::ddcutil::DdcutilError::Command(CommandError::Missing { .. })) => (
             BackendStatus {
                 backend: String::from("ddcutil"),
                 status: BackendStatusKind::Missing,
@@ -175,7 +149,7 @@ fn discover_ddc_monitors<R: ProcessRunner>(
             },
             Vec::new(),
         ),
-        Err(CommandError::Timeout { after, .. }) => (
+        Err(crate::ddcutil::DdcutilError::Command(CommandError::Timeout { after, .. })) => (
             BackendStatus {
                 backend: String::from("ddcutil"),
                 status: BackendStatusKind::Timeout,
@@ -187,18 +161,25 @@ fn discover_ddc_monitors<R: ProcessRunner>(
             },
             Vec::new(),
         ),
-        Err(error) => (
-            BackendStatus {
-                backend: String::from("ddcutil"),
-                status: BackendStatusKind::Error,
-                available: true,
-                message: error.to_string(),
-                guidance: Some(String::from(
-                    "Check ddcutil access and monitor cabling, then rerun discovery.",
-                )),
-            },
-            Vec::new(),
-        ),
+        Err(error) => {
+            let error_msg = error.to_string();
+            let is_permission_error = error_msg.contains("Permission denied");
+            
+            (
+                BackendStatus {
+                    backend: String::from("ddcutil"),
+                    status: BackendStatusKind::Error,
+                    available: true,
+                    message: format!("ddcutil detect failed: {}", error_msg),
+                    guidance: Some(if is_permission_error {
+                        String::from("Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.")
+                    } else {
+                        String::from("Check ddcutil access and monitor cabling, then rerun discovery.")
+                    }),
+                },
+                Vec::new(),
+            )
+        }
     }
 }
 
@@ -382,8 +363,6 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
     )
 }
 
-
-
 fn parse_brightnessctl_backlights(
     output: &str,
     sysfs_root: &Path,
@@ -454,8 +433,6 @@ fn merge_backlight_devices(
 
     merged.into_values().collect()
 }
-
-
 
 fn read_optional_u32(path: &Path) -> Option<u32> {
     let raw = fs::read_to_string(path).ok()?;

@@ -149,7 +149,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn oversized_request_is_rejected_without_unbounded_read() {
         let (mut writer, mut reader) = UnixStream::pair().expect("stream pair should work");
         let oversized = vec![b'x'; MAX_IPC_MESSAGE_BYTES + 1];

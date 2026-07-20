@@ -1,14 +1,11 @@
+pub mod client;
 pub mod command;
 pub mod parser;
 pub mod version;
 
-use crate::backends::ProcessRunner;
-use std::sync::OnceLock;
+pub use client::{DdcutilClient, DdcutilProfile, DdcutilTimeouts, DdcutilError};
 
-thread_local! {
-    static DDCUTIL_CAPABILITIES: std::cell::OnceCell<DdcutilCapabilities> = std::cell::OnceCell::new();
-}
-
+// We keep DdcutilCapabilities around because command.rs uses it, but we can deprecate it later.
 #[derive(Debug, Clone)]
 pub(crate) struct DdcutilCapabilities {
     pub version_string: String,
@@ -18,22 +15,3 @@ pub(crate) struct DdcutilCapabilities {
     pub supports_brief: bool,
 }
 
-pub(crate) struct DdcContext<'a, R: ProcessRunner> {
-    pub runner: &'a R,
-}
-
-impl<'a, R: ProcessRunner> DdcContext<'a, R> {
-    pub(crate) fn new(runner: &'a R) -> Self {
-        Self { runner }
-    }
-
-    pub(crate) fn capabilities(&self) -> DdcutilCapabilities {
-        #[cfg(test)]
-        return command::probe_capabilities(self.runner);
-
-        #[cfg(not(test))]
-        DDCUTIL_CAPABILITIES.with(|caps| {
-            caps.get_or_init(|| command::probe_capabilities(self.runner)).clone()
-        })
-    }
-}

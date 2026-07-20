@@ -305,7 +305,14 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
                 Ok(serde_json::to_string_pretty(&report)?)
             } else {
                 let mut lines = Vec::new();
-                lines.push(if report.overall_healthy { "Overall Health: OK" } else { "Overall Health: ISSUES FOUND" }.to_string());
+                lines.push(
+                    if report.overall_healthy {
+                        "Overall Health: OK"
+                    } else {
+                        "Overall Health: ISSUES FOUND"
+                    }
+                    .to_string(),
+                );
                 lines.push(String::new());
                 for check in &report.checks {
                     let status = match check.status {

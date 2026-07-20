@@ -115,7 +115,7 @@ pub(crate) struct DiscoverySnapshot {
 }
 
 #[derive(Debug)]
-pub(crate) struct RawDdcMonitor {
+pub struct RawDdcMonitor {
     pub(crate) manufacturer: Option<String>,
     pub(crate) model: Option<String>,
     pub(crate) serial: Option<String>,

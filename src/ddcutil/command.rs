@@ -1,6 +1,6 @@
-use std::time::Duration;
-use crate::backends::ProcessRunner;
 use super::DdcutilCapabilities;
+use crate::backends::ProcessRunner;
+use std::time::Duration;
 
 pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabilities {
     let mut caps = DdcutilCapabilities {
@@ -11,13 +11,24 @@ pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabil
         supports_brief: false,
     };
 
-    if let Ok(version_output) = runner.run("ddcutil", &["--version".to_string()], Duration::from_secs(2)) {
+    if let Ok(version_output) = runner.run(
+        "ddcutil",
+        &["--version".to_string()],
+        Duration::from_secs(2),
+    ) {
         if version_output.success() {
-            caps.version_string = version_output.stdout.lines().next().unwrap_or("").trim().to_string();
+            caps.version_string = version_output
+                .stdout
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
         }
     }
 
-    if let Ok(help_output) = runner.run("ddcutil", &["--help".to_string()], Duration::from_secs(2)) {
+    if let Ok(help_output) = runner.run("ddcutil", &["--help".to_string()], Duration::from_secs(2))
+    {
         if help_output.success() {
             let help_text = help_output.stdout;
             caps.supports_noconfig = help_text.contains("--noconfig");
@@ -57,7 +68,11 @@ pub(crate) fn build_capabilities_args(caps: &DdcutilCapabilities, display: u32) 
     args
 }
 
-pub(crate) fn build_getvcp_args(caps: &DdcutilCapabilities, display: u32, vcp: &str) -> Vec<String> {
+pub(crate) fn build_getvcp_args(
+    caps: &DdcutilCapabilities,
+    display: u32,
+    vcp: &str,
+) -> Vec<String> {
     let mut args = build_base_args(caps);
     args.push("--display".to_string());
     args.push(display.to_string());
@@ -71,7 +86,12 @@ pub(crate) fn build_getvcp_args(caps: &DdcutilCapabilities, display: u32, vcp: &
     args
 }
 
-pub(crate) fn build_setvcp_args(caps: &DdcutilCapabilities, selection_args: &[String], vcp: &str, value: &str) -> Vec<String> {
+pub(crate) fn build_setvcp_args(
+    caps: &DdcutilCapabilities,
+    selection_args: &[String],
+    vcp: &str,
+    value: &str,
+) -> Vec<String> {
     let mut args = build_base_args(caps);
     if caps.supports_noverify {
         args.push("--noverify".to_string());
