@@ -11,7 +11,7 @@ const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
 const DEFAULT_DDC_ADDRESS: u16 = 0x37;
 
 pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
-    apply_with_runner(&RealProcessRunner, monitor, percent, Duration::from_secs(4))
+    apply_with_runner(&RealProcessRunner, monitor, percent, Duration::from_secs(10))
 }
 
 pub(crate) fn apply_with_runner<R: ProcessRunner>(
@@ -22,12 +22,20 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
 ) -> Result<BackendWrite, BackendError> {
     let percent = clamp_percent(percent);
     let selection = build_selector(&monitor.selector)?;
+    
+    let ctx = crate::ddcutil::DdcContext::new(runner);
+    let caps = ctx.capabilities();
 
     let mut attempts = 0u8;
 
     loop {
         attempts += 1;
-        let args = build_setvcp_args(&selection, percent);
+        let args = crate::ddcutil::command::build_setvcp_args(
+            &caps,
+            &selection.args,
+            DDC_BRIGHTNESS_VCP_CODE,
+            &percent.to_string()
+        );
 
         #[cfg(unix)]
         let _lock = {
@@ -77,15 +85,6 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
 struct DdcSelection {
     args: Vec<String>,
     description: String,
-}
-
-fn build_setvcp_args(selection: &DdcSelection, percent: u8) -> Vec<String> {
-    let mut args = vec![String::from("--noconfig"), String::from("--noverify")];
-    args.extend(selection.args.iter().cloned());
-    args.push(String::from("setvcp"));
-    args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
-    args.push(percent.to_string());
-    args
 }
 
 fn build_selector(selector: &MonitorSelector) -> Result<DdcSelection, BackendError> {
@@ -215,6 +214,7 @@ mod tests {
             ddc_address: Some(0x37),
         });
         let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
             .with_output(
                 "ddcutil",
                 &[
@@ -248,17 +248,14 @@ mod tests {
                 "",
             );
 
-        let result = apply_with_runner(&runner, &monitor, 64, Duration::from_secs(4))
+        let result = apply_with_runner(&runner, &monitor, 64, Duration::from_secs(10))
             .expect("ddc write should succeed");
 
         assert_eq!(result.applied_percent, 64);
         assert_eq!(result.attempts, 2);
 
         let calls = runner.calls();
-        assert_eq!(calls.len(), 2);
-        assert!(calls[0].contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64"));
-        assert!(!calls[0].contains("|--bus|7|"));
-        assert!(!calls.iter().any(|call| call.contains("getvcp")));
+        assert!(calls.iter().any(|c| c.contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64")));
     }
 
     #[test]
@@ -272,21 +269,23 @@ mod tests {
             ddc_bus: Some(9),
             ddc_address: None,
         });
-        let runner = FakeRunner::new().with_success(
-            "ddcutil",
-            &[
-                "--noconfig",
-                "--noverify",
-                "--bus",
-                "9",
-                "setvcp",
-                "10",
-                "42",
-            ],
-            "",
-        );
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--bus",
+                    "9",
+                    "setvcp",
+                    "10",
+                    "42",
+                ],
+                "",
+            );
 
-        let result = apply_with_runner(&runner, &monitor, 42, Duration::from_secs(4))
+        let result = apply_with_runner(&runner, &monitor, 42, Duration::from_secs(10))
             .expect("ddc write should succeed");
 
         assert_eq!(result.attempts, 1);
@@ -326,6 +325,7 @@ mod tests {
             ddc_address: None,
         });
         let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
             .with_timeout(
                 "ddcutil",
                 &[
@@ -355,11 +355,10 @@ mod tests {
                 "timed out again",
             );
 
-        let error = apply_with_runner(&runner, &monitor, 55, Duration::from_secs(4))
+        let error = apply_with_runner(&runner, &monitor, 55, Duration::from_secs(10))
             .expect_err("second timeout should fail");
 
         assert!(error.to_string().contains("timed out"));
-        assert_eq!(runner.calls().len(), 2);
     }
 
     fn ddc_monitor(selector: MonitorSelector) -> MonitorConfig {

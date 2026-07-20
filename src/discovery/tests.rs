@@ -13,6 +13,7 @@ use super::{
 #[test]
 fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
     let runner = FakeRunner::new()
+        .with_success("ddcutil", &["--help"], "--noconfig --terse")
         .with_success(
             "ddcutil",
             &["--noconfig", "--terse", "detect"],
@@ -53,6 +54,7 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
 #[test]
 fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
     let runner = FakeRunner::new()
+        .with_success("ddcutil", &["--help"], "--noconfig --terse")
         .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
         .with_missing(
             "brightnessctl",
@@ -85,6 +87,7 @@ fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
 #[test]
 fn parses_brightnessctl_machine_readable_output() {
     let runner = FakeRunner::new()
+        .with_success("ddcutil", &["--help"], "--noconfig --terse")
         .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
         .with_success(
             "brightnessctl",
@@ -114,6 +117,7 @@ fn parses_brightnessctl_machine_readable_output() {
 #[test]
 fn reports_clear_guidance_when_no_backends_are_available() {
     let runner = FakeRunner::new()
+        .with_success("ddcutil", &["--help"], "--noconfig --terse")
         .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
         .with_missing(
             "brightnessctl",

@@ -1,4 +1,4 @@
-mod model;
+pub(crate) mod model;
 mod probe;
 mod render;
 mod runner;

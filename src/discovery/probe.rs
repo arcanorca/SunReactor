@@ -5,13 +5,14 @@ use std::time::Duration;
 
 use super::model::{
     build_backlight_stable_id, BackendStatus, BackendStatusKind, BacklightDeviceDiscovery,
-    DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary, RawDdcMonitor,
+    DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary,
 };
 use super::runner::{command_failure_detail, CommandError, ProcessRunner};
 
-const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(4);
-const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(3);
-const BRIGHTNESSCTL_LIST_TIMEOUT: Duration = Duration::from_secs(2);
+const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(25);
+const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(12);
+const DDCUTIL_GETVCP_TIMEOUT: Duration = Duration::from_secs(8);
+const BRIGHTNESSCTL_LIST_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) fn discover_with_runner<R: ProcessRunner>(
     runner: &R,
@@ -53,61 +54,80 @@ pub(crate) fn discover_with_runner<R: ProcessRunner>(
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,
 ) -> (BackendStatus, Vec<DdcMonitorDiscovery>) {
-    let args = vec![
-        String::from("--noconfig"),
-        String::from("--terse"),
-        String::from("detect"),
-    ];
+    let ctx = crate::ddcutil::DdcContext::new(runner);
+    let caps = ctx.capabilities();
+
+    let args = crate::ddcutil::command::build_detect_args(&caps);
 
     match runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT) {
         Ok(output) if output.success() => {
-            let mut monitors = parse_ddc_detect(&output.stdout);
-            let mut capability_failures = 0usize;
+            let raw_monitors = crate::ddcutil::parser::parse_ddc_detect(&output.stdout);
+            let mut monitors = Vec::new();
+            let mut probe_failures = 0usize;
 
-            for monitor in &mut monitors {
-                let capability_args = vec![
-                    String::from("--noconfig"),
-                    String::from("--display"),
-                    monitor.display_number.to_string(),
-                    String::from("capabilities"),
-                ];
+            for raw_monitor in raw_monitors {
+                let mut monitor = raw_monitor.into_discovery();
+                
+                let capability_args = crate::ddcutil::command::build_capabilities_args(&caps, monitor.display_number);
+                let mut vcp10_confirmed = false;
+                let mut note = None;
 
                 match runner.run("ddcutil", &capability_args, DDCUTIL_CAPABILITIES_TIMEOUT) {
                     Ok(capabilities) if capabilities.success() => {
-                        let supported = parse_brightness_vcp_support(&capabilities.stdout);
-                        monitor.brightness_vcp_supported = Some(supported);
-                        monitor.backend_viable = supported;
+                        let supported = crate::ddcutil::parser::parse_brightness_vcp_support(&capabilities.stdout);
+                        if supported {
+                            vcp10_confirmed = true;
+                        } else {
+                            note = Some(String::from("capabilities probe succeeded but omitted VCP 10"));
+                        }
                     }
                     Ok(capabilities) => {
-                        capability_failures += 1;
-                        monitor.note = Some(format!(
-                            "capabilities probe failed: {}",
-                            command_failure_detail(&capabilities)
-                        ));
+                        note = Some(format!("capabilities probe failed: {}", command_failure_detail(&capabilities)));
                     }
                     Err(CommandError::Timeout { after, .. }) => {
-                        capability_failures += 1;
-                        monitor.note = Some(format!(
-                            "capabilities probe timed out after {}s",
-                            after.as_secs()
-                        ));
+                        note = Some(format!("capabilities probe timed out after {}s", after.as_secs()));
                     }
                     Err(error) => {
-                        capability_failures += 1;
-                        monitor.note = Some(error.to_string());
+                        note = Some(error.to_string());
                     }
                 }
+
+                // Fallback to getvcp 10 if capabilities failed or didn't report it
+                if !vcp10_confirmed {
+                    let getvcp_args = crate::ddcutil::command::build_getvcp_args(&caps, monitor.display_number, "10");
+                    match runner.run("ddcutil", &getvcp_args, DDCUTIL_GETVCP_TIMEOUT) {
+                        Ok(getvcp) if getvcp.success() => {
+                            if crate::ddcutil::parser::parse_getvcp_brightness(&getvcp.stdout) {
+                                vcp10_confirmed = true;
+                                if note.is_some() {
+                                    note = Some(format!("{} (recovered via getvcp)", note.unwrap()));
+                                } else {
+                                    note = Some(String::from("recovered via getvcp"));
+                                }
+                            }
+                        }
+                        Ok(_) | Err(_) => {
+                            // Keep the original capabilities error if getvcp also fails
+                            probe_failures += 1;
+                        }
+                    }
+                }
+
+                monitor.brightness_vcp_supported = Some(vcp10_confirmed);
+                monitor.backend_viable = vcp10_confirmed;
+                monitor.note = note;
+                monitors.push(monitor);
             }
 
             let message = if monitors.is_empty() {
                 String::from("No external monitors were reported by ddcutil.")
-            } else if capability_failures == 0 {
+            } else if probe_failures == 0 {
                 format!("Detected {} external monitor(s).", monitors.len())
             } else {
                 format!(
-                    "Detected {} external monitor(s); {} capability probe(s) failed.",
+                    "Detected {} external monitor(s); {} secondary probe(s) failed.",
                     monitors.len(),
-                    capability_failures
+                    probe_failures
                 )
             };
 
@@ -122,18 +142,27 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                 monitors,
             )
         }
-        Ok(output) => (
-            BackendStatus {
-                backend: String::from("ddcutil"),
-                status: BackendStatusKind::Error,
-                available: true,
-                message: format!("ddcutil detect failed: {}", command_failure_detail(&output)),
-                guidance: Some(String::from(
-                    "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.",
-                )),
-            },
-            Vec::new(),
-        ),
+        Ok(output) => {
+            let error_msg = command_failure_detail(&output);
+            let status = if error_msg.contains("Permission denied") || output.stderr.contains("Permission denied") {
+                BackendStatusKind::Error
+            } else {
+                BackendStatusKind::Error
+            };
+            
+            (
+                BackendStatus {
+                    backend: String::from("ddcutil"),
+                    status,
+                    available: true,
+                    message: format!("ddcutil detect failed: {}", error_msg),
+                    guidance: Some(String::from(
+                        "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.",
+                    )),
+                },
+                Vec::new(),
+            )
+        }
         Err(CommandError::Missing { .. }) => (
             BackendStatus {
                 backend: String::from("ddcutil"),
@@ -353,64 +382,7 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
     )
 }
 
-fn parse_ddc_detect(output: &str) -> Vec<DdcMonitorDiscovery> {
-    let mut monitors = Vec::new();
-    let mut current: Option<RawDdcMonitor> = None;
 
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if let Some(display_number) = parse_display_header(trimmed) {
-            if let Some(monitor) = current.take() {
-                monitors.push(monitor.into_discovery());
-            }
-            current = Some(RawDdcMonitor::new(display_number));
-            continue;
-        }
-
-        let Some(monitor) = current.as_mut() else {
-            continue;
-        };
-
-        if let Some(value) = trimmed.strip_prefix("I2C bus:") {
-            monitor.bus_number = parse_bus_number(value.trim());
-        } else if let Some(value) = trimmed.strip_prefix("DRM connector:") {
-            monitor.connector = normalize_optional(value.trim());
-        } else if let Some(value) = trimmed.strip_prefix("Monitor:") {
-            let (manufacturer, model, serial) = parse_monitor_identity(value.trim());
-            monitor.manufacturer = manufacturer;
-            monitor.model = model;
-            monitor.serial = serial;
-        }
-    }
-
-    if let Some(monitor) = current {
-        monitors.push(monitor.into_discovery());
-    }
-
-    monitors.sort_by_key(|monitor| monitor.display_number);
-    monitors
-}
-
-fn parse_brightness_vcp_support(output: &str) -> bool {
-    for line in output.lines() {
-        let normalized = line.trim().to_ascii_lowercase();
-        let Some(rest) = normalized.strip_prefix("feature:") else {
-            continue;
-        };
-        let Some(code) = rest.split_whitespace().next() else {
-            continue;
-        };
-        if code == "10" {
-            return true;
-        }
-    }
-
-    false
-}
 
 fn parse_brightnessctl_backlights(
     output: &str,
@@ -483,30 +455,7 @@ fn merge_backlight_devices(
     merged.into_values().collect()
 }
 
-fn parse_display_header(line: &str) -> Option<u32> {
-    line.strip_prefix("Display ")?.trim().parse::<u32>().ok()
-}
 
-fn parse_bus_number(value: &str) -> Option<u32> {
-    value.rsplit('-').next()?.trim().parse::<u32>().ok()
-}
-
-fn parse_monitor_identity(value: &str) -> (Option<String>, Option<String>, Option<String>) {
-    let mut parts = value.splitn(3, ':');
-    let manufacturer = parts.next().and_then(normalize_optional);
-    let model = parts.next().and_then(normalize_optional);
-    let serial = parts.next().and_then(normalize_optional);
-    (manufacturer, model, serial)
-}
-
-fn normalize_optional(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_owned())
-    }
-}
 
 fn read_optional_u32(path: &Path) -> Option<u32> {
     let raw = fs::read_to_string(path).ok()?;

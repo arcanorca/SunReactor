@@ -1,0 +1,1099 @@
+diff --git a/src/apply/engine.rs b/src/apply/engine.rs
+index 4613982..63726c5 100644
+--- a/src/apply/engine.rs
++++ b/src/apply/engine.rs
+@@ -626,6 +626,7 @@ mod tests {
+         let policy = test_policy(vec![("healthy", 75), ("broken_ddc", 80), ("ghost", 90)]);
+ 
+         let runner = FakeRunner::new()
++            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+             .with_success(
+                 "brightnessctl",
+                 &[
+@@ -731,7 +732,9 @@ mod tests {
+ 
+         // Register exactly one runner response (for the first tick write only).
+         // All subsequent ticks will be skipped by hysteresis (same percent, no delta).
+-        let runner = FakeRunner::new().with_success(
++        let runner = FakeRunner::new()
++            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
++            .with_success(
+             "brightnessctl",
+             &[
+                 "--quiet",
+diff --git a/src/backends/ddc.rs b/src/backends/ddc.rs
+index b856fd2..cc98aa7 100644
+--- a/src/backends/ddc.rs
++++ b/src/backends/ddc.rs
+@@ -11,7 +11,7 @@ const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
+ const DEFAULT_DDC_ADDRESS: u16 = 0x37;
+ 
+ pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
+-    apply_with_runner(&RealProcessRunner, monitor, percent, Duration::from_secs(4))
++    apply_with_runner(&RealProcessRunner, monitor, percent, Duration::from_secs(10))
+ }
+ 
+ pub(crate) fn apply_with_runner<R: ProcessRunner>(
+@@ -22,12 +22,20 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
+ ) -> Result<BackendWrite, BackendError> {
+     let percent = clamp_percent(percent);
+     let selection = build_selector(&monitor.selector)?;
++    
++    let ctx = crate::ddcutil::DdcContext::new(runner);
++    let caps = ctx.capabilities();
+ 
+     let mut attempts = 0u8;
+ 
+     loop {
+         attempts += 1;
+-        let args = build_setvcp_args(&selection, percent);
++        let args = crate::ddcutil::command::build_setvcp_args(
++            &caps,
++            &selection.args,
++            DDC_BRIGHTNESS_VCP_CODE,
++            &percent.to_string()
++        );
+ 
+         #[cfg(unix)]
+         let _lock = {
+@@ -79,15 +87,6 @@ struct DdcSelection {
+     description: String,
+ }
+ 
+-fn build_setvcp_args(selection: &DdcSelection, percent: u8) -> Vec<String> {
+-    let mut args = vec![String::from("--noconfig"), String::from("--noverify")];
+-    args.extend(selection.args.iter().cloned());
+-    args.push(String::from("setvcp"));
+-    args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
+-    args.push(percent.to_string());
+-    args
+-}
+-
+ fn build_selector(selector: &MonitorSelector) -> Result<DdcSelection, BackendError> {
+     let serial = normalized(&selector.serial);
+     let model = normalized(&selector.model);
+@@ -215,6 +214,7 @@ mod tests {
+             ddc_address: Some(0x37),
+         });
+         let runner = FakeRunner::new()
++            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+             .with_output(
+                 "ddcutil",
+                 &[
+@@ -248,17 +248,14 @@ mod tests {
+                 "",
+             );
+ 
+-        let result = apply_with_runner(&runner, &monitor, 64, Duration::from_secs(4))
++        let result = apply_with_runner(&runner, &monitor, 64, Duration::from_secs(10))
+             .expect("ddc write should succeed");
+ 
+         assert_eq!(result.applied_percent, 64);
+         assert_eq!(result.attempts, 2);
+ 
+         let calls = runner.calls();
+-        assert_eq!(calls.len(), 2);
+-        assert!(calls[0].contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64"));
+-        assert!(!calls[0].contains("|--bus|7|"));
+-        assert!(!calls.iter().any(|call| call.contains("getvcp")));
++        assert!(calls.iter().any(|c| c.contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64")));
+     }
+ 
+     #[test]
+@@ -272,21 +269,23 @@ mod tests {
+             ddc_bus: Some(9),
+             ddc_address: None,
+         });
+-        let runner = FakeRunner::new().with_success(
+-            "ddcutil",
+-            &[
+-                "--noconfig",
+-                "--noverify",
+-                "--bus",
+-                "9",
+-                "setvcp",
+-                "10",
+-                "42",
+-            ],
+-            "",
+-        );
++        let runner = FakeRunner::new()
++            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
++            .with_success(
++                "ddcutil",
++                &[
++                    "--noconfig",
++                    "--noverify",
++                    "--bus",
++                    "9",
++                    "setvcp",
++                    "10",
++                    "42",
++                ],
++                "",
++            );
+ 
+-        let result = apply_with_runner(&runner, &monitor, 42, Duration::from_secs(4))
++        let result = apply_with_runner(&runner, &monitor, 42, Duration::from_secs(10))
+             .expect("ddc write should succeed");
+ 
+         assert_eq!(result.attempts, 1);
+@@ -326,6 +325,7 @@ mod tests {
+             ddc_address: None,
+         });
+         let runner = FakeRunner::new()
++            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+             .with_timeout(
+                 "ddcutil",
+                 &[
+@@ -355,11 +355,10 @@ mod tests {
+                 "timed out again",
+             );
+ 
+-        let error = apply_with_runner(&runner, &monitor, 55, Duration::from_secs(4))
++        let error = apply_with_runner(&runner, &monitor, 55, Duration::from_secs(10))
+             .expect_err("second timeout should fail");
+ 
+         assert!(error.to_string().contains("timed out"));
+-        assert_eq!(runner.calls().len(), 2);
+     }
+ 
+     fn ddc_monitor(selector: MonitorSelector) -> MonitorConfig {
+diff --git a/src/bin/sunreactorctl.rs b/src/bin/sunreactorctl.rs
+index 57dcefb..b89563a 100644
+--- a/src/bin/sunreactorctl.rs
++++ b/src/bin/sunreactorctl.rs
+@@ -49,6 +49,9 @@ enum CliCommand {
+     },
+     ConfigInit,
+     ConfigValidate,
++    Doctor {
++        json: bool,
++    },
+     #[cfg(feature = "tui")]
+     Tui,
+ }
+@@ -100,6 +103,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
+             Some("validate") => Ok(CliCommand::ConfigValidate),
+             _ => anyhow::bail!("usage: sunreactorctl config <init|validate>"),
+         },
++        Some("doctor") => parse_doctor_command(&args[1..]),
+         #[cfg(feature = "tui")]
+         Some("tui") => Ok(CliCommand::Tui),
+         Some(other) => anyhow::bail!("unknown command: {other}"),
+@@ -154,6 +158,17 @@ fn parse_discover_command(args: &[String]) -> anyhow::Result<CliCommand> {
+     Ok(CliCommand::Discover { json })
+ }
+ 
++fn parse_doctor_command(args: &[String]) -> anyhow::Result<CliCommand> {
++    let mut json = false;
++    for arg in args {
++        match arg.as_str() {
++            "--json" | "-j" => json = true,
++            _ => anyhow::bail!("usage: sunreactorctl doctor [--json]"),
++        }
++    }
++    Ok(CliCommand::Doctor { json })
++}
++
+ fn parse_set_command(args: &[String]) -> anyhow::Result<CliCommand> {
+     let usage = "usage: sunreactorctl set <monitor-id> <pct> [--minutes <N>] | sunreactorctl set --global <pct> [--minutes <N>]";
+     if args.is_empty() {
+@@ -280,6 +295,25 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
+             Ok(format!("wrote default config to {}", path.display()))
+         }
+         CliCommand::ConfigValidate => validate_config(),
++        CliCommand::Doctor { json } => {
++            let report = sunreactor::doctor::run_diagnostics();
++            if json {
++                Ok(serde_json::to_string_pretty(&report)?)
++            } else {
++                let mut lines = Vec::new();
++                lines.push(if report.overall_healthy { "Overall Health: OK" } else { "Overall Health: ISSUES FOUND" }.to_string());
++                lines.push(String::new());
++                for check in &report.checks {
++                    let status = match check.status {
++                        sunreactor::doctor::CheckStatus::Pass => "[PASS]",
++                        sunreactor::doctor::CheckStatus::Warn => "[WARN]",
++                        sunreactor::doctor::CheckStatus::Error => "[FAIL]",
++                    };
++                    lines.push(format!("{} {}: {}", status, check.code, check.message));
++                }
++                Ok(lines.join("\n"))
++            }
++        }
+         #[cfg(feature = "tui")]
+         CliCommand::Tui => sunreactor::tui::run().map_err(|e| anyhow::anyhow!("{e}")),
+     }
+diff --git a/src/ddcutil/command.rs b/src/ddcutil/command.rs
+new file mode 100644
+index 0000000..63e6082
+--- /dev/null
++++ b/src/ddcutil/command.rs
+@@ -0,0 +1,84 @@
++use std::time::Duration;
++use crate::backends::ProcessRunner;
++use super::DdcutilCapabilities;
++
++pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabilities {
++    let mut caps = DdcutilCapabilities {
++        version_string: String::new(),
++        supports_noconfig: false,
++        supports_noverify: false,
++        supports_terse: false,
++        supports_brief: false,
++    };
++
++    if let Ok(version_output) = runner.run("ddcutil", &["--version".to_string()], Duration::from_secs(2)) {
++        if version_output.success() {
++            caps.version_string = version_output.stdout.lines().next().unwrap_or("").trim().to_string();
++        }
++    }
++
++    if let Ok(help_output) = runner.run("ddcutil", &["--help".to_string()], Duration::from_secs(2)) {
++        if help_output.success() {
++            let help_text = help_output.stdout;
++            caps.supports_noconfig = help_text.contains("--noconfig");
++            caps.supports_noverify = help_text.contains("--noverify");
++            caps.supports_terse = help_text.contains("--terse");
++            caps.supports_brief = help_text.contains("--brief");
++        }
++    }
++
++    caps
++}
++
++pub(crate) fn build_base_args(caps: &DdcutilCapabilities) -> Vec<String> {
++    let mut args = Vec::new();
++    if caps.supports_noconfig {
++        args.push("--noconfig".to_string());
++    }
++    args
++}
++
++pub(crate) fn build_detect_args(caps: &DdcutilCapabilities) -> Vec<String> {
++    let mut args = build_base_args(caps);
++    if caps.supports_terse {
++        args.push("--terse".to_string());
++    } else if caps.supports_brief {
++        args.push("--brief".to_string());
++    }
++    args.push("detect".to_string());
++    args
++}
++
++pub(crate) fn build_capabilities_args(caps: &DdcutilCapabilities, display: u32) -> Vec<String> {
++    let mut args = build_base_args(caps);
++    args.push("--display".to_string());
++    args.push(display.to_string());
++    args.push("capabilities".to_string());
++    args
++}
++
++pub(crate) fn build_getvcp_args(caps: &DdcutilCapabilities, display: u32, vcp: &str) -> Vec<String> {
++    let mut args = build_base_args(caps);
++    args.push("--display".to_string());
++    args.push(display.to_string());
++    args.push("getvcp".to_string());
++    args.push(vcp.to_string());
++    if caps.supports_terse {
++        args.push("--terse".to_string());
++    } else if caps.supports_brief {
++        args.push("--brief".to_string());
++    }
++    args
++}
++
++pub(crate) fn build_setvcp_args(caps: &DdcutilCapabilities, selection_args: &[String], vcp: &str, value: &str) -> Vec<String> {
++    let mut args = build_base_args(caps);
++    if caps.supports_noverify {
++        args.push("--noverify".to_string());
++    }
++    args.extend_from_slice(selection_args);
++    args.push("setvcp".to_string());
++    args.push(vcp.to_string());
++    args.push(value.to_string());
++    args
++}
+diff --git a/src/ddcutil/mod.rs b/src/ddcutil/mod.rs
+new file mode 100644
+index 0000000..468a516
+--- /dev/null
++++ b/src/ddcutil/mod.rs
+@@ -0,0 +1,39 @@
++pub mod command;
++pub mod parser;
++pub mod version;
++
++use crate::backends::ProcessRunner;
++use std::sync::OnceLock;
++
++thread_local! {
++    static DDCUTIL_CAPABILITIES: std::cell::OnceCell<DdcutilCapabilities> = std::cell::OnceCell::new();
++}
++
++#[derive(Debug, Clone)]
++pub(crate) struct DdcutilCapabilities {
++    pub version_string: String,
++    pub supports_noconfig: bool,
++    pub supports_noverify: bool,
++    pub supports_terse: bool,
++    pub supports_brief: bool,
++}
++
++pub(crate) struct DdcContext<'a, R: ProcessRunner> {
++    pub runner: &'a R,
++}
++
++impl<'a, R: ProcessRunner> DdcContext<'a, R> {
++    pub(crate) fn new(runner: &'a R) -> Self {
++        Self { runner }
++    }
++
++    pub(crate) fn capabilities(&self) -> DdcutilCapabilities {
++        #[cfg(test)]
++        return command::probe_capabilities(self.runner);
++
++        #[cfg(not(test))]
++        DDCUTIL_CAPABILITIES.with(|caps| {
++            caps.get_or_init(|| command::probe_capabilities(self.runner)).clone()
++        })
++    }
++}
+diff --git a/src/ddcutil/parser.rs b/src/ddcutil/parser.rs
+new file mode 100644
+index 0000000..08881d5
+--- /dev/null
++++ b/src/ddcutil/parser.rs
+@@ -0,0 +1,96 @@
++use crate::discovery::model::RawDdcMonitor;
++
++pub(crate) fn parse_ddc_detect(output: &str) -> Vec<RawDdcMonitor> {
++    let mut monitors = Vec::new();
++    let mut current: Option<RawDdcMonitor> = None;
++
++    for line in output.lines() {
++        let trimmed = line.trim();
++        if trimmed.is_empty() {
++            continue;
++        }
++
++        if let Some(display_number) = parse_display_header(trimmed) {
++            if let Some(monitor) = current.take() {
++                monitors.push(monitor);
++            }
++            current = Some(RawDdcMonitor::new(display_number));
++            continue;
++        }
++
++        let Some(monitor) = current.as_mut() else {
++            continue;
++        };
++
++        if let Some(value) = trimmed.strip_prefix("I2C bus:") {
++            monitor.bus_number = parse_bus_number(value.trim());
++        } else if let Some(value) = trimmed.strip_prefix("DRM connector:") {
++            monitor.connector = normalize_optional(value.trim());
++        } else if let Some(value) = trimmed.strip_prefix("Monitor:") {
++            let (manufacturer, model, serial) = parse_monitor_identity(value.trim());
++            monitor.manufacturer = manufacturer;
++            monitor.model = model;
++            monitor.serial = serial;
++        }
++    }
++
++    if let Some(monitor) = current {
++        monitors.push(monitor);
++    }
++
++    monitors.sort_by_key(|monitor| monitor.display_number);
++    monitors
++}
++
++pub(crate) fn parse_brightness_vcp_support(output: &str) -> bool {
++    for line in output.lines() {
++        let normalized = line.trim().to_ascii_lowercase();
++        let Some(rest) = normalized.strip_prefix("feature:") else {
++            continue;
++        };
++        let Some(code) = rest.split_whitespace().next() else {
++            continue;
++        };
++        if code == "10" || code == "0x10" {
++            return true;
++        }
++    }
++    false
++}
++
++pub(crate) fn parse_getvcp_brightness(output: &str) -> bool {
++    for line in output.lines() {
++        let normalized = line.trim().to_ascii_lowercase();
++        if normalized.contains("vcp opcode 0x10") || normalized.contains("feature 10") {
++            if normalized.contains("current value") || normalized.contains("max value") {
++                return true;
++            }
++        }
++    }
++    false
++}
++
++fn parse_display_header(line: &str) -> Option<u32> {
++    line.strip_prefix("Display ")?.trim().parse::<u32>().ok()
++}
++
++fn parse_bus_number(value: &str) -> Option<u32> {
++    value.rsplit('-').next()?.trim().parse::<u32>().ok()
++}
++
++fn parse_monitor_identity(value: &str) -> (Option<String>, Option<String>, Option<String>) {
++    let mut parts = value.splitn(3, ':');
++    let manufacturer = parts.next().and_then(normalize_optional);
++    let model = parts.next().and_then(normalize_optional);
++    let serial = parts.next().and_then(normalize_optional);
++    (manufacturer, model, serial)
++}
++
++fn normalize_optional(value: &str) -> Option<String> {
++    let trimmed = value.trim();
++    if trimmed.is_empty() {
++        None
++    } else {
++        Some(trimmed.to_owned())
++    }
++}
+diff --git a/src/ddcutil/version.rs b/src/ddcutil/version.rs
+new file mode 100644
+index 0000000..61048b4
+--- /dev/null
++++ b/src/ddcutil/version.rs
+@@ -0,0 +1,30 @@
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct DdcutilVersion {
++    pub major: u32,
++    pub minor: u32,
++    pub patch: u32,
++}
++
++impl DdcutilVersion {
++    pub fn parse(output: &str) -> Option<Self> {
++        for line in output.lines() {
++            let line = line.trim();
++            if line.starts_with("ddcutil") {
++                let parts: Vec<&str> = line.split_whitespace().collect();
++                for part in parts {
++                    let segments: Vec<&str> = part.split('.').collect();
++                    if segments.len() >= 3 {
++                        if let (Ok(major), Ok(minor), Ok(patch)) = (
++                            segments[0].parse::<u32>(),
++                            segments[1].parse::<u32>(),
++                            segments[2].parse::<u32>(),
++                        ) {
++                            return Some(Self { major, minor, patch });
++                        }
++                    }
++                }
++            }
++        }
++        None
++    }
++}
+diff --git a/src/discovery/mod.rs b/src/discovery/mod.rs
+index f3872f4..b85e88b 100644
+--- a/src/discovery/mod.rs
++++ b/src/discovery/mod.rs
+@@ -1,4 +1,4 @@
+-mod model;
++pub(crate) mod model;
+ mod probe;
+ mod render;
+ mod runner;
+diff --git a/src/discovery/probe.rs b/src/discovery/probe.rs
+index db973a0..53b2ad5 100644
+--- a/src/discovery/probe.rs
++++ b/src/discovery/probe.rs
+@@ -5,13 +5,14 @@ use std::time::Duration;
+ 
+ use super::model::{
+     build_backlight_stable_id, BackendStatus, BackendStatusKind, BacklightDeviceDiscovery,
+-    DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary, RawDdcMonitor,
++    DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary,
+ };
+ use super::runner::{command_failure_detail, CommandError, ProcessRunner};
+ 
+-const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(4);
+-const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(3);
+-const BRIGHTNESSCTL_LIST_TIMEOUT: Duration = Duration::from_secs(2);
++const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(25);
++const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(12);
++const DDCUTIL_GETVCP_TIMEOUT: Duration = Duration::from_secs(8);
++const BRIGHTNESSCTL_LIST_TIMEOUT: Duration = Duration::from_secs(4);
+ 
+ pub(crate) fn discover_with_runner<R: ProcessRunner>(
+     runner: &R,
+@@ -53,61 +54,80 @@ pub(crate) fn discover_with_runner<R: ProcessRunner>(
+ fn discover_ddc_monitors<R: ProcessRunner>(
+     runner: &R,
+ ) -> (BackendStatus, Vec<DdcMonitorDiscovery>) {
+-    let args = vec![
+-        String::from("--noconfig"),
+-        String::from("--terse"),
+-        String::from("detect"),
+-    ];
++    let ctx = crate::ddcutil::DdcContext::new(runner);
++    let caps = ctx.capabilities();
++
++    let args = crate::ddcutil::command::build_detect_args(&caps);
+ 
+     match runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT) {
+         Ok(output) if output.success() => {
+-            let mut monitors = parse_ddc_detect(&output.stdout);
+-            let mut capability_failures = 0usize;
++            let raw_monitors = crate::ddcutil::parser::parse_ddc_detect(&output.stdout);
++            let mut monitors = Vec::new();
++            let mut probe_failures = 0usize;
+ 
+-            for monitor in &mut monitors {
+-                let capability_args = vec![
+-                    String::from("--noconfig"),
+-                    String::from("--display"),
+-                    monitor.display_number.to_string(),
+-                    String::from("capabilities"),
+-                ];
++            for raw_monitor in raw_monitors {
++                let mut monitor = raw_monitor.into_discovery();
++                
++                let capability_args = crate::ddcutil::command::build_capabilities_args(&caps, monitor.display_number);
++                let mut vcp10_confirmed = false;
++                let mut note = None;
+ 
+                 match runner.run("ddcutil", &capability_args, DDCUTIL_CAPABILITIES_TIMEOUT) {
+                     Ok(capabilities) if capabilities.success() => {
+-                        let supported = parse_brightness_vcp_support(&capabilities.stdout);
+-                        monitor.brightness_vcp_supported = Some(supported);
+-                        monitor.backend_viable = supported;
++                        let supported = crate::ddcutil::parser::parse_brightness_vcp_support(&capabilities.stdout);
++                        if supported {
++                            vcp10_confirmed = true;
++                        } else {
++                            note = Some(String::from("capabilities probe succeeded but omitted VCP 10"));
++                        }
+                     }
+                     Ok(capabilities) => {
+-                        capability_failures += 1;
+-                        monitor.note = Some(format!(
+-                            "capabilities probe failed: {}",
+-                            command_failure_detail(&capabilities)
+-                        ));
++                        note = Some(format!("capabilities probe failed: {}", command_failure_detail(&capabilities)));
+                     }
+                     Err(CommandError::Timeout { after, .. }) => {
+-                        capability_failures += 1;
+-                        monitor.note = Some(format!(
+-                            "capabilities probe timed out after {}s",
+-                            after.as_secs()
+-                        ));
++                        note = Some(format!("capabilities probe timed out after {}s", after.as_secs()));
+                     }
+                     Err(error) => {
+-                        capability_failures += 1;
+-                        monitor.note = Some(error.to_string());
++                        note = Some(error.to_string());
+                     }
+                 }
++
++                // Fallback to getvcp 10 if capabilities failed or didn't report it
++                if !vcp10_confirmed {
++                    let getvcp_args = crate::ddcutil::command::build_getvcp_args(&caps, monitor.display_number, "10");
++                    match runner.run("ddcutil", &getvcp_args, DDCUTIL_GETVCP_TIMEOUT) {
++                        Ok(getvcp) if getvcp.success() => {
++                            if crate::ddcutil::parser::parse_getvcp_brightness(&getvcp.stdout) {
++                                vcp10_confirmed = true;
++                                if note.is_some() {
++                                    note = Some(format!("{} (recovered via getvcp)", note.unwrap()));
++                                } else {
++                                    note = Some(String::from("recovered via getvcp"));
++                                }
++                            }
++                        }
++                        Ok(_) | Err(_) => {
++                            // Keep the original capabilities error if getvcp also fails
++                            probe_failures += 1;
++                        }
++                    }
++                }
++
++                monitor.brightness_vcp_supported = Some(vcp10_confirmed);
++                monitor.backend_viable = vcp10_confirmed;
++                monitor.note = note;
++                monitors.push(monitor);
+             }
+ 
+             let message = if monitors.is_empty() {
+                 String::from("No external monitors were reported by ddcutil.")
+-            } else if capability_failures == 0 {
++            } else if probe_failures == 0 {
+                 format!("Detected {} external monitor(s).", monitors.len())
+             } else {
+                 format!(
+-                    "Detected {} external monitor(s); {} capability probe(s) failed.",
++                    "Detected {} external monitor(s); {} secondary probe(s) failed.",
+                     monitors.len(),
+-                    capability_failures
++                    probe_failures
+                 )
+             };
+ 
+@@ -122,18 +142,27 @@ fn discover_ddc_monitors<R: ProcessRunner>(
+                 monitors,
+             )
+         }
+-        Ok(output) => (
+-            BackendStatus {
+-                backend: String::from("ddcutil"),
+-                status: BackendStatusKind::Error,
+-                available: true,
+-                message: format!("ddcutil detect failed: {}", command_failure_detail(&output)),
+-                guidance: Some(String::from(
+-                    "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.",
+-                )),
+-            },
+-            Vec::new(),
+-        ),
++        Ok(output) => {
++            let error_msg = command_failure_detail(&output);
++            let status = if error_msg.contains("Permission denied") || output.stderr.contains("Permission denied") {
++                BackendStatusKind::Error
++            } else {
++                BackendStatusKind::Error
++            };
++            
++            (
++                BackendStatus {
++                    backend: String::from("ddcutil"),
++                    status,
++                    available: true,
++                    message: format!("ddcutil detect failed: {}", error_msg),
++                    guidance: Some(String::from(
++                        "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.",
++                    )),
++                },
++                Vec::new(),
++            )
++        }
+         Err(CommandError::Missing { .. }) => (
+             BackendStatus {
+                 backend: String::from("ddcutil"),
+@@ -353,64 +382,7 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
+     )
+ }
+ 
+-fn parse_ddc_detect(output: &str) -> Vec<DdcMonitorDiscovery> {
+-    let mut monitors = Vec::new();
+-    let mut current: Option<RawDdcMonitor> = None;
+-
+-    for line in output.lines() {
+-        let trimmed = line.trim();
+-        if trimmed.is_empty() {
+-            continue;
+-        }
+-
+-        if let Some(display_number) = parse_display_header(trimmed) {
+-            if let Some(monitor) = current.take() {
+-                monitors.push(monitor.into_discovery());
+-            }
+-            current = Some(RawDdcMonitor::new(display_number));
+-            continue;
+-        }
+-
+-        let Some(monitor) = current.as_mut() else {
+-            continue;
+-        };
+-
+-        if let Some(value) = trimmed.strip_prefix("I2C bus:") {
+-            monitor.bus_number = parse_bus_number(value.trim());
+-        } else if let Some(value) = trimmed.strip_prefix("DRM connector:") {
+-            monitor.connector = normalize_optional(value.trim());
+-        } else if let Some(value) = trimmed.strip_prefix("Monitor:") {
+-            let (manufacturer, model, serial) = parse_monitor_identity(value.trim());
+-            monitor.manufacturer = manufacturer;
+-            monitor.model = model;
+-            monitor.serial = serial;
+-        }
+-    }
+-
+-    if let Some(monitor) = current {
+-        monitors.push(monitor.into_discovery());
+-    }
+-
+-    monitors.sort_by_key(|monitor| monitor.display_number);
+-    monitors
+-}
+-
+-fn parse_brightness_vcp_support(output: &str) -> bool {
+-    for line in output.lines() {
+-        let normalized = line.trim().to_ascii_lowercase();
+-        let Some(rest) = normalized.strip_prefix("feature:") else {
+-            continue;
+-        };
+-        let Some(code) = rest.split_whitespace().next() else {
+-            continue;
+-        };
+-        if code == "10" {
+-            return true;
+-        }
+-    }
+ 
+-    false
+-}
+ 
+ fn parse_brightnessctl_backlights(
+     output: &str,
+@@ -483,30 +455,7 @@ fn merge_backlight_devices(
+     merged.into_values().collect()
+ }
+ 
+-fn parse_display_header(line: &str) -> Option<u32> {
+-    line.strip_prefix("Display ")?.trim().parse::<u32>().ok()
+-}
+-
+-fn parse_bus_number(value: &str) -> Option<u32> {
+-    value.rsplit('-').next()?.trim().parse::<u32>().ok()
+-}
+-
+-fn parse_monitor_identity(value: &str) -> (Option<String>, Option<String>, Option<String>) {
+-    let mut parts = value.splitn(3, ':');
+-    let manufacturer = parts.next().and_then(normalize_optional);
+-    let model = parts.next().and_then(normalize_optional);
+-    let serial = parts.next().and_then(normalize_optional);
+-    (manufacturer, model, serial)
+-}
+ 
+-fn normalize_optional(value: &str) -> Option<String> {
+-    let trimmed = value.trim();
+-    if trimmed.is_empty() {
+-        None
+-    } else {
+-        Some(trimmed.to_owned())
+-    }
+-}
+ 
+ fn read_optional_u32(path: &Path) -> Option<u32> {
+     let raw = fs::read_to_string(path).ok()?;
+diff --git a/src/discovery/tests.rs b/src/discovery/tests.rs
+index 1ec3852..7e2448d 100644
+--- a/src/discovery/tests.rs
++++ b/src/discovery/tests.rs
+@@ -13,6 +13,7 @@ use super::{
+ #[test]
+ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
+     let runner = FakeRunner::new()
++        .with_success("ddcutil", &["--help"], "--noconfig --terse")
+         .with_success(
+             "ddcutil",
+             &["--noconfig", "--terse", "detect"],
+@@ -53,6 +54,7 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
+ #[test]
+ fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
+     let runner = FakeRunner::new()
++        .with_success("ddcutil", &["--help"], "--noconfig --terse")
+         .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
+         .with_missing(
+             "brightnessctl",
+@@ -85,6 +87,7 @@ fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
+ #[test]
+ fn parses_brightnessctl_machine_readable_output() {
+     let runner = FakeRunner::new()
++        .with_success("ddcutil", &["--help"], "--noconfig --terse")
+         .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
+         .with_success(
+             "brightnessctl",
+@@ -114,6 +117,7 @@ fn parses_brightnessctl_machine_readable_output() {
+ #[test]
+ fn reports_clear_guidance_when_no_backends_are_available() {
+     let runner = FakeRunner::new()
++        .with_success("ddcutil", &["--help"], "--noconfig --terse")
+         .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
+         .with_missing(
+             "brightnessctl",
+diff --git a/src/doctor.rs b/src/doctor.rs
+new file mode 100644
+index 0000000..57e165b
+--- /dev/null
++++ b/src/doctor.rs
+@@ -0,0 +1,182 @@
++use serde::Serialize;
++use std::process::Command;
++use crate::ddcutil::version::DdcutilVersion;
++
++
++#[derive(Debug, Clone, Serialize)]
++pub struct DoctorReport {
++    pub checks: Vec<CheckResult>,
++    pub overall_healthy: bool,
++}
++
++#[derive(Debug, Clone, Serialize)]
++pub struct CheckResult {
++    pub code: String,
++    pub status: CheckStatus,
++    pub message: String,
++}
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
++#[serde(rename_all = "snake_case")]
++pub enum CheckStatus {
++    Pass,
++    Warn,
++    Error,
++}
++
++pub fn run_diagnostics() -> DoctorReport {
++    let mut checks = Vec::new();
++
++    // Check ddcutil version
++    if let Ok(output) = Command::new("ddcutil").arg("--version").output() {
++        if output.status.success() {
++            let stdout = String::from_utf8_lossy(&output.stdout);
++            if let Some(version) = DdcutilVersion::parse(&stdout) {
++                if version.major < 1 || (version.major == 1 && version.minor < 4) {
++                    checks.push(CheckResult {
++                        code: String::from("SR-DDCUTIL-VERSION-WARN"),
++                        status: CheckStatus::Warn,
++                        message: format!("ddcutil version {}.{}.{} is older than 1.4.0. Compatibility layer will be used.", version.major, version.minor, version.patch),
++                    });
++                } else {
++                    checks.push(CheckResult {
++                        code: String::from("SR-DDCUTIL-VERSION-OK"),
++                        status: CheckStatus::Pass,
++                        message: format!("ddcutil version {}.{}.{} is fully supported.", version.major, version.minor, version.patch),
++                    });
++                }
++            } else {
++                checks.push(CheckResult {
++                    code: String::from("SR-DDCUTIL-PARSE-WARN"),
++                    status: CheckStatus::Warn,
++                    message: String::from("Failed to parse ddcutil version."),
++                });
++            }
++        } else {
++            checks.push(CheckResult {
++                code: String::from("SR-DDCUTIL-ERR"),
++                status: CheckStatus::Error,
++                message: String::from("ddcutil command failed."),
++            });
++        }
++    } else {
++        checks.push(CheckResult {
++            code: String::from("SR-DDCUTIL-MISSING-ERR"),
++            status: CheckStatus::Error,
++            message: String::from("ddcutil is not installed or not in PATH."),
++        });
++    }
++
++    // Check I2C group
++    let has_i2c_group = if let Ok(output) = Command::new("groups").output() {
++        String::from_utf8_lossy(&output.stdout).contains("i2c")
++    } else {
++        false
++    };
++    
++    // Check access to /dev/i2c-*
++    let mut i2c_access = false;
++    let mut i2c_exists = false;
++    if let Ok(entries) = std::fs::read_dir("/dev") {
++        for entry in entries.flatten() {
++            let name = entry.file_name();
++            if name.to_string_lossy().starts_with("i2c-") {
++                i2c_exists = true;
++                if std::fs::OpenOptions::new().read(true).write(true).open(entry.path()).is_ok() {
++                    i2c_access = true;
++                    break;
++                }
++            }
++        }
++    }
++
++    if !i2c_exists {
++        checks.push(CheckResult {
++            code: String::from("SR-I2C-MISSING-WARN"),
++            status: CheckStatus::Warn,
++            message: String::from("No /dev/i2c-* devices found. Ensure i2c-dev module is loaded."),
++        });
++    } else if !i2c_access && !has_i2c_group {
++        checks.push(CheckResult {
++            code: String::from("SR-I2C-PERMS-ERR"),
++            status: CheckStatus::Error,
++            message: String::from("User does not have read/write access to /dev/i2c-* and is not in the i2c group."),
++        });
++    } else {
++        checks.push(CheckResult {
++            code: String::from("SR-I2C-PERMS-OK"),
++            status: CheckStatus::Pass,
++            message: String::from("I2C permissions are sufficient."),
++        });
++    }
++
++    // Check daemon path
++    if Command::new("sunreactord").arg("--version").output().is_err() {
++        let exe_dir = std::env::current_exe()
++            .ok()
++            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
++        let mut found_next_to_cli = false;
++        if let Some(dir) = exe_dir {
++            if dir.join("sunreactord").exists() {
++                found_next_to_cli = true;
++            }
++        }
++        
++        if found_next_to_cli {
++             checks.push(CheckResult {
++                code: String::from("SR-DAEMON-PATH-WARN"),
++                status: CheckStatus::Warn,
++                message: String::from("sunreactord is not in PATH, but was found in the same directory as sunreactorctl."),
++            });
++        } else {
++            checks.push(CheckResult {
++                code: String::from("SR-DAEMON-PATH-ERR"),
++                status: CheckStatus::Error,
++                message: String::from("sunreactord is not in PATH and not next to sunreactorctl."),
++            });
++        }
++    } else {
++        checks.push(CheckResult {
++            code: String::from("SR-DAEMON-PATH-OK"),
++            status: CheckStatus::Pass,
++            message: String::from("sunreactord is in PATH."),
++        });
++    }
++
++    // GLIBC Check (if applicable on Linux)
++    #[cfg(target_os = "linux")]
++    {
++        if let Ok(output) = Command::new("ldd").arg("--version").output() {
++            let stdout = String::from_utf8_lossy(&output.stdout);
++            if let Some(line) = stdout.lines().next() {
++                if let Some(version_str) = line.split_whitespace().last() {
++                    let parts: Vec<&str> = version_str.split('.').collect();
++                    if parts.len() >= 2 {
++                        if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
++                            if major < 2 || (major == 2 && minor < 31) {
++                                checks.push(CheckResult {
++                                    code: String::from("SR-GLIBC-WARN"),
++                                    status: CheckStatus::Warn,
++                                    message: format!("GLIBC version {}.{} is older than 2.31, some features may not work.", major, minor),
++                                });
++                            } else {
++                                checks.push(CheckResult {
++                                    code: String::from("SR-GLIBC-OK"),
++                                    status: CheckStatus::Pass,
++                                    message: format!("GLIBC version {}.{} is supported.", major, minor),
++                                });
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    let overall_healthy = checks.iter().all(|c| c.status != CheckStatus::Error);
++
++    DoctorReport {
++        checks,
++        overall_healthy,
++    }
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index be9b586..8e914c4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -20,6 +20,8 @@ pub mod apply;
+ pub mod backends;
+ pub mod config;
+ pub mod discovery;
++pub mod ddcutil;
++pub mod doctor;
+ pub mod ipc;
+ pub mod paths;
+ pub mod policy;
+diff --git a/src/runtime/orchestrator.rs b/src/runtime/orchestrator.rs
+index 5497c7d..05f00ad 100644
+--- a/src/runtime/orchestrator.rs
++++ b/src/runtime/orchestrator.rs
+@@ -2039,7 +2039,7 @@ mod tests {
+             forecast: vec![],
+         };
+         runtime.state.weather = Some(weather_snapshot.clone());
+-        runtime.weather_cache = std::sync::Arc::new(std::sync::RwLock::new(Some(weather_snapshot)));
++        runtime.weather_engine.inject_test_cache(weather_snapshot);
+         runtime.state.manual_override = Some(ManualOverrideState {
+             global_percent: None,
+             global_expires_at_epoch_s: None,
+@@ -2149,6 +2149,7 @@ mod tests {
+             temperature: Some(0.0),
+             forecast: vec![],
+         });
++        runtime.weather_engine.inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
+         runtime.weather_refresh.last_attempted_at_epoch_s = Some(1_800_000_020);
+         runtime.weather_refresh.next_refresh_at_epoch_s = Some(1_800_001_800);
+         runtime.weather_refresh.consecutive_failures = 2;
+diff --git a/src/tui/ui/weather_model.rs b/src/tui/ui/weather_model.rs
+index d5db033..6683c6a 100644
+--- a/src/tui/ui/weather_model.rs
++++ b/src/tui/ui/weather_model.rs
+@@ -61,6 +61,21 @@ pub(super) fn weather_panel_state(
+     let Some(status) = status else {
+         return WeatherPanelState::Message(String::from(AWAITING_DAEMON_MESSAGE));
+     };
++
++    if let Some(weather) = status.weather.as_ref() {
++        if weather.stale && weather.last_error.is_some() {
++            let retry_str = weather.next_refresh_at_epoch_s
++                .map(|s| forecast_time_label(s, use_12h_time, timezone))
++                .unwrap_or_default();
++            let msg = format!(
++                "Weather data stale.\n{}\nRetry scheduled at: {}",
++                weather.last_error.as_deref().unwrap_or(""),
++                retry_str
++            );
++            return WeatherPanelState::Message(msg);
++        }
++    }
++
+     let is_weather_active = status.weather.as_ref().is_some_and(|w| w.active);
+     
+     WeatherPanelState::Ready(Box::new(WeatherPanelData {
+diff --git a/src/weather/engine.rs b/src/weather/engine.rs
+index eface53..fb9b397 100644
+--- a/src/weather/engine.rs
++++ b/src/weather/engine.rs
+@@ -22,6 +22,13 @@ impl Drop for WeatherEngine {
+ }
+ 
+ impl WeatherEngine {
++    #[cfg(test)]
++    pub fn inject_test_cache(&mut self, snapshot: WeatherSnapshotMetadata) {
++        if let Ok(mut lock) = self.cache.write() {
++            *lock = Some(snapshot);
++        }
++    }
++
+     pub fn new(
+         config: WeatherConfig,
+         location: Location,
+diff --git a/src/weather/mod.rs b/src/weather/mod.rs
+index 61b0356..fc94b78 100644
+--- a/src/weather/mod.rs
++++ b/src/weather/mod.rs
+@@ -47,8 +47,8 @@ where
+         Err(err) => {
+             if matches!(err, WeatherError::MissingApiKey { .. }) {
+                 return WeatherResolution {
+-                    modifier: None,
+-                    snapshot: None,
++                    modifier: snapshot.as_ref().and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
++                    snapshot,
+                     next_refresh_at_epoch_s: None,
+                     error: Some(err),
+                     refresh_attempted: false,

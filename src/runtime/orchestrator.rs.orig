@@ -2048,8 +2048,7 @@ mod tests {
             temperature: Some(0.0),
             forecast: vec![],
         };
-        runtime.state.weather = Some(weather_snapshot.clone());
-        runtime.weather_engine.inject_test_cache(weather_snapshot);
+        runtime.state.weather = Some(weather_snapshot);
         runtime.state.manual_override = Some(ManualOverrideState {
             global_percent: None,
             global_expires_at_epoch_s: None,
@@ -2159,7 +2158,6 @@ mod tests {
             temperature: Some(0.0),
             forecast: vec![],
         });
-        runtime.weather_engine.inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
         runtime.weather_refresh.last_attempted_at_epoch_s = Some(1_800_000_020);
         runtime.weather_refresh.next_refresh_at_epoch_s = Some(1_800_001_800);
         runtime.weather_refresh.consecutive_failures = 2;

@@ -49,9 +49,6 @@ enum CliCommand {
     },
     ConfigInit,
     ConfigValidate,
-    Doctor {
-        json: bool,
-    },
     #[cfg(feature = "tui")]
     Tui,
 }
@@ -107,7 +104,6 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
             Some("validate") => Ok(CliCommand::ConfigValidate),
             _ => anyhow::bail!("usage: sunreactorctl config <init|validate>"),
         },
-        Some("doctor") => parse_doctor_command(&args[1..]),
         #[cfg(feature = "tui")]
         Some("tui") => Ok(CliCommand::Tui),
         Some(other) => anyhow::bail!("unknown command: {other}"),
@@ -160,17 +156,6 @@ fn parse_discover_command(args: &[String]) -> anyhow::Result<CliCommand> {
     }
 
     Ok(CliCommand::Discover { json })
-}
-
-fn parse_doctor_command(args: &[String]) -> anyhow::Result<CliCommand> {
-    let mut json = false;
-    for arg in args {
-        match arg.as_str() {
-            "--json" | "-j" => json = true,
-            _ => anyhow::bail!("usage: sunreactorctl doctor [--json]"),
-        }
-    }
-    Ok(CliCommand::Doctor { json })
 }
 
 fn parse_set_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -299,25 +284,6 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
             Ok(format!("wrote default config to {}", path.display()))
         }
         CliCommand::ConfigValidate => validate_config(),
-        CliCommand::Doctor { json } => {
-            let report = sunreactor::doctor::run_diagnostics();
-            if json {
-                Ok(serde_json::to_string_pretty(&report)?)
-            } else {
-                let mut lines = Vec::new();
-                lines.push(if report.overall_healthy { "Overall Health: OK" } else { "Overall Health: ISSUES FOUND" }.to_string());
-                lines.push(String::new());
-                for check in &report.checks {
-                    let status = match check.status {
-                        sunreactor::doctor::CheckStatus::Pass => "[PASS]",
-                        sunreactor::doctor::CheckStatus::Warn => "[WARN]",
-                        sunreactor::doctor::CheckStatus::Error => "[FAIL]",
-                    };
-                    lines.push(format!("{} {}: {}", status, check.code, check.message));
-                }
-                Ok(lines.join("\n"))
-            }
-        }
         #[cfg(feature = "tui")]
         CliCommand::Tui => sunreactor::tui::run().map_err(|e| anyhow::anyhow!("{e}")),
     }

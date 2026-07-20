@@ -61,6 +61,21 @@ pub(super) fn weather_panel_state(
     let Some(status) = status else {
         return WeatherPanelState::Message(String::from(AWAITING_DAEMON_MESSAGE));
     };
+
+    if let Some(weather) = status.weather.as_ref() {
+        if weather.stale && weather.last_error.is_some() {
+            let retry_str = weather.next_refresh_at_epoch_s
+                .map(|s| forecast_time_label(s, use_12h_time, timezone))
+                .unwrap_or_default();
+            let msg = format!(
+                "Weather data stale.\n{}\nRetry scheduled at: {}",
+                weather.last_error.as_deref().unwrap_or(""),
+                retry_str
+            );
+            return WeatherPanelState::Message(msg);
+        }
+    }
+
     let is_weather_active = status.weather.as_ref().is_some_and(|w| w.active);
     
     WeatherPanelState::Ready(Box::new(WeatherPanelData {
