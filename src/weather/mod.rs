@@ -47,8 +47,8 @@ where
         Err(err) => {
             if matches!(err, WeatherError::MissingApiKey { .. }) {
                 return WeatherResolution {
-                    modifier: None,
-                    snapshot: None,
+                    modifier: snapshot.as_ref().and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
+                    snapshot,
                     next_refresh_at_epoch_s: None,
                     error: Some(err),
                     refresh_attempted: false,

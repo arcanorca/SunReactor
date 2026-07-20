@@ -626,6 +626,7 @@ mod tests {
         let policy = test_policy(vec![("healthy", 75), ("broken_ddc", 80), ("ghost", 90)]);
 
         let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
             .with_success(
                 "brightnessctl",
                 &[
@@ -731,7 +732,9 @@ mod tests {
 
         // Register exactly one runner response (for the first tick write only).
         // All subsequent ticks will be skipped by hysteresis (same percent, no delta).
-        let runner = FakeRunner::new().with_success(
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+            .with_success(
             "brightnessctl",
             &[
                 "--quiet",

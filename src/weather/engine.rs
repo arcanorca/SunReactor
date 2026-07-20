@@ -22,6 +22,13 @@ impl Drop for WeatherEngine {
 }
 
 impl WeatherEngine {
+    #[cfg(test)]
+    pub fn inject_test_cache(&mut self, snapshot: WeatherSnapshotMetadata) {
+        if let Ok(mut lock) = self.cache.write() {
+            *lock = Some(snapshot);
+        }
+    }
+
     pub fn new(
         config: WeatherConfig,
         location: Location,

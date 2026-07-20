@@ -1,0 +1,11 @@
+--- src/runtime/orchestrator.rs
++++ src/runtime/orchestrator.rs
+@@ -2039,7 +2039,7 @@ mod tests {
+             forecast: vec![],
+         };
+         runtime.state.weather = Some(weather_snapshot.clone());
+-        runtime.weather_cache = std::sync::Arc::new(std::sync::RwLock::new(Some(weather_snapshot)));
++        runtime.weather_engine.inject_test_cache(weather_snapshot);
+         runtime.state.manual_override = Some(ManualOverrideState {
+             global_percent: None,
+             global_expires_at_epoch_s: None,
