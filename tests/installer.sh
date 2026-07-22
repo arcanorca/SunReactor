@@ -53,7 +53,19 @@ case "${1:-}" in
       printf '[daemon]\ntick_seconds = 60\n' > "$XDG_CONFIG_HOME/sunreactor/config.toml"
     fi
     ;;
-  ping) [[ ${INSTALLER_FAIL_STEP:-} != ipc ]] ;;
+  ping)
+    [[ ${INSTALLER_FAIL_STEP:-} != ipc ]] || exit 1
+    if [[ ${INSTALLER_PING_FAILS:-0} -gt 0 ]]; then
+      attempts=0
+      if [[ -f "$INSTALLER_PING_STATE_FILE" ]]; then
+        attempts=$(<"$INSTALLER_PING_STATE_FILE")
+      fi
+      if [[ $attempts -lt ${INSTALLER_PING_FAILS:-0} ]]; then
+        printf '%s' "$((attempts + 1))" > "$INSTALLER_PING_STATE_FILE"
+        exit 1
+      fi
+    fi
+    ;;
   doctor)
     if [[ ${INSTALLER_DOCTOR:-ok} == relogin ]]; then
       echo '{"blocking_errors":1,"i2c_access":"I2C_GROUP_CONFIGURED_BUT_SESSION_STALE"}'
@@ -96,6 +108,8 @@ run_case() {
         SUNREACTOR_UNITDIR="$root/home/.config/systemd/user" \
         SUNREACTOR_SYSTEMCTL="$root/tools/systemctl" \
         SUNREACTOR_SYSTEMD_ANALYZE="$root/tools/systemd-analyze" \
+        SUNREACTOR_IPC_READY_ATTEMPTS=3 \
+        INSTALLER_PING_STATE_FILE="$root/ping-attempts" \
         "$@" \
         bash "$REPO_ROOT/install.sh" --quiet 2>&1)
     rc=$?
@@ -132,6 +146,7 @@ run_case missing_asset SOURCE_BUILD_REQUIRED 1 setup_missing
 run_case checksum BINARY_INCOMPATIBLE 1 setup_checksum
 run_case doctor_block DEPENDENCY_FAILURE 1 setup_ok INSTALLER_DOCTOR=blocked
 run_case relogin RELOGIN_REQUIRED 1 setup_ok INSTALLER_DOCTOR=relogin
+run_case ipc_readiness_wait SUCCESS_NO_MONITORS_CONFIGURED 0 setup_ok INSTALLER_PING_FAILS=2
 run_case ipc_failure IPC_FAILURE 1 setup_ok INSTALLER_FAIL_STEP=ipc
 
 rollback_root=$(mktemp -d)
