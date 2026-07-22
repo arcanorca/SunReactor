@@ -30,6 +30,40 @@ die() {
     exit 1
 }
 
+print_banner() {
+    [[ $QUIET -eq 1 || ! -t 1 ]] && return
+
+    local mode="$1" reset='\033[0m'
+    local art=(
+        '  _____             ____                 _             '
+        ' / ___| _   _ _ __ |  _ \ ___  __ _  ___| |_ ___  _ __ '
+        " \\___ \\| | | | '_ \\| |_) / _ \\/ _\` |/ __| __/ _ \\| '__|"
+        '  ___) | |_| | | | |  _ <  __/ (_| | (__| || (_) | |   '
+        ' |____/ \__,_|_| |_|_| \_\___|\__,_|\___|\__\___/|_|   '
+        '                                                       '
+    )
+    local colors color_index line
+
+    if [[ $mode == uninstall ]]; then
+        colors=('\033[38;5;246m' '\033[38;5;243m' '\033[38;5;240m' '\033[38;5;238m' '\033[38;5;236m' '\033[38;5;234m')
+    else
+        colors=('\033[38;5;220m' '\033[38;5;214m' '\033[38;5;208m' '\033[38;5;202m' '\033[38;5;196m' '\033[38;5;160m')
+    fi
+
+    printf '\n' >&2
+    for line in "${!art[@]}"; do
+        color_index=$((line % ${#colors[@]}))
+        printf '%b%s%b\n' "${colors[$color_index]}" "${art[$line]}" "$reset" >&2
+        sleep 0.1
+    done
+
+    if [[ $mode == uninstall ]]; then
+        printf '%b\n\n' "   \033[1;3;38;5;242mSun sets forever. Your configuration stays safe.\033[0m" >&2
+    else
+        printf '%b\n\n' "   \033[1;3mAutomate Monitor Brightness, Synced with the Sun\033[0m" >&2
+    fi
+}
+
 source_build_instructions() {
     printf '%s\n' \
         'Build from source explicitly (Rust is not installed automatically):' \
@@ -98,6 +132,7 @@ require_commands() {
 }
 
 uninstall() {
+    print_banner uninstall
     "$SYSTEMCTL" --user disable --now sunreactord.service >/dev/null 2>&1 || true
     rm -f "$UNITDIR/sunreactord.service" "$BINDIR/sunreactord" "$BINDIR/sunreactorctl"
     "$SYSTEMCTL" --user daemon-reload >/dev/null 2>&1 || true
@@ -266,6 +301,7 @@ main() {
         die UNSUPPORTED_PLATFORM "No portable prebuilt artifact is published for $(uname -m)."
     }
 
+    print_banner install
     mkdir -m 700 "$STAGE"
     local version archive_name archive
     version=$(latest_version)
