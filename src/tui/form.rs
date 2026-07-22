@@ -107,7 +107,8 @@ impl FormState {
                 1 => Some(ActiveInputKind::Integer),
                 2 => Some(ActiveInputKind::Toggle), // 12h Toggle
                 3 => Some(ActiveInputKind::Toggle), // Unit Toggle
-                4 => Some(ActiveInputKind::Integer),
+                4 => Some(ActiveInputKind::Toggle), // Smooth transition toggle
+                5 => Some(ActiveInputKind::Integer),
                 _ => None,
             },
             _ => None,
@@ -134,7 +135,8 @@ impl FormState {
                 1 => Some(&self.fps_input),
                 2 => None, // Toggle
                 3 => None, // Toggle
-                4 => Some(&self.suspend_minutes_input),
+                4 => None, // Toggle
+                5 => Some(&self.suspend_minutes_input),
                 _ => None,
             },
             _ => None,
@@ -161,7 +163,8 @@ impl FormState {
                 1 => Some(&mut self.fps_input),
                 2 => None, // Toggle
                 3 => None, // Toggle
-                4 => Some(&mut self.suspend_minutes_input),
+                4 => None, // Toggle
+                5 => Some(&mut self.suspend_minutes_input),
                 _ => None,
             },
             _ => None,

@@ -19,7 +19,11 @@ impl DdcutilVersion {
                             segments[1].parse::<u32>(),
                             segments[2].parse::<u32>(),
                         ) {
-                            return Some(Self { major, minor, patch });
+                            return Some(Self {
+                                major,
+                                minor,
+                                patch,
+                            });
                         }
                     }
                 }

@@ -52,6 +52,65 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
 }
 
 #[test]
+fn valid_msi_survives_invalid_boe_and_getvcp_fallback() {
+    let runner = FakeRunner::new()
+        .with_success("ddcutil", &["--help"], "--noconfig")
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "detect"],
+            include_str!("../../tests/fixtures/ddcutil/msi_then_invalid_boe.txt"),
+        )
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--display", "1", "capabilities"],
+            "Feature: 12 (Contrast)",
+        )
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--display", "1", "getvcp", "10"],
+            "VCP code 0x10 (Brightness): current value = 35, max value = 100",
+        )
+        .with_missing(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+        );
+    let sysfs_root = TempSysfs::new(false);
+
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert_eq!(report.ddc_monitors.len(), 1);
+    assert_eq!(report.ddc_monitors[0].manufacturer.as_deref(), Some("MSI"));
+    assert_eq!(report.ddc_monitors[0].bus_number, Some(4));
+    assert!(report.ddc_monitors[0].backend_viable);
+    assert!(report.ddc_monitors[0]
+        .note
+        .as_deref()
+        .is_some_and(|note| note.contains("recovered via getvcp")));
+}
+
+#[test]
+fn successful_detect_with_no_displays_is_not_a_permission_error() {
+    let runner = FakeRunner::new()
+        .with_success("ddcutil", &["--help"], "")
+        .with_success("ddcutil", &["detect"], "No displays found")
+        .with_missing(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+        );
+    let sysfs_root = TempSysfs::new(false);
+
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert_eq!(report.backends.ddcutil.status, BackendStatusKind::Ok);
+    assert!(report.ddc_monitors.is_empty());
+    assert!(report
+        .backends
+        .ddcutil
+        .message
+        .contains("No external monitors"));
+}
+
+#[test]
 fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
     let runner = FakeRunner::new()
         .with_success("ddcutil", &["--help"], "--noconfig --terse")

@@ -1,4 +1,3 @@
-#![warn(clippy::pedantic)]
 #![allow(clippy::unnecessary_wraps)]
 
 use std::env;

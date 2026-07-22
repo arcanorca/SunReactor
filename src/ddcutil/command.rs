@@ -1,6 +1,6 @@
-use std::time::Duration;
-use crate::backends::ProcessRunner;
 use super::DdcutilCapabilities;
+use crate::backends::ProcessRunner;
+use std::time::Duration;
 
 pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabilities {
     let mut caps = DdcutilCapabilities {
@@ -11,15 +11,26 @@ pub(crate) fn probe_capabilities<R: ProcessRunner>(runner: &R) -> DdcutilCapabil
         supports_brief: false,
     };
 
-    if let Ok(version_output) = runner.run("ddcutil", &["--version".to_string()], Duration::from_secs(2)) {
+    if let Ok(version_output) = runner.run(
+        "ddcutil",
+        &[String::from("--version")],
+        Duration::from_secs(2),
+    ) {
         if version_output.success() {
-            caps.version_string = version_output.stdout.lines().next().unwrap_or("").trim().to_string();
+            caps.version_string = format!("{}\n{}", version_output.stdout, version_output.stderr)
+                .lines()
+                .find(|line| line.contains("ddcutil"))
+                .unwrap_or_default()
+                .trim()
+                .to_owned();
         }
     }
 
-    if let Ok(help_output) = runner.run("ddcutil", &["--help".to_string()], Duration::from_secs(2)) {
+    if let Ok(help_output) =
+        runner.run("ddcutil", &[String::from("--help")], Duration::from_secs(2))
+    {
         if help_output.success() {
-            let help_text = help_output.stdout;
+            let help_text = format!("{}\n{}", help_output.stdout, help_output.stderr);
             caps.supports_noconfig = help_text.contains("--noconfig");
             caps.supports_noverify = help_text.contains("--noverify");
             caps.supports_terse = help_text.contains("--terse");
@@ -57,21 +68,30 @@ pub(crate) fn build_capabilities_args(caps: &DdcutilCapabilities, display: u32) 
     args
 }
 
-pub(crate) fn build_getvcp_args(caps: &DdcutilCapabilities, display: u32, vcp: &str) -> Vec<String> {
+pub(crate) fn build_getvcp_args(
+    caps: &DdcutilCapabilities,
+    display: u32,
+    vcp: &str,
+) -> Vec<String> {
     let mut args = build_base_args(caps);
-    args.push("--display".to_string());
-    args.push(display.to_string());
-    args.push("getvcp".to_string());
-    args.push(vcp.to_string());
     if caps.supports_terse {
-        args.push("--terse".to_string());
+        args.push(String::from("--terse"));
     } else if caps.supports_brief {
-        args.push("--brief".to_string());
+        args.push(String::from("--brief"));
     }
+    args.push(String::from("--display"));
+    args.push(display.to_string());
+    args.push(String::from("getvcp"));
+    args.push(vcp.to_owned());
     args
 }
 
-pub(crate) fn build_setvcp_args(caps: &DdcutilCapabilities, selection_args: &[String], vcp: &str, value: &str) -> Vec<String> {
+pub(crate) fn build_setvcp_args(
+    caps: &DdcutilCapabilities,
+    selection_args: &[String],
+    vcp: &str,
+    value: &str,
+) -> Vec<String> {
     let mut args = build_base_args(caps);
     if caps.supports_noverify {
         args.push("--noverify".to_string());

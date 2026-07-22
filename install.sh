@@ -1,334 +1,279 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
-# ==========================================
-# SUNREACTOR AUTOMATED INSTALLER
-# ==========================================
-# Adheres to strict mode, SOLID, and KISS.
+readonly REPO="${SUNREACTOR_REPO:-arcanorca/SunReactor}"
+readonly BINDIR="${SUNREACTOR_BINDIR:-$HOME/.local/bin}"
+readonly UNITDIR="${SUNREACTOR_UNITDIR:-$HOME/.config/systemd/user}"
+readonly CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/sunreactor/config.toml"
+readonly SYSTEMCTL="${SUNREACTOR_SYSTEMCTL:-systemctl}"
+readonly SYSTEMD_ANALYZE="${SUNREACTOR_SYSTEMD_ANALYZE:-systemd-analyze}"
+WORKDIR="$(mktemp -d)"
+readonly WORKDIR
+readonly STAGE="$WORKDIR/stage"
+readonly BACKUP="$WORKDIR/backup"
 
-set -euo pipefail
-
-# ==========================================
-# 1. CONFIGURATION (Readonly Constants)
-# ==========================================
-readonly REPO="arcanorca/SunReactor"
-readonly BIN_DIR="$HOME/.local/bin"
-readonly SYSTEMD_DIR="$HOME/.config/systemd/user"
-readonly CFG_DIR="$HOME/.config/sunreactor"
-readonly TMP_DIR="$(mktemp -d)"
-
-# State variables
 QUIET=0
 UNINSTALL=0
+MUTATED=0
+COMMITTED=0
+CONFIG_CREATED=0
+SERVICE_WAS_ACTIVE=0
+SERVICE_WAS_ENABLED=0
+RESULT_STATE="DEPENDENCY_FAILURE"
 
-# ==========================================
-# 2. SYSTEM MODULE
-# ==========================================
-cleanup() {
-    rm -rf "$TMP_DIR"
+log() { [[ $QUIET -eq 1 ]] || printf '==> %s\n' "$*" >&2; }
+warn() { printf '==> WARNING: %s\n' "$*" >&2; }
+die() {
+    RESULT_STATE="$1"
+    shift
+    printf '==> ERROR: %s\nSUNREACTOR_RESULT=%s\n' "$*" "$RESULT_STATE" >&2
+    exit 1
 }
-trap 'cleanup; exit 1' INT TERM
+
+source_build_instructions() {
+    printf '%s\n' \
+        'Build from source explicitly (Rust is not installed automatically):' \
+        '  cargo build --release --locked' \
+        "  install -Dm755 target/release/sunreactord '$BINDIR/sunreactord'" \
+        "  install -Dm755 target/release/sunreactorctl '$BINDIR/sunreactorctl'" >&2
+}
+
+rollback() {
+    [[ $MUTATED -eq 1 && $COMMITTED -eq 0 ]] || return 0
+    warn "Installation failed after replacement; restoring the previous installation."
+    "$SYSTEMCTL" --user stop sunreactord.service >/dev/null 2>&1 || true
+    for name in sunreactord sunreactorctl; do
+        if [[ -f "$BACKUP/$name" ]]; then
+            install -m 755 "$BACKUP/$name" "$BINDIR/$name" || true
+        else
+            rm -f "$BINDIR/$name"
+        fi
+    done
+    if [[ -f "$BACKUP/sunreactord.service" ]]; then
+        install -m 644 "$BACKUP/sunreactord.service" "$UNITDIR/sunreactord.service" || true
+    else
+        rm -f "$UNITDIR/sunreactord.service"
+    fi
+    if [[ $CONFIG_CREATED -eq 1 ]]; then
+        rm -f "$CONFIG_FILE"
+    fi
+    "$SYSTEMCTL" --user daemon-reload >/dev/null 2>&1 || true
+    if [[ $SERVICE_WAS_ENABLED -eq 1 ]]; then
+        "$SYSTEMCTL" --user enable sunreactord.service >/dev/null 2>&1 || true
+    else
+        "$SYSTEMCTL" --user disable sunreactord.service >/dev/null 2>&1 || true
+    fi
+    if [[ $SERVICE_WAS_ACTIVE -eq 1 ]]; then
+        "$SYSTEMCTL" --user start sunreactord.service >/dev/null 2>&1 || true
+    fi
+}
+
+cleanup() {
+    local rc=$?
+    rollback
+    rm -rf "$WORKDIR"
+    return "$rc"
+}
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 parse_args() {
-    for arg in "$@"; do
-        case $arg in
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             -q|--quiet) QUIET=1 ;;
             --uninstall) UNINSTALL=1 ;;
-            *) ;;
+            *) die UNSUPPORTED_PLATFORM "Unknown option: $1" ;;
         esac
+        shift
     done
 }
 
-check_dependencies() {
-    local deps=("curl" "tar" "sudo")
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" >/dev/null 2>&1; then
-            log_error "Missing required dependency: $dep"
-            exit 1
-        fi
+require_commands() {
+    local command
+    for command in awk chmod cp curl grep head install mktemp mv rm sed sha256sum tar uname; do
+        command -v "$command" >/dev/null 2>&1 || die DEPENDENCY_FAILURE "Missing required command: $command"
     done
-
-    # JSON parsing for auto-discovery
-    if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
-        log_error "Missing dependency: 'python3' or 'jq' is required for auto-discovery setup."
-        exit 1
-    fi
+    command -v "$SYSTEMCTL" >/dev/null 2>&1 || die DEPENDENCY_FAILURE "systemctl is unavailable"
+    command -v "$SYSTEMD_ANALYZE" >/dev/null 2>&1 || die DEPENDENCY_FAILURE "systemd-analyze is unavailable"
 }
 
-# ==========================================
-# 3. LOGGER MODULE
-# ==========================================
-log_info() {
-    [[ $QUIET -eq 1 ]] && return
-    echo -e "\033[1;34m==>\033[0m \033[1m$1\033[0m" >&2
-}
-
-log_success() {
-    [[ $QUIET -eq 1 ]] && return
-    echo -e "\033[1;32m==>\033[0m \033[1;32m$1\033[0m" >&2
-}
-
-log_error() {
-    echo -e "\033[1;31m==> ERROR:\033[0m \033[1m$1\033[0m" >&2
-}
-
-# ==========================================
-# 4. NETWORK MODULE
-# ==========================================
-fetch_latest_version() {
-    local tag
-    tag=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-    
-    if [[ -z "$tag" ]]; then
-        log_error "Failed to fetch the latest release version from GitHub."
-        exit 1
-    fi
-    echo "$tag"
-}
-
-download_release() {
-    local version="$1"
-    local arch
-    local target
-    
-    arch=$(uname -m)
-    case "$arch" in
-        x86_64)
-            target="x86_64"
-            ;;
-        aarch64|arm64)
-            target="aarch64"
-            ;;
-        *)
-            log_error "Unsupported architecture: $arch"
-            exit 1
-            ;;
-    esac
-
-    local tarball="sunreactor-${version}-linux-${target}.tar.gz"
-    local url="https://github.com/$REPO/releases/download/${version}/${tarball}"
-    local dest="$TMP_DIR/$tarball"
-
-    log_info "Downloading SunReactor ${version} for ${target}..."
-    if ! curl -# -L "$url" -o "$dest"; then
-        log_error "Download failed. Check your connection or the release asset existence."
-        exit 1
-    fi
-    echo "$dest"
-}
-
-# ==========================================
-# 5. FILE OPERATIONS MODULE
-# ==========================================
-extract_archive() {
-    local archive_path="$1"
-    log_info "Extracting..."
-    tar xzf "$archive_path" -C "$TMP_DIR"
-}
-
-install_binaries() {
-    log_info "Installing binaries to $BIN_DIR..."
-    mkdir -p "$BIN_DIR"
-    install -m 755 "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl" "$BIN_DIR/"
-}
-
-# ==========================================
-# 6. SYSTEMD MODULE
-# ==========================================
-setup_systemd() {
-    log_info "Setting up systemd service..."
-    
-    # Defensive replacement to ensure systemd uses the correct local binary path
-    sed -i "s|/usr/bin/sunreactord|$BIN_DIR/sunreactord|g" "$TMP_DIR/sunreactord.service"
-    sed -i "s|/usr/local/bin/sunreactord|$BIN_DIR/sunreactord|g" "$TMP_DIR/sunreactord.service"
-    
-    mkdir -p "$SYSTEMD_DIR"
-    cp "$TMP_DIR/sunreactord.service" "$SYSTEMD_DIR/"
-    
-    systemctl --user daemon-reload
-    log_info "Enabling and starting daemon..."
-    systemctl --user enable --now sunreactord.service
-}
-
-# ==========================================
-# 7. PRESENTATION MODULE
-# ==========================================
-print_banner() {
-    [[ $QUIET -eq 1 ]] && return
-
-    local colors
-    local reset="\033[0m"
-    local art=(
-        "  _____             ____                 _             "
-        " / ___| _   _ _ __ |  _ \ ___  __ _  ___| |_ ___  _ __ "
-        " \___ \| | | | '_ \| |_) / _ \/ _\` |/ __| __/ _ \| '__|"
-        "  ___) | |_| | | | |  _ <  __/ (_| | (__| || (_) | |   "
-        " |____/ \__,_|_| |_|_| \_\___|\__,_|\___|\__\___/|_|   "
-        "                                                       "
-    )
-
-    echo ""
-    if [[ $UNINSTALL -eq 1 ]]; then
-        colors=(
-            "\033[38;5;246m" "\033[38;5;243m" "\033[38;5;240m"
-            "\033[38;5;238m" "\033[38;5;236m" "\033[38;5;234m"
-        )
-        for i in "${!art[@]}"; do
-            local color_idx=$(( i % ${#colors[@]} ))
-            echo -e "${colors[$color_idx]}${art[$i]}$reset"
-            sleep 0.1
-        done
-        echo -e "   \033[1;3;38;5;242mSun sets forever. rm -rf taking over.\033[0m\n"
-    else
-        colors=(
-            "\033[38;5;220m" "\033[38;5;214m" "\033[38;5;208m"
-            "\033[38;5;202m" "\033[38;5;196m" "\033[38;5;160m"
-        )
-        for i in "${!art[@]}"; do
-            local color_idx=$(( i % ${#colors[@]} ))
-            echo -e "${colors[$color_idx]}${art[$i]}$reset"
-            sleep 0.1
-        done
-        echo -e "   \033[1;3mAutomate Monitor Brightness, Synced with the Sun\033[0m\n"
-    fi
-    sleep 0.5
-}
-
-launch_dashboard() {
-    # Check if we need to run the setup wizard (interactive only)
-    local needs_setup=0
-    if [[ ! -f "$CFG_DIR/config.toml" ]]; then
-        needs_setup=1
-    else
-        local status_output
-        status_output=$("$BIN_DIR/sunreactorctl" status 2>/dev/null || echo "")
-        if echo "$status_output" | grep -q "configured_monitors: 0"; then
-            needs_setup=1
-        fi
-    fi
-
-    if [[ $needs_setup -eq 1 && $QUIET -eq 0 && -t 1 ]]; then
-        log_info "No monitors configured. Auto-discovering displays..."
-        
-        # Safely extract the config_snippet from the JSON output
-        local snippet=""
-        if command -v python3 >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d.get("config_snippet") or "")' 2>/dev/null || true)
-        elif command -v jq >/dev/null 2>&1; then
-            snippet=$("$BIN_DIR/sunreactorctl" discover --json 2>/dev/null | jq -r '.config_snippet' || true)
-        fi
-
-        if [[ -n "$snippet" && "$snippet" != "null" ]]; then
-            # Ensure the config directory exists and initialize default settings
-            if [[ ! -f "$CFG_DIR/config.toml" ]]; then
-                mkdir -p "$CFG_DIR"
-                "$BIN_DIR/sunreactorctl" config init >/dev/null 2>&1 || true
-            fi
-
-            # Adjust default bounds based on user preference
-            snippet=$(echo "$snippet" | sed 's/min_pct = 0/min_pct = 15/g' | sed 's/max_pct = 100/max_pct = 60/g')
-            echo -e "\n$snippet" >> "$CFG_DIR/config.toml"
-            systemctl --user reload sunreactord.service || true
-            log_success "Successfully detected and configured your monitors!"
-            sleep 1
-        else
-            log_error "Auto-discovery failed or no monitors found. You may need to configure manually."
-            sleep 2
-        fi
-    fi
-
-    echo ""
-    log_success "Installation Complete!"
-    
-    if [ -t 1 ] && [[ $QUIET -eq 0 ]]; then
-        echo -e "Launching dashboard in 3 seconds..."
-        sleep 3
-        exec "$BIN_DIR/sunreactorctl" tui
-    else
-        echo -e "You can now open the dashboard by running: \033[1;36msunreactorctl\033[0m"
-        echo -e "\033[1;33mNote:\033[0m Make sure \033[1m$BIN_DIR\033[0m is in your \$PATH.\n"
-    fi
-}
-
-# ==========================================
-# 8. ORCHESTRATION MODULE
-# ==========================================
-uninstall_sunreactor() {
-    local erase=0
-    [[ $QUIET -eq 0 ]] && erase=1
-
-    erase_line() {
-        if [[ $erase -eq 1 ]]; then
-            sleep 0.4
-            tput cuu 1 2>/dev/null || echo -ne "\033[1A"
-            tput el 2>/dev/null || echo -ne "\033[2K"
-        fi
-    }
-
-    [[ $erase -eq 1 ]] && sleep 1
-    
-    # 9 lines total to erase:
-    # Erase empty line and motto
-    erase_line
-    erase_line
-
-    if systemctl --user is-active --quiet sunreactord.service; then
-        systemctl --user stop sunreactord.service || true
-    fi
-    erase_line
-
-    if systemctl --user is-enabled --quiet sunreactord.service 2>/dev/null; then
-        systemctl --user disable sunreactord.service || true
-    fi
-    erase_line
-
-    if [[ -f "$SYSTEMD_DIR/sunreactord.service" ]]; then
-        rm -f "$SYSTEMD_DIR/sunreactord.service"
-        systemctl --user daemon-reload
-    fi
-    erase_line
-
-    rm -f "$BIN_DIR/sunreactord" "$BIN_DIR/sunreactorctl"
-    erase_line
-
-    rm -rf "$CFG_DIR"
-    rm -rf "$HOME/.local/state/sunreactor"
-    erase_line
-
-    # Erase remaining art lines and top padding
-    erase_line
-    erase_line
-    erase_line
-
-    log_success "SunReactor has been successfully uninstalled."
-    echo -e "\033[1;32mAll configuration and state data have been wiped clean.\033[0m"
+uninstall() {
+    "$SYSTEMCTL" --user disable --now sunreactord.service >/dev/null 2>&1 || true
+    rm -f "$UNITDIR/sunreactord.service" "$BINDIR/sunreactord" "$BINDIR/sunreactorctl"
+    "$SYSTEMCTL" --user daemon-reload >/dev/null 2>&1 || true
+    printf '%s\n' 'SunReactor binaries and user unit removed; configuration and state were preserved.'
+    printf '%s\n' 'SUNREACTOR_RESULT=SUCCESS'
+    COMMITTED=1
     exit 0
+}
+
+latest_version() {
+    if [[ -n ${SUNREACTOR_VERSION:-} ]]; then
+        printf '%s\n' "$SUNREACTOR_VERSION"
+        return
+    fi
+    local metadata tag
+    metadata=$(curl --fail --silent --show-error "https://api.github.com/repos/$REPO/releases/latest") \
+        || die DEPENDENCY_FAILURE "Could not download release metadata."
+    tag=$(printf '%s\n' "$metadata" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    [[ -n $tag ]] || die DEPENDENCY_FAILURE "Release metadata did not contain a tag_name."
+    printf '%s\n' "$tag"
+}
+
+download_artifact() {
+    local version="$1" archive_name="$2" destination="$3"
+    if [[ -n ${SUNREACTOR_RELEASE_DIR:-} ]]; then
+        [[ -f "$SUNREACTOR_RELEASE_DIR/$archive_name" ]] || return 1
+        [[ -f "$SUNREACTOR_RELEASE_DIR/$archive_name.sha256" ]] || return 1
+        cp "$SUNREACTOR_RELEASE_DIR/$archive_name" "$destination/"
+        cp "$SUNREACTOR_RELEASE_DIR/$archive_name.sha256" "$destination/"
+        return
+    fi
+    local base="https://github.com/$REPO/releases/download/$version"
+    curl --fail --location --silent --show-error "$base/$archive_name" -o "$destination/$archive_name" || return 1
+    curl --fail --location --silent --show-error "$base/$archive_name.sha256" -o "$destination/$archive_name.sha256" || return 1
+}
+
+verify_checksum() {
+    local archive="$1" checksum_file="$2" expected actual
+    expected=$(awk 'NF { print $1; exit }' "$checksum_file")
+    [[ $expected =~ ^[[:xdigit:]]{64}$ ]] || return 1
+    actual=$(sha256sum "$archive" | awk '{print $1}')
+    [[ $actual == "$expected" ]]
+}
+
+classify_launch_failure() {
+    local output="$1"
+    case "$output" in
+        *GLIBC_*not\ found*) printf '%s' 'incompatible GLIBC' ;;
+        *Exec\ format\ error*|*cannot\ execute\ binary*) printf '%s' 'wrong architecture' ;;
+        *error\ while\ loading\ shared\ libraries*) printf '%s' 'missing dynamic library' ;;
+        *Permission\ denied*) printf '%s' 'invalid executable permissions' ;;
+        *) printf '%s' 'general launch failure' ;;
+    esac
+}
+
+smoke_binary() {
+    local binary="$1" argument="$2" output
+    if output=$("$binary" "$argument" 2>&1); then
+        return 0
+    fi
+    printf '%s: %s\n' "$(classify_launch_failure "$output")" "$output" >&2
+    return 1
+}
+
+render_unit() {
+    local template="$1" output="$2" escaped
+    [[ $BINDIR == /* ]] || die CONFIG_FAILURE "BINDIR must be absolute: $BINDIR"
+    [[ $BINDIR != *[[:space:]]* ]] || die CONFIG_FAILURE "BINDIR paths containing whitespace are not supported: $BINDIR"
+    escaped=${BINDIR//\\/\\\\}
+    escaped=${escaped//&/\\&}
+    escaped=${escaped//|/\\|}
+    sed "s|@BINDIR@|$escaped|g" "$template" > "$output"
+    if grep -q '@BINDIR@' "$output"; then
+        die CONFIG_FAILURE "Service template contains an unresolved BINDIR placeholder."
+    fi
+}
+
+backup_existing() {
+    mkdir -p "$BACKUP"
+    [[ -f "$BINDIR/sunreactord" ]] && cp -p "$BINDIR/sunreactord" "$BACKUP/sunreactord"
+    [[ -f "$BINDIR/sunreactorctl" ]] && cp -p "$BINDIR/sunreactorctl" "$BACKUP/sunreactorctl"
+    if [[ -f "$UNITDIR/sunreactord.service" ]]; then
+        cp -p "$UNITDIR/sunreactord.service" "$BACKUP/sunreactord.service"
+        if [[ ! -f "$UNITDIR/sunreactord.service.pre-sunreactor" ]]; then
+            cp -p "$UNITDIR/sunreactord.service" "$UNITDIR/sunreactord.service.pre-sunreactor"
+            log "Preserved the previous user unit as sunreactord.service.pre-sunreactor."
+        fi
+    fi
+    "$SYSTEMCTL" --user is-active --quiet sunreactord.service >/dev/null 2>&1 && SERVICE_WAS_ACTIVE=1 || true
+    "$SYSTEMCTL" --user is-enabled --quiet sunreactord.service >/dev/null 2>&1 && SERVICE_WAS_ENABLED=1 || true
+}
+
+replace_file() {
+    local source="$1" destination="$2" mode="$3" temporary
+    temporary="${destination}.sunreactor-new-$$"
+    install -m "$mode" "$source" "$temporary"
+    mv -f "$temporary" "$destination"
+}
+
+install_transaction() {
+    local rendered_unit="$1"
+    mkdir -p "$BINDIR" "$UNITDIR"
+    backup_existing
+    MUTATED=1
+    replace_file "$STAGE/sunreactord" "$BINDIR/sunreactord" 755
+    replace_file "$STAGE/sunreactorctl" "$BINDIR/sunreactorctl" 755
+    replace_file "$rendered_unit" "$UNITDIR/sunreactord.service" 644
+
+    smoke_binary "$BINDIR/sunreactorctl" --version || die BINARY_INCOMPATIBLE "Installed CLI failed its smoke test."
+    smoke_binary "$BINDIR/sunreactord" --help || die BINARY_INCOMPATIBLE "Installed daemon failed its smoke test."
+    "$SYSTEMD_ANALYZE" --user verify "$UNITDIR/sunreactord.service" \
+        || die SERVICE_FAILURE "systemd rejected the rendered user unit."
+    "$SYSTEMCTL" --user daemon-reload || die SERVICE_FAILURE "systemd user manager reload failed."
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        "$BINDIR/sunreactorctl" config init >/dev/null || die CONFIG_FAILURE "Default config creation failed."
+        CONFIG_CREATED=1
+    fi
+    "$BINDIR/sunreactorctl" config validate >/dev/null || die CONFIG_FAILURE "Configuration validation failed."
+    "$SYSTEMCTL" --user enable --now sunreactord.service \
+        || die SERVICE_FAILURE "The daemon could not be enabled and started."
+    "$BINDIR/sunreactorctl" ping >/dev/null || die IPC_FAILURE "Daemon IPC did not respond."
+
+    local doctor_json
+    doctor_json=$("$BINDIR/sunreactorctl" doctor --json) || die DEPENDENCY_FAILURE "Doctor command failed."
+    grep -Eq '"i2c_access"[[:space:]]*:[[:space:]]*"I2C_GROUP_CONFIGURED_BUT_SESSION_STALE"' <<< "$doctor_json" \
+        && die RELOGIN_REQUIRED "I2C group membership is configured but the current session is stale; log out and back in or reboot."
+    grep -Eq '"blocking_errors"[[:space:]]*:[[:space:]]*0' <<< "$doctor_json" \
+        || die DEPENDENCY_FAILURE "Doctor reported blocking environment errors. Run sunreactorctl doctor."
 }
 
 main() {
     parse_args "$@"
-
+    require_commands
     if [[ $UNINSTALL -eq 1 ]]; then
-        print_banner
-        uninstall_sunreactor
+        uninstall
     fi
+    [[ $(uname -s) == Linux ]] || die UNSUPPORTED_PLATFORM "Only GNU/Linux is supported by this installer."
+    [[ $(uname -m) == x86_64 ]] || {
+        source_build_instructions
+        die UNSUPPORTED_PLATFORM "No portable prebuilt artifact is published for $(uname -m)."
+    }
 
-    check_dependencies
-    print_banner
+    mkdir -m 700 "$STAGE"
+    local version archive_name archive
+    version=$(latest_version)
+    archive_name="sunreactor-${version}-linux-x86_64-gnu.tar.gz"
+    download_artifact "$version" "$archive_name" "$WORKDIR" || {
+        source_build_instructions
+        die SOURCE_BUILD_REQUIRED "A compatible release asset and checksum were not found. Existing files were not changed."
+    }
+    archive="$WORKDIR/$archive_name"
+    verify_checksum "$archive" "$archive.sha256" || die BINARY_INCOMPATIBLE "Release checksum verification failed; existing files were not changed."
+    tar -xzf "$archive" -C "$STAGE" || die BINARY_INCOMPATIBLE "Release archive is corrupted or invalid."
+    [[ -f "$STAGE/sunreactord" && -f "$STAGE/sunreactorctl" && -f "$STAGE/sunreactord.service" ]] \
+        || die BINARY_INCOMPATIBLE "Release archive is missing required files."
+    chmod 755 "$STAGE/sunreactord" "$STAGE/sunreactorctl"
+    smoke_binary "$STAGE/sunreactorctl" --version || {
+        source_build_instructions
+        die BINARY_INCOMPATIBLE "Downloaded CLI is incompatible; existing files were not changed."
+    }
+    smoke_binary "$STAGE/sunreactord" --help || {
+        source_build_instructions
+        die BINARY_INCOMPATIBLE "Downloaded daemon is incompatible; existing files were not changed."
+    }
+    render_unit "$STAGE/sunreactord.service" "$WORKDIR/sunreactord.service"
+    install_transaction "$WORKDIR/sunreactord.service"
 
-    local version
-    version=$(fetch_latest_version)
-
-    local archive
-    archive=$(download_release "$version")
-
-    extract_archive "$archive"
-    install_binaries
-    setup_systemd
-    launch_dashboard
+    COMMITTED=1
+    local status=SUCCESS
+    if "$BINDIR/sunreactorctl" status 2>/dev/null | grep -q 'configured_monitors: 0'; then
+        status=SUCCESS_NO_MONITORS_CONFIGURED
+        warn "Software installation succeeded, but no monitors are configured. Run: sunreactorctl discover --apply"
+    fi
+    printf 'SunReactor installation verified.\nSUNREACTOR_RESULT=%s\n' "$status"
+    printf 'Next: run sunreactorctl to open the TUI.\n'
 }
 
-# ==========================================
-# BOOTSTRAP
-# ==========================================
 main "$@"

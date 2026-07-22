@@ -47,6 +47,18 @@ fn parses_valid_config() {
     let config = parse_str(VALID_CONFIG, Path::new("valid.toml")).expect("config should parse");
     assert_eq!(config.monitors.len(), 1);
     assert_eq!(config.monitors[0].logical_id, "desk");
+    assert!(!config.daemon.smooth_transition);
+}
+
+#[test]
+fn parses_smooth_transition_opt_in() {
+    let raw = VALID_CONFIG.replace(
+        "dry_run = false",
+        "dry_run = false\nsmooth_transition = true",
+    );
+    let config = parse_str(&raw, Path::new("smooth-transition.toml")).expect("config should parse");
+
+    assert!(config.daemon.smooth_transition);
 }
 
 #[test]

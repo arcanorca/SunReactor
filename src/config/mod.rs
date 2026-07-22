@@ -1,10 +1,12 @@
 mod compat;
+mod discovered;
 mod error;
 mod io;
 mod model;
 mod template;
 mod validate;
 
+pub use discovered::{apply_discovered_transaction, DiscoveredApplyError, DiscoveredApplyResult};
 pub use error::{ConfigError, ConfigReport, ConfigSource, ValidationError};
 pub use io::{
     load, parse_text, render, save, save_raw, save_raw_to_path, save_to_path, write_default,
