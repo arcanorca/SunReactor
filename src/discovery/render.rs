@@ -185,8 +185,8 @@ fn build_config_snippet(
             format!("logical_id = \"{logical_id}\""),
             String::from("backend = \"ddc\""),
             String::from("enabled = true"),
-            String::from("min_pct = 0"),
-            String::from("max_pct = 100"),
+            String::from("min_pct = 15"),
+            String::from("max_pct = 60"),
             String::from("gain = 1.0"),
         ];
 
@@ -216,8 +216,8 @@ fn build_config_snippet(
             format!("logical_id = \"{logical_id}\""),
             String::from("backend = \"backlight\""),
             String::from("enabled = true"),
-            String::from("min_pct = 0"),
-            String::from("max_pct = 100"),
+            String::from("min_pct = 15"),
+            String::from("max_pct = 60"),
             String::from("gain = 1.0"),
             format!(
                 "sysfs_path = \"{}\"",

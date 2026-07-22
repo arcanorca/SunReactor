@@ -200,16 +200,23 @@ pub enum TemperatureUnit {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TuiConfig {
-    pub fps: u32,
+    // Keep accepting old configuration files, but do not expose or persist a
+    // tuning knob for the fixed, low-overhead TUI refresh rate.
+    #[serde(rename = "fps", skip_serializing, default = "default_legacy_tui_fps")]
+    _legacy_fps: u32,
     pub use_12h_time: bool,
     pub temperature_unit: TemperatureUnit,
     pub theme: crate::tui::theme::Theme,
 }
 
+fn default_legacy_tui_fps() -> u32 {
+    2
+}
+
 impl Default for TuiConfig {
     fn default() -> Self {
         Self {
-            fps: 1,
+            _legacy_fps: default_legacy_tui_fps(),
             use_12h_time: false,
             temperature_unit: TemperatureUnit::Celsius,
             theme: crate::tui::theme::Theme::default(),

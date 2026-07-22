@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::tui::{InputMode, Model, Tab};
 
-use crate::tui::theme::Palette;
+use crate::tui::theme::{focused_style, Palette};
 
 pub(super) fn render_header(f: &mut Frame, app: &Model, area: Rect) {
     let palette = app.config.tui.theme.palette();
@@ -196,12 +196,7 @@ pub(super) fn render_tabs(f: &mut Frame, app: &Model, area: Rect) {
             .border_style(Style::default().fg(palette.border_active)),
     )
     .select(app.active_tab.index())
-    .highlight_style(
-        Style::default()
-            .bg(palette.accent)
-            .fg(palette.bg)
-            .add_modifier(Modifier::BOLD),
-    );
+    .highlight_style(focused_style(&palette, false));
     f.render_widget(tabs, area);
 }
 

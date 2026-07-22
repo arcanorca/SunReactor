@@ -61,7 +61,7 @@ impl Model {
             Tab::Limits => self.automation_field_count(),
             Tab::Location => 3,
             Tab::Weather => 1,
-            Tab::Settings => 6,
+            Tab::Settings => 5,
         }
     }
 
@@ -124,9 +124,9 @@ impl Model {
                 state.select(Some(current_index));
                 self.active_modal =
                     super::model::ActiveModal::ThemeSelect(state, self.config.tui.theme);
-            } else if self.active_setting == 2 {
+            } else if self.active_setting == 1 {
                 self.config.tui.use_12h_time = !self.config.tui.use_12h_time;
-            } else if self.active_setting == 3 {
+            } else if self.active_setting == 2 {
                 self.config.tui.temperature_unit = match self.config.tui.temperature_unit {
                     crate::config::TemperatureUnit::Celsius => {
                         crate::config::TemperatureUnit::Fahrenheit
@@ -135,7 +135,7 @@ impl Model {
                         crate::config::TemperatureUnit::Celsius
                     }
                 };
-            } else if self.active_setting == 4 {
+            } else if self.active_setting == 3 {
                 self.config.daemon.smooth_transition = !self.config.daemon.smooth_transition;
             }
         }

@@ -21,7 +21,6 @@ pub(crate) struct FormState {
     pub(crate) api_key_input: Input,
     pub(crate) desktop_idle_timeout_minutes_input: Input,
     pub(crate) suspend_minutes_input: Input,
-    pub(crate) fps_input: Input,
     pub(crate) monitor_inputs: Vec<(Input, Input)>,
     api_key_source: WeatherApiKeySource,
     api_key_original_value: String,
@@ -46,7 +45,6 @@ impl FormState {
                 "0".to_string()
             });
         let suspend_minutes_input = Input::default();
-        let fps_input = Input::default().with_value(config.tui.fps.to_string());
         let monitor_inputs = config
             .monitors
             .iter()
@@ -69,7 +67,6 @@ impl FormState {
 
             desktop_idle_timeout_minutes_input,
             suspend_minutes_input,
-            fps_input,
             monitor_inputs,
             api_key_source,
             api_key_original_value: api_key_value,
@@ -104,11 +101,10 @@ impl FormState {
             Tab::Weather if active_setting == 0 => Some(ActiveInputKind::Secret),
             Tab::Settings => match active_setting {
                 0 => Some(ActiveInputKind::Toggle), // Theme Toggle
-                1 => Some(ActiveInputKind::Integer),
-                2 => Some(ActiveInputKind::Toggle), // 12h Toggle
-                3 => Some(ActiveInputKind::Toggle), // Unit Toggle
-                4 => Some(ActiveInputKind::Toggle), // Smooth transition toggle
-                5 => Some(ActiveInputKind::Integer),
+                1 => Some(ActiveInputKind::Toggle), // 12h Toggle
+                2 => Some(ActiveInputKind::Toggle), // Unit Toggle
+                3 => Some(ActiveInputKind::Toggle), // Smooth transition toggle
+                4 => Some(ActiveInputKind::Integer),
                 _ => None,
             },
             _ => None,
@@ -132,11 +128,10 @@ impl FormState {
             Tab::Weather if active_setting == 0 => Some(&self.api_key_input),
             Tab::Settings => match active_setting {
                 0 => None, // Theme Toggle
-                1 => Some(&self.fps_input),
+                1 => None, // Toggle
                 2 => None, // Toggle
                 3 => None, // Toggle
-                4 => None, // Toggle
-                5 => Some(&self.suspend_minutes_input),
+                4 => Some(&self.suspend_minutes_input),
                 _ => None,
             },
             _ => None,
@@ -160,11 +155,10 @@ impl FormState {
             Tab::Weather if active_setting == 0 => Some(&mut self.api_key_input),
             Tab::Settings => match active_setting {
                 0 => None, // Theme Toggle
-                1 => Some(&mut self.fps_input),
+                1 => None, // Toggle
                 2 => None, // Toggle
                 3 => None, // Toggle
-                4 => None, // Toggle
-                5 => Some(&mut self.suspend_minutes_input),
+                4 => Some(&mut self.suspend_minutes_input),
                 _ => None,
             },
             _ => None,
@@ -187,7 +181,6 @@ impl FormState {
             self.lon_input.value(),
             self.timezone_input.value(),
             self.desktop_idle_timeout_minutes_input.value(),
-            self.fps_input.value(),
             &monitor_bounds,
         );
         apply_weather_api_key_to_config(
@@ -268,7 +261,6 @@ fn apply_form_values_to_config(
     longitude: &str,
     timezone: &str,
     desktop_idle_timeout_minutes: &str,
-    fps: &str,
     monitor_bounds: &[(String, String)],
 ) {
     config.location.city = city.trim().to_string();
@@ -288,11 +280,6 @@ fn apply_form_values_to_config(
         } else {
             config.daemon.desktop_idle_sync = true;
             config.daemon.desktop_idle_timeout_minutes = minutes;
-        }
-    }
-    if let Ok(fps_val) = fps.trim().parse::<u32>() {
-        if fps_val > 0 {
-            config.tui.fps = fps_val;
         }
     }
     for (index, bounds) in monitor_bounds.iter().enumerate() {
@@ -388,7 +375,6 @@ mod tests {
             "29.0",
             "Europe/Istanbul",
             "5",
-            "8",
             &[],
         );
         apply_weather_api_key_to_config(&mut config, "", WeatherApiKeySource::Missing, "");
@@ -414,7 +400,6 @@ mod tests {
             "29.0",
             "Europe/Istanbul",
             "5",
-            "8",
             &[],
         );
         apply_weather_api_key_to_config(&mut config, "secret", WeatherApiKeySource::Missing, "");
@@ -436,7 +421,6 @@ mod tests {
             "29.0",
             "Europe/Istanbul",
             "5",
-            "8",
             &[],
         );
 

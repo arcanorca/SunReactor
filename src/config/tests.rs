@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{load_from_path, parse_str, write_default_to, ConfigError, ConfigSource};
+use super::{load_from_path, parse_str, render, write_default_to, ConfigError, ConfigSource};
 
 const VALID_CONFIG: &str = r#"
 [daemon]
@@ -59,6 +59,16 @@ fn parses_smooth_transition_opt_in() {
     let config = parse_str(&raw, Path::new("smooth-transition.toml")).expect("config should parse");
 
     assert!(config.daemon.smooth_transition);
+}
+
+#[test]
+fn accepts_legacy_tui_fps_without_persisting_the_removed_setting() {
+    let raw = format!("{VALID_CONFIG}\n[tui]\nfps = 8\n");
+    let config = parse_str(&raw, Path::new("legacy-tui-fps.toml"))
+        .expect("legacy TUI FPS should remain compatible");
+
+    let rendered = render(&config).expect("config should serialize");
+    assert!(!rendered.contains("fps"));
 }
 
 #[test]

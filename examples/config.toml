@@ -54,7 +54,7 @@ min_write_delta_pct = 1
 # backend = "backlight"
 # enabled = true
 # min_pct = 15
-# max_pct = 100
+# max_pct = 60
 # gain = 1.0
 # sysfs_path = "/sys/class/backlight/intel_backlight"
 # [[monitors.milestone_adjustments]]
@@ -68,6 +68,3 @@ api_key_env = "OPENWEATHER_API_KEY"
 # api_key = "set-only-if-you-accept-storing-a-secret-in-config"
 refresh_minutes = 30
 min_multiplier = 0.75
-
-[tui]
-fps = 8

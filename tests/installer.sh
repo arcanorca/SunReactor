@@ -75,7 +75,23 @@ case "${1:-}" in
       echo '{"blocking_errors":0,"i2c_access":"ACCESS_GRANTED_BY_UACCESS"}'
     fi
     ;;
-  status) echo "configured_monitors: ${INSTALLER_MONITORS:-0}" ;;
+  discover)
+    if [[ -n ${INSTALLER_DISCOVER_LOG:-} ]]; then
+      printf '%s\n' "$*" > "$INSTALLER_DISCOVER_LOG"
+    fi
+    [[ ${INSTALLER_DISCOVER:-ok} != fail ]] || exit 1
+    if [[ ${INSTALLER_DISCOVER:-ok} != no_monitors ]]; then
+      : > "$INSTALLER_DISCOVERY_APPLIED_FILE"
+      echo 'added monitor(s): internal'
+    fi
+    ;;
+  status)
+    monitors=0
+    if [[ -f ${INSTALLER_DISCOVERY_APPLIED_FILE:-/nonexistent} ]]; then
+      monitors=${INSTALLER_MONITORS:-1}
+    fi
+    echo "configured_monitors: $monitors"
+    ;;
 esac
 EOF
     fi
@@ -110,6 +126,8 @@ run_case() {
         SUNREACTOR_SYSTEMD_ANALYZE="$root/tools/systemd-analyze" \
         SUNREACTOR_IPC_READY_ATTEMPTS=3 \
         INSTALLER_PING_STATE_FILE="$root/ping-attempts" \
+        INSTALLER_DISCOVERY_APPLIED_FILE="$root/discovery-applied" \
+        INSTALLER_DISCOVER_LOG="$root/discover-args" \
         "$@" \
         bash "$REPO_ROOT/install.sh" --quiet 2>&1)
     rc=$?
@@ -117,7 +135,8 @@ run_case() {
     [[ $rc -eq $expected_rc ]] || fail "$name returned $rc, expected $expected_rc: $output"
     assert_contains "$output" "SUNREACTOR_RESULT=$expected_state"
     if [[ $expected_rc -eq 0 ]]; then
-        assert_contains "$output" 'Next: run sunreactorctl to open the TUI.'
+        grep -qx 'discover --apply' "$root/discover-args" \
+            || fail "$name did not invoke automatic monitor discovery"
     fi
     rm -rf "$root"
     TESTS_RUN=$((TESTS_RUN + 1))
@@ -139,15 +158,17 @@ setup_existing() {
     chmod +x "$1/home/.local/bin/sunreactord" "$1/home/.local/bin/sunreactorctl"
 }
 
-run_case success SUCCESS_NO_MONITORS_CONFIGURED 0 setup_ok
+run_case automatic_discovery SUCCESS 0 setup_ok
+run_case no_monitors SUCCESS_NO_MONITORS_CONFIGURED 0 setup_ok INSTALLER_DISCOVER=no_monitors
 run_case compatible_with_monitors SUCCESS 0 setup_ok INSTALLER_MONITORS=2
 run_case glibc BINARY_INCOMPATIBLE 1 setup_glibc
 run_case missing_asset SOURCE_BUILD_REQUIRED 1 setup_missing
 run_case checksum BINARY_INCOMPATIBLE 1 setup_checksum
 run_case doctor_block DEPENDENCY_FAILURE 1 setup_ok INSTALLER_DOCTOR=blocked
 run_case relogin RELOGIN_REQUIRED 1 setup_ok INSTALLER_DOCTOR=relogin
-run_case ipc_readiness_wait SUCCESS_NO_MONITORS_CONFIGURED 0 setup_ok INSTALLER_PING_FAILS=2
+run_case ipc_readiness_wait SUCCESS 0 setup_ok INSTALLER_PING_FAILS=2
 run_case ipc_failure IPC_FAILURE 1 setup_ok INSTALLER_FAIL_STEP=ipc
+run_case discovery_failure DISCOVERY_FAILURE 1 setup_ok INSTALLER_DISCOVER=fail
 
 rollback_root=$(mktemp -d)
 make_tools "$rollback_root"
@@ -169,6 +190,52 @@ grep -q old-daemon "$rollback_root/home/.local/bin/sunreactord" || fail 'old dae
 grep -q old-cli "$rollback_root/home/.local/bin/sunreactorctl" || fail 'old CLI was not restored'
 grep -q 'old unit' "$rollback_root/home/.config/systemd/user/sunreactord.service" || fail 'old unit was not restored'
 rm -rf "$rollback_root"
+TESTS_RUN=$((TESTS_RUN + 1))
+
+uninstall_root=$(mktemp -d)
+make_tools "$uninstall_root"
+mkdir -p \
+    "$uninstall_root/home/.local/bin" \
+    "$uninstall_root/home/.config/systemd/user" \
+    "$uninstall_root/home/.config/sunreactor" \
+    "$uninstall_root/home/.local/state/sunreactor" \
+    "$uninstall_root/home/.cache/sunreactor"
+printf 'binary\n' > "$uninstall_root/home/.local/bin/sunreactorctl"
+printf 'unit\n' > "$uninstall_root/home/.config/systemd/user/sunreactord.service"
+printf 'config\n' > "$uninstall_root/home/.config/sunreactor/config.toml"
+printf 'state\n' > "$uninstall_root/home/.local/state/sunreactor/runtime-state.json"
+printf 'cache\n' > "$uninstall_root/home/.cache/sunreactor/weather.json"
+uninstall_output=$(env \
+    HOME="$uninstall_root/home" \
+    XDG_CONFIG_HOME="$uninstall_root/home/.config" \
+    XDG_STATE_HOME="$uninstall_root/home/.local/state" \
+    XDG_CACHE_HOME="$uninstall_root/home/.cache" \
+    SUNREACTOR_BINDIR="$uninstall_root/home/.local/bin" \
+    SUNREACTOR_UNITDIR="$uninstall_root/home/.config/systemd/user" \
+    SUNREACTOR_SYSTEMCTL="$uninstall_root/tools/systemctl" \
+    SUNREACTOR_SYSTEMD_ANALYZE="$uninstall_root/tools/systemd-analyze" \
+    bash "$REPO_ROOT/install.sh" --quiet --uninstall 2>&1)
+assert_contains "$uninstall_output" 'SUNREACTOR_RESULT=SUCCESS'
+[[ ! -e "$uninstall_root/home/.config/sunreactor" ]] || fail 'uninstall left configuration behind'
+[[ ! -e "$uninstall_root/home/.local/state/sunreactor" ]] || fail 'uninstall left state behind'
+[[ ! -e "$uninstall_root/home/.cache/sunreactor" ]] || fail 'uninstall left cache behind'
+[[ ! -e "$uninstall_root/home/.local/bin/sunreactorctl" ]] || fail 'uninstall left CLI behind'
+rm -rf "$uninstall_root"
+TESTS_RUN=$((TESTS_RUN + 1))
+
+uninstall_without_systemd_root=$(mktemp -d)
+mkdir -p "$uninstall_without_systemd_root/home/.config/sunreactor"
+printf 'config\n' > "$uninstall_without_systemd_root/home/.config/sunreactor/config.toml"
+uninstall_without_systemd_output=$(env \
+    HOME="$uninstall_without_systemd_root/home" \
+    XDG_CONFIG_HOME="$uninstall_without_systemd_root/home/.config" \
+    SUNREACTOR_SYSTEMCTL="$uninstall_without_systemd_root/tools/missing-systemctl" \
+    SUNREACTOR_SYSTEMD_ANALYZE="$uninstall_without_systemd_root/tools/missing-systemd-analyze" \
+    bash "$REPO_ROOT/install.sh" --quiet --uninstall 2>&1)
+assert_contains "$uninstall_without_systemd_output" 'SUNREACTOR_RESULT=SUCCESS'
+[[ ! -e "$uninstall_without_systemd_root/home/.config/sunreactor" ]] \
+    || fail 'uninstall required unavailable systemd tools'
+rm -rf "$uninstall_without_systemd_root"
 TESTS_RUN=$((TESTS_RUN + 1))
 
 printf 'installer tests: %d passed\n' "$TESTS_RUN"

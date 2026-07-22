@@ -11,7 +11,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::{theme::Palette, Model, Tab};
+use crate::tui::{
+    theme::{focused_style, Palette},
+    Model, Tab,
+};
 
 /// Returns a border style for a panel: brand orange when focused, muted when not.
 pub(super) fn panel_border(focused: bool, palette: &Palette) -> Style {
@@ -104,12 +107,7 @@ fn render_theme_modal(f: &mut Frame, palette: &Palette, state: &mut ratatui::wid
                 .style(Style::default().bg(palette.bg))
                 .title(" Select Theme (Enter to apply, Esc to cancel) "),
         )
-        .highlight_style(
-            Style::default()
-                .bg(palette.accent)
-                .fg(palette.bg)
-                .add_modifier(ratatui::style::Modifier::BOLD),
-        )
+        .highlight_style(focused_style(palette, false))
         .highlight_symbol(">> ");
 
     f.render_stateful_widget(list, modal_area, state);

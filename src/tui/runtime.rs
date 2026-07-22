@@ -15,6 +15,10 @@ use ratatui::{
 use super::worker::IpcCommand;
 use super::{ui, update, DaemonConnection, Model};
 
+// Two frames per second keeps status information fresh without spending CPU on
+// redraws. Key presses wake the event loop immediately, so input is not delayed.
+const REFRESH_FPS: u64 = 2;
+
 pub fn run() -> Result<String, Box<dyn Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -46,11 +50,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut Model) -> io::Resul
             return Ok(());
         }
 
-        let fps = app.config.tui.fps.clamp(1, 120);
         let poll_ms = if app.daemon_connection == DaemonConnection::Unknown {
             10 // fast poll until connected
         } else {
-            1000 / u64::from(fps)
+            1000 / REFRESH_FPS
         };
 
         if event::poll(Duration::from_millis(poll_ms))? {

@@ -9,7 +9,7 @@ use ratatui::{
 use crate::tui::Model;
 
 use super::{panel_border, truncate};
-use crate::tui::theme::Palette;
+use crate::tui::theme::{focused_style, Palette};
 
 pub(super) fn render_monitors(f: &mut Frame, app: &Model, area: Rect) {
     let status = if let Some(status) = &app.status {
@@ -27,7 +27,7 @@ pub(super) fn render_monitors(f: &mut Frame, app: &Model, area: Rect) {
     let palette = app.config.tui.theme.palette();
     if status.monitors.is_empty() {
         f.render_widget(
-            Paragraph::new(" No monitors detected. Run `sunreactorctl discover` first.")
+            Paragraph::new(" No configured monitors. The installer normally adds viable displays automatically. Run `sunreactorctl doctor` to diagnose hardware access.")
                 .wrap(ratatui::widgets::Wrap { trim: true })
                 .block(
                     Block::default()
@@ -69,10 +69,7 @@ pub(super) fn render_monitors(f: &mut Frame, app: &Model, area: Rect) {
             let limit_row = format!("   limits {minimum}%-{maximum}%  |  gamma {gamma:.1}");
 
             let style = if selected {
-                Style::default()
-                    .bg(palette.accent)
-                    .fg(palette.bg)
-                    .add_modifier(Modifier::BOLD)
+                focused_style(&palette, false)
             } else if monitor.override_percent.is_some() {
                 Style::default().fg(palette.warning)
             } else {
@@ -331,10 +328,7 @@ fn render_monitor_advanced(
                 offset_label(milestone.minutes_offset),
             );
             let style = if selected {
-                Style::default()
-                    .bg(palette.accent)
-                    .fg(palette.bg)
-                    .add_modifier(Modifier::BOLD)
+                focused_style(palette, false)
             } else if current {
                 Style::default()
                     .fg(palette.warning)

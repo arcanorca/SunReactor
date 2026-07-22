@@ -48,6 +48,8 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
     assert_eq!(report.ddc_monitors[1].brightness_vcp_supported, Some(false));
     assert!(report.config_snippet.contains("backend = \"ddc\""));
     assert!(report.config_snippet.contains("ddc_bus = 7"));
+    assert!(report.config_snippet.contains("min_pct = 15"));
+    assert!(report.config_snippet.contains("max_pct = 60"));
     assert!(!report.config_snippet.contains("V305PTDA"));
 }
 

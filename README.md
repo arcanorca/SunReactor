@@ -85,6 +85,9 @@ system groups. Failed upgrades restore the previous binaries and unit.
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash
 ```
 
+When run from a terminal, the installer detects and configures viable monitors,
+then opens the TUI after a three-second countdown.
+
 The installer writes to `~/.local/bin` and does not require `sudo`. If no compatible
 artifact exists, it leaves the installation unchanged and prints separate source-build
 instructions.
@@ -143,7 +146,8 @@ systemctl --user enable --now sunreactord.service
 
 ## Uninstallation
 
-This removes the binaries and user unit while preserving configuration and state:
+This removes SunReactor completely: binaries, user unit, configuration, saved
+state, and cache.
 
 ```bash
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash -s -- --uninstall
@@ -151,7 +155,8 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 
 ## // HOW TO USE
 
-After installation, add every viable monitor with one safe, idempotent command:
+The installer automatically adds every viable monitor with a safe, idempotent
+discovery step. To scan again later after connecting another display, run:
 
 ```bash
 sunreactorctl discover --apply
@@ -161,21 +166,22 @@ It validates the updated configuration, avoids duplicate monitor entries, reload
 the daemon, and rolls back if verification fails. Running it again is a no-op for
 monitors that are already configured.
 
-Then open SunReactor:
+Open the interactive terminal interface:
 
 ```bash
 sunreactorctl
 ```
 
-No subcommand is required—the TUI is the normal interface. Use **Tab** or the arrow
-keys to move between pages, **Enter** to edit or toggle a setting, and **q** to save
-and quit. Go to **Location**, search for your city, and select it; changes are
-saved and reloaded automatically. The **Monitors** and **Limits** pages let you tune
-each display, while **Weather** and **Settings** contain optional features.
+This starts the TUI. `sunreactorctl tui` is an equivalent explicit command.
+Use **Tab** or the arrow keys to move between pages, **Enter** to edit or toggle a
+setting, and **q** to save and quit. Go to **Location**, search for your city, and
+select it; changes are saved and reloaded automatically. The **Monitors** and
+**Limits** pages let you tune each display, while **Weather** and **Settings**
+contain optional features.
 
-Smooth hardware fades are disabled by default because some external DDC/CI monitors
-flicker or lose signal when sent rapid commands. You can opt in later from
-**Settings → Smooth Transitions** if your monitor handles them reliably.
+Brightness changes are instant by default, which is safest for external DDC/CI
+monitors. If your display handles gradual fades reliably, enable them later in
+**Settings → Fade brightness changes**.
 
 If the TUI reports a hardware or daemon problem, run:
 
@@ -193,7 +199,9 @@ sunreactorctl clear-override       # Resume automatic solar policy
 
 ## // UNDER THE HOOD
 
-The TUI writes your settings to a standard TOML file at `~/.config/sunreactor/config.toml`. Here is an example:
+The TUI writes your settings to a standard TOML file at `~/.config/sunreactor/config.toml`.
+Newly discovered monitors start with a conservative 15% to 60% range; adjust it in
+the **Limits** page when needed. Here is an example:
 
 ```toml
 [location]
@@ -208,15 +216,15 @@ smooth_transition = false
 [[monitors]]
 logical_id = "desk"
 backend = "ddc"
-min_pct = 20
-max_pct = 90
+min_pct = 15
+max_pct = 60
 gain = 1.0
 
 [[monitors]]
 logical_id = "laptop"
 backend = "backlight"
-min_pct = 5
-max_pct = 100
+min_pct = 15
+max_pct = 60
 gain = 1.2
 sysfs_path = "/sys/class/backlight/amdgpu_bl1"
 

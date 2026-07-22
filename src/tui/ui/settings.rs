@@ -9,7 +9,7 @@ use ratatui::{
 use crate::tui::{InputMode, Model};
 
 use super::truncate;
-use crate::tui::theme::Palette;
+use crate::tui::theme::{focused_style, Palette};
 
 pub(super) fn render_automation(f: &mut Frame, app: &Model, area: Rect) {
     let mut fields = Vec::new();
@@ -40,14 +40,16 @@ pub(super) fn render_automation(f: &mut Frame, app: &Model, area: Rect) {
         usize::MAX,
     ));
 
-    fields.push((
-        String::from("Dim Automatically (Minutes, 0 to disable)"),
-        app.form
-            .desktop_idle_timeout_minutes_input
-            .value()
-            .to_string(),
-        index,
-    ));
+    let idle_minutes = app.form.desktop_idle_timeout_minutes_input.value();
+    let idle_value = if app.active_setting == index && matches!(app.input_mode, InputMode::Editing)
+    {
+        idle_minutes.to_string()
+    } else if idle_minutes == "0" {
+        String::from(" Off. Set minutes to enable")
+    } else {
+        format!(" After {idle_minutes} minutes without input")
+    };
+    fields.push((String::from("Dim screen when inactive"), idle_value, index));
 
     let palette = app.config.tui.theme.palette();
     render_settings_layout(f, app, area, " Brightness Limits ", fields, &palette);
@@ -121,7 +123,7 @@ pub(super) fn render_location(f: &mut Frame, app: &Model, area: Rect) {
                     .border_style(Style::default().fg(palette.bg))
                     .style(Style::default().bg(palette.bg)),
             )
-            .highlight_style(Style::default().bg(palette.accent).fg(palette.bg))
+            .highlight_style(focused_style(&palette, false))
             .highlight_symbol(">> ");
 
         f.render_stateful_widget(list, popup_area, &mut list_state);
@@ -187,30 +189,11 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3),
             Constraint::Min(0),
         ])
         .split(rows[0]);
 
-    let fps_is_active = app.active_setting == 1;
-    let fps_field_style = active_field_style(app, fps_is_active, &palette);
-    let fps_value = format!(" {} ", app.form.fps_input.value());
-
-    let fps_field = Paragraph::new(fps_value)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(field_border_style(fps_is_active, &palette))
-                .title(field_title(
-                    "TUI Refresh Rate (FPS)",
-                    fps_is_active,
-                    &palette,
-                )),
-        )
-        .style(fps_field_style);
-    f.render_widget(fps_field, inputs_layout[1]);
-
-    let use_12h_is_active = app.active_setting == 2;
+    let use_12h_is_active = app.active_setting == 1;
     let use_12h_style = active_field_style(app, use_12h_is_active, &palette);
     let use_12h_value = if app.config.tui.use_12h_time {
         " [x] 12h (AM/PM) "
@@ -230,9 +213,9 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                 )),
         )
         .style(use_12h_style);
-    f.render_widget(use_12h_field, inputs_layout[2]);
+    f.render_widget(use_12h_field, inputs_layout[1]);
 
-    let unit_is_active = app.active_setting == 3;
+    let unit_is_active = app.active_setting == 2;
     let unit_style = active_field_style(app, unit_is_active, &palette);
     let unit_value = match app.config.tui.temperature_unit {
         crate::config::TemperatureUnit::Celsius => " [x] Celsius  [ ] Fahrenheit ",
@@ -251,14 +234,14 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                 )),
         )
         .style(unit_style);
-    f.render_widget(unit_field, inputs_layout[3]);
+    f.render_widget(unit_field, inputs_layout[2]);
 
-    let smooth_transition_is_active = app.active_setting == 4;
+    let smooth_transition_is_active = app.active_setting == 3;
     let smooth_transition_style = active_field_style(app, smooth_transition_is_active, &palette);
     let smooth_transition_value = if app.config.daemon.smooth_transition {
-        " [x] Enabled (multi-step DDC/CI fades) "
+        " [x] Gradual fades: brightness changes in small steps "
     } else {
-        " [ ] Disabled (one direct brightness write) "
+        " [ ] Instant changes. Recommended for external monitors "
     };
 
     let smooth_transition_field = Paragraph::new(smooth_transition_value)
@@ -267,15 +250,15 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                 .borders(Borders::ALL)
                 .border_style(field_border_style(smooth_transition_is_active, &palette))
                 .title(field_title(
-                    "Smooth Brightness Transitions (Toggle with Enter)",
+                    "Fade brightness changes. Press Enter to toggle",
                     smooth_transition_is_active,
                     &palette,
                 )),
         )
         .style(smooth_transition_style);
-    f.render_widget(smooth_transition_field, inputs_layout[4]);
+    f.render_widget(smooth_transition_field, inputs_layout[3]);
 
-    let suspend_is_active = app.active_setting == 5;
+    let suspend_is_active = app.active_setting == 4;
     let suspend_field_style = active_field_style(app, suspend_is_active, &palette);
     let suspend_value = if matches!(app.input_mode, InputMode::Editing) && suspend_is_active {
         format!(" {} ", app.form.suspend_minutes_input.value())
@@ -297,7 +280,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                 )),
         )
         .style(suspend_field_style);
-    f.render_widget(suspend_field, inputs_layout[5]);
+    f.render_widget(suspend_field, inputs_layout[4]);
 
     let theme_is_active = app.active_setting == 0;
     let theme_style = active_field_style(app, theme_is_active, &palette);
@@ -317,14 +300,10 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
         .style(theme_style);
     f.render_widget(theme_field, inputs_layout[0]);
 
-    if fps_is_active && matches!(app.input_mode, InputMode::Editing) {
-        let cursor_x = inputs_layout[1].x + app.form.fps_input.visual_cursor() as u16 + 2;
-        let cursor_y = inputs_layout[1].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
-    } else if suspend_is_active && matches!(app.input_mode, InputMode::Editing) {
+    if suspend_is_active && matches!(app.input_mode, InputMode::Editing) {
         let cursor_x =
-            inputs_layout[5].x + app.form.suspend_minutes_input.visual_cursor() as u16 + 2;
-        let cursor_y = inputs_layout[5].y + 1;
+            inputs_layout[4].x + app.form.suspend_minutes_input.visual_cursor() as u16 + 2;
+        let cursor_y = inputs_layout[4].y + 1;
         f.set_cursor(cursor_x, cursor_y);
     }
 }
@@ -337,7 +316,7 @@ pub(super) fn render_settings_layout(
     fields: Vec<(String, String, usize)>,
     palette: &Palette,
 ) {
-    // Panel border: muted — the tab bar already marks the active section.
+    // Panel border is muted because the tab bar already marks the active section.
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.border_inactive))
@@ -417,7 +396,7 @@ pub(super) fn render_settings_layout(
     }
 }
 
-/// Border style for individual input fields: brand orange when active/focused,
+/// Border style for individual input fields: clear white when active/focused,
 /// muted when the field is not selected.
 fn field_border_style(is_active: bool, palette: &Palette) -> Style {
     if is_active {
@@ -443,17 +422,7 @@ fn field_title<'a>(label: &'a str, is_active: bool, palette: &Palette) -> Span<'
 
 fn active_field_style(app: &Model, is_active: bool, palette: &Palette) -> Style {
     if is_active {
-        if matches!(app.input_mode, InputMode::Editing) {
-            Style::default()
-                .fg(palette.bg)
-                .bg(palette.warning)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-                .fg(palette.bg)
-                .bg(palette.accent)
-                .add_modifier(Modifier::BOLD)
-        }
+        focused_style(palette, matches!(app.input_mode, InputMode::Editing))
     } else {
         Style::default().fg(palette.fg)
     }
