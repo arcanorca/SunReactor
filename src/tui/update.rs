@@ -223,7 +223,7 @@ fn handle_key(key: KeyEvent, app: &mut Model) {
                     } else {
                         app.form.refresh_from_config(&app.config);
                     }
-                } else if matches!(app.active_tab, Tab::Settings) && app.active_setting == 5 {
+                } else if matches!(app.active_tab, Tab::Settings) && app.active_setting == 4 {
                     app.suspend_writes();
                 } else if matches!(app.active_tab, Tab::Monitors) {
                     // Monitor brightness input editing logic was removed.

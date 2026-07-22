@@ -4,7 +4,10 @@ set -Eeuo pipefail
 readonly REPO="${SUNREACTOR_REPO:-arcanorca/SunReactor}"
 readonly BINDIR="${SUNREACTOR_BINDIR:-$HOME/.local/bin}"
 readonly UNITDIR="${SUNREACTOR_UNITDIR:-$HOME/.config/systemd/user}"
-readonly CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/sunreactor/config.toml"
+readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/sunreactor"
+readonly CONFIG_FILE="$CONFIG_DIR/config.toml"
+readonly STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/sunreactor"
+readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sunreactor"
 readonly SYSTEMCTL="${SUNREACTOR_SYSTEMCTL:-systemctl}"
 readonly SYSTEMD_ANALYZE="${SUNREACTOR_SYSTEMD_ANALYZE:-systemd-analyze}"
 WORKDIR="$(mktemp -d)"
@@ -51,17 +54,53 @@ print_banner() {
     fi
 
     printf '\n' >&2
-    for line in "${!art[@]}"; do
-        color_index=$((line % ${#colors[@]}))
-        printf '%b%s%b\n' "${colors[$color_index]}" "${art[$line]}" "$reset" >&2
-        sleep 0.1
-    done
+    if [[ $mode == uninstall ]]; then
+        # Build the logo from the bottom upward, then let it fade away upward.
+        for ((line = ${#art[@]} - 1; line >= 0; line--)); do
+            color_index=$((line % ${#colors[@]}))
+            printf '%b%s%b\n' "${colors[$color_index]}" "${art[$line]}" "$reset" >&2
+            sleep 0.14
+        done
+        printf '%b\n' '   \033[3;38;5;244mSunReactor is winding down...\033[0m' >&2
+        sleep 0.25
+        for ((line = 0; line < ${#art[@]}; line++)); do
+            printf '\033[1A\033[2K' >&2
+            sleep 0.16
+        done
+    else
+        for line in "${!art[@]}"; do
+            color_index=$((line % ${#colors[@]}))
+            printf '%b%s%b\n' "${colors[$color_index]}" "${art[$line]}" "$reset" >&2
+            sleep 0.1
+        done
+    fi
 
     if [[ $mode == uninstall ]]; then
-        printf '%b\n\n' "   \033[1;3;38;5;242mSun sets forever. Your configuration stays safe.\033[0m" >&2
+        printf '%b\n\n' "   \033[1;3;38;5;242mSun sets forever. Configuration and state will be removed.\033[0m" >&2
     else
         printf '%b\n\n' "   \033[1;3mAutomate Monitor Brightness, Synced with the Sun\033[0m" >&2
     fi
+}
+
+show_sun_progress() {
+    [[ $QUIET -eq 1 || ! -t 1 ]] && return 0
+
+    local label="$1" width=18 step index filled empty percent
+    printf '  %s\n' "$label" >&2
+    for ((step = 0; step <= width; step++)); do
+        filled=''
+        empty=''
+        for ((index = 0; index < step; index++)); do
+            filled+='☼'
+        done
+        for ((index = step; index < width; index++)); do
+            empty+='·'
+        done
+        percent=$((step * 100 / width))
+        printf '\r  \033[38;5;220m☀ [%s]\033[0m %3d%%' "$filled$empty" "$percent" >&2
+        sleep 0.025
+    done
+    printf '\n' >&2
 }
 
 source_build_instructions() {
@@ -122,7 +161,7 @@ parse_args() {
     done
 }
 
-require_commands() {
+require_install_commands() {
     local command
     for command in awk chmod cp curl grep head install mktemp mv rm sed sha256sum sleep tar uname; do
         command -v "$command" >/dev/null 2>&1 || die DEPENDENCY_FAILURE "Missing required command: $command"
@@ -133,13 +172,39 @@ require_commands() {
 
 uninstall() {
     print_banner uninstall
-    "$SYSTEMCTL" --user disable --now sunreactord.service >/dev/null 2>&1 || true
+    if command -v "$SYSTEMCTL" >/dev/null 2>&1; then
+        "$SYSTEMCTL" --user disable --now sunreactord.service >/dev/null 2>&1 || true
+    fi
     rm -f "$UNITDIR/sunreactord.service" "$BINDIR/sunreactord" "$BINDIR/sunreactorctl"
-    "$SYSTEMCTL" --user daemon-reload >/dev/null 2>&1 || true
-    printf '%s\n' 'SunReactor binaries and user unit removed; configuration and state were preserved.'
+    rm -rf -- "$CONFIG_DIR" "$STATE_DIR" "$CACHE_DIR"
+    if command -v "$SYSTEMCTL" >/dev/null 2>&1; then
+        "$SYSTEMCTL" --user daemon-reload >/dev/null 2>&1 || true
+    fi
+    printf '%s\n' 'SunReactor binaries, user unit, configuration, state, and cache removed.'
     printf '%s\n' 'SUNREACTOR_RESULT=SUCCESS'
     COMMITTED=1
     exit 0
+}
+
+apply_discovered_monitors() {
+    local output
+    show_sun_progress "Detecting brightness controls"
+    if ! output=$("$BINDIR/sunreactorctl" discover --apply 2>&1); then
+        die DISCOVERY_FAILURE "Automatic monitor setup failed: $output"
+    fi
+    [[ -z $output ]] || log "$output"
+}
+
+launch_tui() {
+    [[ $QUIET -eq 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || return 0
+
+    printf 'Opening the SunReactor TUI in 3 seconds...\n' >&2
+    sleep 1
+    printf 'Opening the SunReactor TUI in 2 seconds...\n' >&2
+    sleep 1
+    printf 'Opening the SunReactor TUI in 1 second...\n' >&2
+    sleep 1
+    exec </dev/tty >/dev/tty 2>/dev/tty "$BINDIR/sunreactorctl" tui
 }
 
 latest_version() {
@@ -291,10 +356,10 @@ install_transaction() {
 
 main() {
     parse_args "$@"
-    require_commands
     if [[ $UNINSTALL -eq 1 ]]; then
         uninstall
     fi
+    require_install_commands
     [[ $(uname -s) == Linux ]] || die UNSUPPORTED_PLATFORM "Only GNU/Linux is supported by this installer."
     [[ $(uname -m) == x86_64 ]] || {
         source_build_instructions
@@ -302,6 +367,7 @@ main() {
     }
 
     print_banner install
+    show_sun_progress "Preparing verified release"
     mkdir -m 700 "$STAGE"
     local version archive_name archive
     version=$(latest_version)
@@ -311,6 +377,7 @@ main() {
         die SOURCE_BUILD_REQUIRED "A compatible release asset and checksum were not found. Existing files were not changed."
     }
     archive="$WORKDIR/$archive_name"
+    show_sun_progress "Verifying release archive"
     verify_checksum "$archive" "$archive.sha256" || die BINARY_INCOMPATIBLE "Release checksum verification failed; existing files were not changed."
     tar -xzf "$archive" -C "$STAGE" || die BINARY_INCOMPATIBLE "Release archive is corrupted or invalid."
     [[ -f "$STAGE/sunreactord" && -f "$STAGE/sunreactorctl" && -f "$STAGE/sunreactord.service" ]] \
@@ -325,16 +392,18 @@ main() {
         die BINARY_INCOMPATIBLE "Downloaded daemon is incompatible; existing files were not changed."
     }
     render_unit "$STAGE/sunreactord.service" "$WORKDIR/sunreactord.service"
+    show_sun_progress "Installing SunReactor"
     install_transaction "$WORKDIR/sunreactord.service"
 
     COMMITTED=1
+    apply_discovered_monitors
     local status=SUCCESS
     if "$BINDIR/sunreactorctl" status 2>/dev/null | grep -q 'configured_monitors: 0'; then
         status=SUCCESS_NO_MONITORS_CONFIGURED
-        warn "Software installation succeeded, but no monitors are configured. Run: sunreactorctl discover --apply"
+        warn "Software installation succeeded, but no usable brightness control was found. Run: sunreactorctl doctor"
     fi
     printf 'SunReactor installation verified.\nSUNREACTOR_RESULT=%s\n' "$status"
-    printf 'Next: run sunreactorctl to open the TUI.\n'
+    launch_tui
 }
 
 main "$@"

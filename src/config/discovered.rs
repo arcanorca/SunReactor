@@ -269,7 +269,7 @@ mod tests {
     }
 
     fn backlight_snippet() -> &'static str {
-        "[[monitors]]\nlogical_id = \"internal\"\nbackend = \"backlight\"\nenabled = true\nmin_pct = 0\nmax_pct = 100\ngain = 1.0\nsysfs_path = \"/sys/class/backlight/intel_backlight\"\n"
+        "[[monitors]]\nlogical_id = \"internal\"\nbackend = \"backlight\"\nenabled = true\nmin_pct = 15\nmax_pct = 60\ngain = 1.0\nsysfs_path = \"/sys/class/backlight/intel_backlight\"\n"
     }
 
     fn report_with_snippet(snippet: &str) -> DiscoveryReport {

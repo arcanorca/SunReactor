@@ -1,4 +1,4 @@
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
@@ -396,4 +396,79 @@ pub struct Palette {
     pub success: Color,
     pub warning: Color,
     pub error: Color,
+}
+
+/// A readable focused style that preserves each theme's own accent colors.
+#[must_use]
+pub fn focused_style(palette: &Palette, editing: bool) -> Style {
+    let background = if editing {
+        palette.warning
+    } else {
+        palette.accent
+    };
+
+    Style::default()
+        .fg(contrast_foreground(background))
+        .bg(background)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn contrast_foreground(background: Color) -> Color {
+    match relative_luminance(background) {
+        Some(luminance) if luminance > 0.179 => Color::Black,
+        _ => Color::White,
+    }
+}
+
+fn relative_luminance(color: Color) -> Option<f32> {
+    match color {
+        Color::Black => Some(0.0),
+        Color::White => Some(1.0),
+        Color::Rgb(red, green, blue) => Some(relative_luminance_rgb(red, green, blue)),
+        _ => None,
+    }
+}
+
+fn relative_luminance_rgb(red: u8, green: u8, blue: u8) -> f32 {
+    let channel = |value: u8| {
+        let value = f32::from(value) / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::style::Color;
+
+    use super::{focused_style, relative_luminance, Theme};
+
+    #[test]
+    fn focused_style_keeps_each_theme_and_is_readable() {
+        for theme in Theme::ALL {
+            let palette = theme.palette();
+            let normal = focused_style(&palette, false);
+            let editing = focused_style(&palette, true);
+
+            assert_eq!(normal.bg, Some(palette.accent));
+            assert_eq!(editing.bg, Some(palette.warning));
+            assert!(contrast_ratio(normal.fg.expect("foreground"), palette.accent) >= 4.5);
+            assert!(contrast_ratio(editing.fg.expect("foreground"), palette.warning) >= 4.5);
+        }
+    }
+
+    fn contrast_ratio(foreground: Color, background: Color) -> f32 {
+        let foreground = relative_luminance(foreground).expect("RGB foreground");
+        let background = relative_luminance(background).expect("RGB background");
+        let (lighter, darker) = if foreground > background {
+            (foreground, background)
+        } else {
+            (background, foreground)
+        };
+        (lighter + 0.05) / (darker + 0.05)
+    }
 }
