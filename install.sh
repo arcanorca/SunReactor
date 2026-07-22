@@ -186,8 +186,12 @@ backup_existing() {
             log "Preserved the previous user unit as sunreactord.service.pre-sunreactor."
         fi
     fi
-    "$SYSTEMCTL" --user is-active --quiet sunreactord.service >/dev/null 2>&1 && SERVICE_WAS_ACTIVE=1 || true
-    "$SYSTEMCTL" --user is-enabled --quiet sunreactord.service >/dev/null 2>&1 && SERVICE_WAS_ENABLED=1 || true
+    if "$SYSTEMCTL" --user is-active --quiet sunreactord.service >/dev/null 2>&1; then
+        SERVICE_WAS_ACTIVE=1
+    fi
+    if "$SYSTEMCTL" --user is-enabled --quiet sunreactord.service >/dev/null 2>&1; then
+        SERVICE_WAS_ENABLED=1
+    fi
 }
 
 replace_file() {
