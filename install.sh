@@ -90,7 +90,7 @@ parse_args() {
 
 require_commands() {
     local command
-    for command in awk chmod cp curl grep head install mktemp mv rm sed sha256sum tar uname; do
+    for command in awk chmod cp curl grep head install mktemp mv rm sed sha256sum sleep tar uname; do
         command -v "$command" >/dev/null 2>&1 || die DEPENDENCY_FAILURE "Missing required command: $command"
     done
     command -v "$SYSTEMCTL" >/dev/null 2>&1 || die DEPENDENCY_FAILURE "systemctl is unavailable"
@@ -162,6 +162,23 @@ smoke_binary() {
     return 1
 }
 
+wait_for_ipc() {
+    local attempts="${SUNREACTOR_IPC_READY_ATTEMPTS:-100}"
+    [[ $attempts =~ ^[1-9][0-9]*$ ]] || attempts=100
+
+    while (( attempts > 0 )); do
+        if "$BINDIR/sunreactorctl" ping >/dev/null 2>&1; then
+            return 0
+        fi
+        attempts=$((attempts - 1))
+        if (( attempts > 0 )); then
+            sleep 0.1
+        fi
+    done
+
+    return 1
+}
+
 render_unit() {
     local template="$1" output="$2" escaped
     [[ $BINDIR == /* ]] || die CONFIG_FAILURE "BINDIR must be absolute: $BINDIR"
@@ -223,7 +240,11 @@ install_transaction() {
     "$BINDIR/sunreactorctl" config validate >/dev/null || die CONFIG_FAILURE "Configuration validation failed."
     "$SYSTEMCTL" --user enable --now sunreactord.service \
         || die SERVICE_FAILURE "The daemon could not be enabled and started."
-    "$BINDIR/sunreactorctl" ping >/dev/null || die IPC_FAILURE "Daemon IPC did not respond."
+    if ! wait_for_ipc; then
+        warn "Daemon did not expose IPC within 10 seconds; service diagnostics follow."
+        "$SYSTEMCTL" --user status sunreactord.service --no-pager >&2 || true
+        die IPC_FAILURE "Daemon IPC did not respond."
+    fi
 
     local doctor_json
     doctor_json=$("$BINDIR/sunreactorctl" doctor --json) || die DEPENDENCY_FAILURE "Doctor command failed."
