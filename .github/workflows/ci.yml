@@ -12,22 +12,114 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
-    runs-on: ubuntu-latest
+  quality:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
       - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
+      - run: cargo test --workspace --all-targets --all-features
 
-      - name: Format
-        run: cargo fmt --all --check
+  installer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: bash -n install.sh
+      - run: shellcheck install.sh tests/installer.sh scripts/check-glibc-baseline.sh
+      - run: bash tests/installer.sh
 
-      - name: Lint
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
+  portable-ubuntu-2204:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build generic x86-64 GNU artifact on the glibc 2.35 baseline
+        env:
+          RUSTFLAGS: -C target-cpu=x86-64
+        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+      - name: Ubuntu 22.04 smoke test
+        run: |
+          target/x86_64-unknown-linux-gnu/release/sunreactorctl --version
+          target/x86_64-unknown-linux-gnu/release/sunreactord --help
+      - name: Fake ddcutil 1.2.2 contract
+        run: cargo test --lib ddcutil::client::tests::ubuntu_2204_style_profile_uses_only_supported_arguments
+      - name: Enforce GLIBC 2.35 maximum
+        run: |
+          bash scripts/check-glibc-baseline.sh \
+            target/x86_64-unknown-linux-gnu/release/sunreactorctl \
+            target/x86_64-unknown-linux-gnu/release/sunreactord
+      - name: Verify rendered systemd user unit
+        run: |
+          bindir="$PWD/target/x86_64-unknown-linux-gnu/release"
+          sed "s|@BINDIR@|$bindir|g" contrib/systemd/sunreactord.service > /tmp/sunreactord.service
+          systemd-analyze --user verify /tmp/sunreactord.service
+      - name: Package exact portable artifact
+        run: |
+          mkdir portable
+          cp target/x86_64-unknown-linux-gnu/release/sunreactorctl portable/
+          cp target/x86_64-unknown-linux-gnu/release/sunreactord portable/
+          cp contrib/systemd/sunreactord.service portable/
+          tar -czf sunreactor-portable-linux-x86_64-gnu.tar.gz -C portable .
+          sha256sum sunreactor-portable-linux-x86_64-gnu.tar.gz > sunreactor-portable-linux-x86_64-gnu.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-linux-x86_64-gnu
+          path: |
+            sunreactor-portable-linux-x86_64-gnu.tar.gz
+            sunreactor-portable-linux-x86_64-gnu.tar.gz.sha256
+          if-no-files-found: error
 
-      - name: Test
-        run: cargo test --workspace --all-targets --all-features
+  portable-forward-compatibility:
+    needs: portable-ubuntu-2204
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-linux-x86_64-gnu
+      - name: Verify and run the unchanged Ubuntu 22.04 artifact
+        run: |
+          sha256sum -c sunreactor-portable-linux-x86_64-gnu.tar.gz.sha256
+          mkdir portable
+          tar -xzf sunreactor-portable-linux-x86_64-gnu.tar.gz -C portable
+          portable/sunreactorctl --version
+          portable/sunreactord --help
+      - name: Verify the unchanged unit template on this systemd version
+        run: |
+          bindir="$PWD/portable"
+          sed "s|@BINDIR@|$bindir|g" portable/sunreactord.service > /tmp/sunreactord.service
+          systemd-analyze --user verify /tmp/sunreactord.service
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, installer, portable-forward-compatibility]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-linux-x86_64-gnu
+      - name: Name the already-tested artifact for the release tag
+        run: |
+          release_name="sunreactor-${GITHUB_REF_NAME}-linux-x86_64-gnu.tar.gz"
+          mv sunreactor-portable-linux-x86_64-gnu.tar.gz "$release_name"
+          sha256sum "$release_name" > "$release_name.sha256"
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          gh release upload "$GITHUB_REF_NAME" \
+            "sunreactor-${GITHUB_REF_NAME}-linux-x86_64-gnu.tar.gz" \
+            "sunreactor-${GITHUB_REF_NAME}-linux-x86_64-gnu.tar.gz.sha256" \
+            --clobber

@@ -1,17 +1,22 @@
 use std::time::Duration;
 
 use crate::config::{MonitorConfig, MonitorSelector};
+use crate::ddcutil::{DdcutilClient, DdcutilError, DdcutilTimeouts};
 
 use super::{
     clamp_percent, command_failure, map_command_error, BackendError, BackendKind, BackendWrite,
     ProcessRunner, RealProcessRunner,
 };
 
-const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
 const DEFAULT_DDC_ADDRESS: u16 = 0x37;
 
 pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
-    apply_with_runner(&RealProcessRunner, monitor, percent, Duration::from_secs(10))
+    apply_with_runner(
+        &RealProcessRunner,
+        monitor,
+        percent,
+        Duration::from_secs(10),
+    )
 }
 
 pub(crate) fn apply_with_runner<R: ProcessRunner>(
@@ -22,21 +27,18 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
 ) -> Result<BackendWrite, BackendError> {
     let percent = clamp_percent(percent);
     let selection = build_selector(&monitor.selector)?;
-    
-    let ctx = crate::ddcutil::DdcContext::new(runner);
-    let caps = ctx.capabilities();
+    let client = DdcutilClient::probe(
+        runner,
+        DdcutilTimeouts {
+            setvcp: timeout,
+            ..DdcutilTimeouts::default()
+        },
+    );
 
     let mut attempts = 0u8;
 
     loop {
         attempts += 1;
-        let args = crate::ddcutil::command::build_setvcp_args(
-            &caps,
-            &selection.args,
-            DDC_BRIGHTNESS_VCP_CODE,
-            &percent.to_string()
-        );
-
         #[cfg(unix)]
         let _lock = {
             let uid = unsafe { libc::geteuid() };
@@ -44,6 +46,7 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
             let lock_file = std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
+                .truncate(false)
                 .open(&lock_path)
                 .ok();
 
@@ -54,8 +57,8 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
             lock_file // keep open until block ends
         };
 
-        match runner.run("ddcutil", &args, timeout) {
-            Ok(output) if output.success() => {
+        match client.set_brightness(&selection.args, percent) {
+            Ok(_) => {
                 return Ok(BackendWrite {
                     backend: BackendKind::Ddc,
                     applied_percent: percent,
@@ -63,19 +66,27 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
                     detail: format!("applied via ddcutil using {}", selection.description),
                 });
             }
-            Ok(output) => {
+            Err(DdcutilError::Failed { output, .. }) => {
                 let error = command_failure(BackendKind::Ddc, "ddcutil", &output);
                 if attempts == 1 && should_retry(&error) {
                     continue;
                 }
                 return Err(error.with_attempts(attempts));
             }
-            Err(error) => {
+            Err(DdcutilError::Command(error)) => {
                 let error = map_command_error(BackendKind::Ddc, error);
                 if attempts == 1 && should_retry(&error) {
                     continue;
                 }
                 return Err(error.with_attempts(attempts));
+            }
+            Err(DdcutilError::Parse(error)) => {
+                return Err(BackendError::Io {
+                    backend: BackendKind::Ddc,
+                    program: String::from("ddcutil"),
+                    message: error.to_string(),
+                    attempts,
+                });
             }
         }
     }
@@ -255,7 +266,9 @@ mod tests {
         assert_eq!(result.attempts, 2);
 
         let calls = runner.calls();
-        assert!(calls.iter().any(|c| c.contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64")));
+        assert!(calls
+            .iter()
+            .any(|c| c.contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64")));
     }
 
     #[test]

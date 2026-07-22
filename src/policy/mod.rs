@@ -240,8 +240,7 @@ pub(crate) fn base_linear_effective_daylight_factor_at_utc(
     context: &BaseMilestoneContext,
     datetime_utc: DateTime<Utc>,
 ) -> Result<f64, PolicyError> {
-    let datetime_local =
-        crate::solar::local_datetime_at_utc(datetime_utc, &input.location).unwrap();
+    let datetime_local = crate::solar::local_datetime_at_utc(datetime_utc, input.location).unwrap();
     if datetime_local <= context.day_start_local
         || datetime_local >= context.minimum_brightness_start_local
     {
@@ -672,7 +671,7 @@ mod tests {
     }
 
     impl TestPolicyInput {
-        fn as_context(&self) -> PolicyContext {
+        fn as_context(&self) -> PolicyContext<'_> {
             PolicyContext {
                 now_utc: self.now_utc,
                 location: &self.location,

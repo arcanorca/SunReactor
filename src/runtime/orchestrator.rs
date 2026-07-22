@@ -363,6 +363,14 @@ impl DaemonRuntime {
                 self.execute_scheduled_tick(now_utc, runner, cadence, desktop_idle);
             }
             LoopAction::RunFadeStep => {
+                // This guard is intentionally redundant with the apply engine:
+                // it prevents a stale queued fade from writing to DDC/CI if
+                // smooth transitions are turned off between loop iterations.
+                if !self.config.apply.smooth_transition {
+                    self.fade_engine.cancel_all();
+                    return;
+                }
+
                 let step_start = Instant::now();
                 let steps = self.fade_engine.process_tick();
                 for (monitor_id, percent) in steps {
@@ -479,7 +487,6 @@ mod loop_timing_tests {
 
 // --- From helpers.rs ---
 /// Pure helper functions used by the runtime — no &mut self, no side effects.
-
 pub(super) fn ipc_error_response(error: &RuntimeError) -> ipc::ResponseEnvelope {
     let code = match error {
         RuntimeError::Ipc(ipc::IpcError::Protocol { .. }) => ipc::ErrorCode::InvalidRequest,
@@ -826,6 +833,7 @@ impl DaemonRuntime {
         apply::ApplySettings {
             min_write_delta_pct: 0,
             max_step_pct_per_tick: 100,
+            smooth_transition: self.config.apply.smooth_transition,
             min_apply_interval: std::time::Duration::ZERO,
             dry_run: self.config.daemon.dry_run,
             apply_reassert_interval: std::time::Duration::from_secs(
@@ -1456,6 +1464,7 @@ impl DaemonRuntime {
     fn apply_reloaded_config(&mut self, next: ConfigReport) -> Result<(), RuntimeError> {
         let new_config = RuntimeConfig::from_report(next)?;
         let location_changed = self.config.location != new_config.location;
+        let cancel_fades = !new_config.apply.smooth_transition;
 
         let previous_config = std::mem::replace(&mut self.config, new_config);
         let previous_monitors = self.state.monitors.clone();
@@ -1484,7 +1493,12 @@ impl DaemonRuntime {
             }
         }
 
-        self.weather_engine.sync_config(&self.config.weather, &self.config.location);
+        self.weather_engine
+            .sync_config(&self.config.weather, &self.config.location);
+
+        if cancel_fades {
+            self.fade_engine.cancel_all();
+        }
 
         Ok(())
     }
@@ -1554,7 +1568,10 @@ impl DaemonRuntime {
             }
 
             self.perform_loop_action(
-                cadence.next_action(desktop_idle.next_deadline(), self.fade_engine.is_fading()),
+                cadence.next_action(
+                    desktop_idle.next_deadline(),
+                    self.config.apply.smooth_transition && self.fade_engine.is_fading(),
+                ),
                 now_utc,
                 &RealProcessRunner,
                 &mut cadence,
@@ -2159,7 +2176,9 @@ mod tests {
             temperature: Some(0.0),
             forecast: vec![],
         });
-        runtime.weather_engine.inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
+        runtime
+            .weather_engine
+            .inject_test_cache(runtime.state.weather.as_ref().unwrap().clone());
         runtime.weather_refresh.last_attempted_at_epoch_s = Some(1_800_000_020);
         runtime.weather_refresh.next_refresh_at_epoch_s = Some(1_800_001_800);
         runtime.weather_refresh.consecutive_failures = 2;
@@ -2699,6 +2718,7 @@ mod tests {
                 daemon: DaemonConfig {
                     tick_seconds: 60,
                     dry_run: false,
+                    smooth_transition: false,
                     desktop_idle_sync: false,
                     desktop_idle_timeout_minutes: 0,
                     log_level: LogLevel::Info,

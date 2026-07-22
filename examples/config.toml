@@ -1,6 +1,10 @@
 [daemon]
 tick_seconds = 60
 dry_run = false
+# Disabled by default to protect DDC/CI displays that flicker or lose signal
+# when they receive a rapid sequence of brightness writes. Set true to opt in
+# to the existing multi-step fade effect.
+smooth_transition = false
 # Keep this enabled if you want sunreactor to suspend itself while the desktop
 # dims/locks and re-sync brightness after wake. Disable it if your desktop power
 # manager should keep full control over idle/wake brightness behavior.

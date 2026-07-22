@@ -10,8 +10,8 @@ Type=simple
 Environment=XDG_CONFIG_HOME=%h/.config
 Environment=XDG_STATE_HOME=%h/.local/state
 Environment=XDG_CACHE_HOME=%h/.cache
-ExecStart=/usr/local/bin/sunreactord
-ExecReload=/usr/local/bin/sunreactorctl reload-config
+ExecStart=@BINDIR@/sunreactord
+ExecReload=@BINDIR@/sunreactorctl reload-config
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=20s
@@ -19,14 +19,12 @@ WorkingDirectory=%h
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectControlGroups=true
-ProtectHostname=true
-ProtectKernelLogs=true
-ProtectKernelModules=true
-ProtectKernelTunables=true
+# ProtectKernel*=, ProtectHostname=, and RestrictNamespaces= are deliberately
+# omitted: they have caused user-manager spawn failures on Ubuntu 22.04 and do
+# not provide reliable device isolation for /dev/i2c-* or sysfs backlights.
+# Device permissions remain the authorization boundary.
 LockPersonality=true
 MemoryDenyWriteExecute=true
-RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 SystemCallArchitectures=native

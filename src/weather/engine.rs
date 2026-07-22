@@ -48,6 +48,7 @@ impl WeatherEngine {
     /// Attempts to read the latest snapshot from the cache.
     /// Returns `Ok(Option<WeatherSnapshotMetadata>)` if the lock was acquired,
     /// or `Err(())` if the lock is currently held by the background thread.
+    #[allow(clippy::result_unit_err)]
     pub fn latest_snapshot(&self) -> Result<Option<WeatherSnapshotMetadata>, ()> {
         self.cache.try_read().map(|g| g.clone()).map_err(|_| ())
     }

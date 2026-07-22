@@ -595,17 +595,6 @@ pub(crate) fn normalize_monitor_backoff(monitor: &mut MonitorRuntimeState) {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use crate::backends::{BackendKind, FailureKind};
-
-    use crate::state::persist::RUNTIME_STATE_FILE_NAME;
-    use crate::state::{
-        FailureBackoffState, ManualOverrideState, MonitorRuntimeState, RuntimeState,
-        WeatherSnapshotMetadata,
-    };
 
     #[test]
     fn step_limiting_moves_toward_requested_target_without_overshoot() {

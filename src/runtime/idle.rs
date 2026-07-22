@@ -1,3 +1,5 @@
+#![allow(clippy::items_after_test_module)]
+
 use crate::backends::ProcessRunner;
 use crate::runtime::orchestrator::{DaemonRuntime, LoopCadence};
 use chrono::{DateTime, Utc};
@@ -306,6 +308,7 @@ mod tests {
                 daemon: DaemonConfig {
                     tick_seconds: 60,
                     dry_run: false,
+                    smooth_transition: false,
                     desktop_idle_sync: true,
                     desktop_idle_timeout_minutes: 0,
                     log_level: LogLevel::Info,

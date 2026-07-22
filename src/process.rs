@@ -1,9 +1,10 @@
 use std::fmt;
-use std::io;
-use std::process::Command;
-use std::sync::mpsc;
+use std::io::{self, Read};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
+
+use wait_timeout::ChildExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CommandOutput {
@@ -59,6 +60,8 @@ impl fmt::Display for CommandError {
     }
 }
 
+impl std::error::Error for CommandError {}
+
 pub(crate) trait ProcessRunner {
     fn run(
         &self,
@@ -71,94 +74,107 @@ pub(crate) trait ProcessRunner {
 pub(crate) struct RealProcessRunner;
 
 impl ProcessRunner for RealProcessRunner {
-    /// Runs `program` with `args`, enforcing a wall-clock `timeout`.
-    ///
-    /// # Thread budget: exactly ONE background thread per call.
-    ///
-    /// The old implementation spawned two reader threads (stdout + stderr) plus
-    /// polled `try_wait()` in a busy loop with 25 ms sleeps.  On ARM devices and
-    /// old laptops that meant 2 OS threads + polling overhead for every single
-    /// brightness command.
-    ///
-    /// The new implementation:
-    ///   1. Spawns **one** thread that calls `Command::output()`.  The OS kernel
-    ///      buffers stdout/stderr internally; `output()` reads both pipes after
-    ///      the child exits.  No reader threads are needed.
-    ///   2. The caller thread waits on an `mpsc` channel with `recv_timeout`.
-    ///      When the timeout fires the child is killed via SIGTERM→SIGKILL
-    ///      (Unix) or `kill()` (all platforms) and the background thread is left
-    ///      to join on its own — it will exit shortly after the child dies.
     fn run(
         &self,
         program: &str,
         args: &[String],
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        // Build the child process but do not spawn yet — we need to record the
-        // program name for error messages before ownership moves into the thread.
-        let program_owned = program.to_owned();
-        let args_owned: Vec<String> = args.to_vec();
+        let mut child = Command::new(program)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| map_spawn_error(program, error))?;
 
-        // Spawn the child and collect output inside a single background thread.
-        // `Command::output()` spawns the child, reads both pipes to EOF, and
-        // waits for the process — all blocking, all in one place, zero extra
-        // threads.
-        let (tx, rx) = mpsc::channel::<Result<CommandOutput, CommandError>>();
+        let stdout = child.stdout.take().expect("piped stdout must be present");
+        let stderr = child.stderr.take().expect("piped stderr must be present");
+        let stdout_reader = thread::spawn(move || read_pipe(stdout));
+        let stderr_reader = thread::spawn(move || read_pipe(stderr));
 
-        let program_thread = program_owned.clone();
-        thread::spawn(move || {
-            let result = Command::new(&program_thread)
-                .args(&args_owned)
-                .output()
-                .map_err(|err| {
-                    if err.kind() == io::ErrorKind::NotFound {
-                        CommandError::Missing {
-                            program: program_thread.clone(),
-                        }
-                    } else {
-                        CommandError::Io {
-                            program: program_thread.clone(),
-                            message: err.to_string(),
-                        }
-                    }
-                })
-                .map(|out| CommandOutput {
-                    stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-                    stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-                    exit_code: out.status.code(),
-                });
-
-            // Send result back; ignore send error if the receiver already timed
-            // out and dropped the channel — the thread will exit cleanly.
-            let _ = tx.send(result);
-        });
-
-        // Block until the background thread delivers a result or the timeout
-        // expires.  This is a single blocking call with no polling loop.
-        match rx.recv_timeout(timeout) {
-            Ok(result) => result,
-            Err(_elapsed) => {
-                // Timeout: we cannot easily get the child PID from the thread
-                // since `Command::output()` owns the child.  The background
-                // thread will unblock once the child's pipes close (i.e. after
-                // the OS kills it on parent exit, or naturally).  For an
-                // immediate kill we use a second best-effort spawn of the same
-                // command with SIGKILL via rustix on Unix.  In practice the
-                // daemon's per-backend timeout (2–5 s) is large enough that a
-                // genuine hanging ddcutil process will be reaped by the OS when
-                // the daemon exits.
-                //
-                // The empty stdout/stderr here is intentional: we timed out
-                // before receiving any output.
-                Err(CommandError::Timeout {
-                    program: program_owned,
-                    after: timeout,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                })
+        let wait_result = child.wait_timeout(timeout);
+        let timed_out = match wait_result {
+            Ok(Some(_)) => false,
+            Ok(None) => {
+                // Killing and then waiting is mandatory: returning before wait()
+                // would leave a live process or zombie behind.
+                let _ = child.kill();
+                child.wait().map_err(|error| CommandError::Io {
+                    program: program.to_owned(),
+                    message: format!("failed to reap timed-out child: {error}"),
+                })?;
+                true
             }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(CommandError::Io {
+                    program: program.to_owned(),
+                    message: format!("failed while waiting for child: {error}"),
+                });
+            }
+        };
+
+        let stdout = join_reader(program, "stdout", stdout_reader)?;
+        let stderr = join_reader(program, "stderr", stderr_reader)?;
+        let stdout = String::from_utf8_lossy(&stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&stderr).into_owned();
+
+        if timed_out {
+            Err(CommandError::Timeout {
+                program: program.to_owned(),
+                after: timeout,
+                stdout,
+                stderr,
+            })
+        } else {
+            let status = child.wait().map_err(|error| CommandError::Io {
+                program: program.to_owned(),
+                message: format!("failed to collect child status: {error}"),
+            })?;
+            Ok(CommandOutput {
+                stdout,
+                stderr,
+                exit_code: status.code(),
+            })
         }
     }
+}
+
+fn map_spawn_error(program: &str, error: io::Error) -> CommandError {
+    if error.kind() == io::ErrorKind::NotFound {
+        CommandError::Missing {
+            program: program.to_owned(),
+        }
+    } else {
+        CommandError::Io {
+            program: program.to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+fn read_pipe<R: Read>(mut reader: R) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn join_reader(
+    program: &str,
+    stream: &str,
+    reader: thread::JoinHandle<io::Result<Vec<u8>>>,
+) -> Result<Vec<u8>, CommandError> {
+    reader
+        .join()
+        .map_err(|_| CommandError::Io {
+            program: program.to_owned(),
+            message: format!("{stream} reader thread panicked"),
+        })?
+        .map_err(|error| CommandError::Io {
+            program: program.to_owned(),
+            message: format!("failed to read child {stream}: {error}"),
+        })
 }
 
 pub(crate) fn command_failure_detail(output: &CommandOutput) -> String {
@@ -179,4 +195,40 @@ fn first_non_empty_line(value: &str) -> Option<String> {
             Some(trimmed.to_owned())
         }
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{CommandError, ProcessRunner, RealProcessRunner};
+    use std::fs;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn timeout_kills_and_reaps_the_exact_child() {
+        let temp = tempfile::tempdir().expect("temporary directory should be created");
+        let pid_file = temp.path().join("child.pid");
+        let args = vec![
+            String::from("-c"),
+            String::from("echo $$ > \"$1\"; exec sleep 30"),
+            String::from("sunreactor-timeout-test"),
+            pid_file.display().to_string(),
+        ];
+        let started = Instant::now();
+
+        let error = RealProcessRunner
+            .run("sh", &args, Duration::from_millis(150))
+            .expect_err("child should time out");
+
+        assert!(matches!(error, CommandError::Timeout { .. }));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let pid = fs::read_to_string(&pid_file)
+            .expect("child should record its pid")
+            .trim()
+            .parse::<u32>()
+            .expect("pid should be numeric");
+        assert!(
+            !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+            "timed-out child {pid} still exists"
+        );
+    }
 }

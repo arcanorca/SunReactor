@@ -20,6 +20,9 @@ pub struct Config {
 pub struct DaemonConfig {
     pub tick_seconds: u64,
     pub dry_run: bool,
+    /// Enable multi-step brightness fades. Disabled by default because rapidly
+    /// issuing DDC/CI writes can destabilize some external displays.
+    pub smooth_transition: bool,
     pub desktop_idle_sync: bool,
     pub desktop_idle_timeout_minutes: u64,
     pub log_level: LogLevel,
@@ -33,6 +36,7 @@ impl Default for DaemonConfig {
         Self {
             tick_seconds: 60,
             dry_run: false,
+            smooth_transition: false,
             desktop_idle_sync: true,
             desktop_idle_timeout_minutes: 0,
             log_level: LogLevel::Info,

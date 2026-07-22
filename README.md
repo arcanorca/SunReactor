@@ -68,35 +68,38 @@ SunReactor relies on the following tools being installed on your system to contr
   - Ubuntu/Debian: `sudo apt install brightnessctl`
 
 > [!NOTE]
-> Make sure your user is in the `i2c` group for `ddcutil` to work without root: `sudo usermod -aG i2c $USER` (requires a reboot).
+> Do not add every user to `i2c` or `video` by default. Run `sunreactorctl doctor`
+> after installation. It tests actual device access and distinguishes active
+> access, stale login sessions, and permission failures.
 
 ---
 
 ### Option A: Automated Installer
 
-The easiest way to install SunReactor is using our automated installation script. It downloads the latest pre-built binary, sets up the systemd background daemon, and launches the dashboard automatically.
+The installer downloads the checksum-verified x86-64 GNU/Linux artifact built on
+Ubuntu 22.04, smoke-tests it before replacing anything, and verifies the user unit,
+config, daemon startup, doctor result, and IPC. It never installs Rust or changes
+system groups. Failed upgrades restore the previous binaries and unit.
 
 ```bash
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash
 ```
 
-*The installer places the executables securely in `~/.local/bin` and does **not** require `sudo`.*
+The installer writes to `~/.local/bin` and does not require `sudo`. If no compatible
+artifact exists, it leaves the installation unchanged and prints separate source-build
+instructions.
 
 <details>
 <summary><b>View Manual Installation Steps</b></summary>
 
-1. Download the latest pre-built binary from [Releases](https://github.com/arcanorca/SunReactor/releases). Make sure to check for the latest version tag (e.g., `v0.1.0`) and choose the correct architecture (`x86_64` or `aarch64`):
+1. Download the latest x86-64 GNU/Linux archive and matching `.sha256` from
+   [Releases](https://github.com/arcanorca/SunReactor/releases), then verify it:
 
-**For x86_64 (Intel/AMD):**
 ```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-x86_64.tar.gz
-tar xzf sunreactor-v0.1.0-linux-x86_64.tar.gz
-```
-
-**For ARM64 (aarch64):**
-```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-aarch64.tar.gz
-tar xzf sunreactor-v0.1.0-linux-aarch64.tar.gz
+sha256sum -c sunreactor-VERSION-linux-x86_64-gnu.tar.gz.sha256
+tar xzf sunreactor-VERSION-linux-x86_64-gnu.tar.gz
+./sunreactorctl --version
+./sunreactord --help
 ```
 
 2. Move the binaries to your local PATH:
@@ -105,10 +108,11 @@ mkdir -p ~/.local/bin
 install -m 755 sunreactord sunreactorctl ~/.local/bin/
 ```
 
-3. Start the daemon:
+3. Render both service paths from the same install directory and start the daemon:
 ```bash
 mkdir -p ~/.config/systemd/user
-cp sunreactord.service ~/.config/systemd/user/
+sed "s|@BINDIR@|$HOME/.local/bin|g" sunreactord.service > ~/.config/systemd/user/sunreactord.service
+systemd-analyze --user verify ~/.config/systemd/user/sunreactord.service
 systemctl --user daemon-reload
 systemctl --user enable --now sunreactord.service
 ```
@@ -122,12 +126,15 @@ If you have Rust installed, you can build from source:
 git clone https://github.com/arcanorca/SunReactor.git
 cd SunReactor
 
-# Install binaries to ~/.cargo/bin
-cargo install --path .
+# Build and install explicitly to ~/.cargo/bin
+cargo build --release --locked
+install -Dm755 target/release/sunreactord ~/.cargo/bin/sunreactord
+install -Dm755 target/release/sunreactorctl ~/.cargo/bin/sunreactorctl
 
-# Start the systemd daemon
+# Render the unit for this distinct source-build path
 mkdir -p ~/.config/systemd/user
-cp contrib/systemd/sunreactord.service ~/.config/systemd/user/
+sed "s|@BINDIR@|$HOME/.cargo/bin|g" contrib/systemd/sunreactord.service > ~/.config/systemd/user/sunreactord.service
+systemd-analyze --user verify ~/.config/systemd/user/sunreactord.service
 systemctl --user daemon-reload
 systemctl --user enable --now sunreactord.service
 ```
@@ -136,54 +143,47 @@ systemctl --user enable --now sunreactord.service
 
 ## Uninstallation
 
-To completely remove SunReactor and its background daemon from your system, simply run:
+This removes the binaries and user unit while preserving configuration and state:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash -s -- --uninstall
 ```
 
-## // QUICK START
+## // HOW TO USE
 
-**1. Initialize config and discover monitors:**
-
-```bash
-sunreactorctl config init
-sunreactorctl discover
-```
-
-The `discover` command detects your connected monitors and prints config snippets you can paste into `~/.config/sunreactor/config.toml`.
-
-**2. Set your location** (via the TUI or by editing the config file directly):
+After installation, add every viable monitor with one safe, idempotent command:
 
 ```bash
-sunreactorctl tui
+sunreactorctl discover --apply
 ```
 
-Navigate to the **Location** tab and search for your city, or enter coordinates manually. Without a location set, the daemon defaults to the equator (0°, 0°) which gives a generic 12h/12h day-night cycle.
+It validates the updated configuration, avoids duplicate monitor entries, reloads
+the daemon, and rolls back if verification fails. Running it again is a no-op for
+monitors that are already configured.
 
-**3. Start the daemon:**
+Then open SunReactor:
 
 ```bash
-mkdir -p ~/.config/systemd/user
-cp sunreactord.service ~/.config/systemd/user/
-
-systemctl --user daemon-reload
-systemctl --user enable --now sunreactord.service
+sunreactorctl
 ```
 
-> **Note:** If installed via `cargo install`, ensure the `ExecStart` path in the unit file points to `~/.cargo/bin/sunreactord`. If installed from the release tarball to `~/.local/bin/`, update it to `~/.local/bin/sunreactord`.
+No subcommand is required—the TUI is the normal interface. Use **Tab** or the arrow
+keys to move between pages, **Enter** to edit or toggle a setting, and **q** to save
+and quit. Go to **Location**, search for your city, and select it; changes are
+saved and reloaded automatically. The **Monitors** and **Limits** pages let you tune
+each display, while **Weather** and **Settings** contain optional features.
 
-## // INTERFACE & CONTROL
+Smooth hardware fades are disabled by default because some external DDC/CI monitors
+flicker or lose signal when sent rapid commands. You can opt in later from
+**Settings → Smooth Transitions** if your monitor handles them reliably.
 
-You can configure and monitor the daemon using the built-in terminal interface (`ratatui`). It connects to the daemon over a local IPC socket.
+If the TUI reports a hardware or daemon problem, run:
 
 ```bash
-sunreactorctl tui
+sunreactorctl doctor
 ```
 
-The TUI includes real-time monitoring, weather charts, theme options, and config management.
-
-The CLI also provides direct commands for scripting or quick overrides:
+The remaining CLI commands are optional and useful for scripting or quick overrides:
 ```bash
 sunreactorctl status               # View current solar state and monitor levels
 sunreactorctl suspend --minutes 60 # Temporarily pause automation
@@ -199,6 +199,11 @@ The TUI writes your settings to a standard TOML file at `~/.config/sunreactor/co
 [location]
 city = "Istanbul"
 timezone = "Europe/Istanbul"
+
+[daemon]
+# Safe default for DDC/CI monitors: one direct brightness command per change.
+# Set true only if your display reliably handles rapid multi-step fades.
+smooth_transition = false
 
 [[monitors]]
 logical_id = "desk"

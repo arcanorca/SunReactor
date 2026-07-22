@@ -175,6 +175,7 @@ impl ResponseEnvelope {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum Response {
     Pong {
         message: String,

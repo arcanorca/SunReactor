@@ -61,7 +61,7 @@ impl Model {
             Tab::Limits => self.automation_field_count(),
             Tab::Location => 3,
             Tab::Weather => 1,
-            Tab::Settings => 5,
+            Tab::Settings => 6,
         }
     }
 
@@ -135,6 +135,8 @@ impl Model {
                         crate::config::TemperatureUnit::Celsius
                     }
                 };
+            } else if self.active_setting == 4 {
+                self.config.daemon.smooth_transition = !self.config.daemon.smooth_transition;
             }
         }
     }

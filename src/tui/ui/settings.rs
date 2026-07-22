@@ -133,7 +133,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(15),
+            Constraint::Length(18),
             Constraint::Length(5),
             Constraint::Min(0),
         ])
@@ -173,9 +173,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                     .border_style(Style::default().fg(palette.border_inactive))
                     .title(Span::styled(
                         " Daemon Control ",
-                        Style::default()
-                            .fg(palette.fg)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
                     )),
             ),
         rows[1],
@@ -184,6 +182,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
     let inputs_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
@@ -254,7 +253,29 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
         .style(unit_style);
     f.render_widget(unit_field, inputs_layout[3]);
 
-    let suspend_is_active = app.active_setting == 4;
+    let smooth_transition_is_active = app.active_setting == 4;
+    let smooth_transition_style = active_field_style(app, smooth_transition_is_active, &palette);
+    let smooth_transition_value = if app.config.daemon.smooth_transition {
+        " [x] Enabled (multi-step DDC/CI fades) "
+    } else {
+        " [ ] Disabled (one direct brightness write) "
+    };
+
+    let smooth_transition_field = Paragraph::new(smooth_transition_value)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(field_border_style(smooth_transition_is_active, &palette))
+                .title(field_title(
+                    "Smooth Brightness Transitions (Toggle with Enter)",
+                    smooth_transition_is_active,
+                    &palette,
+                )),
+        )
+        .style(smooth_transition_style);
+    f.render_widget(smooth_transition_field, inputs_layout[4]);
+
+    let suspend_is_active = app.active_setting == 5;
     let suspend_field_style = active_field_style(app, suspend_is_active, &palette);
     let suspend_value = if matches!(app.input_mode, InputMode::Editing) && suspend_is_active {
         format!(" {} ", app.form.suspend_minutes_input.value())
@@ -276,7 +297,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                 )),
         )
         .style(suspend_field_style);
-    f.render_widget(suspend_field, inputs_layout[4]);
+    f.render_widget(suspend_field, inputs_layout[5]);
 
     let theme_is_active = app.active_setting == 0;
     let theme_style = active_field_style(app, theme_is_active, &palette);
@@ -302,8 +323,8 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
         f.set_cursor(cursor_x, cursor_y);
     } else if suspend_is_active && matches!(app.input_mode, InputMode::Editing) {
         let cursor_x =
-            inputs_layout[4].x + app.form.suspend_minutes_input.visual_cursor() as u16 + 2;
-        let cursor_y = inputs_layout[4].y + 1;
+            inputs_layout[5].x + app.form.suspend_minutes_input.visual_cursor() as u16 + 2;
+        let cursor_y = inputs_layout[5].y + 1;
         f.set_cursor(cursor_x, cursor_y);
     }
 }
@@ -322,9 +343,7 @@ pub(super) fn render_settings_layout(
         .border_style(Style::default().fg(palette.border_inactive))
         .title(Span::styled(
             title,
-            Style::default()
-                .fg(palette.fg)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
         ));
     f.render_widget(block.clone(), area);
     let inner = block.inner(area);
@@ -332,9 +351,7 @@ pub(super) fn render_settings_layout(
     let mut constraints = fields
         .iter()
         .map(|(label, value, _)| {
-            if label.is_empty() {
-                Constraint::Length(1)
-            } else if value == "SUBHEADING" {
+            if label.is_empty() || value == "SUBHEADING" {
                 Constraint::Length(1)
             } else {
                 Constraint::Length(3)

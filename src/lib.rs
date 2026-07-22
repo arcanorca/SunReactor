@@ -1,4 +1,3 @@
-#![warn(clippy::pedantic)]
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -19,8 +18,8 @@
 pub mod apply;
 pub mod backends;
 pub mod config;
-pub mod discovery;
 pub mod ddcutil;
+pub mod discovery;
 pub mod doctor;
 pub mod ipc;
 pub mod paths;
@@ -100,7 +99,8 @@ Commands:
   reload-config             Reload config inside the running daemon
   ping                      Check whether the daemon socket is alive
   run-once [--force]        Trigger one immediate daemon tick
-  discover                  Probe brightness-capable devices locally
+  discover                  Probe brightness-capable devices locally (read-only)
+  discover --apply          Add viable devices transactionally and reload
   config init               Write the default config template
   config validate           Parse and validate the config file
   tui                       Launch the interactive terminal interface
@@ -114,8 +114,9 @@ IPC:
   Protocol: one JSON request and one JSON response per connection
 
 Discovery:
-  {bin} discover          Human-readable device table
-  {bin} discover --json   Machine-readable JSON
+  {bin} discover             Human-readable device table
+  {bin} discover --json      Machine-readable JSON
+  {bin} discover --apply     Deduplicated, atomic config update with rollback
 ",
         name = PRODUCT_NAME,
         bin = CLI_BINARY,
