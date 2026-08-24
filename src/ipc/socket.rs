@@ -76,13 +76,6 @@ impl ControlSocket {
 
         configure_client_stream(&stream, &self.path)?;
         write_json_message(&mut stream, request, &self.path)?;
-        stream
-            .shutdown(std::net::Shutdown::Write)
-            .map_err(|source| IpcError::Io {
-                path: self.path.clone(),
-                source,
-            })?;
-
         read_response(&mut stream, &self.path)?.validate()
     }
 }
@@ -119,7 +112,7 @@ impl BoundControlSocket {
                         }
                         Err(e) => {
                             return Err(IpcError::Protocol {
-                                message: format!("Failed to read SO_PEERCRED: {}", e),
+                                message: format!("Failed to read SO_PEERCRED: {e}"),
                             });
                         }
                     }

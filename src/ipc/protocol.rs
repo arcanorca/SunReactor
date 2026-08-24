@@ -175,6 +175,9 @@ impl ResponseEnvelope {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
+// Keep the status payload inline: this preserves the existing public response
+// shape and avoids changing the IPC response construction API just for layout.
+#[allow(clippy::large_enum_variant)]
 pub enum Response {
     Pong {
         message: String,
@@ -239,6 +242,9 @@ pub struct MonitorStatus {
     pub last_applied_percent: Option<u8>,
     pub last_applied_at_epoch_s: Option<u64>,
     pub backoff_until_epoch_s: Option<u64>,
+    /// Runtime topology classification, when a capability snapshot exists.
+    #[serde(default)]
+    pub topology: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -248,7 +254,9 @@ pub struct WeatherStatus {
     pub active: bool,
     pub stale: bool,
     pub provider: Option<String>,
-    pub observed_at_epoch_s: Option<u64>,
+    pub fetched_at_epoch_s: Option<u64>,
+    pub valid_at_epoch_s: Option<u64>,
+    pub source_kind: Option<crate::weather::WeatherSourceKind>,
     pub last_refresh_attempt_epoch_s: Option<u64>,
     pub next_refresh_at_epoch_s: Option<u64>,
     pub consecutive_failures: u32,

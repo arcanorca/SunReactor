@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io;
 use std::path::PathBuf;
 
@@ -49,7 +50,7 @@ pub enum ConfigError {
 fn format_validation_errors(errors: &[ValidationError]) -> String {
     let mut message = String::new();
     for error in errors {
-        message.push_str(&format!("\n- {error}"));
+        let _ = writeln!(message, "\n- {error}");
     }
     message
 }

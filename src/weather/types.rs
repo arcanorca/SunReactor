@@ -1,14 +1,28 @@
 use crate::state::WeatherSnapshotMetadata;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeatherSnapshot {
     pub provider: String,
-    pub observed_at_epoch_s: u64,
+    /// When SunReactor received the provider response.
+    pub fetched_at_epoch_s: u64,
+    /// Timestamp for the forecast interval represented by this value.
+    pub valid_at_epoch_s: u64,
+    pub source_kind: WeatherSourceKind,
     pub cloud_cover_percent: u8,
     pub temperature: f32,
     pub forecast: Vec<crate::state::ForecastPoint>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WeatherSourceKind {
+    #[default]
+    Unknown,
+    CurrentObservation,
+    Forecast,
 }
 
 #[derive(Debug, Clone, PartialEq)]

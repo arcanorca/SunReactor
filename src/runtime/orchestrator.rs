@@ -7,7 +7,12 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
+
+const IPC_DRAIN_MAX_REQUESTS: usize = 16;
+const IPC_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
 
 use tracing::{error, info};
 
@@ -17,6 +22,8 @@ use crate::config::{self, ConfigError, ConfigReport, ConfigSource, MonitorConfig
 use crate::ipc::{self, BoundControlSocket, ControlSocket};
 use crate::paths::{self, PathError};
 use crate::policy::{self, PolicyContext, PolicyError, PolicyOutput};
+use crate::runtime::topology::CapabilitySnapshot;
+use crate::runtime::wake::{WakeReassertAction, WakeReassertCoordinator, WakeReassertReason};
 use crate::solar::{self, Location, SolarError, SolarSample};
 use crate::state::{RuntimeState, StateError};
 use crate::weather;
@@ -47,6 +54,12 @@ pub enum RuntimeError {
 }
 
 #[derive(Debug)]
+enum CapabilityRefreshResult {
+    Completed(CapabilitySnapshot),
+    Failed,
+}
+
+#[derive(Debug)]
 pub struct DaemonRuntime {
     config: RuntimeConfig,
     pub socket: ControlSocket,
@@ -57,10 +70,32 @@ pub struct DaemonRuntime {
     pub last_solar_elevation: Option<f64>,
     pub fade_engine: fade::FadeEngine,
     pub weather_engine: weather::WeatherEngine,
+    /// Ephemeral capability observation from the last reconciliation.
+    /// Not persisted; kept separate from user config.
+    pub last_capabilities: Option<CapabilitySnapshot>,
+    capability_refresh_tx: mpsc::SyncSender<CapabilityRefreshResult>,
+    capability_refresh_rx: mpsc::Receiver<CapabilityRefreshResult>,
+    capability_refresh_active: Arc<AtomicBool>,
+    capability_refresh_pending: bool,
+    capability_refresh_handle: Option<std::thread::JoinHandle<()>>,
+    wake_reassert: WakeReassertCoordinator,
+    wake_refresh_pending: bool,
 }
 
 impl Drop for DaemonRuntime {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        if let Some(handle) = self.capability_refresh_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+struct CapabilityRefreshGuard(Arc<AtomicBool>);
+
+impl Drop for CapabilityRefreshGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +117,11 @@ pub struct IpcOutcome {
     pub config_reloaded: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct IpcDrainOutcome {
+    processed: usize,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WeatherRefreshState {
     pub next_refresh_at_epoch_s: Option<u64>,
@@ -93,6 +133,17 @@ pub struct WeatherRefreshState {
 impl DaemonRuntime {
     pub fn run_once(&mut self) -> Result<TickReport, RuntimeError> {
         self.run_once_at_with_runner(Utc::now(), &RealProcessRunner, false)
+    }
+
+    /// Perform one complete capability observation before a one-shot apply.
+    /// A one-shot invocation has no daemon loop available to perform the
+    /// normal asynchronous observation/reconciliation handshake.
+    pub fn refresh_capabilities(&mut self) {
+        let report = crate::discovery::discover_with_runner(
+            &RealProcessRunner,
+            std::path::Path::new("/sys/class/backlight"),
+        );
+        self.last_capabilities = Some(CapabilitySnapshot::from_discovery(&report));
     }
 
     /// Force-apply variant: bypasses throttles so brightness changes
@@ -119,6 +170,85 @@ impl DaemonRuntime {
     ) -> Result<TickReport, RuntimeError> {
         self.prepare_apply_resync(clear_backoff);
         self.run_once_at_with_runner(now_utc, runner, true)
+    }
+
+    /// Starts at most one bounded capability observation away from the control
+    /// loop. Only the completed snapshot is published back to the runtime.
+    pub(crate) fn begin_capability_refresh_with_runner<R>(&mut self, runner: R)
+    where
+        R: ProcessRunner + Send + Sync + 'static,
+    {
+        if self.capability_refresh_active.load(Ordering::Acquire) {
+            return;
+        }
+
+        if let Some(handle) = self.capability_refresh_handle.take() {
+            if !handle.is_finished() {
+                self.capability_refresh_handle = Some(handle);
+                return;
+            }
+            let _ = handle.join();
+        }
+
+        if self
+            .capability_refresh_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
+        let sender = self.capability_refresh_tx();
+        let active = Arc::clone(&self.capability_refresh_active);
+        self.capability_refresh_handle = Some(std::thread::spawn(move || {
+            let _active_guard = CapabilityRefreshGuard(active);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let report = crate::discovery::discover_with_runner(
+                    &runner,
+                    std::path::Path::new("/sys/class/backlight"),
+                );
+                CapabilityRefreshResult::Completed(CapabilitySnapshot::from_discovery(&report))
+            }))
+            .unwrap_or(CapabilityRefreshResult::Failed);
+            let _ = sender.try_send(result);
+        }));
+    }
+
+    fn capability_refresh_tx(&self) -> mpsc::SyncSender<CapabilityRefreshResult> {
+        self.capability_refresh_tx.clone()
+    }
+
+    fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
+        match self.capability_refresh_rx.try_recv() {
+            Ok(CapabilityRefreshResult::Completed(snapshot)) => {
+                self.last_capabilities = Some(snapshot);
+                Some(true)
+            }
+            Ok(CapabilityRefreshResult::Failed) => Some(false),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => Some(false),
+        }
+    }
+
+    fn request_wake_reassert(&mut self, reason: WakeReassertReason) {
+        if self.wake_reassert.request(reason, Instant::now()) {
+            tracing::info!(reason = ?reason, "wake_reassert_requested");
+        } else {
+            tracing::debug!(reason = ?reason, "wake_reassert_coalesced");
+        }
+    }
+
+    fn process_wake_reassert(&mut self, now: Instant) -> bool {
+        match self.wake_reassert.poll(now) {
+            WakeReassertAction::Wait => true,
+            WakeReassertAction::Observe { attempt } => {
+                tracing::info!(attempt, "wake_reassert_observation_started");
+                self.wake_refresh_pending = true;
+                self.begin_capability_refresh_with_runner(RealProcessRunner);
+                true
+            }
+            WakeReassertAction::Done => false,
+        }
     }
 
     fn persist_state_if_changed(&mut self) -> Result<bool, RuntimeError> {
@@ -313,40 +443,55 @@ impl LoopCadence {
     }
 }
 
+fn drain_ready_connections<F>(
+    listener: &BoundControlSocket,
+    mut handle: F,
+) -> Result<IpcDrainOutcome, RuntimeError>
+where
+    F: FnMut(std::os::unix::net::UnixStream),
+{
+    let started = Instant::now();
+    let mut outcome = IpcDrainOutcome::default();
+    while outcome.processed < IPC_DRAIN_MAX_REQUESTS && started.elapsed() < IPC_DRAIN_MAX_DURATION {
+        match listener.accept() {
+            Ok(Some(stream)) => {
+                outcome.processed += 1;
+                handle(stream);
+            }
+            Ok(None) => return Ok(outcome),
+            Err(error) => {
+                if is_transient_ipc_accept_error(&error) {
+                    return Ok(outcome);
+                }
+                return Err(RuntimeError::from(error));
+            }
+        }
+    }
+    Ok(outcome)
+}
+
 impl DaemonRuntime {
-    pub(super) fn drain_ipc_requests(
+    fn drain_ipc_requests_with_quantum_impl(
         &mut self,
         listener: &BoundControlSocket,
         cadence: &mut LoopCadence,
         desktop_idle: &mut DesktopIdleSync,
-    ) -> Result<(), RuntimeError> {
-        loop {
-            match listener.accept() {
-                Ok(Some(stream)) => {
-                    let outcome = self.handle_ipc_stream(stream);
-                    if outcome.tick_attempted {
-                        let now_utc = Utc::now();
-                        cadence.note_tick_attempt();
-                        desktop_idle.note_tick_attempt(now_utc);
-                    }
-                    if outcome.config_reloaded {
-                        desktop_idle.update_config(
-                            self.config.daemon.desktop_idle_sync,
-                            self.config.daemon.desktop_idle_timeout_minutes,
-                        );
-                    }
-                }
-                Ok(None) => return Ok(()),
-                Err(error) => {
-                    if is_transient_ipc_accept_error(&error) {
-                        tracing::info!(error = %error, "ipc_accept_retry");
-                        return Ok(());
-                    }
-                    tracing::error!(error = %error, "ipc_accept_failed");
-                    return Err(RuntimeError::from(error));
-                }
+    ) -> Result<IpcDrainOutcome, RuntimeError> {
+        let outcome = drain_ready_connections(listener, |stream| {
+            let request_outcome = self.handle_ipc_stream(stream);
+            if request_outcome.tick_attempted {
+                let now_utc = Utc::now();
+                cadence.note_tick_attempt();
+                desktop_idle.note_tick_attempt(now_utc);
             }
-        }
+            if request_outcome.config_reloaded {
+                desktop_idle.update_config(
+                    self.config.daemon.desktop_idle_sync,
+                    self.config.daemon.desktop_idle_timeout_minutes,
+                );
+            }
+        })?;
+        Ok(outcome)
     }
 
     pub(super) fn perform_loop_action<R: ProcessRunner + Sync>(
@@ -363,6 +508,13 @@ impl DaemonRuntime {
                 self.execute_scheduled_tick(now_utc, runner, cadence, desktop_idle);
             }
             LoopAction::RunFadeStep => {
+                // Fade steps are hardware writes too.  Do not let the high-
+                // cadence path bypass topology authorization while the first
+                // complete capability observation is still pending.
+                if self.last_capabilities.is_none() {
+                    wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
+                    return;
+                }
                 let step_start = Instant::now();
                 let steps = self.fade_engine.process_tick();
                 for (monitor_id, percent) in steps {
@@ -452,12 +604,13 @@ impl DaemonRuntime {
 #[cfg(test)]
 mod loop_timing_tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn cadence_runs_tick_when_interval_elapsed() {
         let mut cadence = LoopCadence::new(60);
         cadence.last_tick_started = Instant::now()
-            .checked_sub(Duration::from_secs(60))
+            .checked_sub(Duration::from_mins(1))
             .expect("instant subtraction should work");
 
         assert_eq!(cadence.next_action(None, false), LoopAction::RunTick);
@@ -475,11 +628,142 @@ mod loop_timing_tests {
             LoopAction::RunFadeStep => panic!("unexpected fade step"),
         }
     }
+
+    #[test]
+    fn ipc_drain_quantum_is_bounded_by_request_count_and_time() {
+        assert_eq!(IPC_DRAIN_MAX_REQUESTS, 16);
+        assert!(IPC_DRAIN_MAX_DURATION <= Duration::from_millis(16));
+    }
+
+    #[test]
+    fn cadence_still_selects_due_tick_after_ipc_quantum_yields() {
+        let mut cadence = LoopCadence::new(60);
+        cadence.last_tick_started = Instant::now()
+            .checked_sub(Duration::from_mins(1))
+            .expect("instant subtraction should work");
+        assert_eq!(cadence.next_action(None, false), LoopAction::RunTick);
+    }
+
+    #[test]
+    fn drain_quantum_is_small_enough_to_yield_to_fade_cadence() {
+        assert_eq!(IPC_DRAIN_MAX_REQUESTS, 16);
+        assert_eq!(IPC_DRAIN_MAX_DURATION, Duration::from_millis(8));
+    }
+
+    #[test]
+    fn real_listener_drain_respects_count_and_preserves_backlog() {
+        let path = std::env::temp_dir().join(format!(
+            "sunreactor-drain-test-{}-{}.sock",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        let socket = ControlSocket { path: path.clone() };
+        let listener = socket.bind_listener().expect("listener should bind");
+        let mut clients = Vec::new();
+        for _ in 0..(IPC_DRAIN_MAX_REQUESTS + 2) {
+            let mut client = UnixStream::connect(&path).expect("client should connect");
+            ipc::write_json_message(
+                &mut client,
+                &ipc::RequestEnvelope::new(ipc::Request::Ping),
+                &path,
+            )
+            .expect("request should write");
+            clients.push(client);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+
+        let handled = std::sync::atomic::AtomicUsize::new(0);
+        let first = drain_ready_connections(&listener, |stream| {
+            handled.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            drop(stream);
+        })
+        .expect("first drain should succeed");
+        assert_eq!(first.processed, IPC_DRAIN_MAX_REQUESTS);
+
+        let second = drain_ready_connections(&listener, |stream| {
+            handled.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            drop(stream);
+        })
+        .expect("second drain should succeed");
+        assert!(second.processed >= 1);
+        assert_eq!(
+            handled.load(std::sync::atomic::Ordering::Relaxed),
+            IPC_DRAIN_MAX_REQUESTS + 2
+        );
+        drop(clients);
+    }
+
+    #[test]
+    fn malformed_connections_consume_drain_budget() {
+        let path = std::env::temp_dir().join(format!(
+            "sunreactor-malformed-drain-test-{}-{}.sock",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should work")
+                .as_nanos()
+        ));
+        let socket = ControlSocket { path: path.clone() };
+        let listener = socket.bind_listener().expect("listener should bind");
+        let mut clients = Vec::new();
+        for _ in 0..=IPC_DRAIN_MAX_REQUESTS {
+            let mut client = UnixStream::connect(&path).expect("client should connect");
+            std::io::Write::write_all(&mut client, b"not-json\n").expect("frame should write");
+            clients.push(client);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        let handled = std::sync::atomic::AtomicUsize::new(0);
+        let result = drain_ready_connections(&listener, |stream| {
+            // Production counts the connection before parsing its frame.
+            handled.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            drop(stream);
+        })
+        .expect("drain should succeed");
+        assert_eq!(result.processed, IPC_DRAIN_MAX_REQUESTS);
+        assert_eq!(
+            handled.load(std::sync::atomic::Ordering::Relaxed),
+            IPC_DRAIN_MAX_REQUESTS
+        );
+        drop(clients);
+    }
+
+    #[test]
+    fn one_slow_handler_is_not_preempted_by_drain_budget() {
+        let path = std::env::temp_dir().join(format!(
+            "sunreactor-slow-drain-test-{}-{}.sock",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        let socket = ControlSocket { path: path.clone() };
+        let listener = socket.bind_listener().expect("listener should bind");
+        let mut client = UnixStream::connect(&path).expect("client should connect");
+        ipc::write_json_message(
+            &mut client,
+            &ipc::RequestEnvelope::new(ipc::Request::Ping),
+            &path,
+        )
+        .expect("request should write");
+        let started = Instant::now();
+        let result = drain_ready_connections(&listener, |_stream| {
+            std::thread::sleep(IPC_DRAIN_MAX_DURATION + Duration::from_millis(4));
+        })
+        .expect("drain should succeed");
+        assert_eq!(result.processed, 1);
+        assert!(started.elapsed() >= IPC_DRAIN_MAX_DURATION);
+    }
+
+    #[test]
+    fn due_tick_is_selected_after_a_drained_quantum() {
+        let mut cadence = LoopCadence::new(60);
+        cadence.last_tick_started = Instant::now()
+            .checked_sub(Duration::from_mins(1))
+            .expect("instant subtraction should work");
+        assert_eq!(cadence.next_action(None, false), LoopAction::RunTick);
+    }
 }
 
 // --- From helpers.rs ---
 /// Pure helper functions used by the runtime — no &mut self, no side effects.
-
 pub(super) fn ipc_error_response(error: &RuntimeError) -> ipc::ResponseEnvelope {
     let code = match error {
         RuntimeError::Ipc(ipc::IpcError::Protocol { .. }) => ipc::ErrorCode::InvalidRequest,
@@ -709,7 +993,8 @@ impl DaemonRuntime {
         let tick_started = Instant::now();
         let inputs = self.collect_tick_inputs(now_utc, force_immediate)?;
         let computed = self.compute_tick_policy(inputs)?;
-        let applied = self.apply_tick_policy(computed, runner, force_immediate);
+        let applied = self.apply_tick_policy(computed, runner, force_immediate); // topology refreshed by daemon loop when available
+
         self.finish_tick(applied, tick_started)
     }
 
@@ -780,16 +1065,26 @@ impl DaemonRuntime {
             skipped_apply_summary(computed.policy.targets.len(), "suspend_until is active")
         } else {
             let settings_override = force_immediate.then(|| self.force_apply_settings());
-            apply::apply_policy_with_runner_monitors(
-                &self.config.monitors,
-                self.config.apply,
-                &computed.policy,
-                &mut self.state,
-                Some(&mut self.fade_engine),
-                runner,
-                computed.inputs.now_epoch_s,
-                settings_override,
-            )
+            let monitors = self.config.monitors.as_slice();
+            let settings = self.config.apply;
+            if let Some(capabilities) = self.last_capabilities.as_ref() {
+                apply::apply_policy_with_runner_reconciled(
+                    monitors,
+                    settings,
+                    &computed.policy,
+                    &mut self.state,
+                    runner,
+                    computed.inputs.now_epoch_s,
+                    capabilities,
+                    Some(&mut self.fade_engine),
+                    settings_override,
+                )
+            } else {
+                skipped_apply_summary(
+                    computed.policy.targets.len(),
+                    "capability observation is not ready",
+                )
+            }
         };
 
         AppliedTick {
@@ -848,15 +1143,12 @@ impl DaemonRuntime {
             return None;
         }
 
-        if let Ok(snapshot_opt) = self.weather_engine.latest_snapshot() {
-            self.state.weather = snapshot_opt;
-            if let Some(snapshot) = &self.state.weather {
-                return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
-            }
-        } else {
-            if let Some(snapshot) = &self.state.weather {
-                return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
-            }
+        if let Ok(Some(snapshot)) = self.weather_engine.latest_snapshot() {
+            self.state.weather = Some(snapshot);
+        }
+
+        if let Some(snapshot) = &self.state.weather {
+            return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
         }
 
         None
@@ -928,6 +1220,7 @@ impl DaemonRuntime {
             initial_weather,
         );
 
+        let (capability_refresh_tx, capability_refresh_rx) = mpsc::sync_channel(1);
         let mut runtime = Self {
             config,
             socket,
@@ -938,9 +1231,44 @@ impl DaemonRuntime {
             last_solar_elevation: None,
             fade_engine: FadeEngine::new(),
             weather_engine,
+            last_capabilities: None,
+            capability_refresh_tx,
+            capability_refresh_rx,
+            capability_refresh_active: Arc::new(AtomicBool::new(false)),
+            capability_refresh_pending: false,
+            capability_refresh_handle: None,
+            wake_reassert: WakeReassertCoordinator::default(),
+            wake_refresh_pending: false,
         };
 
         runtime.prepare_apply_resync(false);
+
+        // Unit fixtures historically invoke ticks directly. Give those
+        // fixtures an explicit safe observation; production bootstrap remains
+        // fail-closed until the daemon loop publishes a real snapshot.
+        #[cfg(test)]
+        {
+            if runtime.config.monitors.iter().any(|monitor| {
+                monitor.backend == crate::backends::BackendKind::Backlight
+                    && monitor.selector.sysfs_path.is_some()
+            }) {
+                runtime.last_capabilities = Some(CapabilitySnapshot {
+                    ddc_present: Vec::new(),
+                    backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
+                        stable_id: String::from("test:backlight"),
+                        device_name: String::from("intel_backlight"),
+                        class: String::from("backlight"),
+                        max_brightness: Some(100),
+                        backlight_type: Some(String::from("raw")),
+                        probe_source: String::from("test-fixture"),
+                        sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                        ddcci_connector: None,
+                        backend_viable: true,
+                        note: None,
+                    }],
+                });
+            }
+        }
 
         runtime.state.prune_to_configured_monitors(
             runtime
@@ -957,6 +1285,7 @@ impl DaemonRuntime {
 
 // --- From control.rs ---
 impl DaemonRuntime {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn handle_ipc_request_with_runner<R: ProcessRunner + Sync>(
         &mut self,
         request: ipc::Request,
@@ -996,7 +1325,7 @@ impl DaemonRuntime {
                 Ok(()) => (
                     self.respond_after_resync(
                         "resume",
-                        String::from("resumed automatic apply and cleared manual overrides"),
+                        "resumed automatic apply and cleared manual overrides",
                         now_utc,
                         runner,
                         true,
@@ -1022,7 +1351,7 @@ impl DaemonRuntime {
                 };
                 match self.set_override(now_epoch_s, monitor_id.as_deref(), percent, minutes) {
                     Ok(message) => (
-                        self.respond_after_forced_apply("set_override", message, now_utc, runner),
+                        self.respond_after_forced_apply("set_override", &message, now_utc, runner),
                         outcome,
                     ),
                     Err(error) => (ipc_error_response(&error), outcome),
@@ -1035,7 +1364,12 @@ impl DaemonRuntime {
                 };
                 match self.clear_override(monitor_id.as_deref(), global) {
                     Ok(message) => (
-                        self.respond_after_forced_apply("clear_override", message, now_utc, runner),
+                        self.respond_after_forced_apply(
+                            "clear_override",
+                            &message,
+                            now_utc,
+                            runner,
+                        ),
                         outcome,
                     ),
                     Err(error) => (ipc_error_response(&error), outcome),
@@ -1053,7 +1387,7 @@ impl DaemonRuntime {
                         (
                             self.respond_after_forced_apply(
                                 "reload_config",
-                                message,
+                                &message,
                                 now_utc,
                                 runner,
                             ),
@@ -1105,7 +1439,7 @@ impl DaemonRuntime {
                 (
                     self.respond_after_forced_apply(
                         "idle_dim",
-                        String::from("desktop idle dimming active"),
+                        "desktop idle dimming active",
                         now_utc,
                         runner,
                     ),
@@ -1118,13 +1452,9 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 self.state.desktop_idle_dimmed = false;
+                self.request_wake_reassert(WakeReassertReason::WaylandIdleResume);
                 (
-                    self.respond_after_forced_apply(
-                        "idle_wake",
-                        String::from("desktop idle dimming inactive"),
-                        now_utc,
-                        runner,
-                    ),
+                    ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
                     outcome,
                 )
             }
@@ -1145,7 +1475,7 @@ impl DaemonRuntime {
                     (
                         self.respond_after_resync(
                             "external_brightness_change",
-                            String::from("external brightness change detected, reasserting policy"),
+                            "external brightness change detected, reasserting policy",
                             now_utc,
                             runner,
                             false,
@@ -1172,45 +1502,54 @@ impl DaemonRuntime {
     fn respond_after_forced_apply<R: ProcessRunner + Sync>(
         &mut self,
         trigger: &'static str,
-        success_message: String,
+        success_message: &str,
         now_utc: DateTime<Utc>,
         runner: &R,
     ) -> ipc::ResponseEnvelope {
         self.run_once_at_with_runner(now_utc, runner, true)
-            .map(|report| immediate_apply_response(success_message.clone(), &report))
-            .unwrap_or_else(|error| {
-                tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
-                ipc::ResponseEnvelope::error(
-                    ipc::ErrorCode::InternalError,
-                    format!("{success_message}, but immediate apply failed: {error}"),
-                )
-            })
+            .map_or_else(
+                |error| {
+                    tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
+                    ipc::ResponseEnvelope::error(
+                        ipc::ErrorCode::InternalError,
+                        format!("{success_message}, but immediate apply failed: {error}"),
+                    )
+                },
+                |report| immediate_apply_response(success_message, &report),
+            )
     }
 
     fn respond_after_resync<R: ProcessRunner + Sync>(
         &mut self,
         trigger: &'static str,
-        success_message: String,
+        success_message: &str,
         now_utc: DateTime<Utc>,
         runner: &R,
         clear_backoff: bool,
     ) -> ipc::ResponseEnvelope {
         self.run_resync_at_with_runner(now_utc, runner, clear_backoff)
-            .map(|report| immediate_apply_response(success_message.clone(), &report))
-            .unwrap_or_else(|error| {
-                tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
-                ipc::ResponseEnvelope::error(
-                    ipc::ErrorCode::InternalError,
-                    format!("{success_message}, but immediate apply failed: {error}"),
-                )
-            })
+            .map_or_else(
+                |error| {
+                    tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
+                    ipc::ResponseEnvelope::error(
+                        ipc::ErrorCode::InternalError,
+                        format!("{success_message}, but immediate apply failed: {error}"),
+                    )
+                },
+                |report| immediate_apply_response(success_message, &report),
+            )
     }
 
+    #[allow(clippy::too_many_lines)]
     fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
         let control = self.state.effective_control(now_epoch_s);
         let weather = if self.config.weather.enabled {
-            let cached_snapshot = self.weather_engine.latest_snapshot().ok();
-            let snapshot_owned = cached_snapshot.unwrap_or_else(|| self.state.weather.clone());
+            let snapshot_owned = self
+                .weather_engine
+                .latest_snapshot()
+                .ok()
+                .flatten()
+                .or_else(|| self.state.weather.clone());
             let snapshot = snapshot_owned.as_ref();
             let snapshot_state =
                 weather::snapshot_state(&self.config.weather, snapshot, now_epoch_s);
@@ -1221,7 +1560,11 @@ impl DaemonRuntime {
                 provider: snapshot
                     .map(|weather| weather.provider.trim().to_owned())
                     .filter(|provider| !provider.is_empty()),
-                observed_at_epoch_s: snapshot.map(|weather| weather.observed_at_epoch_s),
+                fetched_at_epoch_s: snapshot.map(|weather| weather.fetched_at_epoch_s),
+                valid_at_epoch_s: snapshot.and_then(|weather| {
+                    (weather.valid_at_epoch_s != 0).then_some(weather.valid_at_epoch_s)
+                }),
+                source_kind: snapshot.map(|weather| weather.source_kind),
                 last_refresh_attempt_epoch_s: self.weather_refresh.last_attempted_at_epoch_s,
                 next_refresh_at_epoch_s: self.weather_refresh.next_refresh_at_epoch_s,
                 consecutive_failures: self.weather_refresh.consecutive_failures,
@@ -1262,6 +1605,19 @@ impl DaemonRuntime {
                                 None
                             }
                         }),
+                    topology: self.last_capabilities.as_ref().and_then(|capabilities| {
+                        crate::runtime::topology::reconcile(&self.config.monitors, capabilities)
+                            .get(
+                                self.config
+                                    .monitors
+                                    .iter()
+                                    .position(|candidate| {
+                                        candidate.logical_id == monitor.logical_id
+                                    })
+                                    .unwrap_or(usize::MAX),
+                            )
+                            .map(|action| action.name().to_owned())
+                    }),
                 }
             })
             .collect();
@@ -1484,16 +1840,17 @@ impl DaemonRuntime {
             }
         }
 
-        self.weather_engine.sync_config(&self.config.weather, &self.config.location);
+        self.weather_engine
+            .sync_config(&self.config.weather, &self.config.location);
 
         Ok(())
     }
 }
 
-fn immediate_apply_response(success_message: String, report: &TickReport) -> ipc::ResponseEnvelope {
+fn immediate_apply_response(success_message: &str, report: &TickReport) -> ipc::ResponseEnvelope {
     log_tick(report);
 
-    if let Some(message) = immediate_apply_error_message(&success_message, &report.apply_summary) {
+    if let Some(message) = immediate_apply_error_message(success_message, &report.apply_summary) {
         ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, message)
     } else {
         ipc::ResponseEnvelope::ack(success_message)
@@ -1508,6 +1865,7 @@ impl DaemonRuntime {
     /// This function handles IPC requests, idle state transitions, and
     /// applies hardware brightness targets asynchronously until
     /// `shutdown_requested` returns true.
+    #[allow(clippy::too_many_lines)]
     pub fn run_loop<F>(&mut self, mut shutdown_requested: F) -> Result<(), RuntimeError>
     where
         F: FnMut() -> bool,
@@ -1541,7 +1899,11 @@ impl DaemonRuntime {
         }
 
         while !shutdown_requested() {
-            self.drain_ipc_requests(&listener, &mut cadence, &mut desktop_idle)?;
+            let _ = self.drain_ipc_requests_with_quantum_impl(
+                &listener,
+                &mut cadence,
+                &mut desktop_idle,
+            )?;
 
             if shutdown_requested() {
                 break;
@@ -1553,8 +1915,65 @@ impl DaemonRuntime {
                 continue;
             }
 
+            if self.wake_reassert.is_pending() {
+                if self.wake_refresh_pending {
+                    if let Some(result) = self.publish_completed_capability_snapshot() {
+                        self.wake_refresh_pending = false;
+                        // A completed fresh observation is sufficient to run the
+                        // reconciled apply path. That path authorizes each
+                        // configured target independently, so an unavailable,
+                        // ambiguous, or suppressed sibling cannot block a
+                        // healthy Present target.
+                        let observation_ready = result && self.last_capabilities.is_some();
+                        if observation_ready {
+                            let _ = self.run_once_at_with_runner(now_utc, &RealProcessRunner, true);
+                        }
+                        if !self
+                            .wake_reassert
+                            .observation_completed(observation_ready, Instant::now())
+                        {
+                            tracing::warn!(observation_ready, "wake_reassert_observation_finished");
+                        }
+                        continue;
+                    }
+                } else if self.process_wake_reassert(Instant::now()) {
+                    wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
+                    continue;
+                }
+            }
+
+            let action =
+                cadence.next_action(desktop_idle.next_deadline(), self.fade_engine.is_fading());
+            // Phase 9 uses periodic observation only. Refresh immediately
+            // before scheduled ticks, not on every idle loop iteration.
+            if let Some(result) = self.publish_completed_capability_snapshot() {
+                if self.capability_refresh_pending {
+                    self.capability_refresh_pending = false;
+                    if result {
+                        self.execute_scheduled_tick(
+                            now_utc,
+                            &RealProcessRunner,
+                            &mut cadence,
+                            &mut desktop_idle,
+                        );
+                    }
+                    continue;
+                }
+            }
+            if self.capability_refresh_pending {
+                wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
+                continue;
+            }
+
+            if matches!(action, LoopAction::RunTick) {
+                self.capability_refresh_pending = true;
+                self.begin_capability_refresh_with_runner(RealProcessRunner);
+                wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
+                continue;
+            }
+
             self.perform_loop_action(
-                cadence.next_action(desktop_idle.next_deadline(), self.fade_engine.is_fading()),
+                action,
                 now_utc,
                 &RealProcessRunner,
                 &mut cadence,
@@ -1648,8 +2067,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::Duration;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::{TimeZone, Utc};
 
@@ -1666,6 +2084,42 @@ mod tests {
 
     struct RecordingRunner {
         calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[derive(Clone)]
+    struct SlowObservationRunner {
+        delay: Duration,
+        started: Arc<AtomicBool>,
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl ProcessRunner for SlowObservationRunner {
+        fn run(
+            &self,
+            program: &str,
+            _args: &[String],
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            self.started.store(true, Ordering::Release);
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            std::thread::sleep(self.delay);
+            Err(CommandError::Missing {
+                program: program.to_owned(),
+            })
+        }
+    }
+
+    struct PanicObservationRunner;
+
+    impl ProcessRunner for PanicObservationRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[String],
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            panic!("synthetic observation panic");
+        }
     }
 
     impl RecordingRunner {
@@ -1717,6 +2171,123 @@ mod tests {
         assert!(state_path.parent().expect("state dir").exists());
         assert!(socket_path.parent().expect("socket dir").exists());
         assert_eq!(runtime.state, RuntimeState::default());
+    }
+
+    #[test]
+    fn slow_capability_refresh_does_not_block_ipc_or_publish_partial_snapshot() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        runtime.last_capabilities = None;
+        let runner = SlowObservationRunner {
+            delay: Duration::from_millis(150),
+            started: Arc::new(AtomicBool::new(false)),
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let calls = Arc::clone(&runner.calls);
+        let started = Arc::clone(&runner.started);
+
+        runtime.begin_capability_refresh_with_runner(runner.clone());
+        let started_deadline = Instant::now() + Duration::from_millis(100);
+        while !started.load(Ordering::Acquire) && Instant::now() < started_deadline {
+            std::thread::yield_now();
+        }
+        runtime.begin_capability_refresh_with_runner(runner);
+        assert!(started.load(Ordering::Acquire));
+        assert!(runtime.last_capabilities.is_none());
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+
+        let status_started = Instant::now();
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            ipc::Request::Status,
+            &RecordingRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+        assert!(matches!(response.response, ipc::Response::Status { .. }));
+        assert!(!outcome.tick_attempted);
+        assert!(
+            status_started.elapsed() < Duration::from_millis(50),
+            "IPC status handling must not wait for observation"
+        );
+
+        std::thread::sleep(Duration::from_millis(600));
+        runtime.publish_completed_capability_snapshot();
+        assert!(runtime.last_capabilities.is_some());
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn panicking_observation_clears_active_state_and_allows_retry() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+
+        runtime.begin_capability_refresh_with_runner(PanicObservationRunner);
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(runtime.publish_completed_capability_snapshot(), Some(false));
+
+        let runner = SlowObservationRunner {
+            delay: Duration::from_millis(1),
+            started: Arc::new(AtomicBool::new(false)),
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let started = Arc::clone(&runner.started);
+        runtime.begin_capability_refresh_with_runner(runner);
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while !started.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(started.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn bootstrap_rejects_future_state_without_replacing_it() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let original = br#"{"schema_version":2,"future":{"new":true},"monitors":{}}
+"#;
+        fs::create_dir_all(state_path.parent().expect("state dir"))
+            .expect("state dir should exist");
+        fs::write(&state_path, original).expect("future state should write");
+
+        let error = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            state_path.clone(),
+            socket_path,
+        )
+        .expect_err("future state must prevent startup");
+
+        assert!(matches!(
+            error,
+            RuntimeError::State(StateError::UnsupportedSchemaVersion {
+                found: 2,
+                supported: 1,
+                ..
+            })
+        ));
+        assert_eq!(
+            fs::read(&state_path).expect("state should remain"),
+            original
+        );
+        assert_eq!(
+            fs::read_dir(temp.path().join("state"))
+                .expect("state dir should be readable")
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+                .count(),
+            0
+        );
     }
 
     #[test]
@@ -1849,7 +2420,9 @@ mod tests {
         .expect("runtime should bootstrap");
         runtime.state.weather = Some(WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: crate::weather::WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(81),
             smoothed_cloud_cover_percent: Some(77),
             temperature: Some(0.0),
@@ -1903,6 +2476,7 @@ mod tests {
             targets: std::collections::BTreeMap::from([(String::from("internal"), 33)]),
             expires_at_epoch_s: Some(1_800_000_100),
         });
+        runtime.last_capabilities = Some(test_capability_snapshot());
         let runner = FakeRunner::new().with_success(
             "brightnessctl",
             &[
@@ -1944,6 +2518,40 @@ mod tests {
                 .and_then(|monitor| monitor.last_applied_percent),
             Some(33)
         );
+    }
+
+    #[test]
+    fn run_once_without_capability_snapshot_fails_closed() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        runtime.last_capabilities = None;
+        runtime.state.manual_override = Some(ManualOverrideState {
+            global_percent: Some(33),
+            global_expires_at_epoch_s: None,
+            targets: std::collections::BTreeMap::new(),
+            expires_at_epoch_s: None,
+        });
+        let runner = RecordingRunner::new();
+
+        let report = runtime
+            .run_once_at_with_runner(
+                Utc.timestamp_opt(1_800_000_000, 0)
+                    .single()
+                    .expect("valid time"),
+                &runner,
+                true,
+            )
+            .expect("tick should complete with a skipped apply");
+
+        assert!(runtime.last_capabilities.is_none());
+        assert_eq!(report.apply_summary.attempted, 0);
+        assert_eq!(report.apply_summary.skipped, 1);
+        assert!(runner.calls.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1994,6 +2602,7 @@ mod tests {
             targets: std::collections::BTreeMap::new(),
             expires_at_epoch_s: None,
         });
+        runtime.last_capabilities = Some(test_capability_snapshot());
         let runner = FakeRunner::new().with_success(
             "brightnessctl",
             &[
@@ -2042,7 +2651,9 @@ mod tests {
         .expect("runtime should bootstrap");
         let weather_snapshot = crate::state::WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: crate::weather::WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(100),
             smoothed_cloud_cover_percent: Some(100),
             temperature: Some(0.0),
@@ -2152,7 +2763,9 @@ mod tests {
             .record_apply_success("internal", 41, 1_800_000_000);
         runtime.state.weather = Some(crate::state::WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: crate::weather::WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(50),
             smoothed_cloud_cover_percent: Some(50),
             temperature: Some(0.0),
@@ -2721,6 +3334,7 @@ mod tests {
                     logical_id: String::from("internal"),
                     backend: crate::backends::BackendKind::Backlight,
                     enabled: true,
+                    allow_topology_retargeting: false,
                     min_pct: 10,
                     max_pct: 100,
                     gain: 1.0,
@@ -2749,6 +3363,24 @@ mod tests {
         report.config.weather.refresh_minutes = 30;
         report.config.weather.min_multiplier = 0.75;
         report
+    }
+
+    fn test_capability_snapshot() -> CapabilitySnapshot {
+        CapabilitySnapshot {
+            ddc_present: Vec::new(),
+            backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
+                stable_id: String::from("backlight:intel_backlight"),
+                device_name: String::from("intel_backlight"),
+                class: String::from("backlight"),
+                max_brightness: Some(100),
+                backlight_type: Some(String::from("raw")),
+                probe_source: String::from("test"),
+                sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                ddcci_connector: None,
+                backend_viable: true,
+                note: None,
+            }],
+        }
     }
 
     fn test_dry_run_config_report() -> ConfigReport {

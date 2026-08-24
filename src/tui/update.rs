@@ -50,6 +50,7 @@ fn handle_ipc(event: IpcEvent, model: &mut Model) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_key(key: KeyEvent, app: &mut Model) {
     if !matches!(app.active_modal, super::model::ActiveModal::None) {
         match key.code {

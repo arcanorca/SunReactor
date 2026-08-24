@@ -380,7 +380,7 @@ pub(crate) mod testutil {
                 .lock()
                 .unwrap()
                 .get_mut(&key)
-                .and_then(|responses| responses.pop_front())
+                .and_then(std::collections::VecDeque::pop_front)
                 .unwrap_or_else(|| {
                     Err(CommandError::Io {
                         program: program.to_owned(),

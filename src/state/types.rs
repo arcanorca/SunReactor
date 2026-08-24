@@ -75,7 +75,12 @@ pub struct ForecastPoint {
 #[serde(default)]
 pub struct WeatherSnapshotMetadata {
     pub provider: String,
-    pub observed_at_epoch_s: u64,
+    #[serde(alias = "observed_at_epoch_s")]
+    pub fetched_at_epoch_s: u64,
+    #[serde(default)]
+    pub valid_at_epoch_s: u64,
+    #[serde(default)]
+    pub source_kind: crate::weather::WeatherSourceKind,
     pub cloud_cover_percent: Option<u8>,
     pub smoothed_cloud_cover_percent: Option<u8>,
     pub temperature: Option<f32>,
@@ -113,5 +118,14 @@ pub enum StateError {
     Serialize {
         #[source]
         source: serde_json::Error,
+    },
+    #[error(
+        "runtime-state file {} uses unsupported schema version {found}; this build supports schema version {supported}. The state file was not modified",
+        path.display()
+    )]
+    UnsupportedSchemaVersion {
+        path: PathBuf,
+        found: u64,
+        supported: u32,
     },
 }

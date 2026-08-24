@@ -50,35 +50,29 @@ pub(super) fn render_automation(f: &mut Frame, app: &Model, area: Rect) {
     ));
 
     let palette = app.config.tui.theme.palette();
-    render_settings_layout(f, app, area, " Brightness Limits ", fields, &palette);
+    render_settings_layout(f, app, area, " Brightness Limits ", &fields, &palette);
 }
 
 pub(super) fn render_location(f: &mut Frame, app: &Model, area: Rect) {
     let palette = app.config.tui.theme.palette();
-    render_settings_layout(
-        f,
-        app,
-        area,
-        " Solar Location ",
-        vec![
-            (
-                String::from("City"),
-                app.form.city_search_input.value().to_string(),
-                0,
-            ),
-            (
-                String::from("Latitude"),
-                app.form.lat_input.value().to_string(),
-                1,
-            ),
-            (
-                String::from("Longitude"),
-                app.form.lon_input.value().to_string(),
-                2,
-            ),
-        ],
-        &palette,
-    );
+    let fields = vec![
+        (
+            String::from("City"),
+            app.form.city_search_input.value().to_string(),
+            0,
+        ),
+        (
+            String::from("Latitude"),
+            app.form.lat_input.value().to_string(),
+            1,
+        ),
+        (
+            String::from("Longitude"),
+            app.form.lon_input.value().to_string(),
+            2,
+        ),
+    ];
+    render_settings_layout(f, app, area, " Solar Location ", &fields, &palette);
 
     // Render city autocomplete popup
     if app.active_setting == 0
@@ -128,6 +122,7 @@ pub(super) fn render_location(f: &mut Frame, app: &Model, area: Rect) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
     let palette = app.config.tui.theme.palette();
     let rows = Layout::default()
@@ -173,9 +168,7 @@ pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
                     .border_style(Style::default().fg(palette.border_inactive))
                     .title(Span::styled(
                         " Daemon Control ",
-                        Style::default()
-                            .fg(palette.fg)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
                     )),
             ),
         rows[1],
@@ -313,7 +306,7 @@ pub(super) fn render_settings_layout(
     app: &Model,
     area: Rect,
     title: &str,
-    fields: Vec<(String, String, usize)>,
+    fields: &[(String, String, usize)],
     palette: &Palette,
 ) {
     // Panel border: muted — the tab bar already marks the active section.
@@ -322,9 +315,7 @@ pub(super) fn render_settings_layout(
         .border_style(Style::default().fg(palette.border_inactive))
         .title(Span::styled(
             title,
-            Style::default()
-                .fg(palette.fg)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
         ));
     f.render_widget(block.clone(), area);
     let inner = block.inner(area);
@@ -332,9 +323,7 @@ pub(super) fn render_settings_layout(
     let mut constraints = fields
         .iter()
         .map(|(label, value, _)| {
-            if label.is_empty() {
-                Constraint::Length(1)
-            } else if value == "SUBHEADING" {
+            if label.is_empty() || value == "SUBHEADING" {
                 Constraint::Length(1)
             } else {
                 Constraint::Length(3)

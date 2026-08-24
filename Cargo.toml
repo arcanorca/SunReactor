@@ -22,12 +22,16 @@ tracing-subscriber = "0.3.23"
 tui-input = { version = "0.15.0", optional = true }
 ureq = "2.10"
 rustix = { version = "0.38", features = ["fs", "net", "process"] }
+wayland-client = { version = "0.31.15", optional = true }
+wayland-protocols = { version = "0.32.13", features = ["client", "staging"], optional = true }
+wayland-protocols-plasma = { version = "0.3.12", features = ["client"], optional = true }
 tz-rs = "0.6.14"
 tempfile = "3.10.1"
 
 [features]
-default = ["tui"]
+default = ["tui", "wayland"]
 tui = ["ratatui", "crossterm", "tui-input"]
+wayland = ["wayland-client", "wayland-protocols", "wayland-protocols-plasma"]
 
 [lib]
 name = "sunreactor"

@@ -231,7 +231,7 @@ pub(crate) fn safe_find_event_crossing(
 mod tests {
     use super::*;
     use crate::solar::get_sun_events;
-    use chrono::{NaiveDate, TimeZone};
+    use chrono::NaiveDate;
     #[test]
     fn polar_day_night_edge_cases_are_structured_errors() {
         let location =
@@ -239,12 +239,6 @@ mod tests {
         let date = NaiveDate::from_ymd_opt(2024, 12, 21).expect("date should be valid");
 
         let error = get_sun_events(date, &location).expect_err("polar night should remove events");
-        assert!(matches!(
-            error,
-            SolarError::SunNeverCrossesThreshold {
-                threshold_deg: _,
-                ..
-            }
-        ));
+        assert!(matches!(error, SolarError::SunNeverCrossesThreshold { .. }));
     }
 }

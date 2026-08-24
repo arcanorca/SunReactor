@@ -363,8 +363,19 @@ fn render_status(status: &StatusResponse) -> String {
                 optional_text(weather.provider.as_deref())
             ));
             lines.push(format!(
-                "weather_observed_at_epoch_s: {}",
-                optional_u64(weather.observed_at_epoch_s)
+                "weather_fetched_at_epoch_s: {}",
+                optional_u64(weather.fetched_at_epoch_s)
+            ));
+            lines.push(format!(
+                "weather_valid_at_epoch_s: {}",
+                optional_u64(weather.valid_at_epoch_s)
+            ));
+            lines.push(format!(
+                "weather_source_kind: {}",
+                weather.source_kind.map_or_else(
+                    || String::from("unavailable"),
+                    |kind| format!("{kind:?}").to_lowercase(),
+                )
             ));
             lines.push(format!(
                 "weather_last_refresh_attempt_epoch_s: {}",
@@ -396,10 +407,11 @@ fn render_status(status: &StatusResponse) -> String {
         lines.push(String::from("monitors:"));
         for monitor in &status.monitors {
             lines.push(format!(
-                "  - logical_id={} backend={} enabled={} override_percent={} last_applied_percent={} last_applied_at_epoch_s={} backoff_until_epoch_s={}",
+                "  - logical_id={} backend={} enabled={} topology={} override_percent={} last_applied_percent={} last_applied_at_epoch_s={} backoff_until_epoch_s={}",
                 monitor.logical_id,
                 backend_name(monitor.backend),
                 monitor.enabled,
+                optional_text(monitor.topology.as_deref()),
                 optional_u8(monitor.override_percent),
                 optional_u8(monitor.last_applied_percent),
                 optional_u64(monitor.last_applied_at_epoch_s),
@@ -452,7 +464,9 @@ fn render_offline_status(socket: &ipc::ControlSocket) -> String {
         String::from("weather_active: unavailable"),
         String::from("weather_stale: unavailable"),
         String::from("weather_provider: unavailable"),
-        String::from("weather_observed_at_epoch_s: unavailable"),
+        String::from("weather_fetched_at_epoch_s: unavailable"),
+        String::from("weather_valid_at_epoch_s: unavailable"),
+        String::from("weather_source_kind: unavailable"),
         String::from("weather_last_refresh_attempt_epoch_s: unavailable"),
         String::from("weather_next_refresh_at_epoch_s: unavailable"),
         String::from("weather_consecutive_failures: unavailable"),
@@ -658,7 +672,9 @@ mod tests {
                 active: false,
                 stale: true,
                 provider: Some(String::from("openweather")),
-                observed_at_epoch_s: Some(1_700_000_000),
+                fetched_at_epoch_s: Some(1_700_000_000),
+                valid_at_epoch_s: Some(1_700_000_000),
+                source_kind: None,
                 last_refresh_attempt_epoch_s: Some(1_700_000_120),
                 next_refresh_at_epoch_s: Some(1_700_000_180),
                 consecutive_failures: 2,
@@ -675,6 +691,7 @@ mod tests {
                 last_applied_percent: Some(40),
                 last_applied_at_epoch_s: Some(1_700_000_000),
                 backoff_until_epoch_s: None,
+                topology: None,
             }],
             solar_elevation: Some(15.0),
             lunar_phase: None,

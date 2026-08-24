@@ -8,6 +8,16 @@ pub enum TargetKind {
     ExternalMonitor,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PhysicalIdentityStatus {
+    Unique,
+    Ambiguous,
+    TopologyBound,
+    #[default]
+    Insufficient,
+}
+
 #[derive(Debug, Clone)]
 pub struct TargetDescriptor {
     pub id: String,
@@ -51,7 +61,12 @@ pub struct DiscoverySummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DdcMonitorDiscovery {
+    /// Unique only within one discovery report; not a physical identity.
+    #[serde(default)]
+    pub occurrence_id: String,
     pub stable_id: String,
+    #[serde(default)]
+    pub identity_status: PhysicalIdentityStatus,
     pub manufacturer: Option<String>,
     pub model: Option<String>,
     pub serial: Option<String>,
@@ -90,8 +105,16 @@ pub struct BacklightDeviceDiscovery {
     pub device_name: String,
     pub class: String,
     pub max_brightness: Option<u32>,
+    /// Kernel `/sys/class/backlight/<device>/type`, when readable.
+    pub backlight_type: Option<String>,
     pub probe_source: String,
     pub sysfs_path: String,
+    /// Topology evidence: DRM connector directory name (e.g. `card1-DP-1`)
+    /// whose `ddcci_backlight` symlink converges on this device's `device`
+    /// link. `Some` only when the kernel/driver topology link is proven;
+    /// never inferred from names, ordering, or backlight type.
+    #[serde(default)]
+    pub ddcci_connector: Option<String>,
     pub backend_viable: bool,
     pub note: Option<String>,
 }
@@ -138,7 +161,9 @@ impl RawDdcMonitor {
 
     pub(crate) fn into_discovery(self) -> DdcMonitorDiscovery {
         DdcMonitorDiscovery {
+            occurrence_id: String::new(),
             stable_id: build_ddc_stable_id(&self),
+            identity_status: PhysicalIdentityStatus::Insufficient,
             manufacturer: self.manufacturer,
             model: self.model,
             serial: self.serial,

@@ -17,11 +17,20 @@ pub(crate) fn discover_with_runner<R: ProcessRunner>(
     runner: &R,
     sysfs_root: &Path,
 ) -> DiscoverySnapshot {
+    discover_with_roots(runner, sysfs_root, Path::new("/sys/class/drm"))
+}
+
+pub(crate) fn discover_with_roots<R: ProcessRunner>(
+    runner: &R,
+    sysfs_root: &Path,
+    drm_root: &Path,
+) -> DiscoverySnapshot {
     let (ddc_status, ddc_monitors) = discover_ddc_monitors(runner);
     let (brightnessctl_status, brightnessctl_devices) =
         discover_brightnessctl_backlights(runner, sysfs_root);
     let (sysfs_status, sysfs_devices) = discover_sysfs_backlights(sysfs_root);
     let mut backlight_devices = merge_backlight_devices(brightnessctl_devices, sysfs_devices);
+    annotate_ddcci_connector_evidence(&mut backlight_devices, drm_root);
 
     backlight_devices.sort_by(|left, right| left.device_name.cmp(&right.device_name));
 
@@ -34,7 +43,10 @@ pub(crate) fn discover_with_runner<R: ProcessRunner>(
             .count()
             + backlight_devices
                 .iter()
-                .filter(|device| device.backend_viable)
+                .filter(|device| {
+                    device.backend_viable
+                        && !super::is_ddcci_alias_of_viable_ddc(device, &ddc_monitors)
+                })
                 .count(),
     };
 
@@ -50,6 +62,7 @@ pub(crate) fn discover_with_runner<R: ProcessRunner>(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,
 ) -> (BackendStatus, Vec<DdcMonitorDiscovery>) {
@@ -62,6 +75,7 @@ fn discover_ddc_monitors<R: ProcessRunner>(
     match runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT) {
         Ok(output) if output.success() => {
             let mut monitors = parse_ddc_detect(&output.stdout);
+            super::assign_ddc_occurrence_ids(&mut monitors);
             let mut capability_failures = 0usize;
 
             for monitor in &mut monitors {
@@ -295,10 +309,7 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
     let mut devices = Vec::new();
 
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -309,6 +320,7 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
         };
 
         let max_brightness = read_optional_u32(&path.join("max_brightness"));
+        let backlight_type = read_optional_text(&path.join("type"));
         let brightness_exists = path.join("brightness").exists();
         let backend_viable = brightness_exists && max_brightness.unwrap_or(0) > 0;
         let note = if brightness_exists {
@@ -322,8 +334,10 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
             device_name,
             class: String::from("backlight"),
             max_brightness,
+            backlight_type,
             probe_source: String::from("sysfs"),
             sysfs_path: path.display().to_string(),
+            ddcci_connector: None,
             backend_viable,
             note,
         });
@@ -351,6 +365,41 @@ fn discover_sysfs_backlights(sysfs_root: &Path) -> (BackendStatus, Vec<Backlight
         },
         devices,
     )
+}
+
+fn annotate_ddcci_connector_evidence(
+    backlight_devices: &mut [BacklightDeviceDiscovery],
+    drm_root: &Path,
+) {
+    // Build a map: canonical hardware device path -> connector name.
+    // Evidence = the kernel/driver-provided `ddcci_backlight` symlink inside
+    // `/sys/class/drm/<connector>` that converges (via realpath) on the same
+    // hardware device that owns a `/sys/class/backlight` class entry.
+    let mut connectors_by_hw: BTreeMap<_, Vec<String>> = BTreeMap::new();
+    if let Ok(entries) = fs::read_dir(drm_root) {
+        for entry in entries.flatten() {
+            let connector_name = entry.file_name().to_string_lossy().into_owned();
+            let ddcci_link = entry.path().join("ddcci_backlight");
+            if let Ok(hw) = fs::canonicalize(&ddcci_link) {
+                connectors_by_hw.entry(hw).or_default().push(connector_name);
+            }
+        }
+    }
+
+    for device in backlight_devices.iter_mut() {
+        // The `device` symlink on a backlight class entry points to the
+        // hardware device; canonicalize so we compare resolved paths, never
+        // names or ordering.
+        let device_path = Path::new(&device.sysfs_path);
+        let Ok(device_hw) = fs::canonicalize(device_path.join("device")) else {
+            continue;
+        };
+        if let Some(connectors) = connectors_by_hw.get(&device_hw) {
+            if connectors.len() == 1 {
+                device.ddcci_connector = connectors.first().cloned();
+            }
+        }
+    }
 }
 
 fn parse_ddc_detect(output: &str) -> Vec<DdcMonitorDiscovery> {
@@ -443,8 +492,10 @@ fn parse_brightnessctl_backlights(
             device_name: device_name.to_owned(),
             class: class.to_owned(),
             max_brightness,
+            backlight_type: None,
             probe_source: String::from("brightnessctl"),
             sysfs_path: sysfs_path.display().to_string(),
+            ddcci_connector: None,
             backend_viable: max_brightness.unwrap_or(0) > 0,
             note: None,
         });
@@ -468,6 +519,9 @@ fn merge_backlight_devices(
         if let Some(existing) = merged.remove(&device.device_name) {
             if device.max_brightness.is_none() {
                 device.max_brightness = existing.max_brightness;
+            }
+            if device.backlight_type.is_none() {
+                device.backlight_type = existing.backlight_type;
             }
             if device.sysfs_path.is_empty() {
                 device.sysfs_path = existing.sysfs_path;
@@ -511,4 +565,10 @@ fn normalize_optional(value: &str) -> Option<String> {
 fn read_optional_u32(path: &Path) -> Option<u32> {
     let raw = fs::read_to_string(path).ok()?;
     raw.trim().parse::<u32>().ok()
+}
+
+fn read_optional_text(path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    let value = raw.trim();
+    (!value.is_empty()).then(|| value.to_owned())
 }

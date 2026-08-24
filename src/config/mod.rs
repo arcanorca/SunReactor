@@ -11,7 +11,8 @@ pub use io::{
 };
 pub use model::{
     Config, DaemonConfig, LocationConfig, LogLevel, MonitorConfig, MonitorMilestoneAdjustment,
-    MonitorSelector, SolarPolicyConfig, TemperatureUnit, TuiConfig, WeatherConfig, WeatherProvider,
+    MonitorSelector, SolarPolicyConfig, TemperatureUnit, Theme, TuiConfig, WeatherConfig,
+    WeatherProvider,
 };
 pub use template::DEFAULT_CONFIG_TEMPLATE;
 

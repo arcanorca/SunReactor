@@ -4,14 +4,20 @@ use super::model::{
     slugify, BackendStatus, BackendStatusKind, BacklightDeviceDiscovery, DdcMonitorDiscovery,
     DiscoveryReport, DiscoverySnapshot, DiscoverySummary,
 };
+use crate::backends::ddc::{
+    selector_match_count, selector_plan, selector_relation, DdcSelectorRelation,
+};
+use crate::config::MonitorSelector;
 
 pub(super) fn build_report(snapshot: DiscoverySnapshot) -> DiscoveryReport {
-    let notes = build_notes(
+    let mut notes = build_notes(
         &snapshot.backends,
         &snapshot.summary,
         &snapshot.backlight_devices,
     );
-    let config_snippet = build_config_snippet(&snapshot.ddc_monitors, &snapshot.backlight_devices);
+    let (config_snippet, config_notes) =
+        build_config_snippet(&snapshot.ddc_monitors, &snapshot.backlight_devices);
+    notes.extend(config_notes);
 
     DiscoveryReport {
         summary: snapshot.summary,
@@ -23,6 +29,7 @@ pub(super) fn build_report(snapshot: DiscoverySnapshot) -> DiscoveryReport {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn render_human(report: &DiscoveryReport) -> String {
     let backend_rows = vec![
         vec![
@@ -67,6 +74,10 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
             vec![
                 device.device_name.clone(),
                 device.class.clone(),
+                device
+                    .backlight_type
+                    .clone()
+                    .unwrap_or_else(|| String::from("-")),
                 display_opt_u32(device.max_brightness),
                 device.probe_source.clone(),
                 display_bool(device.backend_viable),
@@ -121,6 +132,7 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
                 &[
                     "device",
                     "class",
+                    "type",
                     "max",
                     "source",
                     "viable",
@@ -171,20 +183,79 @@ fn build_notes(
     notes
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_config_snippet(
     ddc_monitors: &[DdcMonitorDiscovery],
     backlight_devices: &[BacklightDeviceDiscovery],
-) -> String {
+) -> (String, Vec<String>) {
     let mut blocks = Vec::new();
     let mut used_ids = HashSet::new();
+    let mut ambiguity_notes = Vec::new();
+    let candidates = ddc_monitors
+        .iter()
+        .filter(|monitor| monitor.backend_viable)
+        .map(|monitor| (monitor, discovery_selector(monitor)))
+        .collect::<Vec<_>>();
+    let mut withheld = HashSet::new();
+    for (candidate_index, (monitor, selector)) in candidates.iter().enumerate() {
+        let match_count = selector_match_count(selector, ddc_monitors);
+        if match_count != Ok(1) {
+            withheld.insert(candidate_index);
+            ambiguity_notes.push(format!(
+                "Withheld enabled DDC config for {}: selector is not unique in the current discovery set (matched {:?} monitor(s)).",
+                monitor.target_label(),
+                match_count.ok()
+            ));
+        }
+    }
+    for (left_index, (_, left)) in candidates.iter().enumerate() {
+        for (right_index, (_, right)) in candidates.iter().enumerate().skip(left_index + 1) {
+            match selector_relation(left, right) {
+                Ok(DdcSelectorRelation::ProvablyDisjoint) => {}
+                Ok(relation) => {
+                    withheld.insert(left_index);
+                    withheld.insert(right_index);
+                    ambiguity_notes.push(format!(
+                        "Withheld enabled DDC config for {} and {}: selectors may overlap ({relation:?}); neither pair is proven to address a distinct display.",
+                        candidates[left_index].0.target_label(),
+                        candidates[right_index].0.target_label()
+                    ));
+                }
+                Err(error) => {
+                    withheld.insert(left_index);
+                    withheld.insert(right_index);
+                    ambiguity_notes.push(format!(
+                        "Withheld enabled DDC config for {} and {}: selector comparison failed ({error}).",
+                        candidates[left_index].0.target_label(),
+                        candidates[right_index].0.target_label()
+                    ));
+                }
+            }
+        }
+    }
 
-    for monitor in ddc_monitors.iter().filter(|monitor| monitor.backend_viable) {
+    for (candidate_index, (monitor, selector)) in candidates.iter().enumerate() {
+        if withheld.contains(&candidate_index) {
+            continue;
+        }
         let logical_id = allocate_logical_id(ddc_logical_id_base(monitor), &mut used_ids);
+        let effective_bus_only = selector_plan(selector).is_ok_and(|plan| plan.is_bus_only());
+        let enabled = !effective_bus_only;
+        if effective_bus_only {
+            ambiguity_notes.push(format!(
+                "Generated disabled DDC candidate for {}: bus-only selection follows an I2C topology slot; enable only with allow_topology_retargeting=true.",
+                monitor.target_label()
+            ));
+        }
         let mut lines = vec![
             String::from("[[monitors]]"),
             format!("logical_id = \"{logical_id}\""),
             String::from("backend = \"ddc\""),
-            String::from("enabled = true"),
+            format!("enabled = {enabled}"),
+            String::from("allow_topology_retargeting = false"),
+            String::from(
+                "# Bus-only selectors follow a topology slot; opt in explicitly before enabling.",
+            ),
             String::from("min_pct = 0"),
             String::from("max_pct = 100"),
             String::from("gain = 1.0"),
@@ -206,10 +277,9 @@ fn build_config_snippet(
         blocks.push(lines.join("\n"));
     }
 
-    for device in backlight_devices
-        .iter()
-        .filter(|device| device.backend_viable)
-    {
+    for device in backlight_devices.iter().filter(|device| {
+        device.backend_viable && !super::is_ddcci_alias_of_viable_ddc(device, ddc_monitors)
+    }) {
         let logical_id = allocate_logical_id(backlight_logical_id_base(device), &mut used_ids);
         let lines = [
             String::from("[[monitors]]"),
@@ -228,9 +298,28 @@ fn build_config_snippet(
     }
 
     if blocks.is_empty() {
-        String::from("# No viable brightness-capable devices were discovered.")
+        (
+            String::from("# No viable brightness-capable devices were discovered."),
+            ambiguity_notes,
+        )
     } else {
-        blocks.join("\n\n")
+        (blocks.join("\n\n"), ambiguity_notes)
+    }
+}
+
+fn discovery_selector(monitor: &DdcMonitorDiscovery) -> MonitorSelector {
+    MonitorSelector {
+        connector: monitor.connector.clone(),
+        serial: monitor.serial.clone(),
+        model: monitor.model.clone(),
+        edid: None,
+        sysfs_path: None,
+        ddc_bus: if monitor.serial.is_none() && monitor.model.is_none() {
+            monitor.bus_number.map(|bus| bus as u8)
+        } else {
+            None
+        },
+        ddc_address: None,
     }
 }
 

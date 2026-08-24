@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use crate::config::{MonitorConfig, MonitorSelector};
@@ -32,10 +33,11 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
         #[cfg(unix)]
         let _lock = {
             let uid = unsafe { libc::geteuid() };
-            let lock_path = format!("/run/user/{}/sunreactor_i2c.lock", uid);
+            let lock_path = format!("/run/user/{uid}/sunreactor_i2c.lock");
             let lock_file = std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
+                .truncate(false)
                 .open(&lock_path)
                 .ok();
 
@@ -74,12 +76,40 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct DdcSelection {
+pub(crate) struct DdcSelectorPlan {
     args: Vec<String>,
-    description: String,
+    pub(crate) description: String,
+    kind: DdcSelectorKind,
 }
 
-fn build_setvcp_args(selection: &DdcSelection, percent: u8) -> Vec<String> {
+impl DdcSelectorPlan {
+    #[must_use]
+    pub(crate) fn is_bus_only(&self) -> bool {
+        matches!(self.kind, DdcSelectorKind::Bus(_))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DdcSelectorRelation {
+    Equal,
+    ProvablyDisjoint,
+    MayOverlap,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DdcSelectorKind {
+    Bus(u8),
+    Serial(String),
+    SerialModel { serial: String, model: String },
+    Model(String),
+    Edid(String),
+}
+
+fn normalize_compare(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn build_setvcp_args(selection: &DdcSelectorPlan, percent: u8) -> Vec<String> {
     let mut args = vec![String::from("--noconfig"), String::from("--noverify")];
     args.extend(selection.args.iter().cloned());
     args.push(String::from("setvcp"));
@@ -88,7 +118,7 @@ fn build_setvcp_args(selection: &DdcSelection, percent: u8) -> Vec<String> {
     args
 }
 
-fn build_selector(selector: &MonitorSelector) -> Result<DdcSelection, BackendError> {
+fn build_selector(selector: &MonitorSelector) -> Result<DdcSelectorPlan, BackendError> {
     let serial = normalized(&selector.serial);
     let model = normalized(&selector.model);
     let edid = normalized(&selector.edid);
@@ -117,28 +147,40 @@ fn build_selector(selector: &MonitorSelector) -> Result<DdcSelection, BackendErr
 
     if let Some(edid) = edid {
         validate_edid(&edid)?;
-        return Ok(DdcSelection {
-            args: vec![String::from("--edid"), edid],
+        return Ok(DdcSelectorPlan {
+            args: vec![String::from("--edid"), edid.clone()],
             description: String::from("EDID"),
+            kind: DdcSelectorKind::Edid(normalize_compare(&edid)),
         });
     }
 
     if let Some(serial) = serial {
         let mut args = vec![String::from("--sn"), serial.clone()];
         let mut description = format!("serial `{serial}`");
-        if let Some(model) = model {
+        let kind = if let Some(model) = model {
             args.push(String::from("--model"));
             args.push(model.clone());
-            description.push_str(&format!(" and model `{model}`"));
-        }
+            let _ = write!(description, " and model `{model}`");
+            DdcSelectorKind::SerialModel {
+                serial: normalize_compare(&serial),
+                model: normalize_compare(&model),
+            }
+        } else {
+            DdcSelectorKind::Serial(normalize_compare(&serial))
+        };
 
-        return Ok(DdcSelection { args, description });
+        return Ok(DdcSelectorPlan {
+            args,
+            description,
+            kind,
+        });
     }
 
     if let Some(bus) = selector.ddc_bus {
-        return Ok(DdcSelection {
+        return Ok(DdcSelectorPlan {
             args: vec![String::from("--bus"), bus.to_string()],
             description: format!("bus {bus}"),
+            kind: DdcSelectorKind::Bus(bus),
         });
     }
 
@@ -146,7 +188,11 @@ fn build_selector(selector: &MonitorSelector) -> Result<DdcSelection, BackendErr
         let args = vec![String::from("--model"), model.clone()];
         let description = format!("model `{model}`");
 
-        return Ok(DdcSelection { args, description });
+        return Ok(DdcSelectorPlan {
+            args,
+            description,
+            kind: DdcSelectorKind::Model(normalize_compare(&model)),
+        });
     }
 
     if connector.is_some() {
@@ -163,12 +209,132 @@ fn build_selector(selector: &MonitorSelector) -> Result<DdcSelection, BackendErr
     })
 }
 
+pub(crate) fn selector_plan(selector: &MonitorSelector) -> Result<DdcSelectorPlan, BackendError> {
+    build_selector(selector)
+}
+
+pub(crate) fn effective_selector_args(
+    selector: &MonitorSelector,
+) -> Result<Vec<String>, BackendError> {
+    Ok(build_selector(selector)?.args)
+}
+
+pub(crate) fn selector_relation(
+    left: &MonitorSelector,
+    right: &MonitorSelector,
+) -> Result<DdcSelectorRelation, BackendError> {
+    let left = selector_plan(left)?.kind;
+    let right = selector_plan(right)?.kind;
+    Ok(match (&left, &right) {
+        (DdcSelectorKind::Bus(a), DdcSelectorKind::Bus(b)) => {
+            if a == b {
+                DdcSelectorRelation::Equal
+            } else {
+                DdcSelectorRelation::ProvablyDisjoint
+            }
+        }
+        (DdcSelectorKind::Serial(a), DdcSelectorKind::Serial(b)) => {
+            if a == b {
+                DdcSelectorRelation::Equal
+            } else {
+                DdcSelectorRelation::ProvablyDisjoint
+            }
+        }
+        (DdcSelectorKind::Edid(a), DdcSelectorKind::Edid(b)) => {
+            if a == b {
+                DdcSelectorRelation::Equal
+            } else {
+                DdcSelectorRelation::ProvablyDisjoint
+            }
+        }
+        (
+            DdcSelectorKind::SerialModel {
+                serial: a,
+                model: am,
+            },
+            DdcSelectorKind::SerialModel {
+                serial: b,
+                model: bm,
+            },
+        ) => {
+            if a != b || am != bm {
+                DdcSelectorRelation::ProvablyDisjoint
+            } else {
+                DdcSelectorRelation::Equal
+            }
+        }
+        (DdcSelectorKind::Model(a), DdcSelectorKind::Model(b)) => {
+            if a == b {
+                DdcSelectorRelation::Equal
+            } else {
+                DdcSelectorRelation::ProvablyDisjoint
+            }
+        }
+        (DdcSelectorKind::Model(a), DdcSelectorKind::SerialModel { model: b, .. })
+        | (DdcSelectorKind::SerialModel { model: b, .. }, DdcSelectorKind::Model(a)) => {
+            if a == b {
+                DdcSelectorRelation::MayOverlap
+            } else {
+                DdcSelectorRelation::ProvablyDisjoint
+            }
+        }
+        (DdcSelectorKind::Serial(a), DdcSelectorKind::SerialModel { serial: b, .. })
+        | (DdcSelectorKind::SerialModel { serial: b, .. }, DdcSelectorKind::Serial(a)) => {
+            if a == b {
+                DdcSelectorRelation::MayOverlap
+            } else {
+                DdcSelectorRelation::ProvablyDisjoint
+            }
+        }
+        _ => DdcSelectorRelation::MayOverlap,
+    })
+}
+
+pub(crate) fn selector_matches_discovery(
+    selector: &MonitorSelector,
+    monitor: &crate::discovery::DdcMonitorDiscovery,
+) -> Result<bool, BackendError> {
+    let plan = selector_plan(selector)?;
+    let matches = match &plan.kind {
+        DdcSelectorKind::Bus(bus) => monitor.bus_number == Some(u32::from(*bus)),
+        DdcSelectorKind::Serial(serial) => {
+            normalized_compare(&monitor.serial).is_some_and(|value| value == *serial)
+        }
+        DdcSelectorKind::SerialModel { serial, model } => {
+            normalized_compare(&monitor.serial).is_some_and(|value| value == *serial)
+                && normalized_compare(&monitor.model).is_some_and(|value| value == *model)
+        }
+        DdcSelectorKind::Model(model) => {
+            normalized_compare(&monitor.model).is_some_and(|value| value == *model)
+        }
+        DdcSelectorKind::Edid(_) => false,
+    };
+    Ok(matches)
+}
+
+pub(crate) fn selector_match_count(
+    selector: &MonitorSelector,
+    monitors: &[crate::discovery::DdcMonitorDiscovery],
+) -> Result<usize, BackendError> {
+    let mut count = 0;
+    for monitor in monitors {
+        if selector_matches_discovery(selector, monitor)? {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 fn normalized(value: &Option<String>) -> Option<String> {
     value
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn normalized_compare(value: &Option<String>) -> Option<String> {
+    value.as_deref().map(normalize_compare)
 }
 
 fn validate_edid(edid: &str) -> Result<(), BackendError> {
@@ -201,7 +367,109 @@ mod tests {
     use crate::backends::testutil::FakeRunner;
     use crate::config::{MonitorConfig, MonitorSelector};
 
-    use super::apply_with_runner;
+    use super::{apply_with_runner, selector_relation, DdcSelectorRelation};
+
+    #[test]
+    fn selector_semantics_distinguish_equality_from_overlap() {
+        let model = MonitorSelector {
+            model: Some(String::from("U2720Q")),
+            ..MonitorSelector::default()
+        };
+        let serial_model = MonitorSelector {
+            serial: Some(String::from("ABC123")),
+            model: Some(String::from("U2720Q")),
+            ..MonitorSelector::default()
+        };
+        let other_serial_model = MonitorSelector {
+            serial: Some(String::from("BBB")),
+            model: Some(String::from("U2720Q")),
+            ..MonitorSelector::default()
+        };
+        let other_model = MonitorSelector {
+            model: Some(String::from("OTHER")),
+            ..MonitorSelector::default()
+        };
+
+        assert_eq!(
+            selector_relation(&model, &serial_model).unwrap(),
+            DdcSelectorRelation::MayOverlap
+        );
+        assert_eq!(
+            selector_relation(&serial_model, &other_serial_model).unwrap(),
+            DdcSelectorRelation::ProvablyDisjoint
+        );
+        assert_eq!(
+            selector_relation(&model, &other_model).unwrap(),
+            DdcSelectorRelation::ProvablyDisjoint
+        );
+        assert_eq!(
+            selector_relation(
+                &MonitorSelector {
+                    serial: Some(String::from("ABC123")),
+                    ..MonitorSelector::default()
+                },
+                &MonitorSelector {
+                    serial: Some(String::from("abc123")),
+                    ..MonitorSelector::default()
+                },
+            )
+            .unwrap(),
+            DdcSelectorRelation::Equal
+        );
+        assert_eq!(
+            selector_relation(
+                &MonitorSelector {
+                    ddc_bus: Some(7),
+                    ..MonitorSelector::default()
+                },
+                &MonitorSelector {
+                    ddc_bus: Some(8),
+                    ..MonitorSelector::default()
+                },
+            )
+            .unwrap(),
+            DdcSelectorRelation::ProvablyDisjoint
+        );
+        assert_eq!(
+            selector_relation(
+                &MonitorSelector {
+                    ddc_bus: Some(7),
+                    ..MonitorSelector::default()
+                },
+                &MonitorSelector {
+                    serial: Some(String::from("ABC123")),
+                    ..MonitorSelector::default()
+                },
+            )
+            .unwrap(),
+            DdcSelectorRelation::MayOverlap
+        );
+
+        let mi_model = MonitorSelector {
+            model: Some(String::from("Mi Monitor")),
+            connector: Some(String::from("card1-DP-1")),
+            ..MonitorSelector::default()
+        };
+        let len_serial_model = MonitorSelector {
+            serial: Some(String::from("V305PTDA")),
+            model: Some(String::from("LEN P24h-20")),
+            connector: Some(String::from("card1-DP-3")),
+            ddc_bus: Some(9),
+            ..MonitorSelector::default()
+        };
+        assert_eq!(
+            selector_relation(&mi_model, &len_serial_model).unwrap(),
+            DdcSelectorRelation::ProvablyDisjoint
+        );
+
+        let model_with_bus = MonitorSelector {
+            model: Some(String::from("Mi Monitor")),
+            ddc_bus: Some(7),
+            ..MonitorSelector::default()
+        };
+        let plan = super::selector_plan(&model_with_bus).expect("model selector should be valid");
+        assert_eq!(plan.args, ["--bus", "7"]);
+    }
 
     #[test]
     fn retries_once_for_transient_ddc_failures_and_uses_stable_selectors() {
@@ -367,6 +635,7 @@ mod tests {
             logical_id: String::from("desk"),
             backend: crate::backends::BackendKind::Ddc,
             enabled: true,
+            allow_topology_retargeting: false,
             min_pct: 0,
             max_pct: 100,
             gain: 1.0,

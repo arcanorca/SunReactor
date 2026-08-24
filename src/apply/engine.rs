@@ -4,6 +4,7 @@ use crate::backends::RealProcessRunner;
 use crate::backends::{BackendError, BackendWrite, ProcessRunner};
 use crate::config::{Config, MonitorConfig};
 use crate::policy::{PerMonitorTarget, PolicyOutput};
+use crate::runtime::topology::{CapabilitySnapshot, ReconcileAction};
 use crate::state::{self, RuntimeState};
 use std::collections::BTreeMap;
 
@@ -34,6 +35,34 @@ pub(crate) fn apply_policy_with_runner<R: ProcessRunner + Sync>(
     apply_policy_with_runner_settings(config, policy, state, None, runner, now_epoch_s, None)
 }
 
+/// Applies only configured monitors classified as present by a fresh runtime
+/// capability snapshot. The snapshot is not persisted and does not mutate
+/// user config; it gates this effective apply set only.
+pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
+    monitors: &[MonitorConfig],
+    settings: ApplySettings,
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    runner: &R,
+    now_epoch_s: u64,
+    capabilities: &CapabilitySnapshot,
+    fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
+    settings_override: Option<ApplySettings>,
+) -> ApplySummary {
+    let actions = crate::runtime::topology::reconcile(monitors, capabilities);
+    apply_policy_with_runner_monitors_impl(
+        monitors,
+        settings,
+        policy,
+        state,
+        fade_engine,
+        runner,
+        now_epoch_s,
+        settings_override,
+        &actions,
+    )
+}
+
 /// Apply policy with an optional settings override. When `settings_override`
 /// is `Some`, the provided settings are used instead of deriving them from
 /// config. This lets IPC `RunOnce` bypass throttles (hysteresis, step limit,
@@ -60,7 +89,32 @@ pub(crate) fn apply_policy_with_runner_settings<R: ProcessRunner + Sync>(
     )
 }
 
+#[allow(clippy::items_after_statements, clippy::too_many_lines)]
 pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
+    monitors: &[MonitorConfig],
+    default_settings: ApplySettings,
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
+    runner: &R,
+    now_epoch_s: u64,
+    settings_override: Option<ApplySettings>,
+) -> ApplySummary {
+    apply_policy_with_runner_monitors_impl(
+        monitors,
+        default_settings,
+        policy,
+        state,
+        fade_engine,
+        runner,
+        now_epoch_s,
+        settings_override,
+        &[],
+    )
+}
+
+#[allow(dead_code, clippy::items_after_statements, clippy::too_many_lines)]
+fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     monitors: &[MonitorConfig],
     default_settings: ApplySettings,
     policy: &PolicyOutput,
@@ -69,12 +123,18 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
     runner: &R,
     now_epoch_s: u64,
     settings_override: Option<ApplySettings>,
+    reconcile_actions: &[ReconcileAction],
 ) -> ApplySummary {
     let bypass_backoff = settings_override.is_some();
     let settings = settings_override.unwrap_or(default_settings);
     let monitor_index = monitors
         .iter()
         .map(|monitor| (monitor.logical_id.as_str(), monitor))
+        .collect::<BTreeMap<_, _>>();
+    let reconcile_index = monitors
+        .iter()
+        .enumerate()
+        .map(|(position, monitor)| (monitor.logical_id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
 
     // -------------------------------------------------------------------------
@@ -115,6 +175,29 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
             }));
             continue;
         };
+
+        // Phase 9: consult the runtime capability reconciliation before any
+        // hardware dispatch. Suppressed/unavailable targets are skipped with
+        // a clear diagnostic; they never enter the concurrent dispatch set.
+        if let Some(&action_position) = reconcile_index.get(target.logical_id.as_str()) {
+            if let Some(action) = reconcile_actions.get(action_position) {
+                if !action.allowed_to_apply() {
+                    work.push(WorkItem::Skip(ApplyRecord {
+                        logical_id: monitor.logical_id.clone(),
+                        backend: Some(monitor.backend),
+                        requested_percent,
+                        applied_percent: requested_percent,
+                        attempts: 0,
+                        failure_kind: None,
+                        consecutive_failures: None,
+                        backoff_until_epoch_s: None,
+                        status: ApplyStatus::SkippedTopology,
+                        detail: format!("runtime topology reconciliation: {}", action.name()),
+                    }));
+                    continue;
+                }
+            }
+        }
 
         if !monitor.enabled {
             work.push(WorkItem::Skip(ApplyRecord {
@@ -360,7 +443,7 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
     // -------------------------------------------------------------------------
     let mut summary = ApplySummary::default();
 
-    for (item, dispatch_result) in work.into_iter().zip(dispatch_results.into_iter()) {
+    for (item, dispatch_result) in work.into_iter().zip(dispatch_results) {
         match item {
             WorkItem::Skip(record) => {
                 summary.push(record);
@@ -501,6 +584,7 @@ mod tests {
             logical_id: logical_id.to_owned(),
             backend,
             enabled: true,
+            allow_topology_retargeting: false,
             min_pct: 0,
             max_pct: 100,
             gain: 1.0,
@@ -543,6 +627,181 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn reconciled_apply_skips_unavailable_topology_before_dispatch() {
+        let monitors = vec![test_monitor("panel", BackendKind::Backlight)];
+        let policy = test_policy(vec![("panel", 50)]);
+        let runner = FakeRunner::new();
+        let mut state = RuntimeState::default();
+
+        let summary = apply_policy_with_runner_reconciled(
+            &monitors,
+            fast_settings(),
+            &policy,
+            &mut state,
+            &runner,
+            1000,
+            &CapabilitySnapshot::default(),
+            None,
+            None,
+        );
+
+        assert_eq!(summary.skipped, 1);
+        assert_eq!(summary.attempted, 0);
+        assert_eq!(summary.records[0].status, ApplyStatus::SkippedTopology);
+        assert!(runner.calls().is_empty());
+    }
+
+    #[test]
+    fn reconciled_apply_keeps_present_sibling_when_other_target_is_unavailable() {
+        let monitors = vec![
+            test_monitor("healthy", BackendKind::Backlight),
+            test_monitor("missing", BackendKind::Ddc),
+        ];
+        let policy = test_policy(vec![("healthy", 50), ("missing", 60)]);
+        let runner = FakeRunner::new().with_success(
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "healthy",
+                "set",
+                "50%",
+            ],
+            "",
+        );
+        let mut state = RuntimeState::default();
+        let capabilities = CapabilitySnapshot {
+            backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
+                stable_id: String::from("backlight:healthy"),
+                device_name: String::from("healthy"),
+                class: String::from("backlight"),
+                max_brightness: Some(100),
+                backlight_type: Some(String::from("raw")),
+                probe_source: String::from("test"),
+                sysfs_path: String::from("/sys/class/backlight/healthy"),
+                ddcci_connector: None,
+                backend_viable: true,
+                note: None,
+            }],
+            ddc_present: Vec::new(),
+        };
+
+        let summary = apply_policy_with_runner_reconciled(
+            &monitors,
+            fast_settings(),
+            &policy,
+            &mut state,
+            &runner,
+            1000,
+            &capabilities,
+            None,
+            Some(fast_settings()),
+        );
+
+        assert_eq!(summary.succeeded, 1);
+        assert_eq!(summary.skipped, 1);
+        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(
+            summary
+                .records
+                .iter()
+                .find(|record| record.logical_id == "missing")
+                .expect("missing target record")
+                .status,
+            ApplyStatus::SkippedTopology
+        );
+    }
+
+    /// Builds a backlight monitor whose selector is ONLY a connector (legacy
+    /// connector-only form). This exercises the Phase 8 owner-approved resolution:
+    /// the daemon must fail closed when no authoritative topology link exists.
+    fn legacy_connector_monitor(logical_id: &str, connector: &str) -> MonitorConfig {
+        MonitorConfig {
+            logical_id: logical_id.to_owned(),
+            backend: BackendKind::Backlight,
+            enabled: true,
+            allow_topology_retargeting: false,
+            min_pct: 0,
+            max_pct: 100,
+            gain: 1.0,
+            transition_gamma: 1.0,
+            milestone_adjustments: Vec::new(),
+            selector: MonitorSelector {
+                connector: Some(connector.to_owned()),
+                serial: None,
+                model: None,
+                edid: None,
+                sysfs_path: None,
+                ddc_bus: None,
+                ddc_address: None,
+            },
+        }
+    }
+
+    // =========================================================================
+    // TEST — legacy connector-only backlight resolution surfaces the
+    // deprecation diagnostic through the apply backend. Uses injectable roots,
+    // so it is deterministic on every host (unlike a real /sys probe).
+    // =========================================================================
+    #[test]
+    fn legacy_connector_only_resolves_through_backend_and_surfaces_diagnostic() {
+        use std::fs;
+
+        let tmpdir = tempfile::tempdir().expect("tempdir");
+        let drm_root = tmpdir.path().join("drm");
+        let conn = drm_root.join("card1-DP-1");
+        fs::create_dir_all(&conn).expect("mkdir connector dir");
+        let backlight_root = tmpdir.path().join("backlight");
+        let hw_device = tmpdir.path().join("hwdd");
+        fs::create_dir_all(&hw_device).expect("mkdir hw device");
+        let device = backlight_root.join("ddcci_backlight_0");
+        fs::create_dir_all(&device).expect("mkdir device");
+        fs::write(device.join("max_brightness"), "100").expect("max");
+        fs::write(device.join("type"), "raw\n").expect("type");
+        std::os::unix::fs::symlink(&hw_device, conn.join("ddcci_backlight")).expect("symlink");
+        std::os::unix::fs::symlink(&hw_device, device.join("device")).expect("device symlink");
+
+        let monitor = legacy_connector_monitor("legacy", "card1-DP-1");
+        let runner = FakeRunner::new().with_success(
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "ddcci_backlight_0",
+                "set",
+                "50%",
+            ],
+            "",
+        );
+
+        let result = crate::backends::backlight::apply_with_runner_roots_for_test(
+            &runner,
+            &monitor,
+            50,
+            std::time::Duration::from_secs(2),
+            &drm_root,
+            &backlight_root,
+        )
+        .expect("exactly one proven mapping must resolve and succeed");
+
+        assert_eq!(result.applied_percent, 50);
+        assert!(
+            result.detail.contains("deprecat"),
+            "BackendWrite.detail must surface the deprecation diagnostic, got: {}",
+            result.detail
+        );
+        assert_eq!(
+            runner.calls().len(),
+            1,
+            "brightnessctl must be invoked once"
+        );
     }
 
     fn fast_settings() -> ApplySettings {
@@ -606,8 +865,7 @@ mod tests {
         // Concurrent ceiling: 500ms + generous overhead = 1400ms.
         assert!(
             elapsed < Duration::from_millis(1400),
-            "concurrent dispatch should complete in <1400ms, took {:?}",
-            elapsed
+            "concurrent dispatch should complete in <1400ms, took {elapsed:?}"
         );
     }
 

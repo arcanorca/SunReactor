@@ -345,7 +345,10 @@ impl RuntimeState {
             weather.smoothed_cloud_cover_percent = weather
                 .smoothed_cloud_cover_percent
                 .map(|value| value.min(100));
-            if weather.provider.is_empty() && weather.observed_at_epoch_s == 0 {
+            if weather.valid_at_epoch_s == 0 {
+                weather.source_kind = crate::weather::WeatherSourceKind::Unknown;
+            }
+            if weather.provider.is_empty() && weather.fetched_at_epoch_s == 0 {
                 self.weather = None;
             }
         }
@@ -594,18 +597,8 @@ pub(crate) fn normalize_monitor_backoff(monitor: &mut MonitorRuntimeState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::{ManualOverrideState, MonitorRuntimeState, RuntimeState};
     use std::collections::BTreeMap;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use crate::backends::{BackendKind, FailureKind};
-
-    use crate::state::persist::RUNTIME_STATE_FILE_NAME;
-    use crate::state::{
-        FailureBackoffState, ManualOverrideState, MonitorRuntimeState, RuntimeState,
-        WeatherSnapshotMetadata,
-    };
 
     #[test]
     fn step_limiting_moves_toward_requested_target_without_overshoot() {

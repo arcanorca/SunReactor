@@ -1,4 +1,5 @@
 use std::fs::{self, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::paths;
@@ -107,7 +108,6 @@ fn write_rendered_to_path(path: &Path, rendered: &str) -> Result<PathBuf, Config
             source,
         })?;
 
-    use std::io::Write;
     temp_file
         .write_all(rendered.as_bytes())
         .map_err(|source| ConfigError::Io {

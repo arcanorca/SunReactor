@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Cargo/package version to qualify (for example 0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_VERSION: '1.97.1'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - name: Validate tag and Cargo version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then tag_version="${{ inputs.version }}"; fi
+          cargo_version=$(sed -n '/^version = /{s/^version = "\([^"]*\)"/\1/p;q;}' Cargo.toml)
+          [[ "$tag_version" == "$cargo_version" ]] || { printf 'tag=%s Cargo.toml=%s\n' "$tag_version" "$cargo_version" >&2; exit 1; }
+      - name: Validate workflow toolchain pin
+        run: test "${RUST_VERSION}" = "$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+      - name: Validate release metadata tooling
+        run: command -v readelf && command -v sha256sum && command -v tar
+      - name: Install pinned Rust toolchain and target
+        run: rustup toolchain install "${RUST_VERSION}" --profile minimal --target "${{ matrix.target }}"
+      - name: Install musl linker
+        if: endsWith(matrix.target, '-musl')
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+      - name: Select musl linker
+        if: endsWith(matrix.target, '-musl')
+        run: |
+          musl_gcc="$(command -v musl-gcc)"
+          target="${{ matrix.target }}"
+          cargo_target="${target//-/_}"
+          echo "CARGO_TARGET_${cargo_target^^}_LINKER=$musl_gcc" >> "$GITHUB_ENV"
+          echo "CC_${target}=$musl_gcc" >> "$GITHUB_ENV"
+          echo "CC_${cargo_target}=$musl_gcc" >> "$GITHUB_ENV"
+          echo "TARGET_CC=$musl_gcc" >> "$GITHUB_ENV"
+      - name: Build locked release binaries
+        run: cargo +"${RUST_VERSION}" build --release --locked --target "${{ matrix.target }}"
+      - name: Inspect and smoke test binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for binary in sunreactord sunreactorctl; do
+            path="target/${{ matrix.target }}/release/$binary"
+            file "$path"
+            readelf -l "$path" | grep -E 'interpreter|Type:' || true
+            readelf -d "$path" | grep NEEDED || true
+            readelf --version-info "$path" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1 || true
+            "$path" --help >/dev/null
+          done
+      - name: Package deterministic archive
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then version="${{ inputs.version }}"; fi
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" scripts/release.sh "$version" "${{ matrix.target }}" "$RUNNER_TEMP/release" "$GITHUB_WORKSPACE"
+      - name: Smoke-test packaged archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=$(find "$RUNNER_TEMP/release" -name '*.tar.gz' -print -quit)
+          smoke="$RUNNER_TEMP/smoke"
+          mkdir -p "$smoke"
+          tar xzf "$archive" -C "$smoke"
+          "$smoke/sunreactord" --help >/dev/null
+          "$smoke/sunreactorctl" --help >/dev/null
+          test "$(tar tzf "$archive" | sort)" = "$(printf '%s\n' LICENSE README.md sunreactorctl sunreactord)"
+      - name: Record archive checksum and ABI metadata
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          sha256sum *.tar.gz > SHA256SUMS
+          mv "${{ runner.temp }}/release/ABI-METADATA" "${{ runner.temp }}/release/${{ matrix.target }}.abi"
+          (cd "${{ runner.temp }}/release" && sha256sum "${{ matrix.target }}.abi") >> SHA256SUMS
+          rm -f *.tar.gz.meta
+      - name: Upload qualification artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Generate combined SHA256SUMS and ABI metadata
+        working-directory: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum *.tar.gz > SHA256SUMS
+          cat *.abi > ABI-METADATA
+          sha256sum ABI-METADATA >> SHA256SUMS
+          rm -f *.abi
+      - name: Create or update GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: release
+        run: |
+          mapfile -t archives < <(find . -type f -name '*.tar.gz' -print | sort)
+          gh release upload "${GITHUB_REF_NAME}" "${archives[@]}" SHA256SUMS ABI-METADATA --clobber
+      - name: Attest complete release decision set
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: |
+            release/*.tar.gz
+            release/ABI-METADATA
+            release/SHA256SUMS

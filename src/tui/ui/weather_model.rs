@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use ratatui::style::Color;
 
 use crate::ipc::{StatusResponse, WeatherStatus};
@@ -61,12 +63,21 @@ pub(super) fn weather_panel_state(
     let Some(status) = status else {
         return WeatherPanelState::Message(String::from(AWAITING_DAEMON_MESSAGE));
     };
+    if let Some(message) = inactive_weather_message(status) {
+        return WeatherPanelState::Message(message);
+    }
     let is_weather_active = status.weather.as_ref().is_some_and(|w| w.active);
-    
+
     WeatherPanelState::Ready(Box::new(WeatherPanelData {
         header: build_header(status, use_12h_time, timezone, unit, palette),
         forecast_rows: if is_weather_active {
-            build_forecast_rows(status.weather.as_ref().unwrap(), use_12h_time, timezone, unit, palette)
+            build_forecast_rows(
+                status.weather.as_ref().unwrap(),
+                use_12h_time,
+                timezone,
+                unit,
+                palette,
+            )
         } else {
             vec![]
         },
@@ -85,6 +96,32 @@ pub(super) fn weather_panel_state(
     }))
 }
 
+fn inactive_weather_message(status: &StatusResponse) -> Option<String> {
+    let weather = status.weather.as_ref()?;
+    if weather.active {
+        return None;
+    }
+
+    if weather.stale {
+        let mut message = String::from("Weather data stale.");
+        if let Some(error) = weather.last_error.as_deref() {
+            message.push(' ');
+            message.push_str(error);
+        }
+        if let Some(next_refresh_at_epoch_s) = weather.next_refresh_at_epoch_s {
+            message.push(' ');
+            let _ = write!(
+                message,
+                "Retry scheduled at {}.",
+                forecast_time_label(next_refresh_at_epoch_s, false, "UTC")
+            );
+        }
+        return Some(message);
+    }
+
+    None
+}
+
 fn convert_temperature(celsius: f64, unit: crate::config::TemperatureUnit) -> f64 {
     match unit {
         crate::config::TemperatureUnit::Celsius => celsius,
@@ -100,7 +137,6 @@ fn format_temperature(celsius: f64, unit: crate::config::TemperatureUnit) -> Str
     };
     format!("{converted:.1}°{symbol}")
 }
-
 
 fn build_header(
     status: &StatusResponse,
@@ -198,12 +234,12 @@ fn build_temperature_chart(
         .fold(f64::NEG_INFINITY, f64::max)
         .ceil()
         + 1.0;
-    let mid_temp = f64::midpoint(min_temp, max_temp);
+    let midpoint_temperature = f64::midpoint(min_temp, max_temp);
 
     TemperatureChart {
         points,
         min_label: format!("{min_temp:.0}"),
-        mid_label: format!("{mid_temp:.0}"),
+        mid_label: format!("{midpoint_temperature:.0}"),
         max_label: format!("{max_temp:.0}"),
         min_temp,
         max_temp,
@@ -409,7 +445,9 @@ mod tests {
                 active: true,
                 stale: false,
                 provider: Some(String::from("openweather")),
-                observed_at_epoch_s: Some(1_700_000_000),
+                fetched_at_epoch_s: Some(1_700_000_000),
+                valid_at_epoch_s: Some(1_700_000_000),
+                source_kind: None,
                 last_refresh_attempt_epoch_s: Some(1_700_000_000),
                 next_refresh_at_epoch_s: Some(1_700_000_600),
                 consecutive_failures: 0,
@@ -468,7 +506,9 @@ mod tests {
                 active: false,
                 stale: true,
                 provider: Some(String::from("openweather")),
-                observed_at_epoch_s: Some(1_700_000_000),
+                fetched_at_epoch_s: Some(1_700_000_000),
+                valid_at_epoch_s: Some(1_700_000_000),
+                source_kind: None,
                 last_refresh_attempt_epoch_s: Some(1_700_000_030),
                 next_refresh_at_epoch_s: Some(1_700_000_060),
                 consecutive_failures: 2,

@@ -1,12 +1,26 @@
 use crate::backends::ProcessRunner;
 use crate::runtime::orchestrator::{DaemonRuntime, LoopCadence};
 use chrono::{DateTime, Utc};
+#[cfg(feature = "wayland")]
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+#[cfg(feature = "wayland")]
+use wayland_client::globals::registry_queue_init;
+#[cfg(feature = "wayland")]
+use wayland_client::protocol::{wl_registry, wl_seat::WlSeat};
+#[cfg(feature = "wayland")]
+use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
+#[cfg(feature = "wayland")]
+use wayland_protocols::ext::idle_notify::v1::client::{
+    ext_idle_notification_v1::{Event as IdleNotificationEvent, ExtIdleNotificationV1},
+    ext_idle_notifier_v1::ExtIdleNotifierV1,
+};
 
 // --- From desktop_idle.rs ---
 const STARTUP_WAKE_SYNC_DELAY: Duration = Duration::from_secs(8);
@@ -18,6 +32,8 @@ const XPRINTIDLE_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Timeout for each individual `xprintidle` subprocess invocation.
 const XPRINTIDLE_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(feature = "wayland")]
+const WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS: u32 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IdleSyncAction {
@@ -27,7 +43,7 @@ enum IdleSyncAction {
 
 pub(super) struct DesktopIdleSync {
     enabled: bool,
-    _watcher: Option<IdleWatcher>,
+    watcher: Option<IdleWatcher>,
     delayed_sync_at: Option<Instant>,
     last_tick_utc: DateTime<Utc>,
     last_spawn_attempt: Option<Instant>,
@@ -41,10 +57,21 @@ impl DesktopIdleSync {
         tick_seconds: u64,
         timeout_minutes: u64,
     ) -> Self {
-        let watcher = if enabled {
-            spawn(socket_path, timeout_minutes)
-        } else {
-            None
+        let watcher = {
+            #[cfg(feature = "wayland")]
+            if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
+                spawn_wayland_idle()
+            } else if enabled {
+                spawn(socket_path, timeout_minutes)
+            } else {
+                None
+            }
+            #[cfg(not(feature = "wayland"))]
+            if enabled {
+                spawn(socket_path, timeout_minutes)
+            } else {
+                None
+            }
         };
 
         Self::new_with_watcher(enabled, watcher, tick_seconds, timeout_minutes)
@@ -58,7 +85,7 @@ impl DesktopIdleSync {
     ) -> Self {
         Self {
             enabled,
-            _watcher: watcher,
+            watcher,
             delayed_sync_at: enabled.then_some(Instant::now() + STARTUP_WAKE_SYNC_DELAY),
             last_tick_utc: Utc::now()
                 .checked_sub_signed(chrono::Duration::seconds(tick_seconds as i64))
@@ -72,7 +99,7 @@ impl DesktopIdleSync {
         if self.enabled != enabled || self.timeout_minutes != timeout_minutes {
             self.enabled = enabled;
             self.timeout_minutes = timeout_minutes;
-            self._watcher = None; // Force respawn in maintain_watcher if enabled
+            self.watcher = None; // Force respawn in maintain_watcher if enabled
         }
     }
 
@@ -85,19 +112,19 @@ impl DesktopIdleSync {
             return;
         }
 
-        let needs_restart = match &self._watcher {
+        let needs_restart = match &self.watcher {
             Some(watcher) => !watcher.is_alive(),
             None => self
                 .last_spawn_attempt
-                .is_none_or(|last| last.elapsed() > Duration::from_secs(60)),
+                .is_none_or(|last| last.elapsed() > Duration::from_mins(1)),
         };
 
         if needs_restart {
-            if self._watcher.is_some() {
+            if self.watcher.is_some() {
                 tracing::info!("idle_watcher_died_restarting");
             }
             self.last_spawn_attempt = Some(Instant::now());
-            self._watcher = spawn(socket_path.to_path_buf(), self.timeout_minutes);
+            self.watcher = spawn(socket_path.to_path_buf(), self.timeout_minutes);
         }
     }
 
@@ -139,10 +166,6 @@ impl DesktopIdleSync {
             return Some(IdleSyncAction::DelayedSync);
         }
 
-        if !self.enabled {
-            return None;
-        }
-
         let elapsed_real = now_utc
             .signed_duration_since(self.last_tick_utc)
             .num_seconds()
@@ -160,196 +183,6 @@ impl DesktopIdleSync {
     fn delayed_sync_due(&self) -> bool {
         self.delayed_sync_at
             .is_some_and(|deadline| Instant::now() >= deadline)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::backends::{BackendKind, FailureKind};
-    use crate::config::{
-        Config, ConfigReport, ConfigSource, DaemonConfig, LocationConfig, LogLevel, MonitorConfig,
-        MonitorSelector, SolarPolicyConfig, WeatherConfig,
-    };
-    use crate::process::{CommandError, CommandOutput};
-    use crate::state::FailureBackoffState;
-    use chrono::TimeZone;
-
-    fn test_idle_sync(enabled: bool, tick_seconds: u64) -> DesktopIdleSync {
-        DesktopIdleSync::new_with_watcher(enabled, None, tick_seconds, 15)
-    }
-
-    struct RecordingRunner {
-        calls: std::sync::Mutex<Vec<String>>,
-    }
-
-    impl RecordingRunner {
-        fn new() -> Self {
-            Self {
-                calls: std::sync::Mutex::new(Vec::new()),
-            }
-        }
-
-        fn calls(&self) -> Vec<String> {
-            self.calls.lock().unwrap().clone()
-        }
-    }
-
-    impl ProcessRunner for RecordingRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[String],
-            _timeout: Duration,
-        ) -> Result<CommandOutput, CommandError> {
-            let mut call = String::from(program);
-            for arg in args {
-                call.push('|');
-                call.push_str(arg);
-            }
-            self.calls.lock().unwrap().push(call);
-            Ok(CommandOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: Some(0),
-            })
-        }
-    }
-
-    #[test]
-    fn disabled_idle_sync_has_no_deadlines_or_drift_actions() {
-        let mut idle_sync = test_idle_sync(false, 60);
-        let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
-
-        assert!(idle_sync.next_deadline().is_none());
-        assert_eq!(
-            idle_sync.due_action(now, std::time::Duration::from_secs(60)),
-            None
-        );
-    }
-
-    #[test]
-    fn enabled_idle_sync_starts_with_delayed_sync_deadline() {
-        let mut enabled = test_idle_sync(true, 60);
-        enabled.delayed_sync_at = Some(Instant::now());
-
-        let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
-        assert_eq!(
-            enabled.due_action(now, std::time::Duration::from_secs(60)),
-            Some(IdleSyncAction::DelayedSync)
-        );
-    }
-
-    #[test]
-    fn drift_recovery_schedules_followup_sync() {
-        let mut idle_sync = test_idle_sync(true, 60);
-        idle_sync.delayed_sync_at = None;
-        idle_sync.last_tick_utc = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
-
-        let action = idle_sync.due_action(
-            Utc.timestamp_opt(1_800_000_030, 0).single().expect("valid"),
-            std::time::Duration::from_secs(10),
-        );
-
-        assert_eq!(
-            action,
-            Some(IdleSyncAction::DriftRecovery { drift_seconds: 20 })
-        );
-        assert!(idle_sync.next_deadline().is_some());
-    }
-
-    #[test]
-    fn delayed_sync_forces_reapply_even_with_active_backoff() {
-        let temp = std::env::temp_dir().join(format!(
-            "sunreactor-desktop-idle-{}",
-            Utc::now().timestamp_nanos_opt().unwrap_or_default()
-        ));
-        std::fs::create_dir_all(&temp).expect("temp dir should be created");
-        let state_path = temp.join("state/runtime-state.json");
-        let socket_path = temp.join("run/control.sock");
-        let mut runtime =
-            DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
-                .expect("runtime should bootstrap");
-        runtime.state.monitor_mut("internal").backoff = Some(FailureBackoffState {
-            backend: BackendKind::Backlight,
-            failure_kind: FailureKind::Transient,
-            consecutive_failures: 3,
-            suppress_until_epoch_s: Some(1_800_000_500),
-        });
-
-        let mut idle_sync = test_idle_sync(true, 60);
-        idle_sync.delayed_sync_at = Some(Instant::now());
-        let mut cadence = LoopCadence::new(60);
-        let runner = RecordingRunner::new();
-        let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
-
-        assert!(idle_sync.perform_due_action(&mut runtime, now, &runner, &mut cadence));
-        assert_eq!(runner.calls().len(), 1);
-        assert!(runner.calls()[0]
-            .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
-        assert_eq!(
-            runtime
-                .state
-                .monitor("internal")
-                .and_then(|monitor| monitor.backoff.as_ref()),
-            None
-        );
-
-        std::fs::remove_dir_all(&temp).ok();
-    }
-
-    fn test_config_report() -> ConfigReport {
-        ConfigReport {
-            path: std::path::PathBuf::from("/tmp/sunreactor-config.toml"),
-            source: ConfigSource::Defaults,
-            config: Config {
-                daemon: DaemonConfig {
-                    tick_seconds: 60,
-                    dry_run: false,
-                    desktop_idle_sync: true,
-                    desktop_idle_timeout_minutes: 0,
-                    log_level: LogLevel::Info,
-                    apply_reassert_minutes: 2,
-                    ddc_timeout_seconds: 4,
-                    backlight_timeout_seconds: 2,
-                },
-                location: LocationConfig {
-                    city: String::new(),
-                    latitude: 41.0082,
-                    longitude: 28.9784,
-                    timezone: String::from("Europe/Istanbul"),
-                },
-                solar_policy: SolarPolicyConfig {
-                    use_adaptive_zenith: true,
-                    twilight_elevation_start: -6.0,
-                    day_elevation_full: 3.0,
-                    min_write_delta_pct: 2,
-                    max_step_pct_per_tick: 6,
-                },
-                monitors: vec![MonitorConfig {
-                    logical_id: String::from("internal"),
-                    backend: BackendKind::Backlight,
-                    enabled: true,
-                    min_pct: 10,
-                    max_pct: 100,
-                    gain: 1.0,
-                    transition_gamma: 1.4,
-                    milestone_adjustments: Vec::new(),
-                    selector: MonitorSelector {
-                        connector: None,
-                        serial: None,
-                        model: None,
-                        edid: None,
-                        sysfs_path: Some(String::from("/sys/class/backlight/intel_backlight")),
-                        ddc_bus: None,
-                        ddc_address: None,
-                    },
-                }],
-                weather: WeatherConfig::default(),
-                tui: crate::config::TuiConfig::default(),
-            },
-            warnings: Vec::new(),
-        }
     }
 }
 
@@ -377,6 +210,11 @@ enum IdleWatcherInner {
         shutdown: Arc<AtomicBool>,
         handle: Option<std::thread::JoinHandle<()>>,
     },
+    #[cfg(feature = "wayland")]
+    WaylandThread {
+        shutdown: Arc<AtomicBool>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    },
 }
 
 impl IdleWatcher {
@@ -390,6 +228,11 @@ impl IdleWatcher {
                 }
             }
             IdleWatcherInner::PollingThread { shutdown, handle } => {
+                !shutdown.load(Ordering::Relaxed)
+                    && handle.as_ref().is_some_and(|h| !h.is_finished())
+            }
+            #[cfg(feature = "wayland")]
+            IdleWatcherInner::WaylandThread { shutdown, handle } => {
                 !shutdown.load(Ordering::Relaxed)
                     && handle.as_ref().is_some_and(|h| !h.is_finished())
             }
@@ -412,6 +255,13 @@ impl Drop for IdleWatcher {
                     let _ = handle.join();
                 }
             }
+            #[cfg(feature = "wayland")]
+            IdleWatcherInner::WaylandThread { shutdown, handle } => {
+                shutdown.store(true, Ordering::Relaxed);
+                if let Some(handle) = handle.take() {
+                    let _ = handle.join();
+                }
+            }
         }
     }
 }
@@ -427,6 +277,13 @@ impl Drop for IdleWatcher {
 /// 3. **None** — drift-only fallback (suspend/resume still detected by
 ///    `DesktopIdleSync::due_action`)
 pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleWatcher> {
+    #[cfg(feature = "wayland")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
+        if let Some(watcher) = spawn_wayland_idle() {
+            return Some(watcher);
+        }
+    }
+
     // Strategy 1: swayidle (Wayland wlr-idle)
     if let Some(watcher) = spawn_swayidle(timeout_minutes) {
         return Some(watcher);
@@ -445,6 +302,155 @@ pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleW
         "idle_watcher_disabled"
     );
     None
+}
+
+#[cfg(feature = "wayland")]
+struct WaylandIdleState {
+    shutdown: Arc<AtomicBool>,
+    _notification: Option<ExtIdleNotificationV1>,
+}
+
+#[cfg(feature = "wayland")]
+impl Dispatch<wl_registry::WlRegistry, wayland_client::globals::GlobalListContents>
+    for WaylandIdleState
+{
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &wayland_client::globals::GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+#[cfg(feature = "wayland")]
+#[allow(clippy::ignored_unit_patterns)]
+impl Dispatch<WlSeat, ()> for WaylandIdleState {
+    fn event(
+        _: &mut Self,
+        _: &WlSeat,
+        _: <WlSeat as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+#[cfg(feature = "wayland")]
+#[allow(clippy::ignored_unit_patterns)]
+impl Dispatch<ExtIdleNotifierV1, ()> for WaylandIdleState {
+    fn event(
+        _: &mut Self,
+        _: &ExtIdleNotifierV1,
+        _: <ExtIdleNotifierV1 as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+#[cfg(feature = "wayland")]
+#[allow(clippy::ignored_unit_patterns)]
+impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
+    fn event(
+        _: &mut Self,
+        _: &ExtIdleNotificationV1,
+        event: IdleNotificationEvent,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if matches!(event, IdleNotificationEvent::Resumed) {
+            fire_sunreactorctl("idle-wake");
+        }
+    }
+}
+
+#[cfg(feature = "wayland")]
+fn spawn_wayland_idle() -> Option<IdleWatcher> {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let thread_shutdown = Arc::clone(&shutdown);
+    let timeout_ms = WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS;
+    let handle = std::thread::Builder::new()
+        .name(String::from("wayland-idle-notify"))
+        .spawn(move || {
+            let Ok(connection) = Connection::connect_to_env() else {
+                tracing::info!(reason = "connection failed", "wayland_idle_unavailable");
+                return;
+            };
+            let Ok((globals, mut queue)) = registry_queue_init::<WaylandIdleState>(&connection)
+            else {
+                tracing::info!(reason = "registry failed", "wayland_idle_unavailable");
+                return;
+            };
+            let qh = queue.handle();
+            let Ok(seat) = globals.bind::<WlSeat, _, _>(&qh, 1..=9, ()) else {
+                tracing::info!(reason = "seat unavailable", "wayland_idle_unavailable");
+                return;
+            };
+            let Ok(notifier) = globals.bind::<ExtIdleNotifierV1, _, _>(&qh, 1..=2, ()) else {
+                tracing::info!(
+                    reason = "ext-idle-notify unavailable",
+                    "wayland_idle_unavailable"
+                );
+                return;
+            };
+            let notification = notifier.get_input_idle_notification(timeout_ms, &seat, &qh, ());
+            let mut state = WaylandIdleState {
+                shutdown: thread_shutdown,
+                _notification: Some(notification),
+            };
+            while !state.shutdown.load(Ordering::Relaxed) {
+                if !dispatch_wayland_once(&mut queue, &mut state) {
+                    break;
+                }
+            }
+        })
+        .ok()?;
+    tracing::info!(strategy = "wayland_ext_idle_notify", "idle_watcher_started");
+    Some(IdleWatcher {
+        inner: IdleWatcherInner::WaylandThread {
+            shutdown,
+            handle: Some(handle),
+        },
+    })
+}
+
+#[cfg(feature = "wayland")]
+fn dispatch_wayland_once(
+    queue: &mut wayland_client::EventQueue<WaylandIdleState>,
+    state: &mut WaylandIdleState,
+) -> bool {
+    let _ = queue.dispatch_pending(state);
+    let Some(read_guard) = queue.prepare_read() else {
+        return true;
+    };
+    let mut pollfd = libc::pollfd {
+        fd: read_guard.connection_fd().as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let result = unsafe { libc::poll(&raw mut pollfd, 1, 100) };
+    if state.shutdown.load(Ordering::Relaxed) {
+        drop(read_guard);
+        return false;
+    }
+    if result < 0 {
+        drop(read_guard);
+        return false;
+    }
+    if result == 0 {
+        drop(read_guard);
+        return true;
+    }
+    if read_guard.read().is_err() {
+        return false;
+    }
+    queue.dispatch_pending(state).is_ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -537,7 +543,7 @@ fn spawn_xprintidle_poll(timeout_minutes: u64) -> Option<IdleWatcher> {
     let handle = std::thread::Builder::new()
         .name("xprintidle-poll".into())
         .spawn(move || {
-            xprintidle_poll_loop(shutdown_clone, timeout_ms);
+            xprintidle_poll_loop(&shutdown_clone, timeout_ms);
         })
         .ok()?;
 
@@ -559,9 +565,8 @@ fn is_xprintidle_available() -> bool {
         .stderr(Stdio::null())
         .spawn();
 
-    let mut child = match output {
-        Ok(c) => c,
-        Err(_) => return false,
+    let Ok(mut child) = output else {
+        return false;
     };
 
     let start = Instant::now();
@@ -605,7 +610,7 @@ fn is_xprintidle_available() -> bool {
 /// Calls `xprintidle` every `XPRINTIDLE_POLL_INTERVAL` seconds, compares the
 /// reported idle time against `timeout_ms`, and dispatches the appropriate
 /// `sunreactorctl` command when state transitions occur.
-fn xprintidle_poll_loop(shutdown: Arc<AtomicBool>, timeout_ms: u64) {
+fn xprintidle_poll_loop(shutdown: &Arc<AtomicBool>, timeout_ms: u64) {
     let mut is_idle = false;
 
     while !shutdown.load(Ordering::Relaxed) {
@@ -723,6 +728,222 @@ fn fire_sunreactorctl(subcommand: &str) {
                 error = %error,
                 "xprintidle_poll_sunreactorctl_spawn_failed"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backends::{BackendKind, FailureKind};
+    use crate::config::{
+        Config, ConfigReport, ConfigSource, DaemonConfig, LocationConfig, LogLevel, MonitorConfig,
+        MonitorSelector, SolarPolicyConfig, WeatherConfig,
+    };
+    use crate::process::{CommandError, CommandOutput};
+    use crate::state::FailureBackoffState;
+    use chrono::TimeZone;
+
+    fn test_idle_sync(enabled: bool, tick_seconds: u64) -> DesktopIdleSync {
+        DesktopIdleSync::new_with_watcher(enabled, None, tick_seconds, 15)
+    }
+
+    struct RecordingRunner {
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl RecordingRunner {
+        fn new() -> Self {
+            Self {
+                calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl ProcessRunner for RecordingRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[String],
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            let mut call = String::from(program);
+            for arg in args {
+                call.push('|');
+                call.push_str(arg);
+            }
+            self.calls.lock().unwrap().push(call);
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            })
+        }
+    }
+
+    #[test]
+    fn disabled_idle_sync_performs_drift_recovery_but_no_idle_deadlines() {
+        let mut idle_sync = test_idle_sync(false, 60);
+        let base_time = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
+        idle_sync.last_tick_utc = base_time;
+
+        assert!(idle_sync.next_deadline().is_none());
+
+        // A small normal tick shouldn't trigger drift
+        let small_advance = base_time + Duration::from_mins(1);
+        assert_eq!(
+            idle_sync.due_action(small_advance, std::time::Duration::from_mins(1)),
+            None
+        );
+
+        // A massive jump (e.g., waking from sleep) MUST trigger drift recovery,
+        // even if idle sync is disabled.
+        let massive_jump = base_time + Duration::from_hours(1);
+        let action = idle_sync.due_action(massive_jump, std::time::Duration::from_mins(1));
+        assert!(matches!(action, Some(IdleSyncAction::DriftRecovery { .. })));
+    }
+
+    #[test]
+    fn enabled_idle_sync_starts_with_delayed_sync_deadline() {
+        let mut enabled = test_idle_sync(true, 60);
+        enabled.delayed_sync_at = Some(Instant::now());
+
+        let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
+        assert_eq!(
+            enabled.due_action(now, std::time::Duration::from_mins(1)),
+            Some(IdleSyncAction::DelayedSync)
+        );
+    }
+
+    #[test]
+    fn drift_recovery_schedules_followup_sync() {
+        let mut idle_sync = test_idle_sync(true, 60);
+        idle_sync.delayed_sync_at = None;
+        idle_sync.last_tick_utc = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
+
+        let action = idle_sync.due_action(
+            Utc.timestamp_opt(1_800_000_030, 0).single().expect("valid"),
+            std::time::Duration::from_secs(10),
+        );
+
+        assert_eq!(
+            action,
+            Some(IdleSyncAction::DriftRecovery { drift_seconds: 20 })
+        );
+        assert!(idle_sync.next_deadline().is_some());
+    }
+
+    #[test]
+    fn delayed_sync_forces_reapply_even_with_active_backoff() {
+        let temp = std::env::temp_dir().join(format!(
+            "sunreactor-desktop-idle-{}",
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&temp).expect("temp dir should be created");
+        let state_path = temp.join("state/runtime-state.json");
+        let socket_path = temp.join("run/control.sock");
+        let mut runtime =
+            DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
+                .expect("runtime should bootstrap");
+        runtime.last_capabilities = Some(crate::runtime::topology::CapabilitySnapshot {
+            ddc_present: Vec::new(),
+            backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
+                stable_id: String::from("test:backlight"),
+                device_name: String::from("intel_backlight"),
+                class: String::from("backlight"),
+                max_brightness: Some(100),
+                backlight_type: Some(String::from("raw")),
+                probe_source: String::from("test-fixture"),
+                sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                ddcci_connector: None,
+                backend_viable: true,
+                note: None,
+            }],
+        });
+        runtime.state.monitor_mut("internal").backoff = Some(FailureBackoffState {
+            backend: BackendKind::Backlight,
+            failure_kind: FailureKind::Transient,
+            consecutive_failures: 3,
+            suppress_until_epoch_s: Some(1_800_000_500),
+        });
+
+        let mut idle_sync = test_idle_sync(true, 60);
+        idle_sync.delayed_sync_at = Some(Instant::now());
+        let mut cadence = LoopCadence::new(60);
+        let runner = RecordingRunner::new();
+        let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
+
+        assert!(idle_sync.perform_due_action(&mut runtime, now, &runner, &mut cadence));
+        assert_eq!(runner.calls().len(), 1);
+        assert!(runner.calls()[0]
+            .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
+        assert_eq!(
+            runtime
+                .state
+                .monitor("internal")
+                .and_then(|monitor| monitor.backoff.as_ref()),
+            None
+        );
+
+        std::fs::remove_dir_all(&temp).ok();
+    }
+
+    fn test_config_report() -> ConfigReport {
+        ConfigReport {
+            path: std::path::PathBuf::from("/tmp/sunreactor-config.toml"),
+            source: ConfigSource::Defaults,
+            config: Config {
+                daemon: DaemonConfig {
+                    tick_seconds: 60,
+                    dry_run: false,
+                    desktop_idle_sync: true,
+                    desktop_idle_timeout_minutes: 0,
+                    log_level: LogLevel::Info,
+                    apply_reassert_minutes: 2,
+                    ddc_timeout_seconds: 4,
+                    backlight_timeout_seconds: 2,
+                },
+                location: LocationConfig {
+                    city: String::new(),
+                    latitude: 41.0082,
+                    longitude: 28.9784,
+                    timezone: String::from("Europe/Istanbul"),
+                },
+                solar_policy: SolarPolicyConfig {
+                    use_adaptive_zenith: true,
+                    twilight_elevation_start: -6.0,
+                    day_elevation_full: 3.0,
+                    min_write_delta_pct: 2,
+                    max_step_pct_per_tick: 6,
+                },
+                monitors: vec![MonitorConfig {
+                    logical_id: String::from("internal"),
+                    backend: BackendKind::Backlight,
+                    enabled: true,
+                    allow_topology_retargeting: false,
+                    min_pct: 10,
+                    max_pct: 100,
+                    gain: 1.0,
+                    transition_gamma: 1.4,
+                    milestone_adjustments: Vec::new(),
+                    selector: MonitorSelector {
+                        connector: None,
+                        serial: None,
+                        model: None,
+                        edid: None,
+                        sysfs_path: Some(String::from("/sys/class/backlight/intel_backlight")),
+                        ddc_bus: None,
+                        ddc_address: None,
+                    },
+                }],
+                weather: WeatherConfig::default(),
+                tui: crate::config::TuiConfig::default(),
+            },
+            warnings: Vec::new(),
         }
     }
 }

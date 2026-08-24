@@ -20,6 +20,7 @@ fn main() {
         milestone_adjustments: vec![],
         backend: sunreactor::backends::BackendKind::Backlight,
         enabled: true,
+        allow_topology_retargeting: false,
         selector: sunreactor::config::MonitorSelector::default(),
     }];
     let loc = Location::from_timezone_name(40.8, 29.2, "Europe/Istanbul").unwrap();

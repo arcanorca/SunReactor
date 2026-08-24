@@ -1,17 +1,17 @@
 [Unit]
 Description=sunreactor adaptive brightness daemon
-Documentation=file:%h/.config/sunreactor/config.toml
+Documentation=https://github.com/arcanorca/SunReactor
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]
 Type=simple
-# sunreactor uses its default XDG paths, pinned here to the documented defaults.
-Environment=XDG_CONFIG_HOME=%h/.config
-Environment=XDG_STATE_HOME=%h/.local/state
-Environment=XDG_CACHE_HOME=%h/.cache
-ExecStart=/usr/local/bin/sunreactord
-ExecReload=/usr/local/bin/sunreactorctl reload-config
+# Paths are rendered by install.sh for the selected installation environment.
+Environment=XDG_CONFIG_HOME=@CONFIG_HOME@
+Environment=XDG_STATE_HOME=@STATE_HOME@
+Environment=XDG_CACHE_HOME=@CACHE_HOME@
+ExecStart="@BIN_DIR@/sunreactord"
+ExecReload="@BIN_DIR@/sunreactorctl" reload-config
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=20s

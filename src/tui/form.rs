@@ -101,7 +101,7 @@ impl FormState {
                 3 => ActiveInputKind::Text,
                 _ => return None,
             }),
-            Tab::Weather if active_setting == 0 => Some(ActiveInputKind::Secret),
+            Tab::Weather => (active_setting == 0).then_some(ActiveInputKind::Secret),
             Tab::Settings => match active_setting {
                 0 => Some(ActiveInputKind::Toggle), // Theme Toggle
                 1 => Some(ActiveInputKind::Integer),
@@ -110,7 +110,6 @@ impl FormState {
                 4 => Some(ActiveInputKind::Integer),
                 _ => None,
             },
-            _ => None,
         }
     }
 
@@ -137,7 +136,7 @@ impl FormState {
                 4 => Some(&self.suspend_minutes_input),
                 _ => None,
             },
-            _ => None,
+            Tab::Weather => None,
         }
     }
 
@@ -164,7 +163,7 @@ impl FormState {
                 4 => Some(&mut self.suspend_minutes_input),
                 _ => None,
             },
-            _ => None,
+            Tab::Weather => None,
         }
     }
 
@@ -209,35 +208,35 @@ impl FormState {
 
     fn automation_input_ref(&self, index: usize) -> Option<&Input> {
         let monitor_field_count = self.monitor_inputs.len() * 2;
-        if index < monitor_field_count {
-            let monitor_index = index / 2;
-            let is_max = index % 2 == 1;
-            self.monitor_inputs
-                .get(monitor_index)
-                .map(|pair| if is_max { &pair.1 } else { &pair.0 })
-        } else if index == monitor_field_count {
-            Some(&self.desktop_idle_timeout_minutes_input)
-        } else {
-            None
+        match index.cmp(&monitor_field_count) {
+            std::cmp::Ordering::Less => {
+                let monitor_index = index / 2;
+                let is_max = index % 2 == 1;
+                self.monitor_inputs
+                    .get(monitor_index)
+                    .map(|pair| if is_max { &pair.1 } else { &pair.0 })
+            }
+            std::cmp::Ordering::Equal => Some(&self.desktop_idle_timeout_minutes_input),
+            std::cmp::Ordering::Greater => None,
         }
     }
 
     fn automation_input_mut(&mut self, index: usize) -> Option<&mut Input> {
         let monitor_field_count = self.monitor_inputs.len() * 2;
-        if index < monitor_field_count {
-            let monitor_index = index / 2;
-            let is_max = index % 2 == 1;
-            self.monitor_inputs.get_mut(monitor_index).map(|pair| {
-                if is_max {
-                    &mut pair.1
-                } else {
-                    &mut pair.0
-                }
-            })
-        } else if index == monitor_field_count {
-            Some(&mut self.desktop_idle_timeout_minutes_input)
-        } else {
-            None
+        match index.cmp(&monitor_field_count) {
+            std::cmp::Ordering::Less => {
+                let monitor_index = index / 2;
+                let is_max = index % 2 == 1;
+                self.monitor_inputs.get_mut(monitor_index).map(|pair| {
+                    if is_max {
+                        &mut pair.1
+                    } else {
+                        &mut pair.0
+                    }
+                })
+            }
+            std::cmp::Ordering::Equal => Some(&mut self.desktop_idle_timeout_minutes_input),
+            std::cmp::Ordering::Greater => None,
         }
     }
 }
@@ -438,8 +437,8 @@ mod tests {
         );
 
         assert_eq!(config.location.timezone, "Europe/Istanbul");
-        assert_eq!(config.solar_policy.twilight_elevation_start, -8.0);
-        assert_eq!(config.solar_policy.day_elevation_full, 15.0);
+        assert!((config.solar_policy.twilight_elevation_start + 8.0).abs() < f64::EPSILON);
+        assert!((config.solar_policy.day_elevation_full - 15.0).abs() < f64::EPSILON);
     }
 
     #[test]
