@@ -1578,7 +1578,7 @@ impl DaemonRuntime {
         now_utc: DateTime<Utc>,
         runner: &R,
     ) -> ipc::ResponseEnvelope {
-        self.run_once_at_with_runner(now_utc, runner, true)
+        self.run_once_at_with_runner_fresh(now_utc, runner, true)
             .map_or_else(
                 |error| {
                     tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
@@ -3215,21 +3215,28 @@ mod tests {
             socket_path,
         )
         .expect("runtime should bootstrap");
-        let runner = FakeRunner::new().with_output(
-            "brightnessctl",
-            &[
-                "--quiet",
-                "--class",
-                "backlight",
-                "--device",
-                "intel_backlight",
-                "set",
-                "36%",
-            ],
-            Some(1),
-            "",
-            "permission denied",
-        );
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
+            .with_success(
+                "brightnessctl",
+                &["--list", "--machine-readable", "--class", "backlight"],
+                "intel_backlight,backlight,50,50%,100\n",
+            )
+            .with_output(
+                "brightnessctl",
+                &[
+                    "--quiet",
+                    "--class",
+                    "backlight",
+                    "--device",
+                    "intel_backlight",
+                    "set",
+                    "36%",
+                ],
+                Some(1),
+                "",
+                "permission denied",
+            );
 
         let (response, outcome) = runtime.handle_ipc_request_with_runner(
             Request::SetOverride {
@@ -3264,6 +3271,48 @@ mod tests {
                 .and_then(
                     |manual_override| manual_override.target_percent("internal", 1_800_000_000)
                 ),
+            Some(36)
+        );
+    }
+
+    #[test]
+    fn ipc_set_override_skips_write_when_fresh_observation_loses_target() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let missing_path = "/sys/class/backlight/__sunreactor_missing__";
+        let mut report = test_config_report();
+        report.config.monitors[0].selector.sysfs_path = Some(String::from(missing_path));
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
+            .expect("runtime should bootstrap");
+        runtime.last_capabilities = Some(test_capability_snapshot_at(missing_path));
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
+            .with_success(
+                "brightnessctl",
+                &["--list", "--machine-readable", "--class", "backlight"],
+                "",
+            );
+
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            Request::SetOverride {
+                monitor_id: Some(String::from("internal")),
+                percent: 36,
+                minutes: Some(10),
+            },
+            &runner,
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(outcome.tick_attempted);
+        assert!(matches!(response.response, Response::Ack { .. }));
+        assert!(!runner.calls().iter().any(|call| call.contains("|set|")));
+        assert_eq!(
+            runtime.state.manual_override.as_ref().and_then(
+                |manual_override| manual_override.target_percent("internal", 1_800_000_000)
+            ),
             Some(36)
         );
     }
