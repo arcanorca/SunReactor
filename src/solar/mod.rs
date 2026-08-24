@@ -8,10 +8,15 @@ pub use types::*;
 
 use crate::solar::ephemeris::solar_elevation_utc;
 use crate::solar::search::{find_event_crossing, find_solar_noon, safe_find_event_crossing};
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use std::cell::RefCell;
+use tz::datetime::{DateTime as TzDateTime, FoundDateTimeKind};
 
 const CIVIL_TWILIGHT_ELEVATION_DEG: f64 = -6.0;
+// Conventional sunrise/sunset center used by NOAA-style civil calculations:
+// solar-disc center at approximately -0.833 degrees, combining the apparent
+// solar radius and a standard near-horizon refraction allowance. This is an
+// estimate, not an observation-time guarantee under arbitrary atmosphere.
 const SUNRISE_SUNSET_ELEVATION_DEG: f64 = -0.833;
 const COARSE_SEARCH_STEP_MINUTES: i64 = 10;
 const FINE_SEARCH_STEP_MINUTES: i64 = 1;
@@ -88,11 +93,11 @@ pub fn get_sun_events(date: NaiveDate, location: &Location) -> Result<SunEvents,
     )?;
 
     let events = SunEvents {
-        dawn: local_datetime_at_utc(dawn, location).unwrap(),
-        sunrise: local_datetime_at_utc(sunrise, location).unwrap(),
-        noon: local_datetime_at_utc(noon, location).unwrap(),
-        sunset: local_datetime_at_utc(sunset, location).unwrap(),
-        dusk: local_datetime_at_utc(dusk, location).unwrap(),
+        dawn: local_datetime_at_utc(dawn, location)?,
+        sunrise: local_datetime_at_utc(sunrise, location)?,
+        noon: local_datetime_at_utc(noon, location)?,
+        sunset: local_datetime_at_utc(sunset, location)?,
+        dusk: local_datetime_at_utc(dusk, location)?,
     };
 
     LAST_SUN_EVENTS.with(|cache| {
@@ -216,20 +221,7 @@ pub(crate) fn resolve_local_datetime(
 ) -> Result<DateTime<FixedOffset>, SolarError> {
     validate_location(location)?;
 
-    let fake_utc_ts = datetime.and_utc().timestamp();
-    let tz = &location.timezone;
-
-    let local_type_1 = tz
-        .find_local_time_type(fake_utc_ts)
-        .map_err(|_| SolarError::DateOutOfRange)?;
-    let approx_utc_ts = fake_utc_ts - local_type_1.ut_offset() as i64;
-
-    let local_type_2 = tz
-        .find_local_time_type(approx_utc_ts)
-        .map_err(|_| SolarError::DateOutOfRange)?;
-    let offset = FixedOffset::east_opt(local_type_2.ut_offset()).unwrap();
-
-    Ok(datetime.and_local_timezone(offset).unwrap())
+    resolve_local_datetime_in_timezone(datetime, &location.timezone, &location.timezone_name)
 }
 
 pub(crate) fn resolve_date_boundary(
@@ -241,25 +233,46 @@ pub(crate) fn resolve_date_boundary(
         .and_hms_opt(0, 0, 0)
         .ok_or(SolarError::DateOutOfRange)?;
 
-    let fake_utc_ts = midnight.and_utc().timestamp();
+    resolve_local_datetime_in_timezone(midnight, tz, timezone_label)
+}
 
-    let local_type_1 =
-        tz.find_local_time_type(fake_utc_ts)
-            .map_err(|_| SolarError::NonexistentLocalTime {
-                datetime: midnight,
-                timezone: timezone_label.to_owned(),
-            })?;
-    let approx_utc_ts = fake_utc_ts - local_type_1.ut_offset() as i64;
+/// Resolve a wall time through tz-rs' canonical local-time inverse.
+fn resolve_local_datetime_in_timezone(
+    datetime: NaiveDateTime,
+    tz: &tz::TimeZone,
+    timezone_label: &str,
+) -> Result<DateTime<FixedOffset>, SolarError> {
+    let found = TzDateTime::find(
+        datetime.year(),
+        datetime.month() as u8,
+        datetime.day() as u8,
+        datetime.hour() as u8,
+        datetime.minute() as u8,
+        datetime.second() as u8,
+        datetime.nanosecond(),
+        tz.as_ref(),
+    )
+    .map_err(|_| SolarError::DateOutOfRange)?;
 
-    let local_type_2 =
-        tz.find_local_time_type(approx_utc_ts)
-            .map_err(|_| SolarError::NonexistentLocalTime {
-                datetime: midnight,
-                timezone: timezone_label.to_owned(),
-            })?;
-    let offset = FixedOffset::east_opt(local_type_2.ut_offset()).unwrap();
-
-    Ok(midnight.and_local_timezone(offset).unwrap())
+    match found.into_inner().as_slice() {
+        [FoundDateTimeKind::Normal(candidate)] => {
+            let offset = FixedOffset::east_opt(candidate.local_time_type().ut_offset())
+                .ok_or(SolarError::DateOutOfRange)?;
+            Utc.timestamp_opt(candidate.unix_time(), candidate.nanoseconds())
+                .single()
+                .map(|utc| utc.with_timezone(&offset))
+                .ok_or(SolarError::DateOutOfRange)
+        }
+        [FoundDateTimeKind::Skipped { .. }] => Err(SolarError::NonexistentLocalTime {
+            datetime,
+            timezone: timezone_label.to_owned(),
+        }),
+        [] => Err(SolarError::DateOutOfRange),
+        _ => Err(SolarError::AmbiguousLocalTime {
+            datetime,
+            timezone: timezone_label.to_owned(),
+        }),
+    }
 }
 
 /// Retrieves all sun events for a given day safely, handling polar edge cases without erroring out.
@@ -367,7 +380,6 @@ mod tests {
         assert_eq!(events.sunrise.offset().local_minus_utc(), -4 * 60 * 60);
     }
     #[test]
-    #[test]
     fn sample_at_utc_classifies_phase_from_elevation_thresholds() {
         let location =
             Location::from_timezone_name(0.0, 0.0, "UTC").expect("timezone should parse");
@@ -379,5 +391,130 @@ mod tests {
         let sample = sample_at_utc(noon, &location, -6.0, 3.0).expect("sample should resolve");
         assert_eq!(sample.phase, SolarPhase::Day);
         assert!(sample.elevation_deg > 80.0);
+    }
+
+    #[test]
+    fn local_datetime_rejects_dst_gap_and_fold() {
+        let berlin = Location::from_timezone_name(52.52, 13.405, "Europe/Berlin")
+            .expect("timezone should parse");
+        let gap = NaiveDate::from_ymd_opt(2024, 3, 31)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        let fold = NaiveDate::from_ymd_opt(2024, 10, 27)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        assert!(matches!(
+            local_datetime(gap, &berlin),
+            Err(SolarError::NonexistentLocalTime { .. })
+        ));
+        assert!(matches!(
+            local_datetime(fold, &berlin),
+            Err(SolarError::AmbiguousLocalTime { .. })
+        ));
+    }
+
+    #[test]
+    fn local_datetime_resolves_ordinary_dst_wall_time() {
+        let new_york = Location::from_timezone_name(40.7128, -74.006, "America/New_York")
+            .expect("timezone should parse");
+        let ordinary = NaiveDate::from_ymd_opt(2024, 6, 21)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let resolved = local_datetime(ordinary, &new_york).expect("ordinary time should resolve");
+        assert_eq!(resolved.offset().local_minus_utc(), -4 * 60 * 60);
+    }
+
+    #[test]
+    fn local_datetime_rejects_new_york_gap_and_fold_and_utc_is_unique() {
+        let new_york = Location::from_timezone_name(40.7128, -74.006, "America/New_York")
+            .expect("timezone should parse");
+        let gap = NaiveDate::from_ymd_opt(2024, 3, 10)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        let fold = NaiveDate::from_ymd_opt(2024, 11, 3)
+            .unwrap()
+            .and_hms_opt(1, 30, 0)
+            .unwrap();
+        assert!(matches!(
+            local_datetime(gap, &new_york),
+            Err(SolarError::NonexistentLocalTime { .. })
+        ));
+        assert!(matches!(
+            local_datetime(fold, &new_york),
+            Err(SolarError::AmbiguousLocalTime { .. })
+        ));
+
+        let utc = Location::from_timezone_name(0.0, 0.0, "UTC").expect("UTC should parse");
+        let ordinary = NaiveDate::from_ymd_opt(2024, 3, 10)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        assert_eq!(
+            local_datetime(ordinary, &utc)
+                .expect("UTC local time should be unique")
+                .offset()
+                .local_minus_utc(),
+            0
+        );
+    }
+
+    #[test]
+    fn date_boundary_uses_canonical_unique_midnight_resolution() {
+        let berlin = Location::from_timezone_name(52.52, 13.405, "Europe/Berlin")
+            .expect("timezone should parse");
+        let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+        let boundary = resolve_date_boundary(date, &berlin.timezone, &berlin.timezone_name)
+            .expect("ordinary midnight should resolve");
+        assert_eq!(boundary.date_naive(), date);
+        assert_eq!(boundary.time().hour(), 0);
+    }
+
+    #[test]
+    fn lord_howe_half_hour_transition_is_classified_without_hour_assumptions() {
+        let lord_howe = Location::from_timezone_name(-31.555, 159.08, "Australia/Lord_Howe")
+            .expect("Lord Howe timezone should parse from installed tzdata");
+        let spring_gap = NaiveDate::from_ymd_opt(2024, 10, 6)
+            .unwrap()
+            .and_hms_opt(2, 15, 0)
+            .unwrap();
+        let autumn_fold = NaiveDate::from_ymd_opt(2024, 4, 7)
+            .unwrap()
+            .and_hms_opt(1, 45, 0)
+            .unwrap();
+
+        assert!(matches!(
+            local_datetime(spring_gap, &lord_howe),
+            Err(SolarError::NonexistentLocalTime { .. })
+        ));
+        assert!(matches!(
+            local_datetime(autumn_fold, &lord_howe),
+            Err(SolarError::AmbiguousLocalTime { .. })
+        ));
+    }
+
+    #[test]
+    fn solar_position_matches_published_nrel_spa_example_with_model_tolerance() {
+        // NREL SPA example vector: 2003-10-17 12:30:30 local time,
+        // 39.742_476 N, 105.1786 W, UTC-07:00. The published SPA result is
+        // apparent zenith 50.111_622 degrees; SunReactor compares geometric
+        // elevation and intentionally does not model SPA atmospheric refraction.
+        let location = Location::from_timezone_name(39.742_476, -105.1786, "UTC")
+            .expect("UTC timezone should parse");
+        let datetime = Utc
+            .with_ymd_and_hms(2003, 10, 17, 19, 30, 30)
+            .single()
+            .expect("SPA example timestamp should be valid");
+        let elevation = get_solar_elevation(datetime.naive_utc(), &location)
+            .expect("solar elevation should resolve");
+        let reference_geometric_elevation = 90.0 - 50.111_622;
+
+        assert!(
+            (elevation - reference_geometric_elevation).abs() < 0.05,
+            "SunReactor elevation {elevation:.6} differs from the published SPA vector"
+        );
     }
 }

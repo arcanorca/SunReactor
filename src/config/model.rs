@@ -107,6 +107,8 @@ pub struct MonitorConfig {
     pub logical_id: String,
     pub backend: BackendKind,
     pub enabled: bool,
+    #[serde(default)]
+    pub allow_topology_retargeting: bool,
     pub min_pct: u8,
     pub max_pct: u8,
     pub gain: f64,
@@ -123,6 +125,7 @@ impl Default for MonitorConfig {
             logical_id: String::new(),
             backend: BackendKind::Backlight,
             enabled: true,
+            allow_topology_retargeting: false,
             min_pct: 15,
             max_pct: 60,
             gain: 1.0,
@@ -193,13 +196,43 @@ pub enum TemperatureUnit {
     Fahrenheit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    Amber,
+    AyuDark,
+    AyuMirage,
+    CatppuccinMocha,
+    Commodore64,
+    Cyberpunk,
+    Dracula,
+    Everforest,
+    Grayscale,
+    Gruvbox,
+    HackerGreen,
+    Kanagawa,
+    MaterialOcean,
+    Monokai,
+    NightOwl,
+    Nord,
+    OneDark,
+    PhosphorBlue,
+    RosePine,
+    SolarizedDark,
+    Synthwave84,
+    Terminal,
+    TokyoNight,
+    Zenburn,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TuiConfig {
     pub fps: u32,
     pub use_12h_time: bool,
     pub temperature_unit: TemperatureUnit,
-    pub theme: crate::tui::theme::Theme,
+    pub theme: Theme,
 }
 
 impl Default for TuiConfig {
@@ -208,7 +241,7 @@ impl Default for TuiConfig {
             fps: 1,
             use_12h_time: false,
             temperature_unit: TemperatureUnit::Celsius,
-            theme: crate::tui::theme::Theme::default(),
+            theme: Theme::default(),
         }
     }
 }

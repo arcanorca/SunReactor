@@ -86,16 +86,18 @@ pub(crate) fn solar_elevation_utc(
     let julian_century = (julian_day - 2_451_545.0) / 36_525.0;
 
     let geom_mean_longitude_deg = normalize_degrees(
-        280.46646 + julian_century * (36_000.769_83 + julian_century * 0.0003032),
+        280.46646 + julian_century * (36_000.769_83 + julian_century * 0.000_303_2),
     );
     let geom_mean_anomaly_deg =
-        357.52911 + julian_century * (35_999.050_29 - 0.0001537 * julian_century);
-    let eccentricity = 0.016708634 - julian_century * (0.000042037 + 0.0000001267 * julian_century);
+        357.52911 + julian_century * (35_999.050_29 - 0.000_153_7 * julian_century);
+    let eccentricity =
+        0.016_708_634 - julian_century * (0.000_042_037 + 0.000_000_126_7 * julian_century);
 
     let sun_eq_of_center_deg = geom_mean_anomaly_deg.to_radians().sin()
-        * (1.914602 - julian_century * (0.004817 + 0.000014 * julian_century))
-        + (2.0 * geom_mean_anomaly_deg).to_radians().sin() * (0.019993 - 0.000101 * julian_century)
-        + (3.0 * geom_mean_anomaly_deg).to_radians().sin() * 0.000289;
+        * (1.914_602 - julian_century * (0.004_817 + 0.000_014 * julian_century))
+        + (2.0 * geom_mean_anomaly_deg).to_radians().sin()
+            * (0.019_993 - 0.000_101 * julian_century)
+        + (3.0 * geom_mean_anomaly_deg).to_radians().sin() * 0.000_289;
 
     let sun_true_longitude_deg = geom_mean_longitude_deg + sun_eq_of_center_deg;
     let sun_apparent_longitude_deg = sun_true_longitude_deg
@@ -106,7 +108,7 @@ pub(crate) fn solar_elevation_utc(
         + (26.0
             + ((21.448
                 - julian_century
-                    * (46.815 + julian_century * (0.00059 - julian_century * 0.001813)))
+                    * (46.815 + julian_century * (0.000_59 - julian_century * 0.001_813)))
                 / 60.0))
             / 60.0;
     let obliquity_correction_deg =

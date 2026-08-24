@@ -90,7 +90,9 @@ pub(crate) fn merge_snapshot(
 
     WeatherSnapshotMetadata {
         provider: fresh_snapshot.provider,
-        observed_at_epoch_s: fresh_snapshot.observed_at_epoch_s,
+        fetched_at_epoch_s: fresh_snapshot.fetched_at_epoch_s,
+        valid_at_epoch_s: fresh_snapshot.valid_at_epoch_s,
+        source_kind: fresh_snapshot.source_kind,
         cloud_cover_percent: Some(fresh_snapshot.cloud_cover_percent),
         smoothed_cloud_cover_percent: Some(smoothed_cloud_cover_percent),
         temperature: Some(fresh_snapshot.temperature),
@@ -103,7 +105,7 @@ pub(crate) fn cache_is_fresh(
     now_epoch_s: u64,
 ) -> bool {
     !snapshot.provider.trim().is_empty()
-        && now_epoch_s.saturating_sub(snapshot.observed_at_epoch_s) <= cache_ttl(config).as_secs()
+        && now_epoch_s.saturating_sub(snapshot.fetched_at_epoch_s) <= cache_ttl(config).as_secs()
 }
 pub(crate) fn smooth_cloud_cover(
     previous_cloud_cover_percent: Option<u8>,

@@ -75,8 +75,21 @@ The control socket stays local-only and intentionally small.
 - stale socket cleanup only removes an existing path when it is a Unix socket and no listener is
   reachable
 - non-socket files at the socket path are never removed
-- each IPC message has a bounded maximum size of 64 KiB
-- malformed or oversized messages return protocol errors instead of crashing the daemon
+- each connection carries exactly one newline-framed JSON request and one newline-framed JSON
+  response; EOF and half-close are not message delimiters
+- the 64 KiB limit counts JSON payload bytes and excludes the terminating LF delimiter; readers and
+  writers enforce the same limit
+- frame reads and writes use absolute operation deadlines; incremental peer progress does not extend
+  either deadline
+- malformed, unterminated, oversized, or deadline-exceeded messages return protocol errors instead
+  of crashing or blocking the daemon indefinitely
+- synchronous IPC draining uses a bounded request-count and wall-clock yield quantum (`16` accepted
+  connections or `8 ms`, whichever comes first); queued connections are resumed on later main-loop
+  iterations
+- the drain quantum is cooperative, not preemptive: one already-running request may take longer
+  than the quantum and can include its own frame-read, handler, and frame-write deadlines
+- IPC cannot monopolize the main loop between connections, but no hard real-time tick/fade latency
+  guarantee is made for an individual request or an unbounded arrival stream
 
 ### Logging
 

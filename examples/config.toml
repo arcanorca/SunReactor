@@ -39,6 +39,9 @@ min_write_delta_pct = 1
 # gain = 1.0
 # connector = "DP-1"
 # ddc_bus = 6
+# Bus-only DDC follows an I2C topology slot, not a permanent monitor.
+# Keep this false unless retargeting after bus reuse is explicitly intended.
+# allow_topology_retargeting = false
 # ddc_address = 55
 # [[monitors.milestone_adjustments]]
 # milestone = "fall_50"

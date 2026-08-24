@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{WeatherError, WeatherProvider, WeatherRequest, WeatherSnapshot};
+use super::{WeatherError, WeatherProvider, WeatherRequest, WeatherSnapshot, WeatherSourceKind};
 use crate::state::ForecastPoint;
 
 const OPENWEATHER_ENDPOINT: &str = "https://api.openweathermap.org/data/2.5/forecast";
@@ -91,7 +91,7 @@ pub(crate) fn parse_snapshot(
         });
     }
 
-    // The first item in the forecast list is usually the current/nearest 3-hour window
+    // The first item is a forecast interval, not a current observation.
     let current = &parsed.list[0];
 
     // The rest form the forecast
@@ -108,7 +108,9 @@ pub(crate) fn parse_snapshot(
 
     Ok(WeatherSnapshot {
         provider: String::from("openweather"),
-        observed_at_epoch_s: fetched_at_epoch_s,
+        fetched_at_epoch_s,
+        valid_at_epoch_s: current.dt,
+        source_kind: WeatherSourceKind::Forecast,
         cloud_cover_percent: current.clouds.all.min(100) as u8,
         temperature: current.main.temp,
         forecast,
@@ -117,7 +119,7 @@ pub(crate) fn parse_snapshot(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_snapshot;
+    use super::{parse_snapshot, WeatherSourceKind};
 
     #[test]
     fn parses_valid_openweather_forecast_response() {
@@ -126,12 +128,20 @@ mod tests {
             parse_snapshot(json, 1_800_000_000).expect("valid OpenWeather response should parse");
 
         assert_eq!(snapshot.provider, "openweather");
-        assert_eq!(snapshot.observed_at_epoch_s, 1_800_000_000);
+        assert_eq!(snapshot.fetched_at_epoch_s, 1_800_000_000);
+        assert_eq!(snapshot.valid_at_epoch_s, 1_700_000_000);
+        assert_eq!(snapshot.source_kind, WeatherSourceKind::Forecast);
         assert_eq!(snapshot.cloud_cover_percent, 83);
-        assert_eq!(snapshot.temperature, 12.5);
+        assert!((snapshot.temperature - 12.5).abs() < f32::EPSILON);
         assert_eq!(snapshot.forecast.len(), 1);
-        assert_eq!(snapshot.forecast[0].dt_epoch_s, 1700010800);
+        assert_eq!(snapshot.forecast[0].dt_epoch_s, 1_700_010_800);
         assert_eq!(snapshot.forecast[0].cloud_cover_percent, 50);
-        assert_eq!(snapshot.forecast[0].temperature, 14.2);
+        assert!((snapshot.forecast[0].temperature - 14.2).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn rejects_missing_forecast_timestamp_without_inventing_weather_time() {
+        let json = r#"{"list":[{"clouds":{"all":83},"main":{"temp":12.5}}]}"#;
+        assert!(parse_snapshot(json, 1_800_000_000).is_err());
     }
 }

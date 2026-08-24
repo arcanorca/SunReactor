@@ -41,6 +41,7 @@ impl WeatherEngine {
     /// Attempts to read the latest snapshot from the cache.
     /// Returns `Ok(Option<WeatherSnapshotMetadata>)` if the lock was acquired,
     /// or `Err(())` if the lock is currently held by the background thread.
+    #[allow(clippy::result_unit_err)]
     pub fn latest_snapshot(&self) -> Result<Option<WeatherSnapshotMetadata>, ()> {
         self.cache.try_read().map(|g| g.clone()).map_err(|_| ())
     }
@@ -107,7 +108,7 @@ impl WeatherEngine {
                 next_refresh_at_epoch_s = resolution.next_refresh_at_epoch_s;
 
                 match rx.recv_timeout(Duration::from_secs(30)) {
-                    Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                         break;
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {

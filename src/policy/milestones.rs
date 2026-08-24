@@ -111,31 +111,25 @@ pub fn compute_adaptive_zenith(
     _use_adaptive_zenith: bool,
     twilight_start_deg: f64,
 ) -> f64 {
-    // `day_elevation_full` and `use_adaptive_zenith` are kept in the config
-    // schema for backward compatibility but are no longer used in the
-    // computation. The plateau is ALWAYS the day's actual solar noon
-    // elevation, producing a natural bell-curve brightness profile that
-    // peaks only at solar noon and tapers symmetrically throughout the day.
-
     let fallback = config_day_full_deg.max(twilight_start_deg + 0.001);
-    let now_local = match solar::local_datetime_at_utc(now_utc, location) {
-        Ok(dt) => dt,
-        Err(_) => return fallback,
+    // When adaptive mode is enabled, the day's solar-noon elevation is the
+    // normal plateau. The configured value remains the safe fallback when the
+    // noon calculation is unavailable.
+    let Ok(now_local) = solar::local_datetime_at_utc(now_utc, location) else {
+        return fallback;
     };
 
-    let events = match solar::safe_get_sun_events(now_local.date_naive(), location) {
-        Ok(e) => e,
-        Err(_) => return fallback,
+    let Ok(events) = solar::safe_get_sun_events(now_local.date_naive(), location) else {
+        return fallback;
     };
 
-    let noon_sample = match solar::sample_at_utc(
+    let Ok(noon_sample) = solar::sample_at_utc(
         events.noon.with_timezone(&Utc),
         location,
         twilight_start_deg,
         config_day_full_deg,
-    ) {
-        Ok(s) => s,
-        Err(_) => return fallback,
+    ) else {
+        return fallback;
     };
 
     let noon_elevation_deg = f64::from(noon_sample.elevation_deg);
@@ -288,9 +282,9 @@ pub(crate) fn resolve_base_milestone_context_for_date(
 pub(crate) fn find_rise_start(
     input: &PolicyContext,
     context: &BaseMilestoneContext,
-) -> Result<DateTime<chrono::FixedOffset>, PolicyError> {
+) -> DateTime<chrono::FixedOffset> {
     if context.peak_linear_factor <= 0.0 {
-        return Ok(context.day_start_local);
+        return context.day_start_local;
     }
 
     let start = context.day_start_local;
@@ -310,8 +304,9 @@ pub(crate) fn find_rise_start(
         current += Duration::minutes(1);
     }
 
-    Ok(rise_start)
+    rise_start
 }
+
 pub(crate) fn resolve_base_milestone_context(
     input: &PolicyContext,
 ) -> Result<BaseMilestoneContext, PolicyError> {
@@ -319,7 +314,7 @@ pub(crate) fn resolve_base_milestone_context(
     let mut date = now_local.date_naive();
 
     let mut context = resolve_base_milestone_context_for_date(input, date)?;
-    let rise_start = find_rise_start(input, &context)?;
+    let rise_start = find_rise_start(input, &context);
 
     if now_local < rise_start {
         // We are before today's sunrise, so we actually belong to yesterday's cycle.
@@ -336,7 +331,7 @@ pub(crate) fn resolve_base_milestone_context(
             .succ_opt()
             .expect("policy date should remain within chrono's supported range");
         let tomorrow_context = resolve_base_milestone_context_for_date(input, tomorrow)?;
-        let tomorrow_rise = find_rise_start(input, &tomorrow_context)?;
+        let tomorrow_rise = find_rise_start(input, &tomorrow_context);
 
         // Today's NightFloor can be pushed up to 1 minute before tomorrow's sunrise.
         context.day_end_local = tomorrow_rise - Duration::minutes(1);
@@ -344,6 +339,8 @@ pub(crate) fn resolve_base_milestone_context(
 
     Ok(context)
 }
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn resolve_base_milestones(
     input: &PolicyContext,
     context: &BaseMilestoneContext,

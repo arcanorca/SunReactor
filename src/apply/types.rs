@@ -37,6 +37,7 @@ pub enum ApplyStatus {
     SkippedHysteresis,
     SkippedMinimumInterval,
     SkippedBackoff,
+    SkippedTopology,
     Succeeded,
     Failed,
 }
@@ -88,7 +89,8 @@ impl ApplySummary {
             ApplyStatus::SkippedDisabled
             | ApplyStatus::SkippedDryRun
             | ApplyStatus::SkippedHysteresis
-            | ApplyStatus::SkippedMinimumInterval => {
+            | ApplyStatus::SkippedMinimumInterval
+            | ApplyStatus::SkippedTopology => {
                 self.skipped += 1;
             }
             ApplyStatus::SkippedBackoff => {

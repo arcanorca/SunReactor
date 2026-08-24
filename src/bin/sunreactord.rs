@@ -44,6 +44,7 @@ fn try_main() -> anyhow::Result<()> {
                         .replace('\\', "\\\\")
                         .replace('"', "\\\"")
                 );
+                runtime.refresh_capabilities();
                 let report = runtime.run_once()?;
                 println!(
                     "level=info event=tick mode=once tick_duration_ms={} monitors_evaluated={} writes_attempted={} writes_skipped={} failures={}",

@@ -47,8 +47,10 @@ where
         Err(err) => {
             if matches!(err, WeatherError::MissingApiKey { .. }) {
                 return WeatherResolution {
-                    modifier: None,
-                    snapshot: None,
+                    modifier: snapshot
+                        .as_ref()
+                        .and_then(|snapshot| snapshot_modifier(config, snapshot, now_epoch_s)),
+                    snapshot,
                     next_refresh_at_epoch_s: None,
                     error: Some(err),
                     refresh_attempted: false,
@@ -58,9 +60,12 @@ where
             // We can't build a request, but we might still use the cached snapshot
             // We'll proceed so the logic can use the old snapshot
             return WeatherResolution {
-                modifier: snapshot.as_ref().and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
+                modifier: snapshot
+                    .as_ref()
+                    .and_then(|s| snapshot_modifier(config, s, now_epoch_s)),
                 snapshot,
-                next_refresh_at_epoch_s: next_refresh_at_epoch_s.or(Some(now_epoch_s + WEATHER_FAILURE_RETRY_MAX_SECONDS)),
+                next_refresh_at_epoch_s: next_refresh_at_epoch_s
+                    .or(Some(now_epoch_s + WEATHER_FAILURE_RETRY_MAX_SECONDS)),
                 error,
                 refresh_attempted: false,
             };
@@ -109,7 +114,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -122,14 +126,16 @@ mod tests {
     use super::{
         cloud_cover_to_multiplier, refresh_interval, resolve_modifier_with_provider,
         snapshot_modifier, snapshot_state, EnvironmentReader, WeatherError, WeatherProvider,
-        WeatherRequest, WeatherSnapshot, WeatherSnapshotState,
+        WeatherRequest, WeatherSnapshot, WeatherSnapshotState, WeatherSourceKind,
     };
 
     #[test]
     fn feature_disabled_skips_fetch_and_returns_no_modifier() {
         let provider = FakeProvider::success(WeatherSnapshot {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 65,
             temperature: 0.0,
             forecast: vec![],
@@ -158,14 +164,18 @@ mod tests {
     fn missing_api_key_uses_cache_without_fetch() {
         let provider = FakeProvider::success(WeatherSnapshot {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 100,
             temperature: 0.0,
             forecast: vec![],
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(80),
             smoothed_cloud_cover_percent: Some(70),
             temperature: Some(0.0),
@@ -185,11 +195,13 @@ mod tests {
         );
 
         assert_eq!(provider.calls(), 0);
-        assert_eq!(
-            resolution
+        assert!(
+            (resolution
                 .modifier
-                .expect("cache should produce a modifier"),
-            cloud_cover_to_multiplier(70, 0.75)
+                .expect("cache should produce a modifier")
+                - cloud_cover_to_multiplier(70, 0.75))
+            .abs()
+                < f64::EPSILON
         );
         assert!(matches!(
             resolution.error,
@@ -203,7 +215,9 @@ mod tests {
             String::from("env-key"),
             WeatherSnapshot {
                 provider: String::from("openweather"),
-                observed_at_epoch_s: 1_800_000_000,
+                fetched_at_epoch_s: 1_800_000_000,
+                valid_at_epoch_s: 1_700_000_000,
+                source_kind: WeatherSourceKind::Forecast,
                 cloud_cover_percent: 40,
                 temperature: 0.0,
                 forecast: vec![],
@@ -236,14 +250,18 @@ mod tests {
     fn cache_usage_skips_fetch_until_refresh_is_due() {
         let provider = FakeProvider::success(WeatherSnapshot {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 0,
             temperature: 0.0,
             forecast: vec![],
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(60),
             temperature: Some(0.0),
@@ -278,7 +296,9 @@ mod tests {
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(90),
             smoothed_cloud_cover_percent: Some(90),
             temperature: Some(0.0),
@@ -320,14 +340,18 @@ mod tests {
     fn bounded_multiplier_behavior_smooths_large_changes_and_stays_within_range() {
         let provider = FakeProvider::success(WeatherSnapshot {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 0,
             temperature: 0.0,
             forecast: vec![],
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_799_999_900,
+            fetched_at_epoch_s: 1_799_999_900,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(100),
             smoothed_cloud_cover_percent: Some(100),
             temperature: Some(0.0),
@@ -360,7 +384,7 @@ mod tests {
 
         assert_eq!(smoothed_cloud_cover_percent, 50);
         assert!((0.75..=1.0).contains(&modifier));
-        assert_eq!(modifier, cloud_cover_to_multiplier(50, 0.75));
+        assert!((modifier - cloud_cover_to_multiplier(50, 0.75)).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -368,7 +392,9 @@ mod tests {
         let config = weather_config(true);
         let snapshot = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(55),
             temperature: Some(0.0),
@@ -443,7 +469,9 @@ mod tests {
     fn forced_refresh_ignores_existing_deadline() {
         let provider = FakeProvider::success(WeatherSnapshot {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 35,
             temperature: 0.0,
             forecast: vec![],
@@ -477,7 +505,9 @@ mod tests {
         let config = weather_config(true);
         let ready_snapshot = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(55),
             temperature: Some(0.0),
@@ -485,7 +515,9 @@ mod tests {
         };
         let incomplete_snapshot = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
-            observed_at_epoch_s: 1_800_000_000,
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: None,
             smoothed_cloud_cover_percent: None,
             temperature: Some(0.0),
@@ -512,6 +544,43 @@ mod tests {
             snapshot_state(&config, Some(&incomplete_snapshot), 1_800_000_100),
             WeatherSnapshotState::Incomplete
         );
+    }
+
+    #[test]
+    fn cache_freshness_uses_fetch_time_not_future_forecast_valid_time() {
+        let config = weather_config(true);
+        let snapshot = WeatherSnapshotMetadata {
+            provider: String::from("openweather"),
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_800_100_000,
+            source_kind: WeatherSourceKind::Forecast,
+            cloud_cover_percent: Some(60),
+            smoothed_cloud_cover_percent: Some(60),
+            temperature: Some(0.0),
+            forecast: vec![],
+        };
+        assert_eq!(
+            snapshot_state(&config, Some(&snapshot), 1_800_000_100),
+            WeatherSnapshotState::Ready
+        );
+        assert_eq!(
+            snapshot_state(
+                &config,
+                Some(&snapshot),
+                1_800_000_000 + refresh_interval(&config).as_secs() * 3,
+            ),
+            WeatherSnapshotState::Stale
+        );
+    }
+
+    #[test]
+    fn weather_error_diagnostics_do_not_include_api_key() {
+        let api_key = "weather-key-must-not-leak-123";
+        let error = WeatherError::Transport {
+            provider: "openweather",
+            message: String::from("network timeout"),
+        };
+        assert!(!error.to_string().contains(api_key));
     }
 
     fn weather_config(enabled: bool) -> WeatherConfig {
@@ -592,11 +661,11 @@ mod tests {
 
         fn fetch_snapshot(
             &self,
-            _request: &WeatherRequest,
+            request: &WeatherRequest,
         ) -> Result<WeatherSnapshot, WeatherError> {
             self.calls.set(self.calls.get() + 1);
             if let Some(expected_api_key) = self.expected_api_key.as_ref() {
-                assert_eq!(_request.api_key, *expected_api_key);
+                assert_eq!(request.api_key, *expected_api_key);
             }
             self.result.clone()
         }

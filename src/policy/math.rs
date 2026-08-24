@@ -86,8 +86,7 @@ pub fn daylight_factor_from_elevation(
 ) -> Result<f64, PolicyError> {
     validate_solar_curve(twilight_elevation_start_deg, day_elevation_full_deg)?;
 
-    // day_elevation_full_deg is already the effective_plateau calculated in compute_adaptive_zenith
-    // But as a failsafe, ensure plateau > twilight_elevation_start_deg
+    // The caller supplies the effective plateau (adaptive or configured).
     let plateau = day_elevation_full_deg.max(twilight_elevation_start_deg + 0.1);
 
     Ok(compute_smoothstep_daylight_factor(
@@ -110,8 +109,8 @@ mod tests {
 
     #[test]
     fn test_summer_plateau_is_respected() {
-        let zenith = 73.0; // The adaptive zenith ensures effective plateau is 15.0.
-                           // Here we test daylight_factor_from_elevation assuming the plateau has already been resolved to 15.0 by compute_adaptive_zenith.
+        // The adaptive zenith ensures the effective plateau is 15.0.
+        // Here we test daylight_factor_from_elevation assuming the plateau has already been resolved to 15.0 by compute_adaptive_zenith.
         let plateau = 15.0;
         let twilight = -6.0;
         let gamma = 1.0;
@@ -121,8 +120,7 @@ mod tests {
             .expect("valid params");
         assert!(
             (factor - 1.0).abs() < f64::EPSILON,
-            "Factor should be exactly 1.0 when elevation is above plateau. Got: {}",
-            factor
+            "Factor should be exactly 1.0 when elevation is above plateau. Got: {factor}"
         );
     }
 
@@ -137,8 +135,7 @@ mod tests {
             .expect("valid params");
         assert!(
             (factor - 0.5).abs() < f64::EPSILON,
-            "Factor should be exactly 0.5 at the mathematical midpoint. Got: {}",
-            factor
+            "Factor should be exactly 0.5 at the mathematical midpoint. Got: {factor}"
         );
     }
 
@@ -157,8 +154,7 @@ mod tests {
                 .expect("valid params");
         assert!(
             (factor - 1.0).abs() < f64::EPSILON,
-            "Factor should be exactly 1.0 when sun reaches its winter peak of 10.0. Got: {}",
-            factor
+            "Factor should be exactly 1.0 when sun reaches its winter peak of 10.0. Got: {factor}"
         );
     }
 }

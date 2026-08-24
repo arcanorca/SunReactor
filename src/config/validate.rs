@@ -8,6 +8,7 @@ const MIN_TICK_SECONDS: u64 = 5;
 const MIN_WEATHER_REFRESH_MINUTES: u32 = 10;
 
 impl Config {
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), ConfigError> {
         let mut errors = Vec::new();
 
@@ -62,6 +63,7 @@ impl Config {
         }
 
         let mut seen_ids = HashSet::new();
+        let mut enabled_ddc = Vec::new();
         for (index, monitor) in self.monitors.iter().enumerate() {
             let field_prefix = format!("monitors[{index}]");
             let logical_id = monitor.logical_id.trim();
@@ -130,6 +132,16 @@ impl Config {
                 }
             }
 
+            if monitor.enabled && monitor.backend == crate::backends::BackendKind::Ddc {
+                match crate::backends::ddc::effective_selector_args(&monitor.selector) {
+                    Ok(args) => enabled_ddc.push((index, monitor.selector.clone(), args)),
+                    Err(error) => errors.push(ValidationError::new(
+                        format!("{field_prefix}.selector"),
+                        error.to_string(),
+                    )),
+                }
+            }
+
             for (adjustment_index, adjustment) in monitor.milestone_adjustments.iter().enumerate() {
                 if !seen_milestones.insert(adjustment.milestone) {
                     errors.push(ValidationError::new(
@@ -147,6 +159,22 @@ impl Config {
                         ),
                         "must stay within -720..=720 minutes",
                     ));
+                }
+            }
+        }
+
+        for (position, (left_index, left, left_args)) in enabled_ddc.iter().enumerate() {
+            for (right_index, right, right_args) in enabled_ddc.iter().skip(position + 1) {
+                match crate::backends::ddc::selector_relation(left, right) {
+                    Ok(crate::backends::ddc::DdcSelectorRelation::ProvablyDisjoint) => {}
+                    Ok(relation) => errors.push(ValidationError::new(
+                        format!("monitors[{right_index}].selector"),
+                        format!("monitors[{left_index}] and monitors[{right_index}] use DDC selectors that may address the same display ({relation:?}): `{left_args:?}` overlaps `{right_args:?}`; use pairwise disjoint selectors"),
+                    )),
+                    Err(error) => errors.push(ValidationError::new(
+                        format!("monitors[{right_index}].selector"),
+                        error.to_string(),
+                    )),
                 }
             }
         }

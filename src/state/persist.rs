@@ -29,12 +29,34 @@ impl RuntimeState {
             }
         };
 
-        if let Ok(state) = serde_json::from_slice::<RuntimeState>(&raw) {
-            Ok(state.normalized())
-        } else {
+        let Ok(document) = serde_json::from_slice::<serde_json::Value>(&raw) else {
             repair_corrupt_state_file(path, &Self::default());
-            Ok(Self::default())
+            return Ok(Self::default());
+        };
+
+        let Some(schema_value) = document.get("schema_version") else {
+            // schema_version has existed since the first persisted state
+            // format. An absent version is therefore not a legacy format.
+            repair_corrupt_state_file(path, &Self::default());
+            return Ok(Self::default());
+        };
+        let Some(found) = schema_value.as_u64() else {
+            repair_corrupt_state_file(path, &Self::default());
+            return Ok(Self::default());
+        };
+        if found != u64::from(crate::state::types::STATE_SCHEMA_VERSION) {
+            return Err(StateError::UnsupportedSchemaVersion {
+                path: path.to_path_buf(),
+                found,
+                supported: crate::state::types::STATE_SCHEMA_VERSION,
+            });
         }
+
+        let Ok(state) = serde_json::from_value::<RuntimeState>(document) else {
+            repair_corrupt_state_file(path, &Self::default());
+            return Ok(Self::default());
+        };
+        Ok(state.normalized())
     }
 
     pub fn save(&self) -> Result<PathBuf, StateError> {
@@ -64,8 +86,12 @@ pub(crate) fn atomic_write_json(path: &Path, state: &RuntimeState) -> Result<(),
         let _ = fs::set_permissions(parent, std::os::unix::fs::PermissionsExt::from_mode(0o700));
     }
 
-    let bytes =
-        serde_json::to_vec_pretty(state).map_err(|source| StateError::Serialize { source })?;
+    // The persistence boundary owns the on-disk schema version. Callers may
+    // hold stale or otherwise accidental in-memory values, but never emit
+    // those values through the current-state save path.
+    let canonical_state = state.clone().normalized();
+    let bytes = serde_json::to_vec_pretty(&canonical_state)
+        .map_err(|source| StateError::Serialize { source })?;
 
     let mut temp_file = tempfile::Builder::new()
         .prefix("sunreactor_state_")
@@ -117,9 +143,15 @@ pub(crate) fn repair_corrupt_state_file(path: &Path, default_state: &RuntimeStat
         return;
     }
 
-    let backup_path = corrupt_backup_path(path);
-    if fs::rename(path, &backup_path).is_err() {
-        return;
+    let mut backup_path = corrupt_backup_path(path);
+    loop {
+        match fs::rename(path, &backup_path) {
+            Ok(()) => break,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                backup_path = corrupt_backup_path(path);
+            }
+            Err(_) => return,
+        }
     }
 
     let _ = atomic_write_json(path, default_state);
@@ -157,14 +189,12 @@ pub(crate) fn corrupt_backup_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::backends::{BackendKind, FailureKind};
-    use crate::state::transitions::{limit_step_size, should_skip_hysteresis};
 
     use crate::state::persist::RUNTIME_STATE_FILE_NAME;
     use crate::state::{
@@ -199,7 +229,9 @@ mod tests {
             }),
             weather: Some(WeatherSnapshotMetadata {
                 provider: String::from("openweather"),
-                observed_at_epoch_s: 1_950,
+                fetched_at_epoch_s: 1_950,
+                valid_at_epoch_s: 1_900,
+                source_kind: crate::weather::WeatherSourceKind::Forecast,
                 cloud_cover_percent: Some(81),
                 smoothed_cloud_cover_percent: Some(79),
                 temperature: Some(0.0),
@@ -228,6 +260,97 @@ mod tests {
     }
 
     #[test]
+    fn legacy_weather_timestamp_maps_to_fetch_time_and_unknown_validity() {
+        let temp = TempDir::new();
+        let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
+        let legacy = br#"{
+  "schema_version": 1,
+  "monitors": {},
+  "weather": {
+    "provider": "openweather",
+    "observed_at_epoch_s": 1800000000,
+    "cloud_cover_percent": 55,
+    "smoothed_cloud_cover_percent": 50,
+    "temperature": 12.0,
+    "forecast": []
+  }
+}
+"#;
+        fs::write(&path, legacy).expect("legacy state should write");
+
+        let state = RuntimeState::load_from_path(&path).expect("legacy state should load");
+        let weather = state
+            .weather
+            .as_ref()
+            .expect("legacy weather should survive load");
+        assert_eq!(weather.fetched_at_epoch_s, 1_800_000_000);
+        assert_eq!(weather.valid_at_epoch_s, 0);
+        assert_eq!(
+            weather.source_kind,
+            crate::weather::WeatherSourceKind::Unknown
+        );
+
+        state.save_to_path(&path).expect("legacy state should save");
+        let canonical = fs::read_to_string(&path).expect("canonical state should read");
+        assert!(canonical.contains("fetched_at_epoch_s"));
+        assert!(!canonical.contains("observed_at_epoch_s"));
+        let reloaded = RuntimeState::load_from_path(&path).expect("canonical state should load");
+        assert_eq!(
+            reloaded
+                .weather
+                .expect("weather should remain")
+                .fetched_at_epoch_s,
+            1_800_000_000
+        );
+    }
+
+    #[test]
+    fn future_schema_is_rejected_without_touching_the_file() {
+        let temp = TempDir::new();
+        let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
+        let original = br#"{"schema_version":2,"future":{"new":true},"monitors":{}}
+"#;
+        fs::write(&path, original).expect("future state should write");
+
+        let error = RuntimeState::load_from_path(&path).expect_err("future state must reject");
+
+        assert!(matches!(
+            error,
+            crate::state::StateError::UnsupportedSchemaVersion {
+                found: 2,
+                supported: 1,
+                ..
+            }
+        ));
+        assert_eq!(fs::read(&path).expect("state should remain"), original);
+        assert_eq!(corrupt_backup_count(temp.path()), 0);
+    }
+
+    #[test]
+    fn missing_schema_is_treated_as_corrupt_not_as_current_state() {
+        let temp = TempDir::new();
+        let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
+        let original = br#"{"monitors":{}}
+"#;
+        fs::write(&path, original).expect("unversioned state should write");
+
+        assert_eq!(
+            RuntimeState::load_from_path(&path).expect("unversioned state should recover"),
+            RuntimeState::default()
+        );
+        assert_eq!(
+            fs::read(first_corrupt_backup(temp.path())).expect("backup should be readable"),
+            original
+        );
+        assert_eq!(
+            serde_json::from_slice::<RuntimeState>(&fs::read(&path).expect("default should exist"))
+                .expect("repaired state should be valid")
+                .schema_version,
+            crate::state::types::STATE_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
     fn corrupted_state_file_falls_back_to_default_and_repairs_file() {
         let temp = TempDir::new();
         let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
@@ -252,6 +375,58 @@ mod tests {
             })
             .count();
         assert_eq!(backup_count, 1);
+    }
+
+    #[test]
+    fn save_canonicalizes_schema_version_and_round_trips_complete_json() {
+        let temp = TempDir::new();
+        let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
+        let state = RuntimeState {
+            schema_version: 999,
+            suspend_until_epoch_s: Some(2_000),
+            ..RuntimeState::default()
+        };
+
+        state.save_to_path(&path).expect("state should save");
+
+        let bytes = fs::read(&path).expect("saved state should exist");
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("json should be complete");
+        assert_eq!(
+            value["schema_version"],
+            crate::state::types::STATE_SCHEMA_VERSION
+        );
+        assert_eq!(
+            RuntimeState::load_from_path(&path).expect("state should load"),
+            state.normalized()
+        );
+    }
+
+    fn corrupt_backup_count(path: &Path) -> usize {
+        fs::read_dir(path)
+            .expect("temp dir should be readable")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("runtime-state.json.corrupt-")
+            })
+            .count()
+    }
+
+    fn first_corrupt_backup(path: &Path) -> PathBuf {
+        fs::read_dir(path)
+            .expect("temp dir should be readable")
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("runtime-state.json.corrupt-")
+            })
+            .expect("corrupt backup should exist")
+            .path()
     }
 
     struct TempDir {

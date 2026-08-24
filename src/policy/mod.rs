@@ -95,9 +95,7 @@ pub fn compute_policy(input: &PolicyContext) -> Result<PolicyOutput, PolicyError
         zenith_deg,
     )?;
 
-    // We can directly call the core logic using the dynamically calculated zenith.
-    // To ensure the rest of the existing policy engine (adjustments, weather, etc.) works
-    // perfectly, we pass the adaptive zenith as the `day_elevation_full` in effective input.
+    // Use the resolved plateau for the remainder of policy evaluation.
     let mut effective_config = input.config.clone();
     effective_config.day_elevation_full = zenith_deg;
 
@@ -240,8 +238,7 @@ pub(crate) fn base_linear_effective_daylight_factor_at_utc(
     context: &BaseMilestoneContext,
     datetime_utc: DateTime<Utc>,
 ) -> Result<f64, PolicyError> {
-    let datetime_local =
-        crate::solar::local_datetime_at_utc(datetime_utc, &input.location).unwrap();
+    let datetime_local = crate::solar::local_datetime_at_utc(datetime_utc, input.location).unwrap();
     if datetime_local <= context.day_start_local
         || datetime_local >= context.minimum_brightness_start_local
     {
@@ -328,16 +325,16 @@ mod tests {
     fn night_maps_to_monitor_minimum() {
         let output = evaluate_at_elevation(-12.0, vec![monitor("internal", 18, 90, 1.0)]);
         assert_eq!(output.targets[0].percent, 18);
-        assert_eq!(output.targets[0].solar_daylight_factor, 0.0);
-        assert_eq!(output.targets[0].effective_daylight_factor, 0.0);
+        assert!(output.targets[0].solar_daylight_factor.abs() < f64::EPSILON);
+        assert!(output.targets[0].effective_daylight_factor.abs() < f64::EPSILON);
     }
 
     #[test]
     fn high_sun_maps_to_monitor_maximum() {
         let output = evaluate_at_elevation(45.0, vec![monitor("internal", 18, 90, 1.0)]);
         assert_eq!(output.targets[0].percent, 90);
-        assert_eq!(output.targets[0].solar_daylight_factor, 1.0);
-        assert_eq!(output.targets[0].effective_daylight_factor, 1.0);
+        assert!((output.targets[0].solar_daylight_factor - 1.0).abs() < f64::EPSILON);
+        assert!((output.targets[0].effective_daylight_factor - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -419,7 +416,7 @@ mod tests {
             vec![monitor("weather", 20, 80, 1.0)],
         );
         assert_eq!(dimmed.targets[0].percent, 50);
-        assert_eq!(dimmed.targets[0].effective_daylight_factor, 0.5);
+        assert!((dimmed.targets[0].effective_daylight_factor - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -501,12 +498,14 @@ mod tests {
         input.weather_multiplier = Some(0.5);
         let clouded = compute_policy(&input.as_context()).expect("policy should evaluate");
 
-        assert_eq!(
-            baseline.targets[0].effective_daylight_factor,
-            clouded.targets[0].effective_daylight_factor
+        assert!(
+            (baseline.targets[0].effective_daylight_factor
+                - clouded.targets[0].effective_daylight_factor)
+                .abs()
+                < f64::EPSILON
         );
         assert_eq!(baseline.targets[0].percent, clouded.targets[0].percent);
-        assert_eq!(clouded.weather_multiplier, 1.0);
+        assert!((clouded.weather_multiplier - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -616,6 +615,7 @@ mod tests {
         assert!(delayed_output.targets[0].percent < baseline_output.targets[0].percent);
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn evaluate_at_elevation(elevation_deg: f64, monitors: Vec<MonitorConfig>) -> PolicyOutput {
         let (location, config) = base_config();
         let input = PolicyContext {
@@ -631,6 +631,7 @@ mod tests {
         compute_policy_for_elevation(&input, elevation_deg).expect("policy should evaluate")
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn evaluate_at_elevation_with_weather(
         elevation_deg: f64,
         weather_multiplier: Option<f64>,
@@ -672,7 +673,7 @@ mod tests {
     }
 
     impl TestPolicyInput {
-        fn as_context(&self) -> PolicyContext {
+        fn as_context(&self) -> PolicyContext<'_> {
             PolicyContext {
                 now_utc: self.now_utc,
                 location: &self.location,
@@ -758,5 +759,113 @@ mod tests {
             output.targets[0].percent < 40,
             "Monitor target should be low in polar night"
         );
+    }
+
+    /// Regression: 2026-07-12 Istanbul 23:30 nighttime brightness anomaly.
+    /// Policy must produce min_pct (5) when the sun is deeply below the
+    /// twilight threshold at 23:30 Istanbul in July.
+    #[test]
+    fn nighttime_brightness_must_be_minimum_at_2330_istanbul() {
+        let location = Location::from_timezone_name(41.01384, 28.94966, "Europe/Istanbul")
+            .expect("Istanbul location should parse");
+        let config = SolarPolicyConfig {
+            twilight_elevation_start: -6.0,
+            day_elevation_full: 20.0,
+            use_adaptive_zenith: true,
+            ..Default::default()
+        };
+        let monitors = vec![MonitorConfig {
+            logical_id: "mi-monitor".to_owned(),
+            min_pct: 5,
+            max_pct: 60,
+            gain: 1.0,
+            transition_gamma: 0.5,
+            ..Default::default()
+        }];
+
+        // 23:30 Istanbul = 20:30 UTC
+        let now_utc = chrono::Utc
+            .with_ymd_and_hms(2026, 7, 12, 20, 30, 0)
+            .single()
+            .expect("UTC datetime should be valid");
+
+        let output = compute_policy(&PolicyContext {
+            now_utc,
+            location: &location,
+            config: &config,
+            monitors: &monitors,
+            weather_multiplier: None,
+        })
+        .expect("policy should evaluate");
+
+        assert!(
+            output.solar_elevation_deg < -6.0,
+            "Solar elevation at 23:30 Istanbul must be below twilight: got {:.2}°",
+            output.solar_elevation_deg
+        );
+        assert_eq!(
+            output.targets[0].percent, 5,
+            "Monitor must be at min_pct (5) at 23:30 Istanbul, got {}",
+            output.targets[0].percent
+        );
+        assert!(output.targets[0].effective_daylight_factor.abs() < f64::EPSILON);
+    }
+
+    /// Regression: evening brightness curve must be monotonically decreasing
+    /// from sunset through midnight, with no time-window anomalies.
+    #[test]
+    fn evening_brightness_monotonically_decreases_istanbul() {
+        let location = Location::from_timezone_name(41.01384, 28.94966, "Europe/Istanbul")
+            .expect("Istanbul location should parse");
+        let config = SolarPolicyConfig {
+            twilight_elevation_start: -6.0,
+            day_elevation_full: 20.0,
+            use_adaptive_zenith: true,
+            ..Default::default()
+        };
+        let monitors = vec![MonitorConfig {
+            logical_id: "mi-monitor".to_owned(),
+            min_pct: 5,
+            max_pct: 60,
+            gain: 1.0,
+            transition_gamma: 0.5,
+            ..Default::default()
+        }];
+
+        // Sweep from 20:00 Istanbul (17:00 UTC) to 00:00 Istanbul (21:00 UTC)
+        let base_utc = chrono::Utc
+            .with_ymd_and_hms(2026, 7, 12, 17, 0, 0)
+            .single()
+            .expect("valid");
+        let mut prev_percent: Option<u8> = None;
+
+        for step in 0..=24 {
+            let now_utc = base_utc + Duration::minutes(step * 10);
+            let output = compute_policy(&PolicyContext {
+                now_utc,
+                location: &location,
+                config: &config,
+                monitors: &monitors,
+                weather_multiplier: None,
+            })
+            .expect("policy should evaluate");
+            let pct = output.targets[0].percent;
+
+            // After 22:30 Istanbul, must be at or near min_pct.
+            if step >= 15 {
+                assert!(pct <= 10, "After 22:30, brightness must be ≤10%. Got {pct}");
+            }
+
+            // Monotonic decrease after sunset area (step >= 4 ≈ 21:20 Istanbul).
+            if step >= 4 {
+                if let Some(prev) = prev_percent {
+                    assert!(
+                        pct <= prev + 1,
+                        "Brightness must not increase during evening (non-monotonic: {prev} -> {pct})"
+                    );
+                }
+            }
+            prev_percent = Some(pct);
+        }
     }
 }
