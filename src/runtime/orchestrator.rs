@@ -53,10 +53,21 @@ pub enum RuntimeError {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CapabilityRefreshPurpose {
+    ScheduledTick,
+    WakeReassert,
+}
+
 #[derive(Debug)]
 enum CapabilityRefreshResult {
-    Completed(CapabilitySnapshot),
-    Failed,
+    Completed {
+        purpose: CapabilityRefreshPurpose,
+        snapshot: CapabilitySnapshot,
+    },
+    Failed {
+        purpose: CapabilityRefreshPurpose,
+    },
 }
 
 #[derive(Debug)]
@@ -77,6 +88,7 @@ pub struct DaemonRuntime {
     capability_refresh_rx: mpsc::Receiver<CapabilityRefreshResult>,
     capability_refresh_active: Arc<AtomicBool>,
     capability_refresh_pending: bool,
+
     capability_refresh_handle: Option<std::thread::JoinHandle<()>>,
     wake_reassert: WakeReassertCoordinator,
     wake_refresh_pending: bool,
@@ -139,8 +151,12 @@ impl DaemonRuntime {
     /// A one-shot invocation has no daemon loop available to perform the
     /// normal asynchronous observation/reconciliation handshake.
     pub fn refresh_capabilities(&mut self) {
+        self.refresh_capabilities_with_runner(&RealProcessRunner);
+    }
+
+    fn refresh_capabilities_with_runner<R: ProcessRunner>(&mut self, runner: &R) {
         let report = crate::discovery::discover_with_runner(
-            &RealProcessRunner,
+            runner,
             std::path::Path::new("/sys/class/backlight"),
         );
         self.last_capabilities = Some(CapabilitySnapshot::from_discovery(&report));
@@ -149,7 +165,17 @@ impl DaemonRuntime {
     /// Force-apply variant: bypasses throttles so brightness changes
     /// are applied immediately to the physical monitor.
     pub fn run_once_forced(&mut self) -> Result<TickReport, RuntimeError> {
-        self.run_once_at_with_runner(Utc::now(), &RealProcessRunner, true)
+        self.run_once_at_with_runner_fresh(Utc::now(), &RealProcessRunner, true)
+    }
+
+    fn run_once_at_with_runner_fresh<R: ProcessRunner + Sync>(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        runner: &R,
+        force_immediate: bool,
+    ) -> Result<TickReport, RuntimeError> {
+        self.refresh_capabilities_with_runner(runner);
+        self.run_once_at_with_runner(now_utc, runner, force_immediate)
     }
 
     pub(super) fn prepare_apply_resync(&mut self, clear_backoff: bool) {
@@ -169,13 +195,17 @@ impl DaemonRuntime {
         clear_backoff: bool,
     ) -> Result<TickReport, RuntimeError> {
         self.prepare_apply_resync(clear_backoff);
+        self.refresh_capabilities_with_runner(runner);
         self.run_once_at_with_runner(now_utc, runner, true)
     }
 
     /// Starts at most one bounded capability observation away from the control
     /// loop. Only the completed snapshot is published back to the runtime.
-    pub(crate) fn begin_capability_refresh_with_runner<R>(&mut self, runner: R)
-    where
+    pub(crate) fn begin_capability_refresh_with_runner<R>(
+        &mut self,
+        runner: R,
+        purpose: CapabilityRefreshPurpose,
+    ) where
         R: ProcessRunner + Send + Sync + 'static,
     {
         if self.capability_refresh_active.load(Ordering::Acquire) {
@@ -207,9 +237,12 @@ impl DaemonRuntime {
                     &runner,
                     std::path::Path::new("/sys/class/backlight"),
                 );
-                CapabilityRefreshResult::Completed(CapabilitySnapshot::from_discovery(&report))
+                CapabilityRefreshResult::Completed {
+                    purpose,
+                    snapshot: CapabilitySnapshot::from_discovery(&report),
+                }
             }))
-            .unwrap_or(CapabilityRefreshResult::Failed);
+            .unwrap_or(CapabilityRefreshResult::Failed { purpose });
             let _ = sender.try_send(result);
         }));
     }
@@ -218,13 +251,28 @@ impl DaemonRuntime {
         self.capability_refresh_tx.clone()
     }
 
-    fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
+    fn publish_completed_capability_snapshot(
+        &mut self,
+        expected_purpose: CapabilityRefreshPurpose,
+    ) -> Option<bool> {
         match self.capability_refresh_rx.try_recv() {
-            Ok(CapabilityRefreshResult::Completed(snapshot)) => {
+            Ok(CapabilityRefreshResult::Completed { purpose, snapshot })
+                if purpose == expected_purpose =>
+            {
                 self.last_capabilities = Some(snapshot);
                 Some(true)
             }
-            Ok(CapabilityRefreshResult::Failed) => Some(false),
+            Ok(CapabilityRefreshResult::Failed { purpose }) if purpose == expected_purpose => {
+                Some(false)
+            }
+            Ok(result) => {
+                tracing::warn!(
+                    ?expected_purpose,
+                    "capability_refresh_result_purpose_mismatch"
+                );
+                let _ = self.capability_refresh_tx.try_send(result);
+                None
+            }
             Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => Some(false),
         }
@@ -244,7 +292,10 @@ impl DaemonRuntime {
             WakeReassertAction::Observe { attempt } => {
                 tracing::info!(attempt, "wake_reassert_observation_started");
                 self.wake_refresh_pending = true;
-                self.begin_capability_refresh_with_runner(RealProcessRunner);
+                self.begin_capability_refresh_with_runner(
+                    RealProcessRunner,
+                    CapabilityRefreshPurpose::WakeReassert,
+                );
                 true
             }
             WakeReassertAction::Done => false,
@@ -515,6 +566,13 @@ impl DaemonRuntime {
                     wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
                     return;
                 }
+                self.refresh_capabilities_with_runner(runner);
+                let Some(capabilities) = self.last_capabilities.as_ref() else {
+                    self.fade_engine.cancel_all();
+                    return;
+                };
+                let actions =
+                    crate::runtime::topology::reconcile(&self.config.monitors, capabilities);
                 let step_start = Instant::now();
                 let steps = self.fade_engine.process_tick();
                 for (monitor_id, percent) in steps {
@@ -525,11 +583,24 @@ impl DaemonRuntime {
                         .find(|m| m.logical_id == monitor_id)
                     {
                         let target = crate::policy::PerMonitorTarget {
-                            logical_id: monitor_id,
+                            logical_id: monitor_id.clone(),
                             percent,
                             solar_daylight_factor: 0.0,
                             effective_daylight_factor: 0.0,
                         };
+                        let position = self
+                            .config
+                            .monitors
+                            .iter()
+                            .position(|candidate| candidate.logical_id == monitor_id);
+                        if position.is_none_or(|position| {
+                            !actions
+                                .get(position)
+                                .is_some_and(|action| action.allowed_to_apply())
+                        }) {
+                            self.fade_engine.active_fades.remove(&monitor_id);
+                            continue;
+                        }
                         let settings = self.config.apply;
                         match crate::apply::apply_monitor_target(
                             runner, monitor, &target, percent, &settings,
@@ -1236,6 +1307,7 @@ impl DaemonRuntime {
             capability_refresh_rx,
             capability_refresh_active: Arc::new(AtomicBool::new(false)),
             capability_refresh_pending: false,
+
             capability_refresh_handle: None,
             wake_reassert: WakeReassertCoordinator::default(),
             wake_refresh_pending: false,
@@ -1410,7 +1482,7 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
 
-                match self.run_once_at_with_runner(now_utc, runner, force) {
+                match self.run_once_at_with_runner_fresh(now_utc, runner, force) {
                     Ok(report) => {
                         log_tick(&report);
                         (
@@ -1917,7 +1989,9 @@ impl DaemonRuntime {
 
             if self.wake_reassert.is_pending() {
                 if self.wake_refresh_pending {
-                    if let Some(result) = self.publish_completed_capability_snapshot() {
+                    if let Some(result) = self.publish_completed_capability_snapshot(
+                        CapabilityRefreshPurpose::WakeReassert,
+                    ) {
                         self.wake_refresh_pending = false;
                         // A completed fresh observation is sufficient to run the
                         // reconciled apply path. That path authorizes each
@@ -1946,7 +2020,9 @@ impl DaemonRuntime {
                 cadence.next_action(desktop_idle.next_deadline(), self.fade_engine.is_fading());
             // Phase 9 uses periodic observation only. Refresh immediately
             // before scheduled ticks, not on every idle loop iteration.
-            if let Some(result) = self.publish_completed_capability_snapshot() {
+            if let Some(result) =
+                self.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick)
+            {
                 if self.capability_refresh_pending {
                     self.capability_refresh_pending = false;
                     if result {
@@ -1967,7 +2043,11 @@ impl DaemonRuntime {
 
             if matches!(action, LoopAction::RunTick) {
                 self.capability_refresh_pending = true;
-                self.begin_capability_refresh_with_runner(RealProcessRunner);
+
+                self.begin_capability_refresh_with_runner(
+                    RealProcessRunner,
+                    CapabilityRefreshPurpose::ScheduledTick,
+                );
                 wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                 continue;
             }
@@ -2132,6 +2212,13 @@ mod tests {
         fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
         }
+
+        fn write_calls(&self) -> Vec<String> {
+            self.calls()
+                .into_iter()
+                .filter(|call| call.contains("|set|"))
+                .collect()
+        }
     }
 
     impl ProcessRunner for RecordingRunner {
@@ -2147,8 +2234,15 @@ mod tests {
                 call.push_str(arg);
             }
             self.calls.lock().unwrap().push(call);
+            let stdout = if program == "brightnessctl"
+                && args == ["--list", "--machine-readable", "--class", "backlight"]
+            {
+                "intel_backlight,backlight,50,50%,100\n"
+            } else {
+                ""
+            };
             Ok(CommandOutput {
-                stdout: String::new(),
+                stdout: stdout.to_owned(),
                 stderr: String::new(),
                 exit_code: Some(0),
             })
@@ -2191,12 +2285,16 @@ mod tests {
         let calls = Arc::clone(&runner.calls);
         let started = Arc::clone(&runner.started);
 
-        runtime.begin_capability_refresh_with_runner(runner.clone());
+        runtime.begin_capability_refresh_with_runner(
+            runner.clone(),
+            CapabilityRefreshPurpose::ScheduledTick,
+        );
         let started_deadline = Instant::now() + Duration::from_millis(100);
         while !started.load(Ordering::Acquire) && Instant::now() < started_deadline {
             std::thread::yield_now();
         }
-        runtime.begin_capability_refresh_with_runner(runner);
+        runtime
+            .begin_capability_refresh_with_runner(runner, CapabilityRefreshPurpose::ScheduledTick);
         assert!(started.load(Ordering::Acquire));
         assert!(runtime.last_capabilities.is_none());
         assert_eq!(calls.load(Ordering::Relaxed), 1);
@@ -2217,7 +2315,7 @@ mod tests {
         );
 
         std::thread::sleep(Duration::from_millis(600));
-        runtime.publish_completed_capability_snapshot();
+        runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick);
         assert!(runtime.last_capabilities.is_some());
         assert_eq!(calls.load(Ordering::Relaxed), 2);
     }
@@ -2232,9 +2330,15 @@ mod tests {
         )
         .expect("runtime should bootstrap");
 
-        runtime.begin_capability_refresh_with_runner(PanicObservationRunner);
+        runtime.begin_capability_refresh_with_runner(
+            PanicObservationRunner,
+            CapabilityRefreshPurpose::ScheduledTick,
+        );
         std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(runtime.publish_completed_capability_snapshot(), Some(false));
+        assert_eq!(
+            runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick),
+            Some(false)
+        );
 
         let runner = SlowObservationRunner {
             delay: Duration::from_millis(1),
@@ -2242,12 +2346,43 @@ mod tests {
             calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
         let started = Arc::clone(&runner.started);
-        runtime.begin_capability_refresh_with_runner(runner);
+        runtime
+            .begin_capability_refresh_with_runner(runner, CapabilityRefreshPurpose::ScheduledTick);
         let deadline = Instant::now() + Duration::from_millis(100);
         while !started.load(Ordering::Acquire) && Instant::now() < deadline {
             std::thread::yield_now();
         }
         assert!(started.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn capability_refresh_result_is_consumed_only_by_matching_purpose() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        runtime.last_capabilities = None;
+        runtime
+            .capability_refresh_tx
+            .try_send(CapabilityRefreshResult::Completed {
+                purpose: CapabilityRefreshPurpose::WakeReassert,
+                snapshot: test_capability_snapshot(),
+            })
+            .expect("test result should enqueue");
+
+        assert_eq!(
+            runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick),
+            None
+        );
+        assert!(runtime.last_capabilities.is_none());
+        assert_eq!(
+            runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::WakeReassert),
+            Some(true)
+        );
+        assert!(runtime.last_capabilities.is_some());
     }
 
     #[test]
@@ -2888,7 +3023,7 @@ mod tests {
         assert!(matches!(resume_response.response, Response::Ack { .. }));
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
         assert_eq!(runtime.state.manual_override, None);
-        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(runner.write_calls().len(), 1);
         assert_eq!(
             RuntimeState::load_from_path(&state_path)
                 .expect("state file should load")
@@ -2941,7 +3076,7 @@ mod tests {
         assert!(matches!(resume_response.response, Response::Ack { .. }));
         assert!(!runtime.state.suspend_indefinite);
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
-        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(runner.write_calls().len(), 1);
     }
 
     #[test]
@@ -2984,8 +3119,8 @@ mod tests {
 
         assert!(outcome.tick_attempted);
         assert!(matches!(response.response, Response::Ack { .. }));
-        assert_eq!(runner.calls().len(), 1);
-        assert!(runner.calls()[0]
+        assert_eq!(runner.write_calls().len(), 1);
+        assert!(runner.write_calls()[0]
             .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
         assert_eq!(runtime.state.manual_override, None);
@@ -3191,19 +3326,26 @@ mod tests {
             consecutive_failures: 3,
             suppress_until_epoch_s: Some(1_800_000_500),
         });
-        let runner = FakeRunner::new().with_success(
-            "brightnessctl",
-            &[
-                "--quiet",
-                "--class",
-                "backlight",
-                "--device",
-                "intel_backlight",
-                "set",
-                "27%",
-            ],
-            "",
-        );
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
+            .with_success(
+                "brightnessctl",
+                &["--list", "--machine-readable", "--class", "backlight"],
+                "intel_backlight,backlight,50,50%,100\n",
+            )
+            .with_success(
+                "brightnessctl",
+                &[
+                    "--quiet",
+                    "--class",
+                    "backlight",
+                    "--device",
+                    "intel_backlight",
+                    "set",
+                    "27%",
+                ],
+                "",
+            );
 
         let (response, outcome) = runtime.handle_ipc_request_with_runner(
             Request::RunOnce { force: true },
@@ -3223,6 +3365,85 @@ mod tests {
         assert_eq!(run_once.writes_attempted, 1);
         assert_eq!(run_once.writes_skipped, 0);
         assert_eq!(run_once.writes_succeeded, 1);
+    }
+
+    #[test]
+    fn forced_run_once_skips_write_when_fresh_observation_loses_target() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let missing_path = "/sys/class/backlight/__sunreactor_missing__";
+        let mut report = test_config_report();
+        report.config.monitors[0].selector.sysfs_path = Some(String::from(missing_path));
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
+            .expect("runtime should bootstrap");
+        runtime.last_capabilities = Some(test_capability_snapshot_at(missing_path));
+        runtime.state.manual_override = Some(ManualOverrideState {
+            global_percent: None,
+            global_expires_at_epoch_s: None,
+            targets: std::collections::BTreeMap::from([(String::from("internal"), 27)]),
+            expires_at_epoch_s: Some(1_800_000_100),
+        });
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
+            .with_success(
+                "brightnessctl",
+                &["--list", "--machine-readable", "--class", "backlight"],
+                "",
+            );
+
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            Request::RunOnce { force: true },
+            &runner,
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(outcome.tick_attempted);
+        let Response::RunOnce { run_once, .. } = response.response else {
+            panic!("run_once request should return a run_once response");
+        };
+        assert_eq!(run_once.writes_attempted, 0);
+        assert_eq!(run_once.writes_succeeded, 0);
+        assert_eq!(run_once.writes_skipped, 1);
+        assert!(!runner.calls().iter().any(|call| call.contains("|set|")));
+    }
+
+    #[test]
+    fn fade_step_skips_write_when_fresh_observation_loses_target() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let missing_path = "/sys/class/backlight/__sunreactor_missing__";
+        let mut report = test_config_report();
+        report.config.monitors[0].selector.sysfs_path = Some(String::from(missing_path));
+        let mut runtime =
+            DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path.clone())
+                .expect("runtime should bootstrap");
+        runtime.last_capabilities = Some(test_capability_snapshot_at(missing_path));
+        assert!(runtime.fade_engine.maybe_enqueue("internal", 80, 20));
+        let listener = runtime
+            .socket
+            .bind_listener()
+            .expect("listener should bind");
+        let runner = RecordingRunner::new();
+        let mut cadence = LoopCadence::new(60);
+        let mut desktop_idle = DesktopIdleSync::new(false, socket_path, 60, 15);
+
+        runtime.perform_loop_action(
+            LoopAction::RunFadeStep,
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+            &runner,
+            &mut cadence,
+            &mut desktop_idle,
+            &listener,
+        );
+
+        assert!(runner.write_calls().is_empty());
+        assert!(!runtime.fade_engine.is_fading());
     }
 
     #[test]
@@ -3366,6 +3587,10 @@ mod tests {
     }
 
     fn test_capability_snapshot() -> CapabilitySnapshot {
+        test_capability_snapshot_at("/sys/class/backlight/intel_backlight")
+    }
+
+    fn test_capability_snapshot_at(sysfs_path: &str) -> CapabilitySnapshot {
         CapabilitySnapshot {
             ddc_present: Vec::new(),
             backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
@@ -3375,7 +3600,7 @@ mod tests {
                 max_brightness: Some(100),
                 backlight_type: Some(String::from("raw")),
                 probe_source: String::from("test"),
-                sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                sysfs_path: String::from(sysfs_path),
                 ddcci_connector: None,
                 backend_viable: true,
                 note: None,

@@ -762,6 +762,13 @@ mod tests {
         fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
         }
+
+        fn write_calls(&self) -> Vec<String> {
+            self.calls()
+                .into_iter()
+                .filter(|call| call.contains("|set|"))
+                .collect()
+        }
     }
 
     impl ProcessRunner for RecordingRunner {
@@ -777,8 +784,15 @@ mod tests {
                 call.push_str(arg);
             }
             self.calls.lock().unwrap().push(call);
+            let stdout = if program == "brightnessctl"
+                && args == ["--list", "--machine-readable", "--class", "backlight"]
+            {
+                "intel_backlight,backlight,50,50%,100\n"
+            } else {
+                ""
+            };
             Ok(CommandOutput {
-                stdout: String::new(),
+                stdout: stdout.to_owned(),
                 stderr: String::new(),
                 exit_code: Some(0),
             })
@@ -878,8 +892,8 @@ mod tests {
         let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
 
         assert!(idle_sync.perform_due_action(&mut runtime, now, &runner, &mut cadence));
-        assert_eq!(runner.calls().len(), 1);
-        assert!(runner.calls()[0]
+        assert_eq!(runner.write_calls().len(), 1);
+        assert!(runner.write_calls()[0]
             .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
         assert_eq!(
             runtime
