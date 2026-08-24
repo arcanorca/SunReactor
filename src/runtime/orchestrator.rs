@@ -251,30 +251,15 @@ impl DaemonRuntime {
         self.capability_refresh_tx.clone()
     }
 
-    fn publish_completed_capability_snapshot(
-        &mut self,
-        expected_purpose: CapabilityRefreshPurpose,
-    ) -> Option<bool> {
+    fn take_completed_capability_snapshot(&mut self) -> Option<(CapabilityRefreshPurpose, bool)> {
         match self.capability_refresh_rx.try_recv() {
-            Ok(CapabilityRefreshResult::Completed { purpose, snapshot })
-                if purpose == expected_purpose =>
-            {
+            Ok(CapabilityRefreshResult::Completed { purpose, snapshot }) => {
                 self.last_capabilities = Some(snapshot);
-                Some(true)
+                Some((purpose, true))
             }
-            Ok(CapabilityRefreshResult::Failed { purpose }) if purpose == expected_purpose => {
-                Some(false)
-            }
-            Ok(result) => {
-                tracing::warn!(
-                    ?expected_purpose,
-                    "capability_refresh_result_purpose_mismatch"
-                );
-                let _ = self.capability_refresh_tx.try_send(result);
-                None
-            }
+            Ok(CapabilityRefreshResult::Failed { purpose }) => Some((purpose, false)),
             Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(false),
+            Err(mpsc::TryRecvError::Disconnected) => None,
         }
     }
 
@@ -300,6 +285,12 @@ impl DaemonRuntime {
             }
             WakeReassertAction::Done => false,
         }
+    }
+
+    fn can_begin_wake_capability_refresh(&self) -> bool {
+        !self.wake_refresh_pending
+            && !self.capability_refresh_pending
+            && !self.capability_refresh_active.load(Ordering::Acquire)
     }
 
     fn persist_state_if_changed(&mut self) -> Result<bool, RuntimeError> {
@@ -1987,11 +1978,9 @@ impl DaemonRuntime {
                 continue;
             }
 
-            if self.wake_reassert.is_pending() {
-                if self.wake_refresh_pending {
-                    if let Some(result) = self.publish_completed_capability_snapshot(
-                        CapabilityRefreshPurpose::WakeReassert,
-                    ) {
+            if let Some((purpose, result)) = self.take_completed_capability_snapshot() {
+                match purpose {
+                    CapabilityRefreshPurpose::WakeReassert if self.wake_refresh_pending => {
                         self.wake_refresh_pending = false;
                         // A completed fresh observation is sufficient to run the
                         // reconciled apply path. That path authorizes each
@@ -2010,7 +1999,34 @@ impl DaemonRuntime {
                         }
                         continue;
                     }
-                } else if self.process_wake_reassert(Instant::now()) {
+                    CapabilityRefreshPurpose::ScheduledTick if self.capability_refresh_pending => {
+                        self.capability_refresh_pending = false;
+                        if result {
+                            self.execute_scheduled_tick(
+                                now_utc,
+                                &RealProcessRunner,
+                                &mut cadence,
+                                &mut desktop_idle,
+                            );
+                        }
+                        continue;
+                    }
+                    _ => {
+                        tracing::warn!(?purpose, "unexpected_capability_refresh_result");
+                    }
+                }
+            }
+
+            if self.wake_reassert.is_pending() {
+                if self.wake_refresh_pending {
+                    wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
+                    continue;
+                }
+                if !self.can_begin_wake_capability_refresh() {
+                    wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
+                    continue;
+                }
+                if self.process_wake_reassert(Instant::now()) {
                     wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                     continue;
                 }
@@ -2020,22 +2036,6 @@ impl DaemonRuntime {
                 cadence.next_action(desktop_idle.next_deadline(), self.fade_engine.is_fading());
             // Phase 9 uses periodic observation only. Refresh immediately
             // before scheduled ticks, not on every idle loop iteration.
-            if let Some(result) =
-                self.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick)
-            {
-                if self.capability_refresh_pending {
-                    self.capability_refresh_pending = false;
-                    if result {
-                        self.execute_scheduled_tick(
-                            now_utc,
-                            &RealProcessRunner,
-                            &mut cadence,
-                            &mut desktop_idle,
-                        );
-                    }
-                    continue;
-                }
-            }
             if self.capability_refresh_pending {
                 wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                 continue;
@@ -2315,7 +2315,10 @@ mod tests {
         );
 
         std::thread::sleep(Duration::from_millis(600));
-        runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick);
+        assert_eq!(
+            runtime.take_completed_capability_snapshot(),
+            Some((CapabilityRefreshPurpose::ScheduledTick, true))
+        );
         assert!(runtime.last_capabilities.is_some());
         assert_eq!(calls.load(Ordering::Relaxed), 2);
     }
@@ -2336,8 +2339,8 @@ mod tests {
         );
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(
-            runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick),
-            Some(false)
+            runtime.take_completed_capability_snapshot(),
+            Some((CapabilityRefreshPurpose::ScheduledTick, false))
         );
 
         let runner = SlowObservationRunner {
@@ -2356,7 +2359,7 @@ mod tests {
     }
 
     #[test]
-    fn capability_refresh_result_is_consumed_only_by_matching_purpose() {
+    fn capability_refresh_result_routes_by_its_own_purpose_without_requeue() {
         let temp = TempDir::new();
         let mut runtime = DaemonRuntime::bootstrap_with_paths(
             test_config_report(),
@@ -2368,21 +2371,33 @@ mod tests {
         runtime
             .capability_refresh_tx
             .try_send(CapabilityRefreshResult::Completed {
-                purpose: CapabilityRefreshPurpose::WakeReassert,
+                purpose: CapabilityRefreshPurpose::ScheduledTick,
                 snapshot: test_capability_snapshot(),
             })
             .expect("test result should enqueue");
+        runtime.capability_refresh_pending = true;
 
+        assert!(!runtime.can_begin_wake_capability_refresh());
         assert_eq!(
-            runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::ScheduledTick),
-            None
-        );
-        assert!(runtime.last_capabilities.is_none());
-        assert_eq!(
-            runtime.publish_completed_capability_snapshot(CapabilityRefreshPurpose::WakeReassert),
-            Some(true)
+            runtime.take_completed_capability_snapshot(),
+            Some((CapabilityRefreshPurpose::ScheduledTick, true))
         );
         assert!(runtime.last_capabilities.is_some());
+        assert_eq!(runtime.take_completed_capability_snapshot(), None);
+        runtime.capability_refresh_pending = false;
+
+        runtime
+            .capability_refresh_active
+            .store(true, Ordering::Release);
+        assert!(!runtime.can_begin_wake_capability_refresh());
+        runtime
+            .capability_refresh_active
+            .store(false, Ordering::Release);
+
+        runtime.wake_refresh_pending = true;
+        assert!(!runtime.can_begin_wake_capability_refresh());
+        runtime.wake_refresh_pending = false;
+        assert!(runtime.can_begin_wake_capability_refresh());
     }
 
     #[test]
