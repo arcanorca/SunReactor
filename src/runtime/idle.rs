@@ -863,7 +863,7 @@ mod tests {
         let mut runtime =
             DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
                 .expect("runtime should bootstrap");
-        runtime.last_capabilities = Some(crate::runtime::topology::CapabilitySnapshot {
+        runtime.test_publish_capabilities(crate::runtime::topology::CapabilitySnapshot {
             ddc_present: Vec::new(),
             backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
                 stable_id: String::from("test:backlight"),
