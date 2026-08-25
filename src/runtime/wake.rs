@@ -99,6 +99,25 @@ impl WakeReassertCoordinator {
         true
     }
 
+    /// Roll back an `Observe` poll when no worker could actually start.
+    ///
+    /// `poll` optimistically enters `Observing`; the caller starts the worker
+    /// afterwards. If start returned `Busy`/`FailedToSpawn`, the phase must
+    /// return to `Retry` with a short due time so the attempt is re-driven by
+    /// the loop instead of being lost. Returns the retry deadline, or `None`
+    /// when the coordinator was not in the `Observing` phase.
+    #[must_use]
+    pub fn defer_observation(&mut self, now: Instant) -> Option<Instant> {
+        if !matches!(self.phase, Phase::Observing) {
+            return None;
+        }
+        self.attempts = self.attempts.saturating_sub(1);
+        self.phase = Phase::Retry;
+        let due = now + RETRY_DELAY;
+        self.due_at = Some(due);
+        Some(due)
+    }
+
     pub fn finish(&mut self) {
         self.phase = Phase::Completed;
         self.due_at = None;
