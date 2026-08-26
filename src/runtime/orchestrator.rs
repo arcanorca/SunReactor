@@ -13,7 +13,9 @@ const IPC_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
 
 use tracing::{error, info};
 
-use crate::apply::{self, ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
+use crate::apply::{
+    self, ApplyDiagnosticContext, ApplyRecord, ApplySettings, ApplyStatus, ApplySummary,
+};
 use crate::backends::{FailureKind, ProcessRunner, RealProcessRunner};
 use crate::config::{self, ConfigError, ConfigReport, ConfigSource, MonitorConfig, WeatherConfig};
 use crate::ipc::{self, BoundControlSocket, ControlSocket};
@@ -1138,10 +1140,25 @@ impl DaemonRuntime {
         runner: &R,
         force_immediate: bool,
     ) -> Result<TickReport, RuntimeError> {
+        self.run_once_at_with_runner_diagnostic(
+            now_utc,
+            runner,
+            force_immediate,
+            ApplyDiagnosticContext::default(),
+        )
+    }
+
+    fn run_once_at_with_runner_diagnostic<R: ProcessRunner + Sync>(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        runner: &R,
+        force_immediate: bool,
+        diagnostic: ApplyDiagnosticContext,
+    ) -> Result<TickReport, RuntimeError> {
         let tick_started = Instant::now();
         let inputs = self.collect_tick_inputs(now_utc, force_immediate)?;
         let computed = self.compute_tick_policy(inputs)?;
-        let applied = self.apply_tick_policy(computed, runner, force_immediate);
+        let applied = self.apply_tick_policy(computed, runner, force_immediate, diagnostic);
 
         self.finish_tick(applied, tick_started)
     }
@@ -1242,6 +1259,7 @@ impl DaemonRuntime {
         computed: ComputedTick,
         runner: &R,
         force_immediate: bool,
+        diagnostic: ApplyDiagnosticContext,
     ) -> AppliedTick {
         let apply_summary = if computed.suspended {
             skipped_apply_summary(computed.policy.targets.len(), "suspend_until is active")
@@ -1271,6 +1289,7 @@ impl DaemonRuntime {
                     &capabilities,
                     None,
                     settings_override,
+                    diagnostic,
                 ),
                 None => skipped_apply_summary(
                     computed.policy.targets.len(),
@@ -2129,7 +2148,20 @@ impl DaemonRuntime {
                                 ?correlation_id,
                                 "observation_completion_published"
                             );
-                            let _ = self.run_once_at_with_runner(now_utc, &RealProcessRunner, true);
+                            let generation = self
+                                .observation
+                                .current
+                                .as_ref()
+                                .map(|published| published.generation.0);
+                            let _ = self.run_once_at_with_runner_diagnostic(
+                                now_utc,
+                                &RealProcessRunner,
+                                true,
+                                ApplyDiagnosticContext {
+                                    correlation_id,
+                                    observation_generation: generation,
+                                },
+                            );
                             if !self
                                 .wake_reassert
                                 .observation_completed(true, Instant::now())
