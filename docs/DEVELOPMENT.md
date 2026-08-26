@@ -11,7 +11,7 @@ The repo intentionally uses stock `rustfmt` behavior. There is no custom formatt
 
 ## Toolchain
 
-The repository pins Rust `1.97.1` in `rust-toolchain.toml` and CI uses the same version. Prefer an explicit rustup invocation: a distro-provided `cargo` earlier in `PATH` can shadow rustup's `cargo +stable` selector.
+For reproducible local development, use the pinned Rust `1.97.1` toolchain through explicit rustup invocations: a distro-provided `cargo` earlier in `PATH` can shadow rustup's `cargo +stable` selector.
 
 ```bash
 rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
