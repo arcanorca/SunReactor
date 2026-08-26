@@ -34,9 +34,9 @@ A fixed clock schedule (like dimming the screen exactly at 8:00 PM) falls out of
 ```
 
 > ### 🧮 The Math
-> **1. Smoothstep:** `t = (Elevation - NightFloor) / (DayPeak - NightFloor)`, then `s(t) = t²(3 - 2t)`
-> **2. Response exponent:** `curve = s(t)^γ`; `transition_gamma` is a user-tunable easing/response exponent, not a calibrated perceptual model
-> **3. Projection:** map the curve into each monitor's `[min_pct, max_pct]`, then apply monitor gain and the bounded weather multiplier with clamping
+> **1. Smoothstep:** `t = (Elevation - NightFloor) / (DayPeak - NightFloor)`  
+> **2. Gamma Curve:** `curve = t^γ`  
+> **3. Projection:** `Brightness = Min% + (Max% - Min%) * curve * weather_multiplier`
 
 - **Local by Default:** SunReactor does all the daylight math locally. Basically, it generates an adaptive brightness curve based on your selected city’s sunrise/sunset times for the current date. Since that is deterministic, it can work completely offline, with the sole exception of the optional weather integration.
 
@@ -50,19 +50,9 @@ SunReactor is built to be predictable and stay out of the way:
 - **Synchronous:** No async runtime. It executes a simple synchronous loop: wake, compute, write to hardware, sleep..
 - **Unprivileged:** Runs as a systemd user service. No root access or dbus required.
 - **Idle Sync:** Includes its own automatic screen dimming feature by integrating directly with Wayland/X11 idle protocols. This allows you to turn off native DE power management to prevent conflicting brightness states, ensuring displays wake up directly to the latest solar calculation rather than a cached value.
-- **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover from the OpenWeather 5-day / 3-hour forecast endpoint and slightly dims your displays on overcast days. The first returned value is a forecast interval, not a current meteorological observation; it is retained as a bounded forecast-derived product heuristic and acts only as a multiplier over the base solar calculation. Additionally, the TUI provides forecast rows and charts from the remaining forecast intervals.
+- **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover and slightly dims your displays on overcast days. This acts only as a multiplier over the base calculation. Additionally, the TUI provides a view of current weather conditions.
 
 ## // Installation
-
-### Release artifacts and verification
-
-Linux archives use explicit architecture and libc names: `x86_64-gnu`, `aarch64-gnu`, `x86_64-musl`, and `aarch64-musl`. The installer detects architecture and libc, downloads the matching archive plus `SHA256SUMS`, verifies SHA-256 before extraction, validates archive members, and rejects unknown libc environments. Checksums protect transfer integrity but do not independently prove provenance; release archives are additionally covered by GitHub artifact attestations. Optional verification:
-
-```sh
-gh attestation verify sunreactor-<version>-linux-x86_64-gnu.tar.gz -R arcanorca/SunReactor
-```
-
-Release builds use the pinned Rust toolchain, `Cargo.lock`, `--locked`, and native x86_64/aarch64 runners where available. GNU/musl claims are limited to tested targets and environments; `ddcutil` and `brightnessctl` remain optional backend-specific runtime dependencies.
 
 ### Prerequisites
 
@@ -84,7 +74,7 @@ SunReactor relies on the following tools being installed on your system to contr
 
 ### Option A: Automated Installer
 
-The easiest way to install SunReactor is using our automated installation script. It downloads the latest pre-built binary, installs the user-local files, and uses a systemd user service when a usable user manager is available.
+The easiest way to install SunReactor is using our automated installation script. It downloads the latest pre-built binary, sets up the systemd background daemon, and launches the dashboard automatically.
 
 ```bash
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash
@@ -92,25 +82,21 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 
 *The installer places the executables securely in `~/.local/bin` and does **not** require `sudo`.*
 
-The installer honors `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` (all must be absolute paths). Before enabling or starting the service, it asks the running systemd user manager for `FragmentPath` and requires the result to equal the unit file installed by SunReactor; this prevents a higher-precedence same-name unit from being mistaken for the installed unit. When no usable systemd user manager is available, files are still installed and the installer prints the command for running `sunreactord` manually. Use `--no-service` to explicitly skip service setup. The installer does not enable systemd linger.
-
-The installer itself requires Bash. Automatic service integration currently means systemd user services only; OpenRC, runit, and s6 are not installed or configured automatically.
-
 <details>
 <summary><b>View Manual Installation Steps</b></summary>
 
-1. Download the latest pre-built binary from [Releases](https://github.com/arcanorca/SunReactor/releases). Make sure to check for the latest version tag (e.g., `v0.1.0`) and choose the correct architecture (`x86_64` or `aarch64`):
+1. Download the latest pre-built binary from [Releases](https://github.com/arcanorca/SunReactor/releases). Use the version without the leading `v` in the archive name and choose the tested architecture/libc target (`x86_64-gnu`, `aarch64-gnu`, `x86_64-musl`, or `aarch64-musl`):
 
-**For x86_64 (Intel/AMD):**
+**For x86_64 GNU/Linux (Intel/AMD):**
 ```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-x86_64.tar.gz
-tar xzf sunreactor-v0.1.0-linux-x86_64.tar.gz
+curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-0.1.0-linux-x86_64-gnu.tar.gz
+tar xzf sunreactor-0.1.0-linux-x86_64-gnu.tar.gz
 ```
 
-**For ARM64 (aarch64):**
+**For ARM64 GNU/Linux (aarch64):**
 ```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-aarch64.tar.gz
-tar xzf sunreactor-v0.1.0-linux-aarch64.tar.gz
+curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-0.1.0-linux-aarch64-gnu.tar.gz
+tar xzf sunreactor-0.1.0-linux-aarch64-gnu.tar.gz
 ```
 
 2. Move the binaries to your local PATH:
@@ -119,18 +105,13 @@ mkdir -p ~/.local/bin
 install -m 755 sunreactord sunreactorctl ~/.local/bin/
 ```
 
-3. Start the daemon (systemd user manager required for this manual path):
+3. Start the daemon:
 ```bash
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-sed -e "s|@CONFIG_HOME@|${XDG_CONFIG_HOME:-$HOME/.config}|g" \
-    -e "s|@STATE_HOME@|${XDG_STATE_HOME:-$HOME/.local/state}|g" \
-    -e "s|@CACHE_HOME@|${XDG_CACHE_HOME:-$HOME/.cache}|g" \
-    -e "s|@BIN_DIR@|$HOME/.local/bin|g" \
-    contrib/systemd/sunreactord.service > "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sunreactord.service"
+mkdir -p ~/.config/systemd/user
+cp sunreactord.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now sunreactord.service
 ```
-Without a systemd user manager, run `~/.local/bin/sunreactord` in the foreground or use a service manager configured separately.
 </details>
 
 ### Option B: Build from Source
@@ -160,8 +141,6 @@ To completely remove SunReactor and its background daemon from your system, simp
 ```bash
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash -s -- --uninstall
 ```
-
-Uninstallation uses the same XDG variables as installation and removes the user service file, binaries, configuration, state, and cache directories for those resolved paths.
 
 ## // QUICK START
 
