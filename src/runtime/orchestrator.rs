@@ -19,11 +19,21 @@ use crate::config::{self, ConfigError, ConfigReport, ConfigSource, MonitorConfig
 use crate::ipc::{self, BoundControlSocket, ControlSocket};
 use crate::paths::{self, PathError};
 use crate::policy::{self, PolicyContext, PolicyError, PolicyOutput};
+use crate::runtime::logind::{LogindEvent, LogindWatcher};
 use crate::runtime::topology::CapabilitySnapshot;
 use crate::runtime::wake::{WakeReassertAction, WakeReassertCoordinator, WakeReassertReason};
 use crate::solar::{self, Location, SolarError, SolarSample};
 use crate::state::{RuntimeState, StateError};
 use crate::weather;
+
+fn logind_wake_reason(event: LogindEvent) -> Option<(WakeReassertReason, Option<u64>)> {
+    match event {
+        LogindEvent::SystemResume { correlation_id } => {
+            Some((WakeReassertReason::SystemResume, Some(correlation_id)))
+        }
+        LogindEvent::PrepareForSleep(_) => None,
+    }
+}
 
 // --- From mod.rs (Types & Impls) ---
 const RUNTIME_DIR_MODE: u32 = 0o700;
@@ -68,7 +78,10 @@ struct ObservationGeneration(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObservationCause {
     ScheduledTick,
-    WakeReassert { attempt: u8 },
+    WakeReassert {
+        attempt: u8,
+        correlation_id: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -239,9 +252,10 @@ impl DaemonRuntime {
     /// only because settlement happens inline on the same thread that
     /// reserved the ticket.
     fn observe_sync<R: ProcessRunner>(&mut self, runner: &R) -> Result<(), RuntimeError> {
+        let cause = ObservationCause::ScheduledTick;
         let ticket = ObservationTicket {
-            generation: self.reserve_generation()?,
-            cause: ObservationCause::ScheduledTick,
+            generation: self.reserve_generation(cause)?,
+            cause,
         };
         self.complete(ticket, Some(Self::observe_capabilities(runner)));
         Ok(())
@@ -249,7 +263,10 @@ impl DaemonRuntime {
 
     /// Reserve the next observation generation. Overflow fails closed: no
     /// authorization is issued and wrapping to zero is forbidden.
-    fn reserve_generation(&mut self) -> Result<ObservationGeneration, RuntimeError> {
+    fn reserve_generation(
+        &mut self,
+        cause: ObservationCause,
+    ) -> Result<ObservationGeneration, RuntimeError> {
         match self.observation.next_generation.checked_add(1) {
             Some(next) => {
                 self.observation.next_generation = next;
@@ -258,6 +275,11 @@ impl DaemonRuntime {
                 // Invalidation on start: accepting any newer observation makes
                 // all older snapshots unauthorized.
                 self.observation.current = None;
+                tracing::info!(
+                    generation = generation.0,
+                    ?cause,
+                    "observation_generation_reserved"
+                );
                 Ok(generation)
             }
             None => Err(RuntimeError::ObservationGenerationOverflow),
@@ -271,6 +293,11 @@ impl DaemonRuntime {
     /// failure keeps authorization absent (failure is not authority).
     fn complete(&mut self, ticket: ObservationTicket, snapshot: Option<CapabilitySnapshot>) {
         if self.observation.latest_started != Some(ticket.generation) {
+            tracing::warn!(
+                generation = ticket.generation.0,
+                ?ticket.cause,
+                "observation_completion_superseded"
+            );
             return;
         }
         self.observation.latest_settled = Some(ticket.generation);
@@ -279,8 +306,18 @@ impl DaemonRuntime {
                 generation: ticket.generation,
                 snapshot,
             });
+            tracing::info!(
+                generation = ticket.generation.0,
+                ?ticket.cause,
+                "observation_completion_published"
+            );
         } else {
             self.observation.current = None;
+            tracing::warn!(
+                generation = ticket.generation.0,
+                ?ticket.cause,
+                "observation_failed_fail_closed"
+            );
         }
     }
 
@@ -298,7 +335,7 @@ impl DaemonRuntime {
         if self.observation.active.is_some() {
             return StartAsyncOutcome::Busy;
         }
-        let Ok(generation) = self.reserve_generation() else {
+        let Ok(generation) = self.reserve_generation(cause) else {
             return StartAsyncOutcome::FailedToSpawn;
         };
         let ticket = ObservationTicket { generation, cause };
@@ -366,9 +403,12 @@ impl DaemonRuntime {
         Some((ticket, outcome))
     }
 
-    fn request_wake_reassert(&mut self, reason: WakeReassertReason) {
-        if self.wake_reassert.request(reason, Instant::now()) {
-            tracing::info!(reason = ?reason, "wake_reassert_requested");
+    fn request_wake_reassert(&mut self, reason: WakeReassertReason, correlation_id: Option<u64>) {
+        if self
+            .wake_reassert
+            .request(reason, correlation_id, Instant::now())
+        {
+            tracing::info!(reason = ?reason, ?correlation_id, "wake_reassert_requested");
         } else {
             tracing::debug!(reason = ?reason, "wake_reassert_coalesced");
         }
@@ -378,12 +418,20 @@ impl DaemonRuntime {
         match self.wake_reassert.poll(now) {
             WakeReassertAction::Wait => true,
             WakeReassertAction::Observe { attempt } => {
-                tracing::info!(attempt, "wake_reassert_observation_started");
+                let correlation_id = self.wake_reassert.correlation_id();
+                tracing::info!(
+                    attempt,
+                    ?correlation_id,
+                    "wake_reassert_observation_started"
+                );
                 // The coordinator enters Observing optimistically inside
                 // poll(); Busy/FailedToSpawn rolls it back to a short retry so
                 // the attempt is re-driven by the loop instead of being lost.
                 match self.try_start_async_observation(
-                    ObservationCause::WakeReassert { attempt },
+                    ObservationCause::WakeReassert {
+                        attempt,
+                        correlation_id,
+                    },
                     RealProcessRunner,
                 ) {
                     StartAsyncOutcome::Started => true,
@@ -514,6 +562,27 @@ mod config_tests {
 
         assert_eq!(runtime.location.timezone_name, "Europe/Istanbul");
         assert_eq!(runtime.monitors.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod logind_handoff_tests {
+    use super::*;
+
+    #[test]
+    fn logind_resume_is_only_a_system_resume_hint() {
+        assert_eq!(
+            logind_wake_reason(LogindEvent::SystemResume { correlation_id: 7 }),
+            Some((WakeReassertReason::SystemResume, Some(7)))
+        );
+        assert_eq!(
+            logind_wake_reason(LogindEvent::PrepareForSleep(false)),
+            None
+        );
+        assert_ne!(
+            Some((WakeReassertReason::SystemResume, Some(7))),
+            Some((WakeReassertReason::WaylandIdleResume, None))
+        );
     }
 }
 
@@ -1574,7 +1643,7 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 self.state.desktop_idle_dimmed = false;
-                self.request_wake_reassert(WakeReassertReason::WaylandIdleResume);
+                self.request_wake_reassert(WakeReassertReason::WaylandIdleResume, None);
                 (
                     ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
                     outcome,
@@ -2001,6 +2070,7 @@ impl DaemonRuntime {
             self.config.daemon.tick_seconds,
             self.config.daemon.desktop_idle_timeout_minutes,
         );
+        let logind = LogindWatcher::spawn();
         let mut cadence = LoopCadence::new(self.config.daemon.tick_seconds);
 
         tracing::info!(
@@ -2033,6 +2103,13 @@ impl DaemonRuntime {
             }
 
             let now_utc = Utc::now();
+            if let Some(logind) = &logind {
+                while let Some(event) = logind.try_recv() {
+                    if let Some((reason, correlation_id)) = logind_wake_reason(event) {
+                        self.request_wake_reassert(reason, correlation_id);
+                    }
+                }
+            }
             desktop_idle.maintain_watcher(&self.socket.path);
             if desktop_idle.perform_due_action(self, now_utc, &RealProcessRunner, &mut cadence) {
                 continue;
@@ -2040,10 +2117,18 @@ impl DaemonRuntime {
 
             if let Some((ticket, outcome)) = self.poll_async_completion() {
                 match ticket.cause {
-                    ObservationCause::WakeReassert { attempt } => match outcome {
+                    ObservationCause::WakeReassert {
+                        attempt,
+                        correlation_id,
+                    } => match outcome {
                         CompletionOutcome::Published => {
                             // Same-generation wake tick: run once under the
                             // freshly published authorization.
+                            tracing::info!(
+                                attempt,
+                                ?correlation_id,
+                                "observation_completion_published"
+                            );
                             let _ = self.run_once_at_with_runner(now_utc, &RealProcessRunner, true);
                             if !self
                                 .wake_reassert
@@ -2053,6 +2138,11 @@ impl DaemonRuntime {
                             }
                         }
                         CompletionOutcome::Superseded => {
+                            tracing::warn!(
+                                attempt,
+                                ?correlation_id,
+                                "observation_completion_superseded"
+                            );
                             // Overtaken completion settles the owner but must
                             // neither publish nor apply.
                             if self.wake_reassert.observation_unavailable(Instant::now()) {
@@ -2630,7 +2720,10 @@ mod tests {
         runtime.complete(
             ObservationTicket {
                 generation: ObservationGeneration(9_999),
-                cause: ObservationCause::WakeReassert { attempt: 7 },
+                cause: ObservationCause::WakeReassert {
+                    attempt: 7,
+                    correlation_id: None,
+                },
             },
             Some(test_capability_snapshot()),
         );
@@ -2666,7 +2759,7 @@ mod tests {
         runtime.observation.latest_settled = None;
         runtime.observation.next_generation = u64::MAX;
 
-        let reserved = runtime.reserve_generation();
+        let reserved = runtime.reserve_generation(ObservationCause::ScheduledTick);
         assert!(matches!(
             reserved,
             Err(RuntimeError::ObservationGenerationOverflow)
