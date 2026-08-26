@@ -4,9 +4,11 @@
 use std::env;
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use sunreactor::{daemon_help, runtime::DaemonRuntime, version};
+
+static TRACING_INITIALIZED: OnceLock<()> = OnceLock::new();
 
 fn main() -> anyhow::Result<()> {
     if let Err(error) = try_main() {
@@ -32,6 +34,7 @@ fn try_main() -> anyhow::Result<()> {
             Ok(())
         }
         DaemonCommand::Run { once } => {
+            initialize_tracing()?;
             let shutdown_flag = Arc::new(AtomicBool::new(false));
             install_shutdown_handlers(Arc::clone(&shutdown_flag))?;
             let mut runtime = DaemonRuntime::bootstrap()?;
@@ -63,6 +66,38 @@ fn try_main() -> anyhow::Result<()> {
     }
 }
 
+fn initialize_tracing() -> anyhow::Result<()> {
+    if TRACING_INITIALIZED.get().is_some() {
+        return Ok(());
+    }
+
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_ansi(false)
+        .with_target(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|error| anyhow::anyhow!("failed to initialize daemon tracing: {error}"))?;
+    let _ = TRACING_INITIALIZED.set(());
+    Ok(())
+}
+
+#[cfg(test)]
+fn daemon_subscriber<W>(writer: W) -> impl tracing::Subscriber
+where
+    W: for<'writer> tracing_subscriber::fmt::MakeWriter<'writer> + Send + Sync + 'static,
+{
+    tracing_subscriber::fmt()
+        .compact()
+        .with_ansi(false)
+        .with_target(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(writer)
+        .finish()
+}
+
 enum DaemonCommand {
     Help,
     Version,
@@ -88,4 +123,40 @@ fn install_shutdown_handlers(shutdown_flag: Arc<AtomicBool>) -> anyhow::Result<(
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))?;
     signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown_flag)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("sink mutex").extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn daemon_subscriber_writes_structured_events_to_its_sink() {
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let sink_output = Arc::clone(&output);
+        let subscriber = super::daemon_subscriber(move || SharedWriter(sink_output.clone()));
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(correlation_id = 41, "wake_hint_consumed");
+        });
+
+        let rendered = String::from_utf8(output.lock().expect("sink mutex").clone())
+            .expect("sink output should be utf8");
+        assert!(rendered.contains("wake_hint_consumed"));
+        assert!(rendered.contains("correlation_id=41"));
+    }
 }
