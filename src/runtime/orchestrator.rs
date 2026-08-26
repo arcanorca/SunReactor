@@ -177,6 +177,14 @@ pub struct WeatherRefreshState {
 }
 
 impl DaemonRuntime {
+    fn observe_capabilities<R: ProcessRunner>(runner: &R) -> CapabilitySnapshot {
+        let report = crate::discovery::discover_with_runner(
+            runner,
+            std::path::Path::new("/sys/class/backlight"),
+        );
+        CapabilitySnapshot::from_discovery(&report)
+    }
+
     /// Perform one complete capability observation and apply one tick under
     /// the resulting same-generation authorization. A one-shot invocation has
     /// no daemon loop available for the asynchronous handshake, so discovery
@@ -235,11 +243,7 @@ impl DaemonRuntime {
             generation: self.reserve_generation()?,
             cause: ObservationCause::ScheduledTick,
         };
-        let report = crate::discovery::discover_with_runner(
-            runner,
-            std::path::Path::new("/sys/class/backlight"),
-        );
-        self.complete(ticket, Some(CapabilitySnapshot::from_discovery(&report)));
+        self.complete(ticket, Some(Self::observe_capabilities(runner)));
         Ok(())
     }
 
@@ -302,11 +306,7 @@ impl DaemonRuntime {
             .name(String::from("sunreactor-observation"))
             .spawn(move || {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let report = crate::discovery::discover_with_runner(
-                        &runner,
-                        std::path::Path::new("/sys/class/backlight"),
-                    );
-                    Some(CapabilitySnapshot::from_discovery(&report))
+                    Some(DaemonRuntime::observe_capabilities(&runner))
                 }))
                 .unwrap_or(None)
             });
@@ -2745,16 +2745,7 @@ mod tests {
     }
 
     fn observe_sync_with_recording_runner(runtime: &mut DaemonRuntime) -> Result<(), RuntimeError> {
-        let ticket = ObservationTicket {
-            generation: runtime.reserve_generation()?,
-            cause: ObservationCause::ScheduledTick,
-        };
-        let report = crate::discovery::discover_with_runner(
-            &RecordingRunner::new(),
-            std::path::Path::new("/sys/class/backlight"),
-        );
-        runtime.complete(ticket, Some(CapabilitySnapshot::from_discovery(&report)));
-        Ok(())
+        runtime.observe_sync(&RecordingRunner::new())
     }
 
     #[test]
