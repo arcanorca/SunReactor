@@ -63,6 +63,21 @@ pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
     )
 }
 
+fn proven_physical_identity(monitor: &MonitorConfig) -> Option<String> {
+    match monitor.backend {
+        crate::backends::BackendKind::Ddc => monitor
+            .selector
+            .serial
+            .as_deref()
+            .or(monitor.selector.edid.as_deref())
+            .or(monitor.selector.connector.as_deref())
+            .map(str::to_owned),
+        crate::backends::BackendKind::Backlight => {
+            monitor.selector.sysfs_path.as_deref().map(str::to_owned)
+        }
+    }
+}
+
 /// Apply policy with an optional settings override. When `settings_override`
 /// is `Some`, the provided settings are used instead of deriving them from
 /// config. This lets IPC `RunOnce` bypass throttles (hysteresis, step limit,
@@ -181,6 +196,15 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
         // a clear diagnostic; they never enter the concurrent dispatch set.
         if let Some(&action_position) = reconcile_index.get(target.logical_id.as_str()) {
             if let Some(action) = reconcile_actions.get(action_position) {
+                tracing::info!(
+                    logical_id = %monitor.logical_id,
+                    backend = ?monitor.backend,
+                    reconciliation = action.name(),
+                    physical_identity = proven_physical_identity(monitor)
+                        .as_deref()
+                        .unwrap_or("none"),
+                    "target_reconciled"
+                );
                 if !action.allowed_to_apply() {
                     work.push(WorkItem::Skip(ApplyRecord {
                         logical_id: monitor.logical_id.clone(),
@@ -365,6 +389,12 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             applied_percent,
             requested_percent,
         });
+        tracing::info!(
+            logical_id = %monitor.logical_id,
+            backend = ?monitor.backend,
+            applied_percent,
+            "apply_attempt_authorized"
+        );
     }
 
     // -------------------------------------------------------------------------

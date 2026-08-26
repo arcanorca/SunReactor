@@ -48,7 +48,7 @@ SunReactor is built to be predictable and stay out of the way:
 
 - **Hardware Control:** Adjusts the actual backlight via `ddcutil` (external) and `sysfs` / `brightnessctl` (internal).
 - **Synchronous:** No async runtime. It executes a simple synchronous loop: wake, compute, write to hardware, sleep..
-- **Unprivileged:** Runs as a systemd user service. No root access or dbus required.
+- **Unprivileged:** Runs as a systemd user service. No root access is required. When available, the daemon optionally listens for the user-session systemd-logind `PrepareForSleep(false)` signal as a resume hint; periodic reconciliation remains the fallback when D-Bus/logind is unavailable.
 - **Idle Sync:** Includes its own automatic screen dimming feature by integrating directly with Wayland/X11 idle protocols. This allows you to turn off native DE power management to prevent conflicting brightness states, ensuring displays wake up directly to the latest solar calculation rather than a cached value.
 - **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover and slightly dims your displays on overcast days. This acts only as a multiplier over the base calculation. Additionally, the TUI provides a view of current weather conditions.
 

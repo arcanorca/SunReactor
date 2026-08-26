@@ -34,6 +34,7 @@ pub struct WakeReassertCoordinator {
     due_at: Option<Instant>,
     attempts: u8,
     last_reason: Option<WakeReassertReason>,
+    correlation_id: Option<u64>,
 }
 
 impl Default for WakeReassertCoordinator {
@@ -43,17 +44,24 @@ impl Default for WakeReassertCoordinator {
             due_at: None,
             attempts: 0,
             last_reason: None,
+            correlation_id: None,
         }
     }
 }
 
 impl WakeReassertCoordinator {
     #[must_use]
-    pub fn request(&mut self, reason: WakeReassertReason, now: Instant) -> bool {
+    pub fn request(
+        &mut self,
+        reason: WakeReassertReason,
+        correlation_id: Option<u64>,
+        now: Instant,
+    ) -> bool {
         self.last_reason = Some(reason);
         if !matches!(self.phase, Phase::Idle | Phase::Completed) {
             return false;
         }
+        self.correlation_id = correlation_id;
         self.phase = Phase::Stabilizing;
         self.attempts = 0;
         self.due_at = Some(now + STABILIZATION_DELAY);
@@ -140,6 +148,11 @@ impl WakeReassertCoordinator {
     pub fn last_reason(&self) -> Option<WakeReassertReason> {
         self.last_reason
     }
+
+    #[must_use]
+    pub fn correlation_id(&self) -> Option<u64> {
+        self.correlation_id
+    }
 }
 
 #[cfg(test)]
@@ -151,7 +164,7 @@ mod tests {
     fn hint_waits_then_allows_one_observation() {
         let start = Instant::now();
         let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::ManualWake, start));
+        assert!(coordinator.request(WakeReassertReason::ManualWake, None, start));
         assert_eq!(coordinator.poll(start), WakeReassertAction::Wait);
         assert_eq!(
             coordinator.poll(start + Duration::from_secs(2)),
@@ -172,17 +185,45 @@ mod tests {
     fn duplicate_hints_are_coalesced_until_episode_finishes() {
         let start = Instant::now();
         let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::KdeDpmsResume, start));
-        assert!(!coordinator.request(WakeReassertReason::WaylandIdleResume, start));
+        assert!(coordinator.request(WakeReassertReason::KdeDpmsResume, None, start));
+        assert!(!coordinator.request(WakeReassertReason::WaylandIdleResume, None, start));
         coordinator.finish();
-        assert!(coordinator.request(WakeReassertReason::SystemResume, start));
+        assert!(coordinator.request(WakeReassertReason::SystemResume, None, start));
+    }
+
+    #[test]
+    fn coalesced_wayland_hint_cannot_replace_system_resume_correlation() {
+        let start = Instant::now();
+        let mut coordinator = WakeReassertCoordinator::default();
+        assert!(coordinator.request(WakeReassertReason::SystemResume, Some(41), start));
+        assert!(!coordinator.request(WakeReassertReason::WaylandIdleResume, None, start));
+        assert_eq!(coordinator.correlation_id(), Some(41));
+        assert_eq!(
+            coordinator.poll(start + Duration::from_secs(2)),
+            WakeReassertAction::Observe { attempt: 1 }
+        );
+        assert_eq!(coordinator.correlation_id(), Some(41));
+    }
+
+    #[test]
+    fn coalesced_system_resume_cannot_replace_wayland_episode_correlation() {
+        let start = Instant::now();
+        let mut coordinator = WakeReassertCoordinator::default();
+        assert!(coordinator.request(WakeReassertReason::WaylandIdleResume, None, start));
+        assert!(!coordinator.request(WakeReassertReason::SystemResume, Some(42), start));
+        assert_eq!(coordinator.correlation_id(), None);
+        assert_eq!(
+            coordinator.poll(start + Duration::from_secs(2)),
+            WakeReassertAction::Observe { attempt: 1 }
+        );
+        assert_eq!(coordinator.correlation_id(), None);
     }
 
     #[test]
     fn unavailable_observation_has_one_bounded_retry_then_stops() {
         let start = Instant::now();
         let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::TopologyRecovery, start));
+        assert!(coordinator.request(WakeReassertReason::TopologyRecovery, None, start));
         assert_eq!(
             coordinator.poll(start + Duration::from_secs(2)),
             WakeReassertAction::Observe { attempt: 1 }
