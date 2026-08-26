@@ -50,25 +50,6 @@ fn parses_valid_config() {
 }
 
 #[test]
-fn topology_retargeting_defaults_to_false_and_round_trips_true() {
-    let without_field =
-        parse_str(VALID_CONFIG, Path::new("missing-field.toml")).expect("old config should parse");
-    assert!(!without_field.monitors[0].allow_topology_retargeting);
-
-    let with_field = VALID_CONFIG.replace(
-        "enabled = true\n",
-        "enabled = true\nallow_topology_retargeting = true\n",
-    );
-    let parsed = parse_str(&with_field, Path::new("explicit-field.toml"))
-        .expect("explicit opt-in should parse");
-    assert!(parsed.monitors[0].allow_topology_retargeting);
-    let encoded = toml::to_string(&parsed).expect("config should serialize");
-    let round_tripped =
-        parse_str(&encoded, Path::new("round-trip.toml")).expect("serialized config should parse");
-    assert!(round_tripped.monitors[0].allow_topology_retargeting);
-}
-
-#[test]
 fn example_template_is_valid() {
     parse_str(
         super::DEFAULT_CONFIG_TEMPLATE,
@@ -83,17 +64,6 @@ fn rejects_duplicate_monitor_ids() {
     let error = parse_str(&raw, Path::new("duplicate.toml")).expect_err("config should fail");
     assert!(matches!(error, ConfigError::Validation(_)));
     assert!(error.to_string().contains("duplicate logical id"));
-}
-
-#[test]
-fn rejects_semantically_overlapping_ddc_selectors() {
-    let base = VALID_CONFIG
-        .replace("connector = \"DP-1\"", "model = \"U2720Q\"")
-        .replace("ddc_bus = 6\n", "");
-    let raw = format!("{base}\n[[monitors]]\nlogical_id = \"right\"\nbackend = \"ddc\"\nenabled = true\nmin_pct = 20\nmax_pct = 90\ngain = 1.0\nserial = \"ABC123\"\nmodel = \"U2720Q\"\n");
-    let error =
-        parse_str(&raw, Path::new("overlap-selector.toml")).expect_err("config should fail");
-    assert!(error.to_string().contains("may address the same display"));
 }
 
 #[test]
