@@ -8,7 +8,7 @@ use std::sync::{Arc, OnceLock};
 
 use sunreactor::{daemon_help, runtime::DaemonRuntime, version};
 
-static TRACING_INITIALIZED: OnceLock<()> = OnceLock::new();
+static TRACING_INITIALIZED: OnceLock<Result<(), String>> = OnceLock::new();
 
 fn main() -> anyhow::Result<()> {
     if let Err(error) = try_main() {
@@ -67,24 +67,32 @@ fn try_main() -> anyhow::Result<()> {
 }
 
 fn initialize_tracing() -> anyhow::Result<()> {
-    if TRACING_INITIALIZED.get().is_some() {
-        return Ok(());
-    }
-
-    let subscriber = tracing_subscriber::fmt()
-        .compact()
-        .with_ansi(false)
-        .with_target(false)
-        .with_max_level(tracing::Level::INFO)
-        .with_writer(std::io::stderr)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .map_err(|error| anyhow::anyhow!("failed to initialize daemon tracing: {error}"))?;
-    let _ = TRACING_INITIALIZED.set(());
-    Ok(())
+    initialize_tracing_with(
+        &TRACING_INITIALIZED,
+        || daemon_subscriber(std::io::stderr),
+        |subscriber| {
+            tracing::subscriber::set_global_default(subscriber)
+                .map_err(|error| format!("failed to initialize daemon tracing: {error}"))
+        },
+    )
 }
 
-#[cfg(test)]
+fn initialize_tracing_with<S, Build, Install>(
+    state: &OnceLock<Result<(), String>>,
+    build: Build,
+    install: Install,
+) -> anyhow::Result<()>
+where
+    S: tracing::Subscriber,
+    Build: FnOnce() -> S,
+    Install: FnOnce(S) -> Result<(), String>,
+{
+    state
+        .get_or_init(|| install(build()))
+        .clone()
+        .map_err(anyhow::Error::msg)
+}
+
 fn daemon_subscriber<W>(writer: W) -> impl tracing::Subscriber
 where
     W: for<'writer> tracing_subscriber::fmt::MakeWriter<'writer> + Send + Sync + 'static,
@@ -128,7 +136,7 @@ fn install_shutdown_handlers(shutdown_flag: Arc<AtomicBool>) -> anyhow::Result<(
 #[cfg(test)]
 mod tests {
     use std::io::{self, Write};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, OnceLock};
 
     #[derive(Clone)]
     struct SharedWriter(Arc<Mutex<Vec<u8>>>);
@@ -148,11 +156,18 @@ mod tests {
     fn daemon_subscriber_writes_structured_events_to_its_sink() {
         let output = Arc::new(Mutex::new(Vec::new()));
         let sink_output = Arc::clone(&output);
-        let subscriber = super::daemon_subscriber(move || SharedWriter(sink_output.clone()));
-
-        tracing::subscriber::with_default(subscriber, || {
-            tracing::info!(correlation_id = 41, "wake_hint_consumed");
-        });
+        let state = OnceLock::new();
+        super::initialize_tracing_with(
+            &state,
+            move || super::daemon_subscriber(move || SharedWriter(sink_output.clone())),
+            |subscriber| {
+                tracing::subscriber::with_default(subscriber, || {
+                    tracing::info!(correlation_id = 41, "wake_hint_consumed");
+                });
+                Ok(())
+            },
+        )
+        .expect("tracing initialization should succeed");
 
         let rendered = String::from_utf8(output.lock().expect("sink mutex").clone())
             .expect("sink output should be utf8");
