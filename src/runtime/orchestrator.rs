@@ -428,13 +428,89 @@ impl DaemonRuntime {
             .wake_reassert
             .request(reason, correlation_id, Instant::now())
         {
-            tracing::info!(reason = ?reason, ?correlation_id, "wake_reassert_requested");
+            tracing::info!(
+                reason = ?reason,
+                ?correlation_id,
+                observation_generation = ?self.observation.latest_started.map(|generation| generation.0),
+                "wake_reassert_requested"
+            );
         } else {
             tracing::debug!(reason = ?reason, "wake_reassert_coalesced");
         }
     }
 
+    fn finish_wake_observation<R: ProcessRunner + Sync>(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        runner: &R,
+        ticket: ObservationTicket,
+        outcome: &CompletionOutcome,
+    ) {
+        let ObservationCause::WakeReassert {
+            attempt,
+            correlation_id,
+        } = ticket.cause
+        else {
+            return;
+        };
+        match outcome {
+            CompletionOutcome::Published => {
+                tracing::info!(attempt, ?correlation_id, "observation_completion_published");
+                let generation = self
+                    .observation
+                    .current
+                    .as_ref()
+                    .map(|published| published.generation.0);
+                let _ = self.run_once_at_with_runner_diagnostic(
+                    now_utc,
+                    runner,
+                    true,
+                    ApplyDiagnosticContext {
+                        correlation_id,
+                        observation_generation: generation,
+                    },
+                );
+                if !self
+                    .wake_reassert
+                    .observation_completed(true, Instant::now())
+                {
+                    tracing::warn!(attempt, "wake_reassert_observation_finished");
+                }
+            }
+            CompletionOutcome::Superseded => {
+                tracing::warn!(
+                    attempt,
+                    ?correlation_id,
+                    "observation_completion_superseded"
+                );
+                if self.wake_reassert.observation_unavailable(Instant::now()) {
+                    tracing::warn!(attempt, "wake_reassert_overtaken_retrying");
+                } else {
+                    tracing::warn!(attempt, "wake_reassert_overtaken_finished");
+                }
+            }
+            CompletionOutcome::Rejected => {
+                if !self
+                    .wake_reassert
+                    .observation_completed(false, Instant::now())
+                {
+                    tracing::warn!(
+                        observation_ready = false,
+                        "wake_reassert_observation_finished"
+                    );
+                }
+            }
+        }
+    }
+
     fn process_wake_reassert(&mut self, now: Instant) -> bool {
+        self.process_wake_reassert_with_runner(now, RealProcessRunner)
+    }
+
+    fn process_wake_reassert_with_runner<R>(&mut self, now: Instant, runner: R) -> bool
+    where
+        R: ProcessRunner + Send + Sync + 'static,
+    {
         match self.wake_reassert.poll(now) {
             WakeReassertAction::Wait => true,
             WakeReassertAction::Observe { attempt } => {
@@ -442,6 +518,7 @@ impl DaemonRuntime {
                 tracing::info!(
                     attempt,
                     ?correlation_id,
+                    observation_generation = ?self.observation.latest_started.map(|generation| generation.0),
                     "wake_reassert_observation_started"
                 );
                 // The coordinator enters Observing optimistically inside
@@ -452,7 +529,7 @@ impl DaemonRuntime {
                         attempt,
                         correlation_id,
                     },
-                    RealProcessRunner,
+                    runner,
                 ) {
                     StartAsyncOutcome::Started => true,
                     StartAsyncOutcome::Busy | StartAsyncOutcome::FailedToSpawn => {
@@ -2154,65 +2231,9 @@ impl DaemonRuntime {
 
             if let Some((ticket, outcome)) = self.poll_async_completion() {
                 match ticket.cause {
-                    ObservationCause::WakeReassert {
-                        attempt,
-                        correlation_id,
-                    } => match outcome {
-                        CompletionOutcome::Published => {
-                            // Same-generation wake tick: run once under the
-                            // freshly published authorization.
-                            tracing::info!(
-                                attempt,
-                                ?correlation_id,
-                                "observation_completion_published"
-                            );
-                            let generation = self
-                                .observation
-                                .current
-                                .as_ref()
-                                .map(|published| published.generation.0);
-                            let _ = self.run_once_at_with_runner_diagnostic(
-                                now_utc,
-                                &RealProcessRunner,
-                                true,
-                                ApplyDiagnosticContext {
-                                    correlation_id,
-                                    observation_generation: generation,
-                                },
-                            );
-                            if !self
-                                .wake_reassert
-                                .observation_completed(true, Instant::now())
-                            {
-                                tracing::warn!(attempt, "wake_reassert_observation_finished");
-                            }
-                        }
-                        CompletionOutcome::Superseded => {
-                            tracing::warn!(
-                                attempt,
-                                ?correlation_id,
-                                "observation_completion_superseded"
-                            );
-                            // Overtaken completion settles the owner but must
-                            // neither publish nor apply.
-                            if self.wake_reassert.observation_unavailable(Instant::now()) {
-                                tracing::warn!(attempt, "wake_reassert_overtaken_retrying");
-                            } else {
-                                tracing::warn!(attempt, "wake_reassert_overtaken_finished");
-                            }
-                        }
-                        CompletionOutcome::Rejected => {
-                            if !self
-                                .wake_reassert
-                                .observation_completed(false, Instant::now())
-                            {
-                                tracing::warn!(
-                                    observation_ready = false,
-                                    "wake_reassert_observation_finished"
-                                );
-                            }
-                        }
-                    },
+                    ObservationCause::WakeReassert { .. } => {
+                        self.finish_wake_observation(now_utc, &RealProcessRunner, ticket, &outcome);
+                    }
                     ObservationCause::ScheduledTick => match outcome {
                         CompletionOutcome::Published => {
                             self.execute_scheduled_tick(
@@ -3265,25 +3286,24 @@ mod tests {
             )
             .expect("runtime should bootstrap");
             runtime.request_wake_reassert(WakeReassertReason::SystemResume, Some(41));
-            let cause = ObservationCause::WakeReassert {
-                attempt: 1,
-                correlation_id: Some(41),
+            let wake_runner = RecordingRunner::new();
+            assert!(runtime.process_wake_reassert_with_runner(
+                Instant::now() + Duration::from_secs(2),
+                wake_runner,
+            ));
+            let (ticket, outcome) = loop {
+                if let Some(completion) = runtime.poll_async_completion() {
+                    break completion;
+                }
+                std::thread::yield_now();
             };
-            let generation = runtime.reserve_generation(cause).expect("generation");
-            runtime.complete(
-                ObservationTicket { generation, cause },
-                Some(test_capability_snapshot()),
-            );
-            let _ = runtime.run_once_at_with_runner_diagnostic(
+            runtime.finish_wake_observation(
                 Utc.timestamp_opt(1_800_000_000, 0)
                     .single()
                     .expect("valid time"),
-                &FakeRunner::new(),
-                true,
-                ApplyDiagnosticContext {
-                    correlation_id: Some(41),
-                    observation_generation: Some(generation.0),
-                },
+                &RecordingRunner::new(),
+                ticket,
+                &outcome,
             );
 
             let messages = collector.messages();
@@ -3293,8 +3313,35 @@ mod tests {
                     .position(|candidate| candidate == message)
                     .unwrap_or_else(|| panic!("missing event {message}: {messages:?}"))
             };
+            assert_eq!(
+                collector.field("wake_reassert_requested", "correlation_id"),
+                Some("Some(41)".into())
+            );
+            assert_eq!(
+                collector.field("wake_reassert_requested", "observation_generation"),
+                Some("Some(1)".into())
+            );
+            assert_eq!(
+                collector.field(
+                    "wake_reassert_observation_started",
+                    "observation_generation"
+                ),
+                Some("Some(1)".into())
+            );
+            assert_eq!(
+                collector.field("observation_generation_reserved", "correlation_id"),
+                Some("Some(41)".into())
+            );
+            assert_eq!(
+                collector.field("observation_generation_reserved", "observation_generation"),
+                Some("1".into())
+            );
             assert!(
-                index_of("wake_reassert_requested") < index_of("observation_generation_reserved")
+                index_of("wake_reassert_requested") < index_of("wake_reassert_observation_started")
+            );
+            assert!(
+                index_of("wake_reassert_observation_started")
+                    < index_of("observation_generation_reserved")
             );
             assert!(
                 index_of("observation_generation_reserved")
