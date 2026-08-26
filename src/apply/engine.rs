@@ -1,5 +1,5 @@
 use super::dispatch::apply_monitor_target;
-use super::types::{ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
+use super::types::{ApplyDiagnosticContext, ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
 use crate::backends::RealProcessRunner;
 use crate::backends::{BackendError, BackendWrite, ProcessRunner};
 use crate::config::{Config, MonitorConfig};
@@ -48,6 +48,7 @@ pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
     capabilities: &CapabilitySnapshot,
     fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
     settings_override: Option<ApplySettings>,
+    diagnostic: ApplyDiagnosticContext,
 ) -> ApplySummary {
     let actions = crate::runtime::topology::reconcile(monitors, capabilities);
     apply_policy_with_runner_monitors_impl(
@@ -60,22 +61,9 @@ pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
         now_epoch_s,
         settings_override,
         &actions,
+        capabilities,
+        diagnostic,
     )
-}
-
-fn proven_physical_identity(monitor: &MonitorConfig) -> Option<String> {
-    match monitor.backend {
-        crate::backends::BackendKind::Ddc => monitor
-            .selector
-            .serial
-            .as_deref()
-            .or(monitor.selector.edid.as_deref())
-            .or(monitor.selector.connector.as_deref())
-            .map(str::to_owned),
-        crate::backends::BackendKind::Backlight => {
-            monitor.selector.sysfs_path.as_deref().map(str::to_owned)
-        }
-    }
 }
 
 /// Apply policy with an optional settings override. When `settings_override`
@@ -125,6 +113,8 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
         now_epoch_s,
         settings_override,
         &[],
+        &CapabilitySnapshot::default(),
+        ApplyDiagnosticContext::default(),
     )
 }
 
@@ -139,6 +129,8 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     now_epoch_s: u64,
     settings_override: Option<ApplySettings>,
     reconcile_actions: &[ReconcileAction],
+    capabilities: &CapabilitySnapshot,
+    diagnostic: ApplyDiagnosticContext,
 ) -> ApplySummary {
     let bypass_backoff = settings_override.is_some();
     let settings = settings_override.unwrap_or(default_settings);
@@ -200,9 +192,15 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                     logical_id = %monitor.logical_id,
                     backend = ?monitor.backend,
                     reconciliation = action.name(),
-                    physical_identity = proven_physical_identity(monitor)
+                    observed_identity = observed_identity_for(
+                        monitor,
+                        capabilities,
+                        *action,
+                    )
                         .as_deref()
                         .unwrap_or("none"),
+                    correlation_id = ?diagnostic.correlation_id,
+                    observation_generation = ?diagnostic.observation_generation,
                     "target_reconciled"
                 );
                 if !action.allowed_to_apply() {
@@ -393,6 +391,8 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             logical_id = %monitor.logical_id,
             backend = ?monitor.backend,
             applied_percent,
+            correlation_id = ?diagnostic.correlation_id,
+            observation_generation = ?diagnostic.observation_generation,
             "apply_attempt_authorized"
         );
     }
@@ -546,6 +546,41 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     summary
 }
 
+fn observed_identity_for(
+    monitor: &MonitorConfig,
+    capabilities: &CapabilitySnapshot,
+    action: ReconcileAction,
+) -> Option<String> {
+    if action != ReconcileAction::Present {
+        return None;
+    }
+    let identity = match monitor.backend {
+        crate::backends::BackendKind::Ddc => capabilities
+            .ddc_present
+            .iter()
+            .filter(|observed| {
+                observed.backend_viable
+                    && crate::backends::ddc::selector_matches_discovery(&monitor.selector, observed)
+                        .unwrap_or(false)
+            })
+            .map(|observed| observed.stable_id.as_str())
+            .next(),
+        crate::backends::BackendKind::Backlight => {
+            let configured_path = crate::backends::backlight::canonical_configured_sysfs_path(
+                monitor.selector.sysfs_path.as_deref()?,
+            )?;
+            capabilities
+                .backlights_present
+                .iter()
+                .find(|observed| {
+                    observed.backend_viable && observed.sysfs_path.trim() == configured_path
+                })
+                .map(|observed| observed.stable_id.as_str())
+        }
+    }?;
+    Some(identity.chars().take(128).collect())
+}
+
 fn reassert_due(
     last_applied_at_epoch_s: Option<u64>,
     now_epoch_s: u64,
@@ -660,6 +695,59 @@ mod tests {
     }
 
     #[test]
+    fn observed_identity_uses_matched_snapshot_not_config_selector() {
+        let mut monitor = test_monitor("external", BackendKind::Ddc);
+        monitor.selector.serial = Some(String::from("  observed-serial  "));
+        monitor.selector.connector = Some(String::from("configured-connector"));
+        let observed = CapabilitySnapshot {
+            ddc_present: vec![crate::discovery::DdcMonitorDiscovery {
+                occurrence_id: String::from("occurrence-1"),
+                stable_id: String::from("ddc:observed-device"),
+                identity_status: crate::discovery::PhysicalIdentityStatus::Unique,
+                manufacturer: Some(String::from("TEST")),
+                model: Some(String::from("Observed Model")),
+                serial: Some(String::from("observed-serial")),
+                display_number: 1,
+                bus_number: Some(9),
+                connector: Some(String::from("observed-connector")),
+                brightness_vcp_supported: Some(true),
+                backend_viable: true,
+                note: None,
+            }],
+            backlights_present: Vec::new(),
+        };
+
+        assert_eq!(
+            observed_identity_for(&monitor, &observed, ReconcileAction::Present),
+            Some(String::from("ddc:observed-device"))
+        );
+        assert_eq!(
+            observed_identity_for(
+                &monitor,
+                &CapabilitySnapshot::default(),
+                ReconcileAction::Present
+            ),
+            None,
+            "config-only selectors must never be labeled as observed identity"
+        );
+        assert_eq!(
+            observed_identity_for(&monitor, &observed, ReconcileAction::TemporarilyUnavailable),
+            None,
+            "unavailable targets have no proven observed identity"
+        );
+    }
+
+    #[test]
+    fn diagnostic_context_preserves_wake_correlation_and_generation() {
+        let context = ApplyDiagnosticContext {
+            correlation_id: Some(41),
+            observation_generation: Some(7),
+        };
+        assert_eq!(context.correlation_id, Some(41));
+        assert_eq!(context.observation_generation, Some(7));
+    }
+
+    #[test]
     fn reconciled_apply_skips_unavailable_topology_before_dispatch() {
         let monitors = vec![test_monitor("panel", BackendKind::Backlight)];
         let policy = test_policy(vec![("panel", 50)]);
@@ -676,6 +764,7 @@ mod tests {
             &CapabilitySnapshot::default(),
             None,
             None,
+            ApplyDiagnosticContext::default(),
         );
 
         assert_eq!(summary.skipped, 1);
@@ -731,6 +820,7 @@ mod tests {
             &capabilities,
             None,
             Some(fast_settings()),
+            ApplyDiagnosticContext::default(),
         );
 
         assert_eq!(summary.succeeded, 1);
