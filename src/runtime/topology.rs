@@ -213,9 +213,7 @@ fn configured_backlight_path(monitor: &MonitorConfig) -> Option<String> {
         .selector
         .sysfs_path
         .as_deref()
-        .map(str::trim)
-        .filter(|point| !point.is_empty())
-        .map(str::to_owned)
+        .and_then(crate::backends::backlight::canonical_configured_sysfs_path)
 }
 
 #[cfg(test)]
@@ -325,6 +323,42 @@ mod tests {
         assert_eq!(
             actions,
             vec![ReconcileAction::Present, ReconcileAction::Present]
+        );
+    }
+
+    #[test]
+    fn relative_backlight_pin_matches_observed_absolute_sysfs_identity() {
+        // R1a characterization: the backend accepts a relative device name
+        // and resolves it to the observed absolute sysfs representation, but
+        // the current topology gate compares the raw configured string.
+        let configured = vec![MonitorConfig {
+            logical_id: String::from("internal"),
+            backend: BackendKind::Backlight,
+            enabled: true,
+            selector: crate::config::MonitorSelector {
+                sysfs_path: Some(String::from("intel_backlight")),
+                ..crate::config::MonitorSelector::default()
+            },
+            ..MonitorConfig::default()
+        }];
+        let observed = CapabilitySnapshot {
+            backlights_present: vec![backlight_observed("intel_backlight", None)],
+            ddc_present: Vec::new(),
+        };
+
+        assert_eq!(
+            crate::backends::backlight::resolve_backlight_device_name(&configured[0].selector)
+                .expect("relative backlight pin should resolve"),
+            "intel_backlight"
+        );
+        assert_eq!(
+            observed.backlights_present[0].sysfs_path,
+            "/sys/class/backlight/intel_backlight"
+        );
+        assert_eq!(
+            reconcile(&configured, &observed),
+            vec![ReconcileAction::Present],
+            "backend-resolvable relative pin must not be rejected by topology"
         );
     }
 

@@ -241,50 +241,80 @@ fn canonicalize(path: &Path) -> Option<PathBuf> {
     fs::canonicalize(path).ok()
 }
 
+/// Converts a configured backlight pin to discovery's absolute representation.
+///
+/// This is deliberately lexical: it does not probe or canonicalize the
+/// filesystem. A normalized path is not proof that hardware exists; topology
+/// still requires an observed, viable device with the same normalized path.
+pub(crate) fn canonical_configured_sysfs_path(raw_path: &str) -> Option<String> {
+    let trimmed = raw_path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        let root = Path::new(SYSFS_BACKLIGHT_ROOT);
+        let relative = path.strip_prefix(root).ok()?;
+        if relative.components().count() != 1 {
+            return None;
+        }
+        let name = relative.as_os_str().to_str()?.trim();
+        if name.is_empty() || name == "." || name == ".." || name.contains('/') {
+            return None;
+        }
+        return Some(format!("{}/{name}", root.display()));
+    }
+
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed == "." || trimmed == ".." {
+        return None;
+    }
+    Some(format!("{SYSFS_BACKLIGHT_ROOT}/{trimmed}"))
+}
+
 fn resolve_relative_device_name(device_name: &str) -> Result<String, BackendError> {
-    let trimmed = device_name.trim();
-    if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains("..") {
-        return Err(BackendError::InvalidSelector {
+    let path = canonical_configured_sysfs_path(device_name).ok_or_else(|| {
+        BackendError::InvalidSelector {
             backend: BackendKind::Backlight,
             field: "sysfs_path",
             message: format!("invalid backlight device name `{device_name}`"),
-        });
-    }
-    Ok(String::from("/sys/class/backlight/") + trimmed)
+        }
+    })?;
+    Ok(Path::new(&path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .expect("canonical backlight path has one valid device component")
+        .to_owned())
 }
 
 /// Validates an explicit absolute `sysfs_path` and extracts the device name component.
 pub(crate) fn resolve_explicit_sysfs_path(raw_path: &str) -> Result<String, BackendError> {
-    let path = PathBuf::from(raw_path);
-    let root = Path::new(SYSFS_BACKLIGHT_ROOT);
-
-    if !path.is_absolute() {
-        return Err(BackendError::InvalidSelector {
-            backend: BackendKind::Backlight,
-            field: "sysfs_path",
-            message: String::from("expected an absolute path"),
-        });
+    let raw = Path::new(raw_path.trim());
+    if raw.is_absolute() {
+        let root = Path::new(SYSFS_BACKLIGHT_ROOT);
+        if let Ok(relative) = raw.strip_prefix(root) {
+            if relative.components().count() > 1 {
+                return Err(BackendError::InvalidSelector {
+                    backend: BackendKind::Backlight,
+                    field: "sysfs_path",
+                    message: String::from(
+                        "expected the backlight device directory, not a nested file",
+                    ),
+                });
+            }
+        }
     }
 
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| BackendError::InvalidSelector {
+    let path =
+        canonical_configured_sysfs_path(raw_path).ok_or_else(|| BackendError::InvalidSelector {
             backend: BackendKind::Backlight,
             field: "sysfs_path",
-            message: format!("expected a path under {}", root.display()),
+            message: String::from("expected one backlight device under /sys/class/backlight"),
         })?;
 
-    if relative.components().count() != 1 {
-        return Err(BackendError::InvalidSelector {
-            backend: BackendKind::Backlight,
-            field: "sysfs_path",
-            message: String::from("expected the backlight device directory, not a nested file"),
-        });
-    }
-
-    path.file_name()
+    Path::new(&path)
+        .file_name()
         .and_then(|value| value.to_str())
-        .filter(|value| !value.trim().is_empty())
         .map(str::to_owned)
         .ok_or_else(|| BackendError::InvalidSelector {
             backend: BackendKind::Backlight,
