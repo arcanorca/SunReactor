@@ -177,3 +177,115 @@ fn rejects_duplicate_monitor_milestone_adjustments() {
     assert!(matches!(error, ConfigError::Validation(_)));
     assert!(error.to_string().contains("duplicate milestone `rise_25`"));
 }
+
+// Guards against the triage survivors `MonitorSelector::has_any: replace ||
+// with &&`: an AND-polarity regression would reject an enabled monitor that
+// correctly identifies its hardware with a single selector field. Every
+// selector kind is exercised because operator precedence lets each mutated
+// pair hide behind any later satisfied term.
+#[test]
+fn accepts_enabled_monitor_with_a_single_selector_field() {
+    const SINGLE_SELECTOR_VARIANTS: &[(&str, &str)] = &[
+        ("connector", "connector = \"DP-1\"\n"),
+        ("serial", "serial = \"ABC123\"\n"),
+        ("model", "model = \"Model X\"\n"),
+        ("edid", "edid = \"DEAD\"\n"),
+        (
+            "sysfs_path",
+            "sysfs_path = \"/sys/class/backlight/intel_backlight\"\n",
+        ),
+        ("ddc_bus", "ddc_bus = 6\n"),
+        ("ddc_address", "ddc_address = 55\n"),
+    ];
+
+    for (field, selector_line) in SINGLE_SELECTOR_VARIANTS {
+        let raw = VALID_CONFIG.replace(
+            "connector = \"DP-1\"\nddc_bus = 6\nddc_address = 55\n",
+            selector_line,
+        );
+        let config = parse_str(&raw, Path::new("single-selector.toml")).unwrap_or_else(|error| {
+            panic!("an enabled monitor with only `{field}` should validate: {error}")
+        });
+
+        assert_eq!(config.monitors[0].logical_id, "desk");
+    }
+}
+
+// Pins the documented default so a drifted `default_transition_gamma` cannot
+// silently reshape the brightness curve for configs that omit the key.
+#[test]
+fn uses_documented_default_transition_gamma() {
+    let config = parse_str(VALID_CONFIG, Path::new("gamma-default.toml"))
+        .expect("valid config should parse");
+
+    assert_eq!(config.monitors[0].transition_gamma, 0.5);
+}
+
+// Failure side of the same contract: an enabled monitor must never silently
+// match every attached device because it selects nothing.
+#[test]
+fn rejects_enabled_monitor_without_selector_fields() {
+    let raw = VALID_CONFIG.replace("connector = \"DP-1\"\nddc_bus = 6\nddc_address = 55\n", "");
+    let error = parse_str(&raw, Path::new("no-selector.toml"))
+        .expect_err("an enabled monitor without selector fields should fail");
+
+    assert!(error.to_string().contains("monitors[0].selector"));
+}
+
+// Guards against the triage survivors `Config::validate: delete -` on the
+// latitude/longitude ranges: flipping a geographic bound must not reject real
+// polar locations sitting exactly on the limit.
+#[test]
+fn accepts_geographic_boundary_extremes() {
+    let raw = VALID_CONFIG
+        .replace("latitude = 41.0082", "latitude = -90.0")
+        .replace("longitude = 28.9784", "longitude = -180.0");
+
+    parse_str(&raw, Path::new("polar.toml")).expect("polar boundaries should validate");
+}
+
+// Guards against the triage survivor `Config::validate: replace >= with <` on
+// the twilight ordering check: an inverted comparison would accept
+// twilight_elevation_start == day_elevation_full, collapsing the daylight ramp
+// to a single elevation point.
+#[test]
+fn rejects_twilight_start_equal_to_day_full() {
+    let raw = VALID_CONFIG.replace(
+        "twilight_elevation_start = -6.0",
+        "twilight_elevation_start = 20.0",
+    );
+    let error = parse_str(&raw, Path::new("flat-ramp.toml")).expect_err("config should fail");
+
+    assert!(error.to_string().contains("twilight_elevation_start"));
+}
+
+// Guards against the triage survivor `Config::validate: replace == with !=` on
+// the max-step guard: a flipped comparison would allow
+// max_step_pct_per_tick = 0, which can deadlock brightness transitions.
+#[test]
+fn rejects_zero_max_step_pct_per_tick() {
+    let raw = VALID_CONFIG.replace("max_step_pct_per_tick = 6", "max_step_pct_per_tick = 0");
+    let error = parse_str(&raw, Path::new("zero-step.toml")).expect_err("config should fail");
+
+    assert!(error
+        .to_string()
+        .contains("solar_policy.max_step_pct_per_tick"));
+}
+
+// Guards against the triage survivors `Config::validate: replace > ...` on the
+// DDC address cap: the 7-bit I2C limit must accept 127 and reject 128 so the
+// boundary itself stays pinned.
+#[test]
+fn accepts_ddc_address_at_seven_bit_limit() {
+    let raw = VALID_CONFIG.replace("ddc_address = 55", "ddc_address = 127");
+
+    parse_str(&raw, Path::new("ddc-limit.toml")).expect("DDC address 127 should validate");
+}
+
+#[test]
+fn rejects_ddc_address_beyond_seven_bit_range() {
+    let raw = VALID_CONFIG.replace("ddc_address = 55", "ddc_address = 128");
+    let error = parse_str(&raw, Path::new("ddc-over.toml")).expect_err("config should fail");
+
+    assert!(error.to_string().contains("monitors[0].ddc_address"));
+}
