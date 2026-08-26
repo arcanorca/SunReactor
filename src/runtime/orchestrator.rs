@@ -277,9 +277,15 @@ impl DaemonRuntime {
                 // Invalidation on start: accepting any newer observation makes
                 // all older snapshots unauthorized.
                 self.observation.current = None;
+                let correlation_id = match cause {
+                    ObservationCause::WakeReassert { correlation_id, .. } => correlation_id,
+                    ObservationCause::ScheduledTick => None,
+                };
                 tracing::info!(
                     generation = generation.0,
+                    observation_generation = generation.0,
                     ?cause,
+                    ?correlation_id,
                     "observation_generation_reserved"
                 );
                 Ok(generation)
@@ -297,7 +303,12 @@ impl DaemonRuntime {
         if self.observation.latest_started != Some(ticket.generation) {
             tracing::warn!(
                 generation = ticket.generation.0,
+                observation_generation = ticket.generation.0,
                 ?ticket.cause,
+                correlation_id = ?match ticket.cause {
+                    ObservationCause::WakeReassert { correlation_id, .. } => correlation_id,
+                    ObservationCause::ScheduledTick => None,
+                },
                 "observation_completion_superseded"
             );
             return;
@@ -308,15 +319,22 @@ impl DaemonRuntime {
                 generation: ticket.generation,
                 snapshot,
             });
+            let correlation_id = match ticket.cause {
+                ObservationCause::WakeReassert { correlation_id, .. } => correlation_id,
+                ObservationCause::ScheduledTick => None,
+            };
             tracing::info!(
                 generation = ticket.generation.0,
+                observation_generation = ticket.generation.0,
                 ?ticket.cause,
+                ?correlation_id,
                 "observation_completion_published"
             );
         } else {
             self.observation.current = None;
             tracing::warn!(
                 generation = ticket.generation.0,
+                observation_generation = ticket.generation.0,
                 ?ticket.cause,
                 "observation_failed_fail_closed"
             );
@@ -2355,6 +2373,98 @@ mod tests {
     use crate::state::{
         FailureBackoffState, ManualOverrideState, RuntimeState, WeatherSnapshotMetadata,
     };
+    use tracing_subscriber::layer::{Context, SubscriberExt};
+    use tracing_subscriber::registry::LookupSpan;
+
+    #[derive(Clone, Debug)]
+    struct CapturedEvent {
+        message: String,
+        fields: Vec<(String, String)>,
+    }
+
+    #[derive(Clone, Default)]
+    struct EventCollector {
+        events: Arc<Mutex<Vec<CapturedEvent>>>,
+    }
+
+    impl<S> tracing_subscriber::Layer<S> for EventCollector
+    where
+        S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    {
+        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+            struct Visitor {
+                message: String,
+                fields: Vec<(String, String)>,
+            }
+
+            impl tracing::field::Visit for Visitor {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    let rendered = format!("{value:?}");
+                    if field.name() == "message" {
+                        self.message = rendered.trim_matches('"').to_owned();
+                    } else {
+                        self.fields.push((field.name().to_owned(), rendered));
+                    }
+                }
+
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    if field.name() == "message" {
+                        self.message = value.to_owned();
+                    } else {
+                        self.fields
+                            .push((field.name().to_owned(), format!("{value:?}")));
+                    }
+                }
+            }
+
+            let mut visitor = Visitor {
+                message: String::new(),
+                fields: Vec::new(),
+            };
+            event.record(&mut visitor);
+            self.events.lock().unwrap().push(CapturedEvent {
+                message: visitor.message,
+                fields: visitor.fields,
+            });
+        }
+    }
+
+    impl EventCollector {
+        fn messages(&self) -> Vec<String> {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|event| event.message.clone())
+                .collect()
+        }
+
+        fn has_field(&self, message: &str, name: &str, value: &str) -> bool {
+            self.events.lock().unwrap().iter().any(|event| {
+                event.message == message
+                    && event
+                        .fields
+                        .iter()
+                        .any(|(field, rendered)| field == name && rendered == value)
+            })
+        }
+
+        fn field(&self, message: &str, name: &str) -> Option<String> {
+            self.events.lock().unwrap().iter().find_map(|event| {
+                (event.message == message).then(|| {
+                    event
+                        .fields
+                        .iter()
+                        .find(|(field, _)| field == name)
+                        .map(|(_, value)| value.clone())
+                })
+            })?
+        }
+    }
 
     struct RecordingRunner {
         calls: std::sync::Mutex<Vec<String>>,
@@ -3140,6 +3250,134 @@ mod tests {
                 .and_then(|monitor| monitor.last_applied_percent),
             Some(33)
         );
+    }
+
+    #[test]
+    fn wake_diagnostic_fields_cross_runtime_and_apply_event_seams() {
+        let collector = EventCollector::default();
+        let subscriber = tracing_subscriber::registry().with(collector.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            let temp = TempDir::new();
+            let mut runtime = DaemonRuntime::bootstrap_with_paths(
+                test_config_report(),
+                temp.path().join("state/runtime-state.json"),
+                temp.path().join("run/control.sock"),
+            )
+            .expect("runtime should bootstrap");
+            runtime.request_wake_reassert(WakeReassertReason::SystemResume, Some(41));
+            let cause = ObservationCause::WakeReassert {
+                attempt: 1,
+                correlation_id: Some(41),
+            };
+            let generation = runtime.reserve_generation(cause).expect("generation");
+            runtime.complete(
+                ObservationTicket { generation, cause },
+                Some(test_capability_snapshot()),
+            );
+            let _ = runtime.run_once_at_with_runner_diagnostic(
+                Utc.timestamp_opt(1_800_000_000, 0)
+                    .single()
+                    .expect("valid time"),
+                &FakeRunner::new(),
+                true,
+                ApplyDiagnosticContext {
+                    correlation_id: Some(41),
+                    observation_generation: Some(generation.0),
+                },
+            );
+
+            let messages = collector.messages();
+            let index_of = |message: &str| {
+                messages
+                    .iter()
+                    .position(|candidate| candidate == message)
+                    .unwrap_or_else(|| panic!("missing event {message}: {messages:?}"))
+            };
+            assert!(
+                index_of("wake_reassert_requested") < index_of("observation_generation_reserved")
+            );
+            assert!(
+                index_of("observation_generation_reserved")
+                    < index_of("observation_completion_published")
+            );
+            assert!(index_of("observation_completion_published") < index_of("target_reconciled"));
+            assert!(index_of("target_reconciled") < index_of("apply_attempt_authorized"));
+            for message in [
+                "observation_completion_published",
+                "target_reconciled",
+                "apply_attempt_authorized",
+            ] {
+                assert_eq!(
+                    collector.field(message, "correlation_id"),
+                    Some("Some(41)".into())
+                );
+                assert!(matches!(
+                    collector
+                        .field(message, "observation_generation")
+                        .as_deref(),
+                    Some("1" | "Some(1)")
+                ));
+            }
+        });
+    }
+
+    #[test]
+    fn non_wake_and_superseded_observations_are_distinct_and_fail_closed() {
+        let collector = EventCollector::default();
+        let subscriber = tracing_subscriber::registry().with(collector.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            let temp = TempDir::new();
+            let mut runtime = DaemonRuntime::bootstrap_with_paths(
+                test_config_report(),
+                temp.path().join("state/runtime-state.json"),
+                temp.path().join("run/control.sock"),
+            )
+            .expect("runtime should bootstrap");
+            runtime.request_wake_reassert(WakeReassertReason::WaylandIdleResume, None);
+            assert_eq!(
+                collector.field("wake_reassert_requested", "correlation_id"),
+                Some("None".into())
+            );
+
+            let old_cause = ObservationCause::WakeReassert {
+                attempt: 1,
+                correlation_id: Some(9),
+            };
+            let old_generation = runtime
+                .reserve_generation(old_cause)
+                .expect("old generation");
+            runtime
+                .reserve_generation(ObservationCause::ScheduledTick)
+                .expect("new generation");
+            runtime.complete(
+                ObservationTicket {
+                    generation: old_generation,
+                    cause: old_cause,
+                },
+                Some(test_capability_snapshot()),
+            );
+
+            assert!(collector
+                .messages()
+                .contains(&String::from("observation_completion_superseded")));
+            assert_eq!(
+                collector.field("observation_completion_superseded", "generation"),
+                Some("1".into())
+            );
+            assert_eq!(
+                collector
+                    .messages()
+                    .iter()
+                    .filter(|message| message.as_str() == "apply_attempt_authorized")
+                    .count(),
+                0
+            );
+            assert!(collector.has_field(
+                "observation_generation_reserved",
+                "cause",
+                "ScheduledTick"
+            ));
+        });
     }
 
     #[test]
