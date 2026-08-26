@@ -11,12 +11,16 @@ The repo intentionally uses stock `rustfmt` behavior. There is no custom formatt
 
 ## Toolchain
 
-Install a stable Rust toolchain with `rustfmt` and `clippy`:
+The repository pins Rust `1.97.1` in `rust-toolchain.toml` and CI uses the same version. Prefer an explicit rustup invocation: a distro-provided `cargo` earlier in `PATH` can shadow rustup's `cargo +stable` selector.
 
 ```bash
-rustup toolchain install stable --component rustfmt --component clippy
-rustup default stable
+rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
+rustup run 1.97.1 cargo fmt --all --check
+rustup run 1.97.1 cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
+rustup run 1.97.1 cargo test --workspace --all-targets --all-features
 ```
+
+These commands do not change the host's default Rust toolchain.
 
 ## Local Workflow
 
