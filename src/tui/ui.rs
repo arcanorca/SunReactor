@@ -1,5 +1,6 @@
 mod automation;
 pub(crate) mod chrome;
+pub(crate) mod fonts;
 pub(crate) mod kit;
 mod light_cycle;
 pub(crate) mod location;
