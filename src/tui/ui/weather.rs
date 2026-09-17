@@ -813,7 +813,6 @@ fn render_additional(
 }
 
 /// Sun times, daylight, location, and data source along the bottom.
-#[allow(clippy::too_many_lines)]
 fn render_sun_strip(
     f: &mut Frame,
     app: &Model,
@@ -832,12 +831,23 @@ fn render_sun_strip(
     if inner.height < 2 {
         return;
     }
+    let (mut items, place) = sun_strip_items(app, view);
+    fit_sun_strip_items(&mut items, &place, inner.width);
+    render_sun_strip_items(f, inner, &items, styles);
+}
+
+struct SunStripItem {
+    glyph: &'static str,
+    label: &'static str,
+    value: String,
+}
+
+fn sun_strip_items(app: &Model, view: &WeatherViewModel) -> (Vec<SunStripItem>, String) {
     let anchors = super::automation::cycle_anchors(app, None);
-    let use_12h = app.config.tui.use_12h_time;
     let time = |value: Option<&chrono::DateTime<chrono::FixedOffset>>| {
         value.map_or_else(
             || String::from("—"),
-            |time| super::automation::format_time(time, use_12h),
+            |time| super::automation::format_time(time, app.config.tui.use_12h_time),
         )
     };
     let daylight = match (&anchors.sunrise, &anchors.sunset) {
@@ -860,67 +870,108 @@ fn render_sun_strip(
         location.longitude.abs(),
         if location.longitude < 0.0 { "W" } else { "E" },
     );
-    let mut items: Vec<(&str, &str, String)> = vec![
-        ("↑", "Sunrise", time(anchors.sunrise.as_ref())),
-        (kit::BRAND_MARK, "Solar noon", time(anchors.noon.as_ref())),
-        ("↓", "Sunset", time(anchors.sunset.as_ref())),
-        ("◐", "Daylight", daylight),
-        ("◎", "Location", format!("{place}  {coordinates}")),
-        ("≡", "Weather data", view.source_label.clone()),
-    ];
-    // Drop the least important items until everything fits with separators.
-    let needed = |items: &Vec<(&str, &str, String)>| -> usize {
-        items
-            .iter()
-            .map(|(_, label, value)| 2 + kit::cell_width(label).max(kit::cell_width(value)))
-            .sum::<usize>()
-            + items.len().saturating_sub(1) * 3
-    };
-    for drop in ["Weather data", "Daylight", "Solar noon"] {
-        if needed(&items) <= usize::from(inner.width) {
+    (
+        vec![
+            SunStripItem {
+                glyph: "↑",
+                label: "Sunrise",
+                value: time(anchors.sunrise.as_ref()),
+            },
+            SunStripItem {
+                glyph: kit::BRAND_MARK,
+                label: "Solar noon",
+                value: time(anchors.noon.as_ref()),
+            },
+            SunStripItem {
+                glyph: "↓",
+                label: "Sunset",
+                value: time(anchors.sunset.as_ref()),
+            },
+            SunStripItem {
+                glyph: "◐",
+                label: "Daylight",
+                value: daylight,
+            },
+            SunStripItem {
+                glyph: "◎",
+                label: "Location",
+                value: format!("{place}  {coordinates}"),
+            },
+            SunStripItem {
+                glyph: "≡",
+                label: "Weather data",
+                value: view.source_label.clone(),
+            },
+        ],
+        place,
+    )
+}
+
+fn sun_strip_width(items: &[SunStripItem]) -> usize {
+    items
+        .iter()
+        .map(|item| 2 + kit::cell_width(item.label).max(kit::cell_width(&item.value)))
+        .sum::<usize>()
+        + items.len().saturating_sub(1) * 3
+}
+
+fn fit_sun_strip_items(items: &mut Vec<SunStripItem>, place: &str, width: u16) {
+    for label in ["Weather data", "Daylight", "Solar noon"] {
+        if sun_strip_width(items) <= usize::from(width) {
             break;
         }
-        items.retain(|(_, label, _)| *label != drop);
+        items.retain(|item| item.label != label);
     }
-    if needed(&items) > usize::from(inner.width) {
-        if let Some(item) = items.iter_mut().find(|(_, label, _)| *label == "Location") {
-            item.2.clone_from(&place);
+    if sun_strip_width(items) > usize::from(width) {
+        if let Some(item) = items.iter_mut().find(|item| item.label == "Location") {
+            place.clone_into(&mut item.value);
         }
     }
+}
+
+fn render_sun_strip_items(
+    f: &mut Frame,
+    inner: Rect,
+    items: &[SunStripItem],
+    styles: &SemanticStyles,
+) {
     let widths: Vec<u16> = items
         .iter()
-        .map(|(_, label, value)| (2 + kit::cell_width(label).max(kit::cell_width(value))) as u16)
+        .map(|item| (2 + kit::cell_width(item.label).max(kit::cell_width(&item.value))) as u16)
         .collect();
     let content: u16 = widths.iter().sum();
-    let gaps = items.len().saturating_sub(1) as u16;
-    let spacing = inner.width.saturating_sub(content) / gaps.max(1);
+    let spacing =
+        inner.width.saturating_sub(content) / (items.len().saturating_sub(1) as u16).max(1);
     let mut x = inner.x;
-    for (index, ((glyph, label, value), width)) in items.iter().zip(&widths).enumerate() {
+    for (index, (item, width)) in items.iter().zip(&widths).enumerate() {
         f.render_widget(
             Paragraph::new(vec![
                 Line::from(vec![
-                    Span::styled(format!("{glyph} "), styles.focus_marker),
-                    Span::styled(*label, styles.text_muted),
+                    Span::styled(format!("{} ", item.glyph), styles.focus_marker),
+                    Span::styled(item.label, styles.text_muted),
                 ]),
                 Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(value.clone(), styles.text_primary),
+                    Span::styled(item.value.clone(), styles.text_primary),
                 ]),
             ]),
             Rect::new(x, inner.y, (*width).min(inner.x + inner.width - x), 2),
         );
         x += width;
         if index + 1 < items.len() {
-            let separator = x + spacing / 2;
-            if separator < inner.x + inner.width {
-                for row in 0..2 {
-                    f.buffer_mut()
-                        .get_mut(separator, inner.y + row)
-                        .set_symbol("│")
-                        .set_style(styles.border_normal);
-                }
-            }
+            render_sun_strip_separator(f, x + spacing / 2, inner.y, inner.x + inner.width, styles);
             x += spacing;
+        }
+    }
+}
+
+fn render_sun_strip_separator(f: &mut Frame, x: u16, y: u16, right: u16, styles: &SemanticStyles) {
+    if x < right {
+        for row in 0..2 {
+            f.buffer_mut()
+                .get_mut(x, y + row)
+                .set_symbol("│")
+                .set_style(styles.border_normal);
         }
     }
 }
