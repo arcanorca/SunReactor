@@ -14,21 +14,13 @@ mod environment;
 use environment::load_timezone;
 #[cfg(test)]
 pub(crate) use environment::ModelEnvironment;
+mod input_editing;
+pub use input_editing::EditBufferPolicy;
 
 use super::model::{
-    settings_index, ActionKind, ActionState, ActiveInputKind, DaemonConnection, DaemonLifecycle,
-    ErrorCategory, InputMode, Model, MonitorDiscoveryState, MonitorWorkspaceState,
-    NextMilestoneInfo, OperationalMode, Tab,
+    settings_index, ActionKind, ActionState, DaemonConnection, DaemonLifecycle, ErrorCategory,
+    Model, MonitorDiscoveryState, MonitorWorkspaceState, NextMilestoneInfo, OperationalMode, Tab,
 };
-
-/// Policy for initializing text input buffers when entering editing mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditBufferPolicy {
-    /// Buffer retains current value and places cursor at the end.
-    ExistingValue,
-    /// Buffer is cleared for clean replacement (original preserved in snapshot for Esc).
-    CleanReplacement,
-}
 
 impl Model {
     #[must_use]
@@ -243,7 +235,7 @@ impl Model {
         }
     }
 
-    fn selected_config_monitor_index(&self) -> Option<usize> {
+    pub(crate) fn selected_config_monitor_index(&self) -> Option<usize> {
         self.selected_monitor_logical_id()
             .and_then(|logical_id| {
                 self.config
@@ -573,209 +565,6 @@ impl Model {
         if let super::model::ActiveModal::ThemeSelect(_, original_theme) = self.active_modal {
             self.active_modal = super::model::ActiveModal::None;
             self.config.tui.theme = original_theme;
-        }
-    }
-
-    /// Determines the input initialization policy for the currently focused field.
-    #[must_use]
-    pub fn edit_buffer_policy(&self) -> EditBufferPolicy {
-        if (matches!(self.active_tab, Tab::Location) && self.active_setting == 0)
-            || (matches!(self.active_tab, Tab::Settings)
-                && self.active_setting == settings_index::WEATHER_API_KEY)
-        {
-            EditBufferPolicy::CleanReplacement
-        } else {
-            EditBufferPolicy::ExistingValue
-        }
-    }
-
-    pub fn start_editing(&mut self) {
-        if matches!(self.active_tab, Tab::Monitors)
-            && !matches!(
-                self.monitor_pane_focus,
-                super::model::MonitorPaneFocus::Detail
-            )
-        {
-            return;
-        }
-        self.editing_form_snapshot = Some(self.form.clone());
-        self.input_mode = InputMode::Editing;
-
-        match self.edit_buffer_policy() {
-            EditBufferPolicy::CleanReplacement => {
-                if matches!(self.active_tab, Tab::Location) && self.active_setting == 0 {
-                    self.form.city_search_input = tui_input::Input::default();
-                    self.form.city_search_results.clear();
-                    self.form.city_search_selected_index = 0;
-                } else if matches!(self.active_tab, Tab::Settings)
-                    && self.active_setting == settings_index::WEATHER_API_KEY
-                {
-                    self.form.api_key_input = tui_input::Input::default();
-                }
-            }
-            EditBufferPolicy::ExistingValue => {
-                if let Some(input) = self.active_input_mut() {
-                    let len = input.value().chars().count();
-                    input.handle(tui_input::InputRequest::SetCursor(len));
-                }
-            }
-        }
-    }
-
-    pub fn stop_editing(&mut self) {
-        self.input_mode = InputMode::Normal;
-        self.editing_form_snapshot = None;
-    }
-
-    pub fn cancel_editing(&mut self) {
-        if let Some(snapshot) = self.editing_form_snapshot.take() {
-            self.form = snapshot;
-        }
-        self.config_error = None;
-        self.input_mode = InputMode::Normal;
-    }
-
-    pub fn handle_input_request(&mut self, req: tui_input::InputRequest) -> bool {
-        if let Some(input) = self.active_input_mut() {
-            input.handle(req).is_some()
-        } else {
-            false
-        }
-    }
-
-    pub fn insert_char_to_active_input(&mut self, c: char) {
-        self.handle_input_request(tui_input::InputRequest::InsertChar(c));
-    }
-
-    pub fn backspace_active_input(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::DeletePrevChar);
-    }
-
-    pub fn delete_active_input(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::DeleteNextChar);
-    }
-
-    pub fn move_cursor_left(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::GoToPrevChar);
-    }
-
-    pub fn move_cursor_right(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::GoToNextChar);
-    }
-
-    pub fn move_cursor_start(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::GoToStart);
-    }
-
-    pub fn move_cursor_end(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::GoToEnd);
-    }
-
-    pub fn delete_prev_word_active_input(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::DeletePrevWord);
-    }
-
-    pub fn move_cursor_prev_word(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::GoToPrevWord);
-    }
-
-    pub fn move_cursor_next_word(&mut self) {
-        self.handle_input_request(tui_input::InputRequest::GoToNextWord);
-    }
-
-    #[must_use]
-    pub fn active_input_kind(&self) -> Option<ActiveInputKind> {
-        if matches!(self.active_tab, Tab::Monitors) {
-            if matches!(
-                self.monitor_pane_focus,
-                super::model::MonitorPaneFocus::Detail
-            ) {
-                match self.monitor_control_index {
-                    0 | 1 => Some(ActiveInputKind::Integer),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        } else if matches!(self.active_tab, Tab::Limits) {
-            if matches!(
-                self.automation_focus,
-                super::model::AutomationRegionFocus::Curve
-            ) {
-                Some(ActiveInputKind::Decimal)
-            } else {
-                None
-            }
-        } else {
-            self.form
-                .active_input_kind(self.active_tab, self.active_setting)
-        }
-    }
-
-    #[must_use]
-    pub fn active_input_ref(&self) -> Option<&tui_input::Input> {
-        if matches!(self.active_tab, Tab::Monitors) {
-            if matches!(
-                self.monitor_pane_focus,
-                super::model::MonitorPaneFocus::Detail
-            ) {
-                let pair = self
-                    .selected_config_monitor_index()
-                    .and_then(|index| self.form.monitor_inputs.get(index));
-                match self.monitor_control_index {
-                    0 => pair.map(|p| &p.0),
-                    1 => pair.map(|p| &p.1),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        } else if matches!(self.active_tab, Tab::Limits) {
-            if matches!(
-                self.automation_focus,
-                super::model::AutomationRegionFocus::Curve
-            ) {
-                self.selected_config_monitor_index()
-                    .and_then(|index| self.form.monitor_curve_inputs.get(index))
-            } else {
-                None
-            }
-        } else {
-            self.form
-                .active_input_ref(self.active_tab, self.active_setting)
-        }
-    }
-
-    pub fn active_input_mut(&mut self) -> Option<&mut tui_input::Input> {
-        if matches!(self.active_tab, Tab::Monitors) {
-            if matches!(
-                self.monitor_pane_focus,
-                super::model::MonitorPaneFocus::Detail
-            ) {
-                let idx = self.monitor_control_index;
-                let monitor_index = self.selected_config_monitor_index()?;
-                let pair = self.form.monitor_inputs.get_mut(monitor_index);
-                match idx {
-                    0 => pair.map(|p| &mut p.0),
-                    1 => pair.map(|p| &mut p.1),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        } else if matches!(self.active_tab, Tab::Limits) {
-            if matches!(
-                self.automation_focus,
-                super::model::AutomationRegionFocus::Curve
-            ) {
-                let monitor_index = self.selected_config_monitor_index()?;
-                self.form.monitor_curve_inputs.get_mut(monitor_index)
-            } else {
-                None
-            }
-        } else {
-            self.form
-                .active_input_mut(self.active_tab, self.active_setting)
         }
     }
 
