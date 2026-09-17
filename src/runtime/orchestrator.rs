@@ -1086,20 +1086,10 @@ impl DaemonRuntime {
         runner: &R,
         force_immediate: bool,
     ) -> Result<TickReport, RuntimeError> {
-        self.run_once_at_with_runner_mode(now_utc, runner, force_immediate, false)
-    }
-
-    fn run_once_at_with_runner_mode<R: ProcessRunner + Sync>(
-        &mut self,
-        now_utc: DateTime<Utc>,
-        runner: &R,
-        force_immediate: bool,
-        lifecycle_recovery: bool,
-    ) -> Result<TickReport, RuntimeError> {
         let tick_started = Instant::now();
         let inputs = self.collect_tick_inputs(now_utc, force_immediate)?;
         let computed = self.compute_tick_policy(inputs)?;
-        let applied = self.apply_tick_policy(computed, runner, force_immediate, lifecycle_recovery);
+        let applied = self.apply_tick_policy(computed, runner, force_immediate);
 
         self.finish_tick(applied, tick_started)
     }
@@ -1166,7 +1156,6 @@ impl DaemonRuntime {
         computed: ComputedTick,
         runner: &R,
         force_immediate: bool,
-        lifecycle_recovery: bool,
     ) -> AppliedTick {
         let apply_summary = if computed.suspended {
             skipped_apply_summary(computed.policy.targets.len(), "suspend_until is active")
@@ -1185,7 +1174,6 @@ impl DaemonRuntime {
                     capabilities,
                     Some(&mut self.fade_engine),
                     settings_override,
-                    lifecycle_recovery,
                 )
             } else {
                 skipped_apply_summary(

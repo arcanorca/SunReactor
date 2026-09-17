@@ -60,7 +60,6 @@ pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
         capabilities,
         fade_engine,
         settings_override,
-        false,
     )
 }
 
@@ -182,7 +181,6 @@ pub(crate) fn apply_policy_with_runner_reconciled_mode<R: ProcessRunner + Sync>(
     capabilities: &CapabilitySnapshot,
     fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
     settings_override: Option<ApplySettings>,
-    lifecycle_recovery: bool,
 ) -> ApplySummary {
     let actions = crate::runtime::topology::reconcile(monitors, capabilities);
     apply_policy_with_runner_monitors_impl(
@@ -194,7 +192,6 @@ pub(crate) fn apply_policy_with_runner_reconciled_mode<R: ProcessRunner + Sync>(
         runner,
         now_epoch_s,
         settings_override,
-        lifecycle_recovery,
         &actions,
     )
 }
@@ -245,7 +242,6 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
         runner,
         now_epoch_s,
         settings_override,
-        false,
         &[],
     )
 }
@@ -260,7 +256,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     runner: &R,
     now_epoch_s: u64,
     settings_override: Option<ApplySettings>,
-    lifecycle_recovery: bool,
     reconcile_actions: &[ReconcileAction],
 ) -> ApplySummary {
     let bypass_backoff = settings_override.is_some();
@@ -368,20 +363,10 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                 settings.apply_reassert_interval.as_secs(),
             );
 
-        if (reassert_is_due || lifecycle_recovery)
-            && monitor_state.last_applied_percent == Some(requested_percent)
-        {
+        if reassert_is_due && monitor_state.last_applied_percent == Some(requested_percent) {
             match super::dispatch::read_monitor_percent(runner, monitor, &settings) {
                 Ok(observation) if observation.percent == requested_percent => {
                     state.record_integrity_check(&monitor.logical_id, now_epoch_s);
-                    if lifecycle_recovery {
-                        tracing::info!(
-                            logical_id = %monitor.logical_id,
-                            requested_percent,
-                            observed_percent = observation.percent,
-                            "lifecycle_recovery_matches_hardware; no_write_required"
-                        );
-                    }
                     work.push(WorkItem::Skip(ApplyRecord {
                         logical_id: monitor.logical_id.clone(),
                         backend: Some(monitor.backend),
@@ -405,7 +390,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                         logical_id = %monitor.logical_id,
                         requested_percent,
                         observed_percent = observation.percent,
-                        lifecycle_recovery,
                         "brightness_drift_detected; correcting_to_current_policy"
                     );
                 }
@@ -424,7 +408,7 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             requested_percent,
             settings.min_write_delta_pct,
         );
-        if skip_hysteresis && !reassert_is_due && !lifecycle_recovery {
+        if skip_hysteresis && !reassert_is_due {
             let delta = monitor_state
                 .last_applied_percent
                 .map_or(0, |last| requested_percent.abs_diff(last));
@@ -656,15 +640,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                             write.applied_percent,
                             now_epoch_s,
                         );
-                        if lifecycle_recovery {
-                            tracing::info!(
-                                logical_id = %monitor.logical_id,
-                                applied_percent = write.applied_percent,
-                                attempts = write.attempts,
-                                detail = %write.detail,
-                                "lifecycle_recovery_write_succeeded"
-                            );
-                        }
                         summary.push(ApplyRecord {
                             logical_id: monitor.logical_id.clone(),
                             backend: Some(write.backend),
@@ -697,13 +672,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                             backoff.consecutive_failures,
                             backoff.failure_kind
                         );
-                        if lifecycle_recovery {
-                            tracing::warn!(
-                                logical_id = %monitor.logical_id,
-                                error = %error,
-                                "lifecycle_recovery_write_failed"
-                            );
-                        }
                         summary.push(ApplyRecord {
                             logical_id: monitor.logical_id.clone(),
                             backend: Some(monitor.backend),
@@ -1123,57 +1091,6 @@ mod tests {
 
         assert_eq!(summary.records[0].status, ApplyStatus::SkippedHysteresis);
         assert!(runner.calls().is_empty());
-    }
-
-    #[test]
-    fn lifecycle_recovery_corrects_different_observed_brightness() {
-        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
-        let policy = test_policy(vec![("panel", 50)]);
-        let runner = FakeRunner::new()
-            .with_success(
-                "ddcutil",
-                &["--noconfig", "--terse", "--sn", "SN_panel", "getvcp", "10"],
-                "VCP 10 C 35 100\n",
-            )
-            .with_success(
-                "ddcutil",
-                &[
-                    "--noconfig",
-                    "--noverify",
-                    "--sn",
-                    "SN_panel",
-                    "setvcp",
-                    "10",
-                    "50",
-                ],
-                "",
-            );
-        let mut state = RuntimeState::default();
-        state.record_apply_success("panel", 50, 1_000);
-
-        let summary = apply_policy_with_runner_monitors_impl(
-            &monitors,
-            fast_settings(),
-            &policy,
-            &mut state,
-            None,
-            &runner,
-            1_001,
-            Some(ApplySettings {
-                min_write_delta_pct: 0,
-                max_step_pct_per_tick: 100,
-                min_apply_interval: Duration::ZERO,
-                dry_run: false,
-                apply_reassert_interval: Duration::from_mins(2),
-                ddc_timeout: Duration::from_secs(10),
-                backlight_timeout: Duration::from_secs(5),
-            }),
-            true,
-            &[],
-        );
-
-        assert_eq!(summary.succeeded, 1);
-        assert!(runner.calls().iter().any(|call| call.contains("|setvcp|")));
     }
 
     fn fast_settings() -> ApplySettings {
