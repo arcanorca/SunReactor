@@ -5,6 +5,7 @@ pub mod fade;
 pub mod idle;
 pub mod orchestrator;
 pub(super) mod runtime_config;
+pub(super) mod status;
 pub(super) mod tick;
 pub(crate) mod topology;
 pub mod wake;
