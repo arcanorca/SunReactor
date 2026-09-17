@@ -300,7 +300,7 @@ fn render_conditions(
         Some(celsius) => {
             let (value, letter) = temperature_in_unit(celsius, unit);
             let color =
-                super::light_cycle::mix(temperature_color(celsius), styles.palette.accent, 0.3);
+                crate::tui::theme::mix(temperature_color(celsius), styles.palette.accent, 0.3);
             for (index, row) in dot_matrix_rows(&format!("{value:.0}"))
                 .into_iter()
                 .enumerate()
@@ -501,7 +501,7 @@ fn render_forecast(
         .map_or(1.0, |phase| f64::from(1.0 - (1.0 - phase).powi(3)));
 
     let palette = styles.palette;
-    let grid = Style::default().fg(super::light_cycle::mix(
+    let grid = Style::default().fg(crate::tui::theme::mix(
         palette.border_inactive,
         palette.bg,
         0.45,
@@ -536,14 +536,14 @@ fn render_forecast(
             let eighths = (fraction * total).round() as u16;
             let full = eighths / 8;
             let partial = usize::from(eighths % 8);
-            let color = super::light_cycle::mix(temperature_color(celsius), palette.accent, 0.3);
+            let color = crate::tui::theme::mix(temperature_color(celsius), palette.accent, 0.3);
             for step_row in 0..plot_height {
                 let row = plot_top + plot_height - 1 - step_row;
                 let cell = buffer.get_mut(plot_x + column, row);
                 if step_row < full {
                     let height = f64::from(step_row + 1) / f64::from(plot_height);
                     cell.set_symbol("█")
-                        .set_style(Style::default().fg(super::light_cycle::mix(
+                        .set_style(Style::default().fg(crate::tui::theme::mix(
                             palette.bg,
                             color,
                             0.25 + 0.6 * height,
@@ -638,7 +638,7 @@ fn render_forecast(
         );
         let (display, _) = temperature_in_unit(sample.celsius, unit);
         let temperature = format!("{display:.0}°");
-        let color = super::light_cycle::mix(temperature_color(sample.celsius), palette.accent, 0.3);
+        let color = crate::tui::theme::mix(temperature_color(sample.celsius), palette.accent, 0.3);
         let chance = sample
             .precipitation_percent
             .map_or_else(|| String::from("—"), |percent| format!("{percent}%"));
@@ -1048,7 +1048,7 @@ fn temperature_color(celsius: f32) -> Color {
     let (low, from) = STOPS[index];
     let (high, to) = STOPS[index + 1];
     let amount = f64::from(((clamped - low) / (high - low)).clamp(0.0, 1.0));
-    super::light_cycle::mix(
+    crate::tui::theme::mix(
         Color::Rgb(from.0, from.1, from.2),
         Color::Rgb(to.0, to.1, to.2),
         amount,

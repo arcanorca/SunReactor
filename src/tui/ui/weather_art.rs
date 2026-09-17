@@ -15,7 +15,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::tui::theme::Palette;
+use crate::tui::theme::{mix, Palette};
 use crate::weather::{WeatherCondition, WeatherDayPhase};
 
 /// Terminal cells occupied by one scene.
@@ -220,9 +220,7 @@ impl Canvas {
     /// leaves the panel colour.
     fn lines(&self, palette: &Palette) -> Vec<Line<'static>> {
         let paint = |pixel: Option<(Rgb, Role)>| {
-            pixel.map(|(color, role)| {
-                super::light_cycle::mix(rgb(color), role.theme_color(palette), THEME_TINT)
-            })
+            pixel.map(|(color, role)| mix(rgb(color), role.theme_color(palette), THEME_TINT))
         };
         (0..VIEW_H / 2)
             .map(|row| {
@@ -612,9 +610,7 @@ pub(crate) fn mini_icon(
         day_phase == Some(WeatherDayPhase::Night),
     );
     let paint = |code: u8| {
-        mini_color(code).map(|(color, role)| {
-            super::light_cycle::mix(rgb(color), role.theme_color(palette), THEME_TINT)
-        })
+        mini_color(code).map(|(color, role)| mix(rgb(color), role.theme_color(palette), THEME_TINT))
     };
     (0..2)
         .map(|row| {

@@ -2,6 +2,21 @@ use ratatui::style::{Color, Modifier, Style};
 
 pub use crate::config::Theme;
 
+/// Linear blend between two theme colours; non-RGB colours switch halfway.
+pub(crate) fn mix(from: Color, to: Color, amount: f64) -> Color {
+    let amount = amount.clamp(0.0, 1.0);
+    match (from, to) {
+        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+            let blend = |a: u8, b: u8| {
+                (f64::from(a) + (f64::from(b) - f64::from(a)) * amount).round() as u8
+            };
+            Color::Rgb(blend(r1, r2), blend(g1, g2), blend(b1, b2))
+        }
+        _ if amount < 0.5 => from,
+        _ => to,
+    }
+}
+
 impl Theme {
     pub const ALL: [Self; 28] = [
         Self::Amber,
@@ -713,6 +728,15 @@ impl From<Palette> for SemanticStyles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colours_blend_only_when_both_are_rgb() {
+        assert_eq!(
+            mix(Color::Rgb(0, 0, 0), Color::Rgb(200, 100, 50), 0.5),
+            Color::Rgb(100, 50, 25)
+        );
+        assert_eq!(mix(Color::Blue, Color::Rgb(1, 1, 1), 0.2), Color::Blue);
+    }
 
     #[test]
     #[allow(clippy::too_many_lines)]
