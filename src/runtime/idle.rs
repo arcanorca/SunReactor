@@ -1,5 +1,6 @@
 use crate::backends::ProcessRunner;
-use crate::runtime::orchestrator::{DaemonRuntime, LoopCadence};
+use crate::runtime::orchestrator::DaemonRuntime;
+use crate::runtime::r#loop::LoopCadence;
 use chrono::{DateTime, Utc};
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 use std::os::fd::AsRawFd;
