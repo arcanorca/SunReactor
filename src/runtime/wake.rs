@@ -18,28 +18,25 @@ pub const PROBE_INTERVAL: Duration = Duration::from_secs(2);
 pub const FIRST_PROBE_DELAY: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WakeReassertReason {
-    Startup,
+pub enum WakeReason {
     WaylandIdleResume,
     SystemResume,
-    ManualWake,
     DrmHotplug,
     DrmConnectorChange,
-    TopologyRecovery,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct WakeWatch {
     until: Option<Instant>,
     next_probe: Option<Instant>,
-    reason: Option<WakeReassertReason>,
+    reason: Option<WakeReason>,
     probes: u32,
 }
 
 impl WakeWatch {
     /// Opens the watch window, or extends it when one is already open.
     /// Returns `true` when this signal opened a new window.
-    pub fn start(&mut self, reason: WakeReassertReason, now: Instant) -> bool {
+    pub fn start(&mut self, reason: WakeReason, now: Instant) -> bool {
         let already_open = self.is_active(now);
         self.until = Some(now + WATCH_WINDOW);
         self.reason = Some(reason);
@@ -79,7 +76,7 @@ impl WakeWatch {
     }
 
     #[must_use]
-    pub fn reason(&self) -> Option<WakeReassertReason> {
+    pub fn reason(&self) -> Option<WakeReason> {
         self.reason
     }
 
@@ -98,7 +95,7 @@ mod tests {
         let start = Instant::now();
         let mut watch = WakeWatch::default();
         assert!(!watch.take_due_probe(start));
-        assert!(watch.start(WakeReassertReason::DrmHotplug, start));
+        assert!(watch.start(WakeReason::DrmHotplug, start));
         assert!(!watch.take_due_probe(start));
         assert_eq!(watch.next_deadline(), Some(start + FIRST_PROBE_DELAY));
 
@@ -113,11 +110,11 @@ mod tests {
     fn a_new_signal_extends_the_window_without_resetting_the_cadence() {
         let start = Instant::now();
         let mut watch = WakeWatch::default();
-        watch.start(WakeReassertReason::DrmHotplug, start);
+        watch.start(WakeReason::DrmHotplug, start);
         let later = start + Duration::from_secs(50);
         assert!(watch.take_due_probe(later));
-        assert!(!watch.start(WakeReassertReason::WaylandIdleResume, later));
-        assert_eq!(watch.reason(), Some(WakeReassertReason::WaylandIdleResume));
+        assert!(!watch.start(WakeReason::WaylandIdleResume, later));
+        assert_eq!(watch.reason(), Some(WakeReason::WaylandIdleResume));
         // The first window would have closed at 60 s; the extension keeps it open.
         assert!(watch.is_active(start + Duration::from_secs(100)));
         assert!(!watch.take_due_probe(later + Duration::from_secs(1)));
@@ -127,7 +124,7 @@ mod tests {
     fn the_window_closes_and_stops_probing() {
         let start = Instant::now();
         let mut watch = WakeWatch::default();
-        watch.start(WakeReassertReason::SystemResume, start);
+        watch.start(WakeReason::SystemResume, start);
         let after = start + WATCH_WINDOW;
         assert!(!watch.take_due_probe(after));
         assert!(!watch.is_active(after));

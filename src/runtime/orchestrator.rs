@@ -31,7 +31,7 @@ use crate::ipc::{self, BoundControlSocket, ControlSocket};
 use crate::paths::{self, PathError};
 use crate::policy::{self, PolicyContext, PolicyError, PolicyOutput};
 use crate::runtime::topology::CapabilitySnapshot;
-use crate::runtime::wake::{WakeReassertReason, WakeWatch};
+use crate::runtime::wake::{WakeReason, WakeWatch};
 use crate::solar::{self, Location, SolarError, SolarSample};
 use crate::state::{RuntimeState, StateError};
 use crate::weather;
@@ -260,7 +260,7 @@ impl DaemonRuntime {
 
     /// Opens (or extends) the wake watch; probes then fix any brightness a
     /// waking monitor or the desktop restored on its own.
-    pub(super) fn request_wake_reassert(&mut self, reason: WakeReassertReason) -> bool {
+    pub(super) fn request_wake_reassert(&mut self, reason: WakeReason) -> bool {
         let opened = self.wake_watch.start(reason, Instant::now());
         if opened {
             tracing::info!(reason = ?reason, "wake_watch_started");
@@ -272,9 +272,9 @@ impl DaemonRuntime {
 
     fn handle_display_event(&mut self, reason: DisplayRecoveryReason) {
         let wake_reason = match reason {
-            DisplayRecoveryReason::DrmHotplug => WakeReassertReason::DrmHotplug,
-            DisplayRecoveryReason::DrmConnectorChange => WakeReassertReason::DrmConnectorChange,
-            DisplayRecoveryReason::Resume => WakeReassertReason::SystemResume,
+            DisplayRecoveryReason::DrmHotplug => WakeReason::DrmHotplug,
+            DisplayRecoveryReason::DrmConnectorChange => WakeReason::DrmConnectorChange,
+            DisplayRecoveryReason::Resume => WakeReason::SystemResume,
         };
         if self.request_wake_reassert(wake_reason) {
             // A capability observation that started before the change may
@@ -1607,7 +1607,7 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 self.state.desktop_idle_dimmed = false;
-                let _ = self.request_wake_reassert(WakeReassertReason::WaylandIdleResume);
+                let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
                 (
                     ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
                     outcome,
@@ -2106,7 +2106,7 @@ impl DaemonRuntime {
             }
 
             if DesktopIdleSync::take_input_resume() {
-                let _ = self.request_wake_reassert(WakeReassertReason::WaylandIdleResume);
+                let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
             }
             if self.wake_watch.take_due_probe(Instant::now()) {
                 self.run_wake_probe(now_utc, &RealProcessRunner);
