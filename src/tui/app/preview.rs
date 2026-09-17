@@ -180,7 +180,7 @@ fn compute_preview_outcome(inputs: &PreviewInputs) -> PreviewOutcome {
             inputs.midnight_utc,
             inputs.weather_multiplier,
         ),
-        milestones: super::build_monitor_milestones(
+        milestones: super::milestones::build_monitor_milestones(
             &inputs.config,
             inputs.now_utc,
             inputs.weather_multiplier,
