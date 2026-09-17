@@ -312,36 +312,3 @@ pub(crate) fn centered(area: Rect, width: u16, height: u16) -> Rect {
         height,
     )
 }
-
-/// Three-row rounded glyphs for large numbers: digits and a minus sign.
-const BIG_DIGITS: [[&str; 3]; 10] = [
-    ["╭─╮", "│ │", "╰─╯"],
-    ["╶╮ ", " │ ", "╶┴╴"],
-    ["╭─╮", "╭─╯", "╰─╴"],
-    ["╶─╮", " ─┤", "╶─╯"],
-    ["╷ ╷", "╰─┤", "  ╵"],
-    ["╭─╴", "╰─╮", "╶─╯"],
-    ["╭─╴", "├─╮", "╰─╯"],
-    ["╶─╮", "  │", "  ╵"],
-    ["╭─╮", "├─┤", "╰─╯"],
-    ["╭─╮", "╰─┤", "╶─╯"],
-];
-
-/// `text` in the three-row number font, glyphs one cell apart. Characters
-/// other than digits and `-` are skipped.
-pub(crate) fn big_text_rows(text: &str) -> [String; 3] {
-    let mut rows: [String; 3] = Default::default();
-    let glyphs = text.chars().filter_map(|character| match character {
-        '-' => Some(["   ", "╶─╴", "   "]),
-        digit => digit.to_digit(10).map(|digit| BIG_DIGITS[digit as usize]),
-    });
-    for (index, glyph) in glyphs.enumerate() {
-        for (row, line) in rows.iter_mut().enumerate() {
-            if index > 0 {
-                line.push(' ');
-            }
-            line.push_str(glyph[row]);
-        }
-    }
-    rows
-}

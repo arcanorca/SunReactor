@@ -737,7 +737,7 @@ fn render_target_instrument(
             } else {
                 styles.text_muted
             };
-            let rows = kit::big_text_rows(&shown.to_string());
+            let rows = super::fonts::rounded_number_rows(&shown.to_string());
             for (index, row) in rows.into_iter().enumerate() {
                 let mut spans = vec![Span::raw(kit::BLANK_CURSOR), Span::styled(row, digit_style)];
                 if index == 2 {

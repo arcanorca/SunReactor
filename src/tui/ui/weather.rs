@@ -301,7 +301,7 @@ fn render_conditions(
             let (value, letter) = temperature_in_unit(celsius, unit);
             let color =
                 crate::tui::theme::mix(temperature_color(celsius), styles.palette.accent, 0.3);
-            for (index, row) in dot_matrix_rows(&format!("{value:.0}"))
+            for (index, row) in super::fonts::braille_dot_matrix_rows(&format!("{value:.0}"))
                 .into_iter()
                 .enumerate()
             {
@@ -925,112 +925,6 @@ fn render_sun_strip(
     }
 }
 
-/// A 5×7 dot-matrix font, like an LED or Nothing-style display.
-const DOT_GLYPHS: [(char, [&str; 7]); 11] = [
-    (
-        '0',
-        [
-            ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###.",
-        ],
-    ),
-    (
-        '1',
-        [
-            "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###.",
-        ],
-    ),
-    (
-        '2',
-        [
-            ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####",
-        ],
-    ),
-    (
-        '3',
-        [
-            "#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###.",
-        ],
-    ),
-    (
-        '4',
-        [
-            "...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#.",
-        ],
-    ),
-    (
-        '5',
-        [
-            "#####", "#....", "####.", "....#", "....#", "#...#", ".###.",
-        ],
-    ),
-    (
-        '6',
-        [
-            "..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###.",
-        ],
-    ),
-    (
-        '7',
-        [
-            "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#...",
-        ],
-    ),
-    (
-        '8',
-        [
-            ".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###.",
-        ],
-    ),
-    (
-        '9',
-        [
-            ".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##..",
-        ],
-    ),
-    (
-        '-',
-        [
-            ".....", ".....", ".....", "#####", ".....", ".....", ".....",
-        ],
-    ),
-];
-
-/// `text` in [`DOT_GLYPHS`] as four rows of Braille. Every font dot is one
-/// Braille dot, two dot positions apart in both directions, so the digits read
-/// as an evenly spaced dot matrix.
-fn dot_matrix_rows(text: &str) -> [String; 4] {
-    let glyphs: Vec<&[&str; 7]> = text
-        .chars()
-        .filter_map(|c| DOT_GLYPHS.iter().find(|(key, _)| *key == c))
-        .map(|(_, rows)| rows)
-        .collect();
-    let mut rows: [String; 4] = Default::default();
-    for (cell_row, out) in rows.iter_mut().enumerate() {
-        for (index, glyph) in glyphs.iter().enumerate() {
-            if index > 0 {
-                out.push(' ');
-            }
-            for column in 0..5 {
-                let lit = |font_row: usize| {
-                    glyph
-                        .get(font_row)
-                        .is_some_and(|row| row.as_bytes()[column] == b'#')
-                };
-                // Font rows 2n and 2n+1 share a cell, on Braille rows 0 and 2.
-                let mut bits = 0_u32;
-                if lit(cell_row * 2) {
-                    bits |= 0x01;
-                }
-                if lit(cell_row * 2 + 1) {
-                    bits |= 0x04;
-                }
-                out.push(char::from_u32(0x2800 + bits).unwrap_or(' '));
-            }
-        }
-    }
-    rows
-}
-
 /// A colour for a temperature: cool blue through a mild gold to warm coral.
 fn temperature_color(celsius: f32) -> Color {
     const STOPS: [(f32, (u8, u8, u8)); 5] = [
@@ -1395,19 +1289,6 @@ mod tests {
         assert!(crate::tui::command::commands_for_footer(&loading)
             .current_commands
             .is_empty());
-    }
-
-    #[test]
-    fn temperature_uses_the_dot_matrix_font() {
-        let rows = super::dot_matrix_rows("1");
-        // "..#.." over ".##..": the middle column has both dots in cell row 0.
-        assert_eq!(rows[0], "⠀⠄⠅⠀⠀");
-        // The last font row ".###." sits alone on Braille row 0 of cell row 3.
-        assert_eq!(rows[3], "⠀⠁⠁⠁⠀");
-        let pair = super::dot_matrix_rows("23");
-        assert!(pair.iter().all(|row| row.chars().count() == 11));
-        let negative = super::dot_matrix_rows("-4");
-        assert_eq!(negative[1].chars().take(5).collect::<String>(), "⠄⠄⠄⠄⠄");
     }
 
     #[test]
