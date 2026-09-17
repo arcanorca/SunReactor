@@ -197,8 +197,8 @@ impl DesktopIdleSync {
                 tracing::info!(drift_secs = %drift_seconds, "time_jump_detected");
                 runtime.execute_resync_tick(now_utc, runner, cadence, self, true);
                 // Monitors may still be waking after a suspend.
-                let _ = runtime
-                    .request_wake_reassert(crate::runtime::wake::WakeReassertReason::SystemResume);
+                let _ =
+                    runtime.request_wake_reassert(crate::runtime::wake::WakeReason::SystemResume);
             }
         }
         true
