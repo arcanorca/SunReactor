@@ -28,5 +28,8 @@ cities15000.zip
 
 # Agent metadata
 .agents/
+.worktrees/
+.hermes/
+.backups/
 AGENTS.md
 OPTIMIZATIONS.md
