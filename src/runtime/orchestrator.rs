@@ -15,8 +15,6 @@ pub(crate) type NativeIpcStream = std::os::unix::net::UnixStream;
 #[cfg(target_os = "windows")]
 pub(crate) type NativeIpcStream = crate::platform::windows::pipe::NamedPipeStream;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 const IPC_DRAIN_MAX_REQUESTS: usize = 16;
@@ -30,6 +28,7 @@ use crate::config::{self, ConfigError, ConfigReport, ConfigSource};
 use crate::ipc::{self, BoundControlSocket, ControlSocket};
 use crate::paths::{self, PathError};
 use crate::policy::{self, PolicyContext, PolicyError, PolicyOutput};
+use crate::runtime::capabilities::{CapabilityRefreshPublication, CapabilityRefreshState};
 use crate::runtime::runtime_config::RuntimeConfig;
 use crate::runtime::topology::CapabilitySnapshot;
 use crate::runtime::wake::{WakeReason, WakeWatch};
@@ -64,15 +63,6 @@ pub enum RuntimeError {
 }
 
 #[derive(Debug)]
-enum CapabilityRefreshResult {
-    Completed {
-        generation: u64,
-        snapshot: CapabilitySnapshot,
-    },
-    Failed,
-}
-
-#[derive(Debug)]
 pub struct DaemonRuntime {
     config: RuntimeConfig,
     pub socket: ControlSocket,
@@ -86,30 +76,9 @@ pub struct DaemonRuntime {
     /// Ephemeral capability observation from the last reconciliation.
     /// Not persisted; kept separate from user config.
     pub last_capabilities: Option<CapabilitySnapshot>,
-    capability_refresh_tx: mpsc::SyncSender<CapabilityRefreshResult>,
-    capability_refresh_rx: mpsc::Receiver<CapabilityRefreshResult>,
-    capability_refresh_active: Arc<AtomicBool>,
-    capability_refresh_pending: bool,
-    capability_refresh_handle: Option<std::thread::JoinHandle<()>>,
-    capability_refresh_generation: Arc<AtomicU64>,
+    capability_refresh: CapabilityRefreshState,
     wake_watch: WakeWatch,
     display_events: Option<DisplayEventSources>,
-}
-
-impl Drop for DaemonRuntime {
-    fn drop(&mut self) {
-        if let Some(handle) = self.capability_refresh_handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-struct CapabilityRefreshGuard(Arc<AtomicBool>);
-
-impl Drop for CapabilityRefreshGuard {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -192,70 +161,19 @@ impl DaemonRuntime {
     where
         R: ProcessRunner + Send + Sync + 'static,
     {
-        if self.capability_refresh_active.load(Ordering::Acquire) {
-            return;
-        }
-        let generation = self
-            .capability_refresh_generation
-            .fetch_add(1, Ordering::AcqRel)
-            .saturating_add(1);
-
-        if let Some(handle) = self.capability_refresh_handle.take() {
-            if !handle.is_finished() {
-                self.capability_refresh_handle = Some(handle);
-                return;
-            }
-            let _ = handle.join();
-        }
-
-        if self
-            .capability_refresh_active
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return;
-        }
-
-        let sender = self.capability_refresh_tx();
-        let active = Arc::clone(&self.capability_refresh_active);
-        self.capability_refresh_handle = Some(std::thread::spawn(move || {
-            let _active_guard = CapabilityRefreshGuard(active);
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let report = crate::discovery::discover_with_runner(
-                    &runner,
-                    std::path::Path::new("/sys/class/backlight"),
-                );
-                CapabilityRefreshResult::Completed {
-                    generation,
-                    snapshot: CapabilitySnapshot::from_discovery(&report),
-                }
-            }))
-            .unwrap_or(CapabilityRefreshResult::Failed);
-            let _ = sender.try_send(result);
-        }));
-    }
-
-    fn capability_refresh_tx(&self) -> mpsc::SyncSender<CapabilityRefreshResult> {
-        self.capability_refresh_tx.clone()
+        self.capability_refresh.begin_with_runner(runner);
     }
 
     fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
-        match self.capability_refresh_rx.try_recv() {
-            Ok(CapabilityRefreshResult::Completed {
-                generation,
-                snapshot,
-            }) => {
-                if generation == self.capability_refresh_generation.load(Ordering::Acquire) {
-                    self.last_capabilities = Some(snapshot);
-                    Some(true)
-                } else {
-                    tracing::warn!(generation, "capability_refresh_superseded");
-                    Some(false)
-                }
+        match self.capability_refresh.publish_completed() {
+            Some(CapabilityRefreshPublication::Published(snapshot)) => {
+                self.last_capabilities = Some(snapshot);
+                Some(true)
             }
-            Ok(CapabilityRefreshResult::Failed) => Some(false),
-            Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(false),
+            Some(
+                CapabilityRefreshPublication::Discarded | CapabilityRefreshPublication::Failed,
+            ) => Some(false),
+            None => None,
         }
     }
 
@@ -280,8 +198,7 @@ impl DaemonRuntime {
         if self.request_wake_reassert(wake_reason) {
             // A capability observation that started before the change may
             // describe the old topology; make sure it is not published.
-            self.capability_refresh_generation
-                .fetch_add(1, Ordering::AcqRel);
+            self.capability_refresh.invalidate();
         }
     }
 
@@ -1246,7 +1163,6 @@ impl DaemonRuntime {
             initial_weather,
         );
 
-        let (capability_refresh_tx, capability_refresh_rx) = mpsc::sync_channel(1);
         let mut runtime = Self {
             config,
             socket,
@@ -1258,12 +1174,7 @@ impl DaemonRuntime {
             fade_engine: FadeEngine::new(),
             weather_engine,
             last_capabilities: None,
-            capability_refresh_tx,
-            capability_refresh_rx,
-            capability_refresh_active: Arc::new(AtomicBool::new(false)),
-            capability_refresh_pending: false,
-            capability_refresh_handle: None,
-            capability_refresh_generation: Arc::new(AtomicU64::new(0)),
+            capability_refresh: CapabilityRefreshState::default(),
             wake_watch: WakeWatch::default(),
             display_events: None,
         };
@@ -2021,8 +1932,7 @@ impl DaemonRuntime {
             // Phase 9 uses periodic observation only. Refresh immediately
             // before scheduled ticks, not on every idle loop iteration.
             if let Some(result) = self.publish_completed_capability_snapshot() {
-                if self.capability_refresh_pending {
-                    self.capability_refresh_pending = false;
+                if self.capability_refresh.take_pending() {
                     if result {
                         self.execute_scheduled_tick(
                             now_utc,
@@ -2034,13 +1944,13 @@ impl DaemonRuntime {
                     continue;
                 }
             }
-            if self.capability_refresh_pending {
+            if self.capability_refresh.is_pending() {
                 wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                 continue;
             }
 
             if matches!(action, LoopAction::RunTick) {
-                self.capability_refresh_pending = true;
+                self.capability_refresh.set_pending();
                 self.begin_capability_refresh_with_runner(RealProcessRunner);
                 wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                 continue;
@@ -2141,6 +2051,8 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::{TimeZone, Utc};
