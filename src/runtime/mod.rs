@@ -8,5 +8,7 @@ pub(super) mod runtime_config;
 pub(super) mod tick;
 pub(crate) mod topology;
 pub mod wake;
+pub(super) mod weather_refresh;
 
-pub use orchestrator::{DaemonRuntime, IpcOutcome, RuntimeError, TickReport, WeatherRefreshState};
+pub use orchestrator::{DaemonRuntime, IpcOutcome, RuntimeError, TickReport};
+pub use weather_refresh::WeatherRefreshState;
