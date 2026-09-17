@@ -8,9 +8,12 @@ use super::model::{
     DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary, RawDdcMonitor,
 };
 use super::runner::{command_failure_detail, CommandError, ProcessRunner};
+use crate::backends::ddc::{filter_unsupported_noconfig, is_unsupported_noconfig_error};
 
-const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(4);
-const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(3);
+// `ddcutil detect` probes every I2C bus and routinely takes five seconds or
+// more on multi-output GPUs, so the limit leaves generous headroom.
+const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(15);
+const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(6);
 const BRIGHTNESSCTL_LIST_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) fn discover_with_runner<R: ProcessRunner>(
@@ -25,7 +28,7 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
     sysfs_root: &Path,
     drm_root: &Path,
 ) -> DiscoverySnapshot {
-    let (ddc_status, ddc_monitors) = discover_ddc_monitors(runner);
+    let (ddc_status, ddc_monitors, ddc_observation_complete) = discover_ddc_monitors(runner);
     let (brightnessctl_status, brightnessctl_devices) =
         discover_brightnessctl_backlights(runner, sysfs_root);
     let (sysfs_status, sysfs_devices) = discover_sysfs_backlights(sysfs_root);
@@ -57,6 +60,7 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
             brightnessctl: brightnessctl_status,
             sysfs: sysfs_status,
         },
+        ddc_observation_complete,
         ddc_monitors,
         backlight_devices,
     }
@@ -65,28 +69,53 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
 #[allow(clippy::too_many_lines)]
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,
-) -> (BackendStatus, Vec<DdcMonitorDiscovery>) {
+) -> (BackendStatus, Vec<DdcMonitorDiscovery>, bool) {
     let args = vec![
         String::from("--noconfig"),
         String::from("--terse"),
         String::from("detect"),
     ];
 
-    match runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT) {
+    let run_detect = runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT);
+    let detect_result = match run_detect {
+        Ok(output) if !output.success() && is_unsupported_noconfig_error(&output) => {
+            let fallback = filter_unsupported_noconfig(&args);
+            runner.run("ddcutil", &fallback, DDCUTIL_DETECT_TIMEOUT)
+        }
+        other => other,
+    };
+
+    match detect_result {
         Ok(output) if output.success() => {
             let mut monitors = parse_ddc_detect(&output.stdout);
+            let observation_complete = !has_invalid_display_record(&output.stdout);
             super::assign_ddc_occurrence_ids(&mut monitors);
             let mut capability_failures = 0usize;
 
             for monitor in &mut monitors {
+                // `--display N` makes ddcutil repeat the full bus scan; the bus
+                // reported by `detect` addresses the same display directly.
+                let (selector_flag, selector_value) = monitor.bus_number.map_or_else(
+                    || ("--display", monitor.display_number.to_string()),
+                    |bus| ("--bus", bus.to_string()),
+                );
                 let capability_args = vec![
                     String::from("--noconfig"),
-                    String::from("--display"),
-                    monitor.display_number.to_string(),
+                    String::from(selector_flag),
+                    selector_value,
                     String::from("capabilities"),
                 ];
 
-                match runner.run("ddcutil", &capability_args, DDCUTIL_CAPABILITIES_TIMEOUT) {
+                let cap_run = runner.run("ddcutil", &capability_args, DDCUTIL_CAPABILITIES_TIMEOUT);
+                let cap_result = match cap_run {
+                    Ok(output) if !output.success() && is_unsupported_noconfig_error(&output) => {
+                        let fallback = filter_unsupported_noconfig(&capability_args);
+                        runner.run("ddcutil", &fallback, DDCUTIL_CAPABILITIES_TIMEOUT)
+                    }
+                    other => other,
+                };
+
+                match cap_result {
                     Ok(capabilities) if capabilities.success() => {
                         let supported = parse_brightness_vcp_support(&capabilities.stdout);
                         monitor.brightness_vcp_supported = Some(supported);
@@ -134,20 +163,36 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                     guidance: None,
                 },
                 monitors,
+                observation_complete,
             )
         }
-        Ok(output) => (
-            BackendStatus {
-                backend: String::from("ddcutil"),
-                status: BackendStatusKind::Error,
-                available: true,
-                message: format!("ddcutil detect failed: {}", command_failure_detail(&output)),
-                guidance: Some(String::from(
-                    "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.",
-                )),
-            },
-            Vec::new(),
-        ),
+        Ok(output) => {
+            let detail = command_failure_detail(&output);
+            let guidance = if detail.contains("i2c-dev")
+                || output.stderr.contains("i2c-dev")
+                || output.stdout.contains("i2c-dev")
+                || detail.contains("No /dev/i2c devices exist")
+            {
+                String::from("Kernel module `i2c-dev` is not loaded. Load it with `sudo modprobe i2c-dev` or add it to `/etc/modules-load.d/i2c.conf`.")
+            } else if detail.contains("Permission denied")
+                || output.stderr.contains("Permission denied")
+            {
+                String::from("Permission denied accessing /dev/i2c-* devices. Add your user to the `i2c` group (`sudo usermod -aG i2c $USER`) or configure uaccess rules, then relogin.")
+            } else {
+                String::from("Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.")
+            };
+            (
+                BackendStatus {
+                    backend: String::from("ddcutil"),
+                    status: BackendStatusKind::Error,
+                    available: true,
+                    message: format!("ddcutil detect failed: {detail}"),
+                    guidance: Some(guidance),
+                },
+                Vec::new(),
+                false,
+            )
+        }
         Err(CommandError::Missing { .. }) => (
             BackendStatus {
                 backend: String::from("ddcutil"),
@@ -159,6 +204,7 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                 )),
             },
             Vec::new(),
+            false,
         ),
         Err(CommandError::Timeout { after, .. }) => (
             BackendStatus {
@@ -171,6 +217,7 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                 )),
             },
             Vec::new(),
+            false,
         ),
         Err(error) => (
             BackendStatus {
@@ -183,8 +230,15 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                 )),
             },
             Vec::new(),
+            false,
         ),
     }
+}
+
+fn has_invalid_display_record(output: &str) -> bool {
+    output
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("Invalid display"))
 }
 
 fn discover_brightnessctl_backlights<R: ProcessRunner>(

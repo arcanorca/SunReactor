@@ -80,6 +80,21 @@ pub struct MonitorMilestone {
     pub target_percent: u8,
     pub minutes_offset: i16,
 }
+
+impl MonitorMilestone {
+    /// Computes the unconstrained requested time: `base_time_local + requested_offset`.
+    #[must_use]
+    pub fn requested_time_local(&self, requested_offset: i16) -> DateTime<chrono::FixedOffset> {
+        self.base_time_local + chrono::Duration::minutes(i64::from(requested_offset))
+    }
+
+    /// Determines whether the effective scheduled time was clamped by adjacent
+    /// milestone ordering or day boundaries, differing from the requested time.
+    #[must_use]
+    pub fn is_constrained(&self, requested_offset: i16) -> bool {
+        self.requested_time_local(requested_offset) != self.adjusted_time_local
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonitorMilestoneSchedule {
     pub logical_id: String,
@@ -118,27 +133,92 @@ pub fn compute_adaptive_zenith(
     let Ok(now_local) = solar::local_datetime_at_utc(now_utc, location) else {
         return fallback;
     };
+    let date = now_local.date_naive();
 
-    let Ok(events) = solar::safe_get_sun_events(now_local.date_naive(), location) else {
-        return fallback;
-    };
+    // The result depends only on the local date, the location, and the two
+    // thresholds, but finding solar noon is a search. Milestone scans ask for
+    // it once per minute of the day, so remember the latest answer.
+    let hit = ZENITH_MEMO.with(|memo| {
+        memo.borrow().as_ref().and_then(|entry| {
+            entry
+                .matches(date, location, config_day_full_deg, twilight_start_deg)
+                .then_some(entry.zenith_deg)
+        })
+    });
+    if let Some(zenith_deg) = hit {
+        return zenith_deg;
+    }
 
-    let Ok(noon_sample) = solar::sample_at_utc(
+    let zenith_deg = solar_noon_zenith(date, location, config_day_full_deg, twilight_start_deg)
+        .unwrap_or(fallback);
+    ZENITH_MEMO.with(|memo| {
+        *memo.borrow_mut() = Some(ZenithMemo {
+            date,
+            latitude_bits: location.latitude.to_bits(),
+            longitude_bits: location.longitude.to_bits(),
+            timezone_name: location.timezone_name.clone(),
+            day_full_bits: config_day_full_deg.to_bits(),
+            twilight_bits: twilight_start_deg.to_bits(),
+            zenith_deg,
+        });
+    });
+    zenith_deg
+}
+
+fn solar_noon_zenith(
+    date: chrono::NaiveDate,
+    location: &solar::Location,
+    config_day_full_deg: f64,
+    twilight_start_deg: f64,
+) -> Option<f64> {
+    let events = solar::safe_get_sun_events(date, location).ok()?;
+    let noon_sample = solar::sample_at_utc(
         events.noon.with_timezone(&Utc),
         location,
         twilight_start_deg,
         config_day_full_deg,
-    ) else {
-        return fallback;
-    };
-
+    )
+    .ok()?;
     let noon_elevation_deg = f64::from(noon_sample.elevation_deg);
-    if !noon_elevation_deg.is_finite() {
-        return fallback;
-    }
-
-    noon_elevation_deg.max(twilight_start_deg + 0.1)
+    noon_elevation_deg
+        .is_finite()
+        .then(|| noon_elevation_deg.max(twilight_start_deg + 0.1))
 }
+
+/// The most recent adaptive-zenith answer on this thread.
+struct ZenithMemo {
+    date: chrono::NaiveDate,
+    latitude_bits: u64,
+    longitude_bits: u64,
+    timezone_name: String,
+    day_full_bits: u64,
+    twilight_bits: u64,
+    zenith_deg: f64,
+}
+
+impl ZenithMemo {
+    fn matches(
+        &self,
+        date: chrono::NaiveDate,
+        location: &solar::Location,
+        config_day_full_deg: f64,
+        twilight_start_deg: f64,
+    ) -> bool {
+        self.date == date
+            && self.latitude_bits == location.latitude.to_bits()
+            && self.longitude_bits == location.longitude.to_bits()
+            && self.timezone_name == location.timezone_name
+            && self.day_full_bits == config_day_full_deg.to_bits()
+            && self.twilight_bits == twilight_start_deg.to_bits()
+    }
+}
+
+thread_local! {
+    static ZENITH_MEMO: std::cell::RefCell<Option<ZenithMemo>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg_attr(not(feature = "tui"), allow(dead_code))]
 pub(crate) fn compute_monitor_milestones(
     input: &PolicyContext,
 ) -> Result<Vec<MonitorMilestoneSchedule>, PolicyError> {
@@ -533,4 +613,40 @@ pub(crate) fn local_time_from_minute_of_day(minute_of_day: u16) -> Option<NaiveT
         u32::from(minute_of_day % 60),
         0,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Duration, TimeZone, Utc};
+
+    use super::{compute_adaptive_zenith, solar_noon_zenith};
+    use crate::solar::{self, Location};
+
+    #[test]
+    fn remembered_zenith_matches_a_fresh_search_whenever_inputs_change() {
+        let kazan = Location::from_timezone_name(55.79, 49.12, "Europe/Moscow").unwrap();
+        let sydney = Location::from_timezone_name(-33.87, 151.21, "Australia/Sydney").unwrap();
+        let start = Utc.with_ymd_and_hms(2026, 3, 20, 21, 30, 0).unwrap();
+        let mut checked = 0;
+        for step in 0..12 {
+            let now = start + Duration::hours(step * 5);
+            for location in [&kazan, &sydney, &kazan] {
+                for (day_full, twilight) in [(40.0, -6.0), (30.0, -4.0)] {
+                    let date = solar::local_datetime_at_utc(now, location)
+                        .unwrap()
+                        .date_naive();
+                    let expected = solar_noon_zenith(date, location, day_full, twilight)
+                        .unwrap_or_else(|| f64::max(day_full, twilight + 0.001));
+                    // Twice: the second call is served from memory.
+                    for _ in 0..2 {
+                        let zenith =
+                            compute_adaptive_zenith(now, location, day_full, true, twilight);
+                        assert_eq!(zenith.to_bits(), expected.to_bits());
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 144);
+    }
 }

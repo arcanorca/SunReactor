@@ -1,8 +1,6 @@
 use super::protocol::{IpcError, RequestEnvelope, ResponseEnvelope};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
-use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,55 +9,71 @@ const SERVER_IO_TIMEOUT: Duration = Duration::from_millis(100);
 const MAX_IPC_MESSAGE_BYTES: usize = 64 * 1024;
 const FRAME_READ_CHUNK_BYTES: usize = 4096;
 
-pub(crate) fn read_request(
-    stream: &mut UnixStream,
-    path: &Path,
+pub(crate) trait IpcStream: Read + Write {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
+}
+
+#[cfg(target_os = "linux")]
+impl IpcStream for std::os::unix::net::UnixStream {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.set_read_timeout(timeout)
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.set_write_timeout(timeout)
+    }
+}
+
+pub(crate) fn read_request<S: IpcStream>(
+    stream: &mut S,
+    target: &str,
 ) -> Result<RequestEnvelope, IpcError> {
-    read_json_message(stream, path, SERVER_IO_TIMEOUT)
+    read_json_message(stream, target, SERVER_IO_TIMEOUT)
 }
 
-pub(crate) fn write_response(
-    stream: &mut UnixStream,
+pub(crate) fn write_response<S: IpcStream>(
+    stream: &mut S,
     response: &ResponseEnvelope,
-    path: &Path,
+    target: &str,
 ) -> Result<(), IpcError> {
-    write_json_message_with_timeout(stream, response, path, SERVER_IO_TIMEOUT)
+    write_json_message_with_timeout(stream, response, target, SERVER_IO_TIMEOUT)
 }
 
-pub(crate) fn read_response(
-    stream: &mut UnixStream,
-    path: &Path,
+pub(crate) fn read_response<S: IpcStream>(
+    stream: &mut S,
+    target: &str,
 ) -> Result<ResponseEnvelope, IpcError> {
-    read_json_message(stream, path, SOCKET_IO_TIMEOUT)
+    read_json_message(stream, target, SOCKET_IO_TIMEOUT)
 }
 
-fn read_json_message<T>(
-    stream: &mut UnixStream,
-    path: &Path,
+fn read_json_message<T, S: IpcStream>(
+    stream: &mut S,
+    target: &str,
     timeout: Duration,
 ) -> Result<T, IpcError>
 where
     T: for<'de> Deserialize<'de>,
 {
-    let bytes = read_bounded_message(stream, path, timeout)?;
+    let bytes = read_bounded_message(stream, target, timeout)?;
     serde_json::from_slice(&bytes).map_err(|source| IpcError::Json { source })
 }
 
-pub(crate) fn write_json_message<T>(
-    stream: &mut UnixStream,
+pub(crate) fn write_json_message<T, S: IpcStream>(
+    stream: &mut S,
     message: &T,
-    path: &Path,
+    target: &str,
 ) -> Result<(), IpcError>
 where
     T: Serialize,
 {
-    write_json_message_with_timeout(stream, message, path, SOCKET_IO_TIMEOUT)
+    write_json_message_with_timeout(stream, message, target, SOCKET_IO_TIMEOUT)
 }
 
-fn write_json_message_with_timeout<T>(
-    stream: &mut UnixStream,
+fn write_json_message_with_timeout<T, S: IpcStream>(
+    stream: &mut S,
     message: &T,
-    path: &Path,
+    target: &str,
     timeout: Duration,
 ) -> Result<(), IpcError>
 where
@@ -77,45 +91,51 @@ where
     let mut frame = Vec::with_capacity(bytes.len() + 1);
     frame.extend_from_slice(&bytes);
     frame.push(b'\n');
-    write_frame_with_deadline(stream, &frame, path, timeout)
+    write_frame_with_deadline(stream, &frame, target, timeout)
 }
 
-pub(crate) fn configure_client_stream(stream: &UnixStream, path: &Path) -> Result<(), IpcError> {
+pub(crate) fn configure_client_stream<S: IpcStream>(
+    stream: &S,
+    target: &str,
+) -> Result<(), IpcError> {
     stream
         .set_read_timeout(Some(SOCKET_IO_TIMEOUT))
         .map_err(|source| IpcError::Io {
-            path: path.to_path_buf(),
+            target: target.to_string(),
             source,
         })?;
     stream
         .set_write_timeout(Some(SOCKET_IO_TIMEOUT))
         .map_err(|source| IpcError::Io {
-            path: path.to_path_buf(),
+            target: target.to_string(),
             source,
         })?;
     Ok(())
 }
 
-pub(crate) fn configure_server_stream(stream: &UnixStream, path: &Path) -> Result<(), IpcError> {
+pub(crate) fn configure_server_stream<S: IpcStream>(
+    stream: &S,
+    target: &str,
+) -> Result<(), IpcError> {
     stream
         .set_read_timeout(Some(SERVER_IO_TIMEOUT))
         .map_err(|source| IpcError::Io {
-            path: path.to_path_buf(),
+            target: target.to_string(),
             source,
         })?;
     stream
         .set_write_timeout(Some(SERVER_IO_TIMEOUT))
         .map_err(|source| IpcError::Io {
-            path: path.to_path_buf(),
+            target: target.to_string(),
             source,
         })?;
     Ok(())
 }
 
-fn write_frame_with_deadline(
-    stream: &mut UnixStream,
+fn write_frame_with_deadline<S: IpcStream>(
+    stream: &mut S,
     frame: &[u8],
-    path: &Path,
+    target: &str,
     timeout: Duration,
 ) -> Result<(), IpcError> {
     let deadline = Instant::now()
@@ -126,19 +146,19 @@ fn write_frame_with_deadline(
     while offset < frame.len() {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err(write_deadline_error(path, offset, frame.len()));
+            return Err(write_deadline_error(target, offset, frame.len()));
         }
         stream
             .set_write_timeout(Some(remaining))
             .map_err(|source| IpcError::Io {
-                path: path.to_path_buf(),
+                target: target.to_string(),
                 source,
             })?;
 
         match stream.write(&frame[offset..]) {
             Ok(0) => {
                 return Err(IpcError::Io {
-                    path: path.to_path_buf(),
+                    target: target.to_string(),
                     source: io::Error::new(
                         io::ErrorKind::WriteZero,
                         "IPC frame write returned zero bytes",
@@ -150,16 +170,16 @@ fn write_frame_with_deadline(
             Err(source) if source.kind() == io::ErrorKind::WouldBlock => {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
-                    return Err(write_deadline_error(path, offset, frame.len()));
+                    return Err(write_deadline_error(target, offset, frame.len()));
                 }
                 thread::sleep(remaining.min(Duration::from_millis(1)));
             }
             Err(source) if source.kind() == io::ErrorKind::TimedOut => {
-                return Err(write_deadline_error(path, offset, frame.len()));
+                return Err(write_deadline_error(target, offset, frame.len()));
             }
             Err(source) => {
                 return Err(IpcError::Io {
-                    path: path.to_path_buf(),
+                    target: target.to_string(),
                     source,
                 });
             }
@@ -168,12 +188,12 @@ fn write_frame_with_deadline(
 
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
-        return Err(write_deadline_error(path, offset, frame.len()));
+        return Err(write_deadline_error(target, offset, frame.len()));
     }
     stream
         .set_write_timeout(Some(remaining))
         .map_err(|source| IpcError::Io {
-            path: path.to_path_buf(),
+            target: target.to_string(),
             source,
         })?;
     match stream.flush() {
@@ -184,18 +204,18 @@ fn write_frame_with_deadline(
                 io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
             ) =>
         {
-            Err(write_deadline_error(path, offset, frame.len()))
+            Err(write_deadline_error(target, offset, frame.len()))
         }
         Err(source) => Err(IpcError::Io {
-            path: path.to_path_buf(),
+            target: target.to_string(),
             source,
         }),
     }
 }
 
-fn write_deadline_error(path: &Path, offset: usize, frame_len: usize) -> IpcError {
+fn write_deadline_error(target: &str, offset: usize, frame_len: usize) -> IpcError {
     IpcError::Io {
-        path: path.to_path_buf(),
+        target: target.to_string(),
         source: io::Error::new(
             io::ErrorKind::TimedOut,
             format!("IPC frame write deadline exceeded after {offset} of {frame_len} bytes"),
@@ -203,9 +223,9 @@ fn write_deadline_error(path: &Path, offset: usize, frame_len: usize) -> IpcErro
     }
 }
 
-fn read_bounded_message(
-    stream: &mut UnixStream,
-    path: &Path,
+fn read_bounded_message<S: IpcStream>(
+    stream: &mut S,
+    target: &str,
     timeout: Duration,
 ) -> Result<Vec<u8>, IpcError> {
     let deadline = Instant::now() + timeout;
@@ -222,7 +242,7 @@ fn read_bounded_message(
         stream
             .set_read_timeout(Some(remaining))
             .map_err(|source| IpcError::Io {
-                path: path.to_path_buf(),
+                target: target.to_string(),
                 source,
             })?;
 
@@ -245,7 +265,7 @@ fn read_bounded_message(
             }
             Err(source) => {
                 return Err(IpcError::Io {
-                    path: path.to_path_buf(),
+                    target: target.to_string(),
                     source,
                 });
             }
@@ -275,7 +295,7 @@ fn read_bounded_message(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::{
         read_bounded_message, read_request, read_response, write_frame_with_deadline,
@@ -316,11 +336,11 @@ mod tests {
         write_json_message(
             &mut writer,
             &RequestEnvelope::new(Request::Ping),
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
         )
         .expect("request should encode");
         let started = Instant::now();
-        let request = read_request(&mut reader, Path::new("/tmp/control.sock"))
+        let request = read_request(&mut reader, "/tmp/control.sock")
             .expect("LF should complete request without EOF");
         assert!(started.elapsed() < Duration::from_secs(1));
         assert_eq!(
@@ -332,14 +352,10 @@ mod tests {
     #[test]
     fn response_frame_does_not_require_server_eof() {
         let (mut writer, mut reader) = UnixStream::pair().expect("stream pair should work");
-        write_response(
-            &mut writer,
-            &ResponseEnvelope::pong(),
-            Path::new("/tmp/control.sock"),
-        )
-        .expect("response should encode");
+        write_response(&mut writer, &ResponseEnvelope::pong(), "/tmp/control.sock")
+            .expect("response should encode");
         let started = Instant::now();
-        let response = read_response(&mut reader, Path::new("/tmp/control.sock"))
+        let response = read_response(&mut reader, "/tmp/control.sock")
             .expect("LF should complete response without EOF");
         assert!(started.elapsed() < Duration::from_secs(1));
         assert_eq!(response.kind_name(), "pong");
@@ -353,9 +369,9 @@ mod tests {
             percent: 42,
             minutes: None,
         });
-        write_json_message(&mut writer, &request, Path::new("/tmp/control.sock"))
+        write_json_message(&mut writer, &request, "/tmp/control.sock")
             .expect("request should encode");
-        let decoded = read_request(&mut reader, Path::new("/tmp/control.sock"))
+        let decoded = read_request(&mut reader, "/tmp/control.sock")
             .expect("escaped newline should remain in one frame")
             .validate()
             .expect("request should validate");
@@ -366,8 +382,8 @@ mod tests {
     fn empty_frame_is_rejected() {
         let (mut writer, mut reader) = UnixStream::pair().expect("stream pair should work");
         writer.write_all(b"\n").expect("frame should write");
-        let error = read_request(&mut reader, Path::new("/tmp/control.sock"))
-            .expect_err("empty frame must fail");
+        let error =
+            read_request(&mut reader, "/tmp/control.sock").expect_err("empty frame must fail");
         assert!(matches!(error, super::IpcError::Json { .. }));
     }
 
@@ -377,8 +393,8 @@ mod tests {
         writer
             .write_all(b"{\"request\":\n")
             .expect("frame should write");
-        let error = read_request(&mut reader, Path::new("/tmp/control.sock"))
-            .expect_err("malformed JSON must fail");
+        let error =
+            read_request(&mut reader, "/tmp/control.sock").expect_err("malformed JSON must fail");
         assert!(matches!(error, super::IpcError::Json { .. }));
     }
 
@@ -389,12 +405,9 @@ mod tests {
             .write_all(&vec![b'x'; MAX_IPC_MESSAGE_BYTES])
             .expect("boundary payload should write");
         writer.write_all(b"\n").expect("delimiter should write");
-        let payload = read_bounded_message(
-            &mut reader,
-            Path::new("/tmp/control.sock"),
-            Duration::from_secs(1),
-        )
-        .expect("exact payload boundary should be accepted");
+        let payload =
+            read_bounded_message(&mut reader, "/tmp/control.sock", Duration::from_secs(1))
+                .expect("exact payload boundary should be accepted");
         assert_eq!(payload.len(), MAX_IPC_MESSAGE_BYTES);
     }
 
@@ -405,12 +418,8 @@ mod tests {
             .write_all(&vec![b'x'; MAX_IPC_MESSAGE_BYTES + 1])
             .expect("oversize payload should write");
         writer.write_all(b"\n").expect("delimiter should write");
-        let error = read_bounded_message(
-            &mut reader,
-            Path::new("/tmp/control.sock"),
-            Duration::from_secs(1),
-        )
-        .expect_err("payload over the limit must fail");
+        let error = read_bounded_message(&mut reader, "/tmp/control.sock", Duration::from_secs(1))
+            .expect_err("payload over the limit must fail");
         assert!(error.to_string().contains("exceeds"));
     }
 
@@ -423,8 +432,8 @@ mod tests {
         writer
             .shutdown(std::net::Shutdown::Write)
             .expect("writer should close");
-        let error = read_request(&mut reader, Path::new("/tmp/control.sock"))
-            .expect_err("EOF before LF must fail");
+        let error =
+            read_request(&mut reader, "/tmp/control.sock").expect_err("EOF before LF must fail");
         assert!(error.to_string().contains("unterminated"));
     }
 
@@ -434,7 +443,7 @@ mod tests {
         writer
             .write_all(&vec![b'x'; MAX_IPC_MESSAGE_BYTES + 1])
             .expect("oversize frame should write");
-        let error = read_request(&mut reader, Path::new("/tmp/control.sock"))
+        let error = read_request(&mut reader, "/tmp/control.sock")
             .expect_err("oversize frame must fail immediately");
         assert!(error.to_string().contains("exceeds"));
     }
@@ -445,11 +454,11 @@ mod tests {
         write_json_message(
             &mut writer,
             &RequestEnvelope::new(Request::Ping),
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
         )
         .expect("bounded frame should write");
         assert_eq!(
-            read_request(&mut reader, Path::new("/tmp/control.sock"))
+            read_request(&mut reader, "/tmp/control.sock")
                 .expect("frame should decode")
                 .validate()
                 .expect("request should validate"),
@@ -473,7 +482,7 @@ mod tests {
         write_frame_with_deadline(
             &mut writer,
             &frame,
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
             Duration::from_secs(1),
         )
         .expect("max-size payload plus delimiter should be writable");
@@ -499,7 +508,7 @@ mod tests {
                 .expect("peer should read frame");
             bytes
         });
-        write_json_message(&mut writer, &request, Path::new("/tmp/control.sock"))
+        write_json_message(&mut writer, &request, "/tmp/control.sock")
             .expect("legal near-maximum payload should write");
         drop(writer);
         let frame = reader_thread.join().expect("reader should finish");
@@ -544,7 +553,7 @@ mod tests {
         let error = write_frame_with_deadline(
             &mut writer,
             &frame,
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
             Duration::from_millis(100),
         )
         .expect_err("slow peer should exhaust the total write deadline");
@@ -564,7 +573,7 @@ mod tests {
         let error = write_frame_with_deadline(
             &mut writer,
             &frame,
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
             Duration::from_millis(100),
         )
         .expect_err("non-reading peer should exhaust the write deadline");
@@ -601,7 +610,7 @@ mod tests {
             }
         });
         let started = Instant::now();
-        let error = read_request(&mut reader, Path::new("/tmp/control.sock"))
+        let error = read_request(&mut reader, "/tmp/control.sock")
             .expect_err("slow drip without LF must hit the absolute deadline");
         assert!(started.elapsed() < Duration::from_secs(2));
         assert!(error.to_string().contains("deadline"));
@@ -614,17 +623,17 @@ mod tests {
         write_json_message(
             &mut writer,
             &RequestEnvelope::new(Request::Ping),
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
         )
         .expect("first frame should write");
         write_json_message(
             &mut writer,
             &RequestEnvelope::new(Request::Status),
-            Path::new("/tmp/control.sock"),
+            "/tmp/control.sock",
         )
         .expect("second frame should write");
 
-        let first = read_request(&mut reader, Path::new("/tmp/control.sock"))
+        let first = read_request(&mut reader, "/tmp/control.sock")
             .expect("first frame should decode")
             .validate()
             .expect("first request should validate");
@@ -639,7 +648,7 @@ mod tests {
             percent: 42,
             minutes: None,
         });
-        let error = write_json_message(&mut writer, &oversized, Path::new("/tmp/control.sock"))
+        let error = write_json_message(&mut writer, &oversized, "/tmp/control.sock")
             .expect_err("oversize payload must be rejected");
         assert!(error.to_string().contains("exceeds"));
         reader
@@ -657,7 +666,7 @@ mod tests {
         let oversized = vec![b'x'; MAX_IPC_MESSAGE_BYTES + 1];
 
         let server = thread::spawn(move || {
-            let error = read_request(&mut reader, Path::new("/tmp/control.sock"))
+            let error = read_request(&mut reader, "/tmp/control.sock")
                 .expect_err("oversized request must fail");
             assert!(matches!(error, super::IpcError::Protocol { .. }));
             assert!(error.to_string().contains("exceeds"));
@@ -676,17 +685,13 @@ mod tests {
         for _ in 0..20 {
             match listener.accept().expect("accept should work") {
                 Some(mut stream) => {
-                    let request = read_request(&mut stream, Path::new("/tmp/control.sock"))
+                    let request = read_request(&mut stream, "/tmp/control.sock")
                         .expect("request should decode")
                         .validate()
                         .expect("request should validate");
                     assert_eq!(request, Request::Ping);
-                    write_response(
-                        &mut stream,
-                        &ResponseEnvelope::pong(),
-                        Path::new("/tmp/control.sock"),
-                    )
-                    .expect("response should encode");
+                    write_response(&mut stream, &ResponseEnvelope::pong(), "/tmp/control.sock")
+                        .expect("response should encode");
                     return;
                 }
                 None => thread::sleep(Duration::from_millis(10)),

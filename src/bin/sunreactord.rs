@@ -47,6 +47,7 @@ fn try_main() -> anyhow::Result<()> {
                         .replace('\\', "\\\\")
                         .replace('"', "\\\"")
                 );
+                runtime.refresh_capabilities();
                 let report = runtime.run_once()?;
                 println!(
                     "level=info event=tick mode=once tick_duration_ms={} monitors_evaluated={} writes_attempted={} writes_skipped={} failures={}",
@@ -128,9 +129,18 @@ fn parse_args(args: &[String]) -> anyhow::Result<DaemonCommand> {
 }
 
 fn install_shutdown_handlers(shutdown_flag: Arc<AtomicBool>) -> anyhow::Result<()> {
-    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))?;
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown_flag)?;
-    Ok(())
+    #[cfg(target_os = "linux")]
+    {
+        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))?;
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown_flag)?;
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        sunreactor::platform::windows::register_console_shutdown_handler(shutdown_flag)
+            .map_err(anyhow::Error::msg)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

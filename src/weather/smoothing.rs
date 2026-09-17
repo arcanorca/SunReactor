@@ -96,7 +96,11 @@ pub(crate) fn merge_snapshot(
         cloud_cover_percent: Some(fresh_snapshot.cloud_cover_percent),
         smoothed_cloud_cover_percent: Some(smoothed_cloud_cover_percent),
         temperature: Some(fresh_snapshot.temperature),
+        condition: fresh_snapshot.condition,
+        condition_description: fresh_snapshot.condition_description,
+        day_phase: fresh_snapshot.day_phase,
         forecast: fresh_snapshot.forecast,
+        details: fresh_snapshot.details,
     }
 }
 pub(crate) fn cache_is_fresh(

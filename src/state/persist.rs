@@ -1,6 +1,11 @@
-use std::fs::{self, File};
-use std::io::{self, Write};
-use std::os::unix::fs::DirBuilderExt;
+use std::fs;
+#[cfg(target_os = "linux")]
+use std::fs::File;
+use std::io;
+#[cfg(target_os = "linux")]
+use std::io::Write;
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -75,67 +80,72 @@ impl RuntimeState {
 }
 
 pub(crate) fn atomic_write_json(path: &Path, state: &RuntimeState) -> Result<(), StateError> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    if !parent.exists() {
-        let mut builder = fs::DirBuilder::new();
-        builder.recursive(true).mode(0o700);
-        builder.create(parent).map_err(|source| StateError::Io {
-            path: parent.to_path_buf(),
-            source,
-        })?;
-        let _ = fs::set_permissions(parent, std::os::unix::fs::PermissionsExt::from_mode(0o700));
-    }
-
-    // The persistence boundary owns the on-disk schema version. Callers may
-    // hold stale or otherwise accidental in-memory values, but never emit
-    // those values through the current-state save path.
     let canonical_state = state.clone().normalized();
     let bytes = serde_json::to_vec_pretty(&canonical_state)
         .map_err(|source| StateError::Serialize { source })?;
 
-    let mut temp_file = tempfile::Builder::new()
-        .prefix("sunreactor_state_")
-        .suffix(".tmp")
-        .tempfile_in(parent)
-        .map_err(|source| StateError::Io {
-            path: parent.to_path_buf(),
-            source,
-        })?;
-
-    #[cfg(unix)]
+    #[cfg(target_os = "windows")]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600));
+        crate::platform::windows::atomic_write_file(path, &bytes).map_err(|source| StateError::Io {
+            path: path.to_path_buf(),
+            source,
+        })
     }
 
-    temp_file
-        .write_all(&bytes)
-        .map_err(|source| StateError::Io {
-            path: temp_file.path().to_path_buf(),
-            source,
-        })?;
-    temp_file
-        .write_all(b"\n")
-        .map_err(|source| StateError::Io {
-            path: temp_file.path().to_path_buf(),
-            source,
-        })?;
-    temp_file
-        .as_file()
-        .sync_all()
-        .map_err(|source| StateError::Io {
-            path: temp_file.path().to_path_buf(),
-            source,
+    #[cfg(target_os = "linux")]
+    {
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.exists() {
+            let mut builder = fs::DirBuilder::new();
+            builder.recursive(true).mode(0o700);
+            builder.create(parent).map_err(|source| StateError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+            let _ =
+                fs::set_permissions(parent, std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        }
+
+        let mut temp_file = tempfile::Builder::new()
+            .prefix("sunreactor_state_")
+            .suffix(".tmp")
+            .tempfile_in(parent)
+            .map_err(|source| StateError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+
+        let _ = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600));
+
+        temp_file
+            .write_all(&bytes)
+            .map_err(|source| StateError::Io {
+                path: temp_file.path().to_path_buf(),
+                source,
+            })?;
+        temp_file
+            .write_all(b"\n")
+            .map_err(|source| StateError::Io {
+                path: temp_file.path().to_path_buf(),
+                source,
+            })?;
+        temp_file
+            .as_file()
+            .sync_all()
+            .map_err(|source| StateError::Io {
+                path: temp_file.path().to_path_buf(),
+                source,
+            })?;
+
+        temp_file.persist(path).map_err(|source| StateError::Io {
+            path: path.to_path_buf(),
+            source: source.error,
         })?;
 
-    temp_file.persist(path).map_err(|source| StateError::Io {
-        path: path.to_path_buf(),
-        source: source.error,
-    })?;
+        sync_parent_dir(path)?;
 
-    sync_parent_dir(path)?;
-
-    Ok(())
+        Ok(())
+    }
 }
 
 pub(crate) fn repair_corrupt_state_file(path: &Path, default_state: &RuntimeState) {
@@ -157,6 +167,7 @@ pub(crate) fn repair_corrupt_state_file(path: &Path, default_state: &RuntimeStat
     let _ = atomic_write_json(path, default_state);
 }
 
+#[cfg(target_os = "linux")]
 pub(crate) fn sync_parent_dir(path: &Path) -> Result<(), StateError> {
     let Some(parent) = path.parent() else {
         return Ok(());
@@ -235,7 +246,11 @@ mod tests {
                 cloud_cover_percent: Some(81),
                 smoothed_cloud_cover_percent: Some(79),
                 temperature: Some(0.0),
+                condition: crate::weather::WeatherCondition::Cloudy,
+                condition_description: Some(String::from("overcast clouds")),
+                day_phase: Some(crate::weather::WeatherDayPhase::Day),
                 forecast: vec![],
+                ..Default::default()
             }),
             ..RuntimeState::default()
         };
@@ -244,6 +259,7 @@ mod tests {
             MonitorRuntimeState {
                 last_applied_percent: Some(58),
                 last_applied_at_epoch_s: Some(1_900),
+                last_integrity_check_at_epoch_s: None,
                 backoff: Some(FailureBackoffState {
                     backend: BackendKind::Ddc,
                     failure_kind: FailureKind::Persistent,
@@ -289,6 +305,9 @@ mod tests {
             weather.source_kind,
             crate::weather::WeatherSourceKind::Unknown
         );
+        assert_eq!(weather.condition, crate::weather::WeatherCondition::Unknown);
+        assert_eq!(weather.condition_description, None);
+        assert_eq!(weather.day_phase, None);
 
         state.save_to_path(&path).expect("legacy state should save");
         let canonical = fs::read_to_string(&path).expect("canonical state should read");

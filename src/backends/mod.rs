@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod backlight;
 pub mod ddc;
+#[cfg(target_os = "windows")]
+pub mod windows_external;
 pub(crate) use crate::process::{CommandError, CommandOutput, ProcessRunner, RealProcessRunner};
 
 /// Defines the physical communication channel for a monitor.
@@ -18,6 +20,17 @@ pub(crate) use crate::process::{CommandError, CommandOutput, ProcessRunner, Real
 pub enum BackendKind {
     Backlight,
     Ddc,
+}
+
+impl BackendKind {
+    /// Human-facing uppercase/clean display label (e.g. "DDC", "Backlight").
+    #[must_use]
+    pub fn display_label(self) -> &'static str {
+        match self {
+            Self::Ddc => "DDC",
+            Self::Backlight => "Backlight",
+        }
+    }
 }
 
 /// Categorizes backend failures to determine whether they should be retried
@@ -36,6 +49,11 @@ pub struct BackendWrite {
     pub applied_percent: u8,
     pub attempts: u8,
     pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BackendObservation {
+    pub percent: u8,
 }
 
 /// Structured error representing all potential failure modes when

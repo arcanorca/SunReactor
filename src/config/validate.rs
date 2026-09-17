@@ -3,7 +3,11 @@ use std::collections::HashSet;
 use super::{Config, ConfigError, ValidationError};
 
 const MAX_GAIN: f64 = 4.0;
-const MAX_GAMMA: f64 = 4.0;
+/// Largest valid exponent for a monitor automation curve.
+///
+/// Interactive clients use this same limit so they never offer values that
+/// persisted configuration validation would reject.
+pub const MAX_TRANSITION_GAMMA: f64 = 4.0;
 const MIN_TICK_SECONDS: u64 = 5;
 const MIN_WEATHER_REFRESH_MINUTES: u32 = 10;
 
@@ -71,11 +75,11 @@ impl Config {
 
             if !monitor.transition_gamma.is_finite()
                 || monitor.transition_gamma <= 0.0
-                || monitor.transition_gamma > MAX_GAMMA
+                || monitor.transition_gamma > MAX_TRANSITION_GAMMA
             {
                 errors.push(ValidationError::new(
                     format!("{field_prefix}.transition_gamma"),
-                    format!("must be finite and within 0 < gamma <= {MAX_GAMMA}"),
+                    format!("must be finite and within 0 < gamma <= {MAX_TRANSITION_GAMMA}"),
                 ));
             }
 
@@ -250,7 +254,11 @@ fn validate_pct(errors: &mut Vec<ValidationError>, field: impl Into<String>, val
 pub fn validate_timezone(timezone: &str) -> Result<(), String> {
     let timezone = timezone.trim();
     let path = std::path::Path::new("/usr/share/zoneinfo").join(timezone);
-    if path.exists() {
+    if path.is_file() {
+        return Ok(());
+    }
+
+    if tzdb::tz_by_name(timezone).is_some() {
         return Ok(());
     }
 

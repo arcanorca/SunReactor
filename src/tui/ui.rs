@@ -1,67 +1,81 @@
-mod chrome;
+mod automation;
+pub(crate) mod chrome;
+pub(crate) mod kit;
+mod light_cycle;
+pub(crate) mod location;
+pub(crate) mod monitor_selector;
 mod monitors;
-mod settings;
+pub(crate) mod settings;
 mod weather;
-mod weather_model;
+pub(crate) mod weather_art;
+pub(crate) mod weather_model;
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     widgets::Block,
     Frame,
 };
 
+use crate::tui::model::ResponsiveMode;
 use crate::tui::{theme::Palette, Model, Tab};
 
-/// Returns a border style for a panel: brand orange when focused, muted when not.
-pub(super) fn panel_border(focused: bool, palette: &Palette) -> Style {
-    if focused {
-        Style::default().fg(palette.border_active)
-    } else {
-        Style::default().fg(palette.border_inactive)
-    }
-}
+const LOGO_MIN_WIDTH: u16 = 76;
+// The full masthead is valuable character, but below this height it steals
+// the rows that make the workspaces legible. Compact terminals keep the
+// dual-tone `✻ SunReactor` identity row instead.
+const LOGO_MIN_HEIGHT: u16 = 32;
 
 pub fn ui(f: &mut Frame, app: &mut Model) {
-    let total_height = f.size().height;
+    let size = f.size();
     let palette = app.config.tui.theme.palette();
+    let styles = palette.styles();
 
-    f.render_widget(
-        Block::default().style(Style::default().bg(palette.bg).fg(palette.fg)),
-        f.size(),
-    );
+    f.render_widget(Block::default().style(styles.base), size);
 
-    // When the terminal is tall enough (≥ 30 lines) we show the full 5-line
-    // ASCII logo (header = 8 lines total). On smaller terminals we collapse to
-    // a single-line compact title bar (header = 2 lines) to reclaim space for
-    // the actual content panels.
-    let header_height: u16 = if total_height >= 30 { 8 } else { 2 };
+    let mode = ResponsiveMode::from_size(size.width, size.height);
+    if mode == ResponsiveMode::TooSmall {
+        render_too_small(f, size, &palette);
+        return;
+    }
+
+    let show_full_logo =
+        app.config.tui.show_logo && size.width >= LOGO_MIN_WIDTH && size.height >= LOGO_MIN_HEIGHT;
+    let header_height = if show_full_logo {
+        chrome::FULL_HEADER_HEIGHT
+    } else {
+        1
+    };
+    // A breathing row above the tabs when the full masthead is shown.
+    let header_gap = u16::from(show_full_logo);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_height),
-            Constraint::Length(3),
+            Constraint::Length(header_gap),
+            Constraint::Length(2),
             Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(1),
         ])
-        .split(f.size());
+        .split(size);
 
-    chrome::render_header(f, app, chunks[0]);
-    chrome::render_tabs(f, app, chunks[1]);
+    chrome::render_header(f, app, chunks[0], &styles);
+    chrome::render_tabs(f, app, chunks[2], &styles);
 
+    let body = body_area(chunks[3]);
     match app.active_tab {
-        Tab::Monitors => monitors::render_monitors(f, app, chunks[2]),
-        Tab::Limits => settings::render_automation(f, app, chunks[2]),
-        Tab::Location => settings::render_location(f, app, chunks[2]),
-        Tab::Weather => weather::render_weather(f, app, chunks[2]),
-        Tab::Settings => settings::render_control(f, app, chunks[2]),
+        Tab::Monitors => monitors::render_monitors(f, app, body, &styles),
+        Tab::Limits => automation::render_automation(f, app, body, &styles),
+        Tab::Location => location::render_location(f, app, body, &styles),
+        Tab::Weather => weather::render_weather(f, app, body, &styles),
+        Tab::Settings => settings::render_settings(f, app, body, &styles),
     }
 
-    chrome::render_footer(f, app, chunks[3]);
+    chrome::render_footer(f, app, chunks[4], &styles);
 
     if app.show_help {
-        chrome::render_help(f, &palette);
+        chrome::render_help(f, app, &palette);
     }
 
     let mut theme_state = None;
@@ -76,6 +90,48 @@ pub fn ui(f: &mut Frame, app: &mut Model) {
             *app_state = state;
         }
     }
+}
+
+/// Workspaces get a one-column gutter and one row of air under the tabs.
+fn body_area(area: Rect) -> Rect {
+    let top = u16::from(area.height > 12);
+    Rect::new(
+        area.x + 1,
+        area.y + top,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(top),
+    )
+}
+
+fn render_too_small(f: &mut Frame, area: Rect, palette: &Palette) {
+    use ratatui::layout::Alignment;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
+    let styles = palette.styles();
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(kit::BRAND_MARK, styles.chrome_title_secondary),
+            Span::raw(" "),
+            Span::styled("SunReactor", styles.chrome_title),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled("Terminal too small", styles.status_warning)),
+        Line::from(Span::styled(
+            format!("{}×{} · needs 40×12", area.width, area.height),
+            styles.text_muted,
+        )),
+        Line::from(""),
+        Line::from(Span::styled("q to quit", styles.text_muted)),
+    ];
+    let height = (lines.len() as u16 + 2).min(area.height);
+    let inner = kit::centered(area, area.width, height);
+    f.render_widget(
+        Paragraph::new(lines)
+            .alignment(Alignment::Center)
+            .block(kit::panel("SunReactor", false, &styles)),
+        inner,
+    );
 }
 
 fn render_theme_modal(f: &mut Frame, palette: &Palette, state: &mut ratatui::widgets::ListState) {
@@ -100,9 +156,10 @@ fn render_theme_modal(f: &mut Frame, palette: &Palette, state: &mut ratatui::wid
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
                 .border_style(Style::default().fg(palette.secondary_accent))
                 .style(Style::default().bg(palette.bg))
-                .title(" Select Theme (Enter to apply, Esc to cancel) "),
+                .title(" Theme · Enter apply · Esc cancel "),
         )
         .highlight_style(
             Style::default()
@@ -110,16 +167,32 @@ fn render_theme_modal(f: &mut Frame, palette: &Palette, state: &mut ratatui::wid
                 .fg(palette.bg)
                 .add_modifier(ratatui::style::Modifier::BOLD),
         )
-        .highlight_symbol(">> ");
+        .highlight_symbol(kit::CURSOR);
 
     f.render_stateful_widget(list, modal_area, state);
 }
 
 pub(super) fn truncate(value: &str, max: usize) -> String {
-    if value.chars().count() <= max {
+    use ratatui::text::Span;
+
+    if Span::raw(value).width() <= max {
         value.to_string()
     } else {
-        let truncated: String = value.chars().take(max.saturating_sub(1)).collect();
-        format!("{truncated}…")
+        if max == 0 {
+            return String::new();
+        }
+
+        let mut truncated = String::new();
+        let available = max.saturating_sub(Span::raw("…").width());
+        for character in value.chars() {
+            let mut candidate = truncated.clone();
+            candidate.push(character);
+            if Span::raw(candidate.as_str()).width() > available {
+                break;
+            }
+            truncated = candidate;
+        }
+        truncated.push('…');
+        truncated
     }
 }

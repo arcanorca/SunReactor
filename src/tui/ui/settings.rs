@@ -1,466 +1,399 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    layout::Rect,
+    style::Modifier,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Clear, Paragraph, Wrap},
     Frame,
 };
 
-use crate::tui::{InputMode, Model};
+use crate::tui::model::{settings_index as setting, DaemonLifecycle, InputMode};
+use crate::tui::theme::SemanticStyles;
+use crate::tui::Model;
 
-use super::truncate;
-use crate::tui::theme::Palette;
+use super::kit::{self, FieldKind, FieldState};
 
-pub(super) fn render_automation(f: &mut Frame, app: &Model, area: Rect) {
-    let mut fields = Vec::new();
-    let mut index = 0;
+const LABEL_WIDTH: usize = 18;
+const NARROW_LABEL_WIDTH: usize = 14;
 
-    for (monitor_index, monitor) in app.config.monitors.iter().enumerate() {
-        if let Some((min_input, max_input)) = app.form.monitor_inputs.get(monitor_index) {
-            fields.push((
-                format!("{} Min Limit %", truncate(&monitor.logical_id, 16)),
-                min_input.value().to_string(),
-                index,
-            ));
-            index += 1;
-            fields.push((
-                format!("{} Max Limit %", truncate(&monitor.logical_id, 16)),
-                max_input.value().to_string(),
-                index,
-            ));
-            index += 1;
+fn label_width_for(width: u16) -> usize {
+    if width >= 46 {
+        LABEL_WIDTH
+    } else {
+        NARROW_LABEL_WIDTH
+    }
+}
+
+/// One row of a settings group.
+struct Row {
+    index: Option<usize>,
+    label: &'static str,
+    value: String,
+    kind: FieldKind,
+}
+
+impl Row {
+    fn editable(index: usize, label: &'static str, value: String, kind: FieldKind) -> Self {
+        Self {
+            index: Some(index),
+            label,
+            value,
+            kind,
         }
     }
 
-    fields.push((String::new(), String::new(), usize::MAX));
-
-    fields.push((
-        String::from(" ── Power Management ──"),
-        String::from("SUBHEADING"),
-        usize::MAX,
-    ));
-
-    fields.push((
-        String::from("Dim Automatically (Minutes, 0 to disable)"),
-        app.form
-            .desktop_idle_timeout_minutes_input
-            .value()
-            .to_string(),
-        index,
-    ));
-
-    let palette = app.config.tui.theme.palette();
-    render_settings_layout(f, app, area, " Brightness Limits ", &fields, &palette);
+    fn info(label: &'static str, value: String) -> Self {
+        Self {
+            index: None,
+            label,
+            value,
+            kind: FieldKind::ReadOnly,
+        }
+    }
 }
 
-pub(super) fn render_location(f: &mut Frame, app: &Model, area: Rect) {
-    let palette = app.config.tui.theme.palette();
-    let fields = vec![
+type Group = (&'static str, Vec<Row>);
+
+/// Renders Settings (Tab 5): one vertical list in focus order, so ↑/↓ always
+/// move to the row visually above or below, with a panel describing the
+/// focused setting beside it when there is room.
+pub(crate) fn render_settings(f: &mut Frame, app: &Model, area: Rect, styles: &SemanticStyles) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let groups = setting_groups(app);
+    let (list_area, about_area) = if area.width >= 96 {
+        let list_width = (area.width * 11 / 20).clamp(56, 66);
         (
-            String::from("City"),
-            app.form.city_search_input.value().to_string(),
-            0,
-        ),
-        (
-            String::from("Latitude"),
-            app.form.lat_input.value().to_string(),
-            1,
-        ),
-        (
-            String::from("Longitude"),
-            app.form.lon_input.value().to_string(),
-            2,
-        ),
-    ];
-    render_settings_layout(f, app, area, " Solar Location ", &fields, &palette);
+            Rect::new(area.x, area.y, list_width, area.height),
+            Some(Rect::new(
+                area.x + list_width + 1,
+                area.y,
+                area.width.saturating_sub(list_width + 1),
+                area.height.min(12),
+            )),
+        )
+    } else {
+        (area, None)
+    };
 
-    // Render city autocomplete popup
-    if app.active_setting == 0
-        && matches!(app.input_mode, InputMode::Editing)
-        && !app.form.city_search_results.is_empty()
-    {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(palette.border_inactive))
-            .title(" Solar Location ");
-        let inner = block.inner(area);
-        let popup_area = Rect {
-            x: inner.x,
-            y: inner.y + 3,
-            width: inner.width,
-            height: (app.form.city_search_results.len() as u16 + 2).min(12),
-        };
-
-        f.render_widget(ratatui::widgets::Clear, popup_area);
-
-        let cities = crate::tui::cities::get_cities();
-        let items: Vec<ratatui::widgets::ListItem> = app
-            .form
-            .city_search_results
-            .iter()
-            .map(|&idx| {
-                let city = &cities[idx];
-                let content = format!("{}, {} ({})", city.name, city.country, city.timezone);
-                ratatui::widgets::ListItem::new(content)
-            })
-            .collect();
-
-        let mut list_state = ratatui::widgets::ListState::default();
-        list_state.select(Some(app.form.city_search_selected_index));
-
-        let list = ratatui::widgets::List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(palette.bg))
-                    .style(Style::default().bg(palette.bg)),
-            )
-            .highlight_style(Style::default().bg(palette.accent).fg(palette.bg))
-            .highlight_symbol(">> ");
-
-        f.render_stateful_widget(list, popup_area, &mut list_state);
+    render_list(f, app, &groups, list_area, styles);
+    if let Some(about_area) = about_area {
+        render_about(f, app, &groups, about_area, styles);
     }
 }
 
 #[allow(clippy::too_many_lines)]
-pub(super) fn render_control(f: &mut Frame, app: &Model, area: Rect) {
-    let palette = app.config.tui.theme.palette();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(15),
-            Constraint::Length(5),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let control_lines = if let Some(status) = &app.status {
-        let until = format_suspend_until(
-            status.suspend_until_epoch_s,
-            status.suspended,
-            &app.config.location.timezone,
-            app.config.tui.use_12h_time,
-        );
-
-        vec![
-            Line::from(format!(" Current suspend : {until}")),
-            Line::from(format!(
-                " Quick actions : [s] suspend {}   [r] resume now",
-                suspend_action_label(app.form.suspend_minutes_input.value())
-            )),
-        ]
+fn setting_groups(app: &Model) -> Vec<Group> {
+    let idle = if !app.config.daemon.desktop_idle_sync
+        || app.config.daemon.desktop_idle_timeout_minutes == 0
+    {
+        String::from("Off")
     } else {
-        vec![
-            Line::from(" Current suspend : unknown"),
-            Line::from(format!(
-                " Quick actions : [s] suspend {}   [r] resume now",
-                suspend_action_label(app.form.suspend_minutes_input.value())
-            )),
-        ]
+        format!("{} min", app.config.daemon.desktop_idle_timeout_minutes)
     };
-
-    f.render_widget(
-        Paragraph::new(control_lines)
-            .wrap(ratatui::widgets::Wrap { trim: true })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(palette.border_inactive))
-                    .title(Span::styled(
-                        " Daemon Control ",
-                        Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
-                    )),
-            ),
-        rows[1],
-    );
-
-    let inputs_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Min(0),
-        ])
-        .split(rows[0]);
-
-    let fps_is_active = app.active_setting == 1;
-    let fps_field_style = active_field_style(app, fps_is_active, &palette);
-    let fps_value = format!(" {} ", app.form.fps_input.value());
-
-    let fps_field = Paragraph::new(fps_value)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(field_border_style(fps_is_active, &palette))
-                .title(field_title(
-                    "TUI Refresh Rate (FPS)",
-                    fps_is_active,
-                    &palette,
-                )),
-        )
-        .style(fps_field_style);
-    f.render_widget(fps_field, inputs_layout[1]);
-
-    let use_12h_is_active = app.active_setting == 2;
-    let use_12h_style = active_field_style(app, use_12h_is_active, &palette);
-    let use_12h_value = if app.config.tui.use_12h_time {
-        " [x] 12h (AM/PM) "
+    let suspend = if app.form.suspend_minutes_input.value().trim().is_empty() {
+        String::from("Until resumed")
     } else {
-        " [ ] 24h "
+        format!("{} min", app.form.suspend_minutes_input.value().trim())
     };
-
-    let use_12h_field = Paragraph::new(use_12h_value)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(field_border_style(use_12h_is_active, &palette))
-                .title(field_title(
-                    "Time Format (Toggle with Enter)",
-                    use_12h_is_active,
-                    &palette,
-                )),
-        )
-        .style(use_12h_style);
-    f.render_widget(use_12h_field, inputs_layout[2]);
-
-    let unit_is_active = app.active_setting == 3;
-    let unit_style = active_field_style(app, unit_is_active, &palette);
-    let unit_value = match app.config.tui.temperature_unit {
-        crate::config::TemperatureUnit::Celsius => " [x] Celsius  [ ] Fahrenheit ",
-        crate::config::TemperatureUnit::Fahrenheit => " [ ] Celsius  [x] Fahrenheit ",
-    };
-
-    let unit_field = Paragraph::new(unit_value)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(field_border_style(unit_is_active, &palette))
-                .title(field_title(
-                    "Temperature Unit (Toggle with Enter)",
-                    unit_is_active,
-                    &palette,
-                )),
-        )
-        .style(unit_style);
-    f.render_widget(unit_field, inputs_layout[3]);
-
-    let suspend_is_active = app.active_setting == 4;
-    let suspend_field_style = active_field_style(app, suspend_is_active, &palette);
-    let suspend_value = if matches!(app.input_mode, InputMode::Editing) && suspend_is_active {
-        format!(" {} ", app.form.suspend_minutes_input.value())
-    } else if app.form.suspend_minutes_input.value().trim().is_empty() {
-        String::from(" until resume ")
+    let api_key = if app.form.api_key_input.value().trim().is_empty() {
+        String::from("Not set")
     } else {
-        format!(" {} ", app.form.suspend_minutes_input.value())
+        String::from("●●●●●●●●")
     };
 
-    let suspend_field = Paragraph::new(suspend_value)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(field_border_style(suspend_is_active, &palette))
-                .title(field_title(
-                    "Suspend Duration Minutes (blank = until resume)",
-                    suspend_is_active,
-                    &palette,
-                )),
-        )
-        .style(suspend_field_style);
-    f.render_widget(suspend_field, inputs_layout[4]);
+    let interface = vec![
+        Row::editable(
+            setting::THEME,
+            "Theme",
+            app.config.tui.theme.name().to_owned(),
+            FieldKind::Text,
+        ),
+        Row::editable(
+            setting::EFFECTS,
+            "Effects",
+            app.config.tui.effects.label().to_owned(),
+            FieldKind::Adjustable,
+        ),
+        Row::editable(
+            setting::SHOW_LOGO,
+            "Large logo",
+            on_off(app.config.tui.show_logo),
+            FieldKind::Adjustable,
+        ),
+        Row::editable(
+            setting::REFRESH_RATE,
+            "Animation rate",
+            format!("{} fps", app.config.tui.fps),
+            FieldKind::Text,
+        ),
+        Row::editable(
+            setting::TIME_FORMAT,
+            "Time format",
+            String::from(if app.config.tui.use_12h_time {
+                "12-hour"
+            } else {
+                "24-hour"
+            }),
+            FieldKind::Adjustable,
+        ),
+        Row::editable(
+            setting::TEMPERATURE_UNIT,
+            "Temperature",
+            String::from(match app.config.tui.temperature_unit {
+                crate::config::TemperatureUnit::Celsius => "°C",
+                crate::config::TemperatureUnit::Fahrenheit => "°F",
+            }),
+            FieldKind::Adjustable,
+        ),
+    ];
+    let power = vec![
+        Row::editable(setting::IDLE_DIM, "Dim when idle", idle, FieldKind::Text),
+        Row::editable(
+            setting::SUSPEND_DURATION,
+            "Suspend for",
+            suspend,
+            FieldKind::Text,
+        ),
+    ];
+    let weather = vec![
+        Row::editable(
+            setting::WEATHER_ENABLED,
+            "Use weather",
+            on_off(app.config.weather.enabled),
+            FieldKind::Adjustable,
+        ),
+        Row::editable(
+            setting::WEATHER_API_KEY,
+            "API key",
+            api_key,
+            FieldKind::Text,
+        ),
+        Row::info("Provider", String::from("OpenWeather forecast")),
+        Row::info(
+            "Refresh",
+            format!("Every {} min", app.config.weather.refresh_minutes),
+        ),
+    ];
 
-    let theme_is_active = app.active_setting == 0;
-    let theme_style = active_field_style(app, theme_is_active, &palette);
-    let theme_value = format!(" [{}] ", app.config.tui.theme.name());
+    let suspended = app.status.as_ref().is_some_and(|status| status.suspended);
+    let daemon = match app.daemon_lifecycle() {
+        DaemonLifecycle::Active => String::from("Running"),
+        DaemonLifecycle::IdleDimmed => String::from("Running · idle dimmed"),
+        DaemonLifecycle::Suspended => String::from("Running · writes paused"),
+        DaemonLifecycle::Unreachable => String::from("Not responding"),
+    };
+    let writes = if suspended {
+        let until = app
+            .status
+            .as_ref()
+            .and_then(|status| status.suspend_until_epoch_s);
+        format!("Paused {}", format_suspend_until(until, true, app))
+    } else {
+        String::from("Enabled")
+    };
+    let service = vec![
+        Row::info("Daemon", daemon),
+        Row::info("Display writes", writes),
+    ];
 
-    let theme_field = Paragraph::new(theme_value)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(field_border_style(theme_is_active, &palette))
-                .title(field_title(
-                    "Theme (Enter to select)",
-                    theme_is_active,
-                    &palette,
-                )),
-        )
-        .style(theme_style);
-    f.render_widget(theme_field, inputs_layout[0]);
-
-    if fps_is_active && matches!(app.input_mode, InputMode::Editing) {
-        let cursor_x = inputs_layout[1].x + app.form.fps_input.visual_cursor() as u16 + 2;
-        let cursor_y = inputs_layout[1].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
-    } else if suspend_is_active && matches!(app.input_mode, InputMode::Editing) {
-        let cursor_x =
-            inputs_layout[4].x + app.form.suspend_minutes_input.visual_cursor() as u16 + 2;
-        let cursor_y = inputs_layout[4].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
-    }
+    vec![
+        ("Interface", interface),
+        ("Power", power),
+        ("Weather", weather),
+        ("Service", service),
+    ]
 }
 
-pub(super) fn render_settings_layout(
-    f: &mut Frame,
-    app: &Model,
-    area: Rect,
-    title: &str,
-    fields: &[(String, String, usize)],
-    palette: &Palette,
-) {
-    // Panel border: muted — the tab bar already marks the active section.
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette.border_inactive))
-        .title(Span::styled(
-            title,
-            Style::default().fg(palette.fg).add_modifier(Modifier::BOLD),
-        ));
-    f.render_widget(block.clone(), area);
-    let inner = block.inner(area);
+fn on_off(value: bool) -> String {
+    String::from(if value { "On" } else { "Off" })
+}
 
-    let mut constraints = fields
-        .iter()
-        .map(|(label, value, _)| {
-            if label.is_empty() || value == "SUBHEADING" {
-                Constraint::Length(1)
+fn edit_value(app: &Model, index: usize) -> Option<String> {
+    (matches!(app.input_mode, InputMode::Editing) && app.active_setting == index)
+        .then(|| app.active_input_ref().map(|input| input.value().to_owned()))
+        .flatten()
+}
+
+fn row_line(app: &Model, row: &Row, width: usize, styles: &SemanticStyles) -> Line<'static> {
+    let editing = matches!(app.input_mode, InputMode::Editing);
+    let focused = row.index == Some(app.active_setting) && app.workspace_focused();
+    let label_width = label_width_for(width as u16);
+    let value_width = width.saturating_sub(2 + label_width + 1 + 4);
+    let edit = row
+        .index
+        .and_then(|index| edit_value(app, index))
+        .map(|value| {
+            if row.index == Some(setting::WEATHER_API_KEY) {
+                // Secrets stay masked while typing; only the length is visible.
+                "●".repeat(value.chars().count())
             } else {
-                Constraint::Length(3)
+                value
             }
-        })
-        .collect::<Vec<_>>();
-    constraints.push(Constraint::Min(0));
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(inner);
-
-    for (index, (label, value, active_idx)) in fields.iter().enumerate() {
-        if label.is_empty() {
-            continue;
+        });
+    let mut line = kit::field_line(
+        row.label,
+        label_width,
+        &super::truncate(&row.value, value_width),
+        row.kind,
+        FieldState::new(focused, focused && editing),
+        edit.as_deref(),
+        styles,
+    );
+    if row.label == "Daemon" || row.label == "Display writes" {
+        // Service state keeps a status glyph so health reads at a glance.
+        let healthy = !row.value.starts_with("Not") && !row.value.starts_with("Paused");
+        let glyph = if healthy {
+            Span::styled(format!("{} ", kit::DOT), styles.status_success)
+        } else {
+            Span::styled(format!("{} ", kit::WARN), styles.status_warning)
+        };
+        let value = line.spans.pop();
+        line.spans.push(glyph);
+        if let Some(value) = value {
+            line.spans.push(value.style(styles.text_primary));
         }
+    }
+    line
+}
 
-        if value == "SUBHEADING" {
-            let p = Paragraph::new(Span::styled(
-                label.as_str(),
-                Style::default()
-                    .fg(palette.secondary_accent)
-                    .add_modifier(Modifier::BOLD),
+/// All groups in one panel. The list scrolls to keep the focused row visible.
+fn render_list(f: &mut Frame, app: &Model, groups: &[Group], area: Rect, styles: &SemanticStyles) {
+    let block = kit::panel("Settings", app.workspace_focused(), styles);
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block.style(styles.base), area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let mut lines: Vec<(Line, bool)> = Vec::new();
+    for (position, (title, rows)) in groups.iter().enumerate() {
+        if position > 0 {
+            lines.push((Line::from(""), false));
+        }
+        lines.push((kit::heading(title, inner.width, styles), false));
+        for row in rows {
+            lines.push((
+                row_line(app, row, usize::from(inner.width), styles),
+                row.index == Some(app.active_setting),
             ));
-            f.render_widget(p, chunks[index]);
-            continue;
         }
+    }
+    let focus_row = lines.iter().position(|(_, focused)| *focused).unwrap_or(0);
+    let visible = usize::from(inner.height);
+    let start = focus_row
+        .saturating_sub(visible.saturating_sub(3))
+        .min(lines.len().saturating_sub(visible));
+    let shown: Vec<Line> = lines
+        .into_iter()
+        .skip(start)
+        .take(visible)
+        .map(|(line, _)| line)
+        .collect();
+    f.render_widget(Paragraph::new(shown), inner);
 
-        let is_active = app.active_setting == *active_idx;
-        let style = active_field_style(app, is_active, palette);
-        let display_value = display_field_value(label, value, is_active, app);
-        let field = Paragraph::new(display_value)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(field_border_style(is_active, palette))
-                    .title(field_title(label.as_str(), is_active, palette)),
-            )
-            .style(style);
-        f.render_widget(field, chunks[index]);
-
-        if is_active && matches!(app.input_mode, InputMode::Editing) {
-            let Some(active_input) = app.active_input_ref() else {
-                continue;
-            };
-            let cursor_x = chunks[index].x + active_input.visual_cursor() as u16 + 2;
-            let cursor_y = chunks[index].y + 1;
-            if cursor_x < f.size().width {
-                f.set_cursor(cursor_x, cursor_y);
+    if matches!(app.input_mode, InputMode::Editing) && focus_row >= start {
+        if let Some(input) = app.active_input_ref() {
+            let row = Rect::new(
+                inner.x,
+                inner.y + (focus_row - start) as u16,
+                inner.width,
+                1,
+            );
+            if row.y < inner.y + inner.height {
+                let slice = compute_horizontal_viewport(input.value(), input.cursor(), 32);
+                kit::place_field_cursor(f, row, label_width_for(inner.width), slice.cursor_col);
             }
         }
     }
 
     if let Some(error) = &app.config_error {
-        let status = Span::styled(
-            format!(" Error: {error}"),
-            Style::default().fg(palette.error),
-        );
-        f.render_widget(
-            Paragraph::new(status).wrap(ratatui::widgets::Wrap { trim: true }),
-            chunks[fields.len()],
-        );
-    }
-}
-
-/// Border style for individual input fields: brand orange when active/focused,
-/// muted when the field is not selected.
-fn field_border_style(is_active: bool, palette: &Palette) -> Style {
-    if is_active {
-        Style::default().fg(palette.secondary_accent)
-    } else {
-        Style::default().fg(palette.border_inactive)
-    }
-}
-
-/// Title span for a field: bold white when active, muted when not.
-fn field_title<'a>(label: &'a str, is_active: bool, palette: &Palette) -> Span<'a> {
-    if is_active {
-        Span::styled(
-            label,
-            Style::default()
-                .fg(palette.secondary_accent)
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::styled(label, Style::default().fg(palette.border_inactive))
-    }
-}
-
-fn active_field_style(app: &Model, is_active: bool, palette: &Palette) -> Style {
-    if is_active {
-        if matches!(app.input_mode, InputMode::Editing) {
-            Style::default()
-                .fg(palette.bg)
-                .bg(palette.warning)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-                .fg(palette.bg)
-                .bg(palette.accent)
-                .add_modifier(Modifier::BOLD)
+        if area.y + area.height < f.size().height {
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    format!(" ✕ {error}"),
+                    styles.status_error.add_modifier(Modifier::BOLD),
+                )),
+                Rect::new(area.x, area.y + area.height, area.width, 1),
+            );
         }
-    } else {
-        Style::default().fg(palette.fg)
     }
 }
 
-fn display_field_value(label: &str, value: &str, is_active: bool, app: &Model) -> String {
-    if label.to_lowercase().contains("api key") {
-        if matches!(app.input_mode, InputMode::Editing) && is_active {
-            if value.is_empty() {
-                String::from(" <editing - type your key> ")
-            } else {
-                format!(" {value} ")
+/// What the focused setting does, and its choices when there are few.
+fn render_about(f: &mut Frame, app: &Model, groups: &[Group], area: Rect, styles: &SemanticStyles) {
+    let Some(row) = groups
+        .iter()
+        .flat_map(|(_, rows)| rows)
+        .find(|row| row.index == Some(app.active_setting))
+    else {
+        return;
+    };
+    let block = kit::panel(row.label, false, styles);
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block.style(styles.base), area);
+
+    let max_dim = ((1.0 - app.config.weather.min_multiplier) * 100.0).round();
+    let description = match app.active_setting {
+        setting::THEME => String::from("Colour palette for every screen. Enter opens the list."),
+        setting::EFFECTS => String::from(
+            "Full adds transitions and live feedback. Reduced keeps small confirmations. Off removes motion.",
+        ),
+        setting::SHOW_LOGO => {
+            String::from("Shows the SunReactor wordmark when the terminal is at least 76×32.")
+        }
+        setting::REFRESH_RATE => String::from(
+            "Frame rate while an animation runs, used between 24 and 60. Idle screens redraw once per second.",
+        ),
+        setting::TIME_FORMAT => String::from("Clock and schedule times."),
+        setting::TEMPERATURE_UNIT => String::from("Weather temperatures."),
+        setting::IDLE_DIM => String::from(
+            "Dims displays after this many minutes without desktop input. 0 turns it off.",
+        ),
+        setting::SUSPEND_DURATION => String::from(
+            "How long s pauses brightness writes. Leave it empty to pause until you resume with r.",
+        ),
+        setting::WEATHER_ENABLED => {
+            format!("Cloud cover can lower daylight brightness by up to {max_dim:.0}%.")
+        }
+        setting::WEATHER_API_KEY => String::from(
+            "Your OpenWeather key. Saved in config.toml unless it comes from an environment variable. Never shown.",
+        ),
+        _ => String::new(),
+    };
+    let choices: &[&str] = match app.active_setting {
+        setting::EFFECTS => &["Full", "Reduced", "Off"],
+        setting::SHOW_LOGO | setting::WEATHER_ENABLED => &["On", "Off"],
+        setting::TIME_FORMAT => &["24-hour", "12-hour"],
+        setting::TEMPERATURE_UNIT => &["°C", "°F"],
+        _ => &[],
+    };
+
+    let mut lines = vec![Line::from(Span::styled(description, styles.text_primary))];
+    if !choices.is_empty() {
+        lines.push(Line::from(""));
+        let mut spans = Vec::new();
+        for (position, choice) in choices.iter().enumerate() {
+            if position > 0 {
+                spans.push(Span::styled(kit::SEPARATOR, styles.border_normal));
             }
-        } else if value.is_empty() {
-            String::from(" <not set - press enter to edit> ")
-        } else {
-            format!(" {} ", "*".repeat(value.len().max(16)))
+            spans.push(if *choice == row.value {
+                Span::styled(
+                    format!("{} {choice}", kit::DOT),
+                    styles.focus_marker.add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled(format!("{} {choice}", kit::HOLLOW), styles.text_muted)
+            });
         }
-    } else if label == "City" && value.is_empty() {
-        if matches!(app.input_mode, InputMode::Editing) && is_active {
-            String::from("  ")
-        } else {
-            String::from(" <enter your city...> ")
-        }
-    } else {
-        format!(" {value} ")
+        lines.push(Line::from(spans));
     }
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
 }
 
-fn format_suspend_until(
-    until_epoch_s: Option<u64>,
-    suspended: bool,
-    timezone: &str,
-    use_12h_time: bool,
-) -> String {
+fn format_suspend_until(until_epoch_s: Option<u64>, suspended: bool, app: &Model) -> String {
     if !suspended {
         return String::from("not suspended");
     }
@@ -469,46 +402,65 @@ fn format_suspend_until(
         return String::from("until resume");
     };
 
-    let Some(dt) = chrono::DateTime::from_timestamp(epoch_s as i64, 0) else {
+    let Some(dt) = app.local_time_at_epoch(epoch_s) else {
         return format!("epoch {epoch_s}");
     };
-
-    let path = std::path::Path::new("/usr/share/zoneinfo").join(timezone);
-    let tz_offset_and_abbr = std::fs::read(&path)
-        .ok()
-        .and_then(|data| tz::TimeZone::from_tz_data(&data).ok())
-        .or_else(|| tz::TimeZone::from_posix_tz(timezone).ok())
-        .and_then(|tz| {
-            tz.find_local_time_type(dt.timestamp())
-                .ok()
-                .map(|lt| (lt.ut_offset(), lt.time_zone_designation().to_string()))
-        });
-
-    let absolute = if let Some((offset_secs, abbr)) = tz_offset_and_abbr {
-        let offset = chrono::FixedOffset::east_opt(offset_secs).unwrap();
-        let format_str = if use_12h_time { "%I:%M %p" } else { "%H:%M" };
-        format!("{} {}", dt.with_timezone(&offset).format(format_str), abbr)
+    let format_str = if app.config.tui.use_12h_time {
+        "%I:%M %p"
     } else {
-        let format_str = if use_12h_time {
-            "%I:%M %p %Z"
-        } else {
-            "%H:%M %Z"
-        };
-        dt.with_timezone(&chrono::Local)
-            .format(format_str)
-            .to_string()
+        "%H:%M"
     };
+    let absolute = dt.format(format_str).to_string();
 
     let now_epoch_s = chrono::Utc::now().timestamp().max(0) as u64;
     let remaining_minutes = epoch_s.saturating_sub(now_epoch_s).div_ceil(60);
-    format!("{absolute} ({remaining_minutes} min left)")
+    format!("until {absolute} ({remaining_minutes} min left)")
 }
 
-fn suspend_action_label(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        String::from("until resume")
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ViewportSlice {
+    pub display_text: String,
+    pub cursor_col: usize,
+}
+
+pub(crate) fn compute_horizontal_viewport(
+    value: &str,
+    cursor_char_idx: usize,
+    viewport_width: usize,
+) -> ViewportSlice {
+    let char_count = value.chars().count();
+    let cursor = cursor_char_idx.min(char_count);
+
+    if viewport_width == 0 {
+        return ViewportSlice {
+            display_text: String::new(),
+            cursor_col: 0,
+        };
+    }
+
+    if char_count <= viewport_width {
+        return ViewportSlice {
+            display_text: value.to_string(),
+            cursor_col: cursor,
+        };
+    }
+
+    let start_char = if cursor < viewport_width {
+        0
     } else {
-        format!("for {trimmed} min")
+        let ideal_start = cursor.saturating_sub(viewport_width.saturating_sub(1));
+        ideal_start.min(char_count.saturating_sub(viewport_width))
+    };
+
+    let slice: String = value
+        .chars()
+        .skip(start_char)
+        .take(viewport_width)
+        .collect();
+    let cursor_col = cursor.saturating_sub(start_char);
+
+    ViewportSlice {
+        display_text: slice,
+        cursor_col,
     }
 }

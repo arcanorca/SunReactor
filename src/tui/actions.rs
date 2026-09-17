@@ -2,20 +2,8 @@ use crate::config::MonitorMilestoneAdjustment;
 
 use super::Model;
 
-pub(crate) fn toggle_monitor_advanced(app: &mut Model) {
-    app.monitor_advanced_open = !app.monitor_advanced_open;
-    if let Some(schedule) = app.selected_monitor_schedule() {
-        let max_index = schedule.milestones.len().saturating_sub(1);
-        if app.selected_monitor_milestone > max_index {
-            app.selected_monitor_milestone = max_index;
-        }
-    } else {
-        app.selected_monitor_milestone = 0;
-    }
-}
-
 pub(crate) fn select_previous_monitor_milestone(app: &mut Model) {
-    if !app.monitor_advanced_open {
+    if !matches!(app.active_tab, super::Tab::Limits) {
         return;
     }
     if app.selected_monitor_milestone > 0 {
@@ -24,7 +12,7 @@ pub(crate) fn select_previous_monitor_milestone(app: &mut Model) {
 }
 
 pub(crate) fn select_next_monitor_milestone(app: &mut Model) {
-    if !app.monitor_advanced_open {
+    if !matches!(app.active_tab, super::Tab::Limits) {
         return;
     }
     let Some(schedule) = app.selected_monitor_schedule() else {

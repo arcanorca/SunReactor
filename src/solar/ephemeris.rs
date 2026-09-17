@@ -77,11 +77,62 @@ pub fn calculate_lunar_phase(now_utc: DateTime<Utc>) -> LunarPhase {
     }
 }
 
+/// Position in the synodic month as a fraction: 0 = new moon, 0.25 = first
+/// quarter, 0.5 = full moon, 0.75 = last quarter. Uses the same reference
+/// epoch as [`calculate_lunar_phase`].
+#[must_use]
+pub fn lunar_age_fraction(now_utc: DateTime<Utc>) -> f64 {
+    let elapsed = julian_day(now_utc) - REFERENCE_NEW_MOON_JD;
+    elapsed.rem_euclid(SYNODIC_MONTH_DAYS) / SYNODIC_MONTH_DAYS
+}
+
 pub(crate) fn solar_elevation_utc(
     datetime: DateTime<Utc>,
     latitude_deg: f64,
     longitude_deg: f64,
 ) -> f64 {
+    let (declination_rad, equation_of_time_minutes) = solar_position_terms(datetime);
+
+    let true_solar_time_minutes = normalize_minutes(
+        utc_minutes_of_day(datetime) + equation_of_time_minutes + 4.0 * longitude_deg,
+    );
+    let hour_angle_deg = if true_solar_time_minutes / 4.0 < 0.0 {
+        true_solar_time_minutes / 4.0 + 180.0
+    } else {
+        true_solar_time_minutes / 4.0 - 180.0
+    };
+
+    let latitude_rad = latitude_deg.to_radians();
+    let zenith_rad = (latitude_rad.sin() * declination_rad.sin()
+        + latitude_rad.cos() * declination_rad.cos() * hour_angle_deg.to_radians().cos())
+    .clamp(-1.0, 1.0)
+    .acos();
+
+    90.0 - radians_to_degrees(zenith_rad)
+}
+
+/// Returns the geographic point where the sun is at the zenith, as
+/// `(latitude_deg, longitude_deg)`. It uses exactly the same NOAA terms as
+/// [`solar_elevation_utc`], so a day/night boundary derived from it agrees
+/// with the elevation the policy engine uses.
+#[cfg_attr(not(feature = "tui"), allow(dead_code))]
+pub(crate) fn subsolar_point_utc(datetime: DateTime<Utc>) -> (f64, f64) {
+    let (declination_rad, equation_of_time_minutes) = solar_position_terms(datetime);
+    // Hour angle is zero where true solar time is 12:00.
+    let longitude_deg = (720.0 - utc_minutes_of_day(datetime) - equation_of_time_minutes) / 4.0;
+    let longitude_deg = (longitude_deg + 180.0).rem_euclid(360.0) - 180.0;
+    (radians_to_degrees(declination_rad), longitude_deg)
+}
+
+fn utc_minutes_of_day(datetime: DateTime<Utc>) -> f64 {
+    f64::from(datetime.hour()) * 60.0
+        + f64::from(datetime.minute())
+        + f64::from(datetime.second()) / 60.0
+        + f64::from(datetime.nanosecond()) / 60_000_000_000.0
+}
+
+/// Solar declination (radians) and equation of time (minutes).
+fn solar_position_terms(datetime: DateTime<Utc>) -> (f64, f64) {
     let julian_day = julian_day(datetime);
     let julian_century = (julian_day - 2_451_545.0) / 36_525.0;
 
@@ -132,26 +183,7 @@ pub(crate) fn solar_elevation_utc(
                 - 1.25 * eccentricity.powi(2) * (2.0 * geom_mean_anomaly_deg).to_radians().sin(),
         );
 
-    let utc_minutes = f64::from(datetime.hour()) * 60.0
-        + f64::from(datetime.minute())
-        + f64::from(datetime.second()) / 60.0
-        + f64::from(datetime.nanosecond()) / 60_000_000_000.0;
-
-    let true_solar_time_minutes =
-        normalize_minutes(utc_minutes + equation_of_time_minutes + 4.0 * longitude_deg);
-    let hour_angle_deg = if true_solar_time_minutes / 4.0 < 0.0 {
-        true_solar_time_minutes / 4.0 + 180.0
-    } else {
-        true_solar_time_minutes / 4.0 - 180.0
-    };
-
-    let latitude_rad = latitude_deg.to_radians();
-    let zenith_rad = (latitude_rad.sin() * declination_rad.sin()
-        + latitude_rad.cos() * declination_rad.cos() * hour_angle_deg.to_radians().cos())
-    .clamp(-1.0, 1.0)
-    .acos();
-
-    90.0 - radians_to_degrees(zenith_rad)
+    (declination_rad, equation_of_time_minutes)
 }
 
 pub(crate) fn julian_day(datetime: DateTime<Utc>) -> f64 {
@@ -264,6 +296,25 @@ mod lunar_tests {
                 got, *expected_phase,
                 "at +{day_offset:.2} days expected {expected_phase:?}, got {got:?}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod subsolar_tests {
+    use super::{solar_elevation_utc, subsolar_point_utc};
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn subsolar_point_agrees_with_the_elevation_model() {
+        for (month, day, hour) in [(3, 20, 12), (6, 21, 3), (9, 15, 11), (12, 21, 20)] {
+            let now = Utc.with_ymd_and_hms(2026, month, day, hour, 17, 0).unwrap();
+            let (lat, lon) = subsolar_point_utc(now);
+            assert!((-23.5..=23.5).contains(&lat), "declination {lat}");
+            assert!((-180.0..180.0).contains(&lon));
+            assert!(solar_elevation_utc(now, lat, lon) > 89.9);
+            let antipode_lon = if lon > 0.0 { lon - 180.0 } else { lon + 180.0 };
+            assert!(solar_elevation_utc(now, -lat, antipode_lon) < -89.9);
         }
     }
 }

@@ -133,3 +133,27 @@ See the Owner Brief list above; verify against final `git diff --name-only` befo
 - Linux hardware qualification: pending.
 - Release/musl/aarch64 hardware qualification: not claimed.
 - Phase 10: not started.
+
+## Phase 9.3 Executive Brief: Identity Restoration & Product-Language Cleanup
+
+1. **Dual-Tone ASCII Logo Restored:**
+   - Middle stripe row restored to `palette.secondary_accent` (`chrome_title_secondary`).
+   - Adapts naturally across all 24 themes without hardcoded Amber RGBs.
+   - Power-on sweep transitions cleanly: dual-tone initial -> sweep band -> dual-tone settled.
+
+2. **Plain Unix Copy & GNOME HIG Alignment:**
+   - Stripped all theatrical marketing phrases (`OPERATOR REFERENCE` -> `HELP`, `INSTRUMENT LEGEND` -> `SYMBOLS`, `LOCATION IDENTITY` removed, `DRIVES AUTOMATION` removed).
+   - Stripped weather empty state prose paragraph slop -> clean `WEATHER` / `○ Off` / `Enable in Settings > Weather.`.
+   - Unified terminology (`ATMOSPHERIC SUBSYSTEM` / `ATMOSPHERIC INPUT` -> `WEATHER` / `WEATHER INPUT`).
+
+3. **Settings Layout & Spacing:**
+   - Balanced two-column structure: Left (`INTERFACE` + `SERVICE`), Right (`POWER` + `WEATHER`).
+   - Fixed cramping with minimum 1-2 blank rows between semantic groups.
+   - Concise labels: `Dim after idle`, `API key`, `SERVICE`.
+   - Progressive disclosure: hints visible only on active/focused rows.
+
+4. **Interaction Salience:**
+   - Distinct 3-channel active selection: Focus rail `▌`, label typography, and high-contrast value capsule `[ <value> ]`.
+   - Pure luminance contrast function ensures safe readable text across every theme.
+   - Clean separation of focused vs editing state. Non-interactive rows never imitate focus.
+

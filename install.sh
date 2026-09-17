@@ -5,6 +5,11 @@
 # ==========================================
 # Adheres to strict mode, SOLID, and KISS.
 
+if [ -z "${BASH_VERSION:-}" ]; then
+    printf 'Error: SunReactor installer requires bash. Please run with: bash %s\n' "$0" >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 if [[ -z "${HOME:-}" ]]; then
@@ -30,6 +35,7 @@ readonly TMP_DIR="$(mktemp -d)"
 # State variables
 QUIET=0
 UNINSTALL=0
+PURGE=0
 NO_SERVICE=0
 
 # ==========================================
@@ -46,6 +52,7 @@ parse_args() {
         case $arg in
             -q|--quiet) QUIET=1 ;;
             --uninstall) UNINSTALL=1 ;;
+            --purge) PURGE=1 ;;
             --no-service) NO_SERVICE=1 ;;
             *) ;;
         esac
@@ -246,29 +253,31 @@ extract_archive() {
 }
 
 install_binaries() {
-    log_info "Installing binaries to $BIN_DIR..."
-    mkdir -p "$BIN_DIR"
+    local target_bin="${DESTDIR:-}$BIN_DIR"
+    log_info "Installing binaries to $target_bin..."
+    mkdir -p "$target_bin"
     local artifact_dir="${ARTIFACT_DIR:-$TMP_DIR}"
-    install -m 755 "$artifact_dir/sunreactord" "$artifact_dir/sunreactorctl" "$BIN_DIR/"
+    install -m 755 "$artifact_dir/sunreactord" "$artifact_dir/sunreactorctl" "$target_bin/"
 }
 
 # ==========================================
 # 6. SYSTEMD MODULE
 # ==========================================
 install_systemd_unit() {
+    local target_systemd="${DESTDIR:-}$SYSTEMD_DIR"
     if ! render_service_unit "$TMP_DIR/sunreactord.service"; then
         log_error "Failed to render the systemd user service."
         return 1
     fi
-    if ! mkdir -p "$SYSTEMD_DIR"; then
-        log_error "Failed to create the systemd user unit directory: $SYSTEMD_DIR"
+    if ! mkdir -p "$target_systemd"; then
+        log_error "Failed to create the systemd user unit directory: $target_systemd"
         return 1
     fi
-    if ! install -m 644 "$TMP_DIR/sunreactord.service" "$SYSTEMD_DIR/sunreactord.service"; then
-        log_error "Failed to install the systemd user unit: $SYSTEMD_DIR/sunreactord.service"
+    if ! install -m 644 "$TMP_DIR/sunreactord.service" "$target_systemd/sunreactord.service"; then
+        log_error "Failed to install the systemd user unit: $target_systemd/sunreactord.service"
         return 1
     fi
-    log_success "Service unit installed: $SYSTEMD_DIR/sunreactord.service"
+    log_success "Service unit installed: $target_systemd/sunreactord.service"
 }
 
 setup_systemd() {
@@ -496,17 +505,26 @@ uninstall_sunreactor() {
     rm -f "$BIN_DIR/sunreactord" "$BIN_DIR/sunreactorctl"
     erase_line
 
-    rm -rf "$CFG_DIR"
-    rm -rf "$STATE_DIR" "$CACHE_DIR"
-    erase_line
-
-    # Erase remaining art lines and top padding
-    erase_line
-    erase_line
-    erase_line
-
-    log_success "SunReactor has been successfully uninstalled."
-    echo -e "\033[1;32mAll configuration and state data have been wiped clean.\033[0m"
+    if [[ $PURGE -eq 1 ]]; then
+        rm -rf "$CFG_DIR"
+        rm -rf "$STATE_DIR" "$CACHE_DIR"
+        erase_line
+        # Erase remaining art lines and top padding
+        erase_line
+        erase_line
+        erase_line
+        log_success "SunReactor has been successfully uninstalled (purged)."
+        echo -e "\033[1;32mAll configuration and state data have been wiped clean.\033[0m"
+    else
+        erase_line
+        # Erase remaining art lines and top padding
+        erase_line
+        erase_line
+        erase_line
+        log_success "SunReactor has been successfully uninstalled."
+        echo -e "\033[1;33mConfiguration ($CFG_DIR) and state ($STATE_DIR) have been preserved.\033[0m"
+        echo -e "\033[1;30m(Pass --purge with --uninstall to remove all configuration and state.)\033[0m"
+    fi
     exit 0
 }
 
@@ -530,6 +548,11 @@ main() {
 
     extract_archive "$archive"
     install_binaries
+    if [[ -n "${DESTDIR:-}" ]]; then
+        install_systemd_unit || exit 1
+        log_success "Staged installation into DESTDIR=$DESTDIR complete."
+        exit 0
+    fi
     if [[ $NO_SERVICE -eq 1 ]]; then
         log_info "Files installed. Service setup disabled (--no-service); run $BIN_DIR/sunreactord manually."
     elif ! install_systemd_unit; then

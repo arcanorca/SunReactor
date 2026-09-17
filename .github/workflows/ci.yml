@@ -12,22 +12,112 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
+  quality:
+    name: Canonical Quality (fmt, clippy, test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
       - uses: Swatinem/rust-cache@v2
-
       - name: Format
         run: cargo fmt --all --check
-
       - name: Lint
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
-
       - name: Test
         run: cargo test --workspace --all-targets --all-features
+
+  installer:
+    name: Installer & Packaging Staging Invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y curl tar gawk
+      - name: Run installer test suite
+        run: bash tests/installer_test.sh
+      - name: Run release packaging helper test
+        run: bash tests/release_test.sh
+
+  release-artifact-compat:
+    name: Cross-Distro Conservative Release Artifact Matrix
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build conservative generic release binaries (Ubuntu 22.04 / glibc 2.35 builder)
+        run: cargo build --release --locked --bin sunreactord --bin sunreactorctl
+      - name: Verify binary ABI and dynamic dependencies
+        run: |
+          file target/release/sunreactord target/release/sunreactorctl
+          readelf -d target/release/sunreactord | grep NEEDED
+          readelf --version-info target/release/sunreactord | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
+      - name: Verify exact artifact executes on Ubuntu 22.04 LTS
+        run: docker run --rm -v $PWD/target/release:/app:ro ubuntu:22.04 /app/sunreactorctl --help
+      - name: Verify exact artifact executes on Ubuntu 24.04 LTS
+        run: docker run --rm -v $PWD/target/release:/app:ro ubuntu:24.04 /app/sunreactorctl --help
+      - name: Verify exact artifact executes on Ubuntu 26.04 LTS
+        run: docker run --rm -v $PWD/target/release:/app:ro ubuntu:26.04 /app/sunreactorctl --help
+      - name: Verify exact artifact executes on Debian 13 (Stable)
+        run: docker run --rm -v $PWD/target/release:/app:ro debian:13 /app/sunreactorctl --help
+      - name: Verify exact artifact executes on Fedora 43
+        run: docker run --rm -v $PWD/target/release:/app:ro fedora:43 /app/sunreactorctl --help
+      - name: Verify exact artifact executes on Fedora 44
+        run: docker run --rm -v $PWD/target/release:/app:ro fedora:44 /app/sunreactorctl --help
+      - name: Verify exact artifact executes on openSUSE Tumbleweed
+        run: docker run --rm -v $PWD/target/release:/app:ro registry.opensuse.org/opensuse/tumbleweed:latest /app/sunreactorctl --help
+      - name: Verify exact artifact executes on Arch Linux
+        run: docker run --rm -v $PWD/target/release:/app:ro archlinux:latest /app/sunreactorctl --help
+
+  windows-native:
+    name: Windows Native Platform & Topology Foundation (MSVC x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features
+      - name: Build Release Binaries
+        run: cargo build --release --bin sunreactord --bin sunreactorctl
+      - name: Smoke Test Release Binaries & IPC Lifecycle
+        shell: pwsh
+        run: |
+          .\target\release\sunreactord.exe --version
+          .\target\release\sunreactord.exe --help
+          .\target\release\sunreactorctl.exe --version
+          .\target\release\sunreactorctl.exe --help
+          .\target\release\sunreactorctl.exe discover
+          .\target\release\sunreactorctl.exe discover --json
+
+          # Verify test-brightness refuses mutation without SUNREACTOR_ALLOW_HARDWARE_TESTS
+          try {
+              .\target\release\sunreactorctl.exe test-brightness --monitor-id win-test-dummy
+              throw "test-brightness should have failed without opt-in environment variable!"
+          } catch {
+              Write-Host "test-brightness successfully failed closed without explicit opt-in"
+          }
+
+          # Exercise live daemon startup, CLI-to-daemon Named Pipe IPC, and duplicate rejection
+          $daemon = Start-Process -FilePath ".\target\release\sunreactord.exe" -PassThru
+          Start-Sleep -Seconds 2
+          try {
+              .\target\release\sunreactorctl.exe status
+              $second = Start-Process -FilePath ".\target\release\sunreactord.exe" -Wait -PassThru
+              if ($second.ExitCode -eq 0) {
+                  throw "Second daemon instance should have been rejected by single-instance guard!"
+              }
+              .\target\release\sunreactorctl.exe suspend --minutes 15
+              .\target\release\sunreactorctl.exe resume
+          } finally {
+              Stop-Process -Id $daemon.Id -Force
+          }

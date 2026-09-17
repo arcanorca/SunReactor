@@ -203,7 +203,9 @@ pub enum Theme {
     Amber,
     AyuDark,
     AyuMirage,
+    CasioDigital,
     CatppuccinMocha,
+    ClassicMacintosh,
     Commodore64,
     Cyberpunk,
     Dracula,
@@ -216,14 +218,62 @@ pub enum Theme {
     Monokai,
     NightOwl,
     Nord,
+    Nothing,
     OneDark,
     PhosphorBlue,
     RosePine,
     SolarizedDark,
     Synthwave84,
     Terminal,
+    ThinkPad,
     TokyoNight,
     Zenburn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MotionLevel {
+    #[default]
+    Instrument,
+    Reduced,
+    Off,
+}
+
+impl MotionLevel {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            // Keep the serialized variant stable while presenting a clear
+            // appliance-like setting to users.
+            Self::Instrument => "Full",
+            Self::Reduced => "Reduced",
+            Self::Off => "Off",
+        }
+    }
+
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Instrument => Self::Reduced,
+            Self::Reduced => Self::Off,
+            Self::Off => Self::Instrument,
+        }
+    }
+
+    #[must_use]
+    pub fn previous(self) -> Self {
+        match self {
+            Self::Instrument => Self::Off,
+            Self::Reduced => Self::Instrument,
+            Self::Off => Self::Reduced,
+        }
+    }
+}
+
+impl std::fmt::Display for MotionLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -233,6 +283,9 @@ pub struct TuiConfig {
     pub use_12h_time: bool,
     pub temperature_unit: TemperatureUnit,
     pub theme: Theme,
+    pub effects: MotionLevel,
+    /// Keep the original SunReactor masthead visible on terminals with room for it.
+    pub show_logo: bool,
 }
 
 impl Default for TuiConfig {
@@ -242,6 +295,8 @@ impl Default for TuiConfig {
             use_12h_time: false,
             temperature_unit: TemperatureUnit::Celsius,
             theme: Theme::default(),
+            effects: MotionLevel::default(),
+            show_logo: true,
         }
     }
 }

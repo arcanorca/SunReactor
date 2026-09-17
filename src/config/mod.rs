@@ -11,17 +11,20 @@ pub use io::{
 };
 pub use model::{
     Config, DaemonConfig, LocationConfig, LogLevel, MonitorConfig, MonitorMilestoneAdjustment,
-    MonitorSelector, SolarPolicyConfig, TemperatureUnit, Theme, TuiConfig, WeatherConfig,
-    WeatherProvider,
+    MonitorSelector, MotionLevel, SolarPolicyConfig, TemperatureUnit, Theme, TuiConfig,
+    WeatherConfig, WeatherProvider,
 };
 pub use template::DEFAULT_CONFIG_TEMPLATE;
+pub use validate::MAX_TRANSITION_GAMMA;
 
 pub fn validate(config: &Config) -> Result<(), ConfigError> {
     config.validate()
 }
 
+#[cfg(any(test, feature = "tui"))]
+pub(crate) use io::load_from_path;
 #[cfg(test)]
-pub(crate) use io::{load_from_path, parse_str, write_default_to};
+pub(crate) use io::{parse_str, write_default_to};
 
 #[cfg(test)]
 mod tests;

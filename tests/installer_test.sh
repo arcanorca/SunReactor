@@ -65,6 +65,14 @@ test_custom_paths_and_uninstall_paths() {
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; QUIET=1; uninstall_sunreactor' _ "$ROOT_DIR/install.sh" >/dev/null 2>&1
     [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     [[ ! -e /tmp/custom-config/systemd/user/sunreactord.service ]]
+    # Standard uninstall MUST preserve user configuration and runtime state
+    [[ -e /tmp/custom-config/sunreactor/config.toml ]]
+    [[ -e /tmp/custom-state/sunreactor/runtime-state.json ]]
+
+    # Purge uninstall MUST remove user configuration and runtime state
+    SYSTEMCTL_MARKER="$home/systemctl-called" PATH="/usr/bin:/bin" HOME="$home" \
+        XDG_CONFIG_HOME=/tmp/custom-config XDG_STATE_HOME=/tmp/custom-state XDG_CACHE_HOME=/tmp/custom-cache \
+        SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; QUIET=1; PURGE=1; uninstall_sunreactor' _ "$ROOT_DIR/install.sh" >/dev/null 2>&1
     [[ ! -e /tmp/custom-config/sunreactor && ! -e /tmp/custom-state/sunreactor && ! -e /tmp/custom-cache/sunreactor ]]
     rm -rf "$home" /tmp/custom-config /tmp/custom-state /tmp/custom-cache
 }
@@ -395,7 +403,9 @@ test_service_path_escaping() {
     touch "$home/.local/bin/sunreactord" "$home/.local/bin/sunreactorctl"
     chmod +x "$home/.local/bin/sunreactord" "$home/.local/bin/sunreactorctl"
     printf '%s\n' "$unit" >"$home/sunreactord.service"
-    systemd-analyze verify "$home/sunreactord.service"
+    if command -v systemd-analyze >/dev/null 2>&1; then
+        systemd-analyze verify "$home/sunreactord.service"
+    fi
     rm -rf "$home"
 }
 
@@ -434,6 +444,37 @@ test_discoverable_postcondition_is_required
 test_fragment_path_rejects_shadowed_unit
 test_service_path_escaping
 
+test_destdir_staging_installation() {
+    local home destdir fakebin marker
+    home=$(mktemp -d)
+    destdir=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    marker="$home/systemctl-called"
+    cat >"$fakebin/systemctl" <<'SHIM'
+#!/usr/bin/env bash
+printf '%s\n' called >"$SYSTEMCTL_MARKER"
+exit 1
+SHIM
+    chmod +x "$fakebin/systemctl"
+    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" DESTDIR="$destdir" \
+        XDG_CONFIG_HOME="$home/.config" XDG_STATE_HOME="$home/.local/state" XDG_CACHE_HOME="$home/.cache" \
+        SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            main >/dev/null
+        ' _ "$ROOT_DIR/install.sh"
+    [[ -x "$destdir/$home/.local/bin/sunreactord" && -x "$destdir/$home/.local/bin/sunreactorctl" ]]
+    [[ -f "$destdir/$home/.config/systemd/user/sunreactord.service" ]]
+    [[ ! -e "$marker" ]] || {
+        printf 'DESTDIR staging unexpectedly invoked systemctl\n' >&2
+        exit 1
+    }
+    rm -rf "$home" "$destdir" "$fakebin"
+}
+test_destdir_staging_installation
+
 test_checksum_helpers() {
     local file expected
     file=$(mktemp)
@@ -444,6 +485,10 @@ test_checksum_helpers() {
 }
 
 test_archive_member_rejection() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        printf 'test_archive_member_rejection: SKIP (python3 unavailable)\n'
+        return 0
+    fi
     local home archive
     home=$(mktemp -d)
     archive="$home/unsafe.tar.gz"
