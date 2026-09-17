@@ -730,7 +730,7 @@ fn render_target_instrument(
             // New values flash toward the foreground colour and settle back
             // to the accent as the count completes.
             let color = glow.map_or(palette.accent, |phase| {
-                super::light_cycle::mix(palette.fg, palette.accent, f64::from(phase))
+                crate::tui::theme::mix(palette.fg, palette.accent, f64::from(phase))
             });
             let digit_style = if applied.is_some() {
                 Style::default().fg(color).add_modifier(Modifier::BOLD)

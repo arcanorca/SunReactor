@@ -19,7 +19,11 @@ use ratatui::{
 use crate::{
     policy::{AutomationMilestone, MonitorMilestoneSchedule},
     solar::{self, Location},
-    tui::{model::AutomationRegionFocus, theme::SemanticStyles, Model},
+    tui::{
+        model::AutomationRegionFocus,
+        theme::{mix, SemanticStyles},
+        Model,
+    },
 };
 
 use super::{
@@ -788,25 +792,9 @@ fn smoothstep(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Linear blend between two theme colours; non-RGB colours switch halfway.
-pub(super) fn mix(from: Color, to: Color, amount: f64) -> Color {
-    let amount = amount.clamp(0.0, 1.0);
-    match (from, to) {
-        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
-            let blend = |a: u8, b: u8| {
-                (f64::from(a) + (f64::from(b) - f64::from(a)) * amount).round() as u8
-            };
-            Color::Rgb(blend(r1, r2), blend(g1, g2), blend(b1, b2))
-        }
-        _ if amount < 0.5 => from,
-        _ => to,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{hour_step, mix, phase_at, CycleRows};
-    use ratatui::style::Color;
+    use super::{hour_step, phase_at, CycleRows};
 
     #[test]
     fn row_plan_keeps_the_chart_readable_and_caps_its_height() {
@@ -846,14 +834,5 @@ mod tests {
         assert_eq!(phase_at(310.0, &bounds), 1);
         assert_eq!(phase_at(800.0, &bounds), 3);
         assert_eq!(phase_at(1200.0, &bounds), 5);
-    }
-
-    #[test]
-    fn colours_blend_only_when_both_are_rgb() {
-        assert_eq!(
-            mix(Color::Rgb(0, 0, 0), Color::Rgb(200, 100, 50), 0.5),
-            Color::Rgb(100, 50, 25)
-        );
-        assert_eq!(mix(Color::Blue, Color::Rgb(1, 1, 1), 0.2), Color::Blue);
     }
 }
