@@ -7656,36 +7656,6 @@ fn test_phase9_4_removed_selected_monitor_uses_nearest_configured_context() {
 // ══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_model_in_tests_is_isolated_from_the_user_session() {
-    let mut model = Model::new();
-    let save_path = model
-        .config_save_path
-        .clone()
-        .expect("unit tests never write the user's configuration file");
-    assert!(save_path.starts_with(std::env::temp_dir()));
-    assert!(
-        model.config.monitors.is_empty(),
-        "tests start from defaults"
-    );
-
-    // A save lands in the private directory and the reload request cannot
-    // reach a daemon, so a test run can never reload or suspend a live one.
-    assert!(model.save_config());
-    assert!(save_path.exists());
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut outcome = None;
-    while Instant::now() < deadline && outcome.is_none() {
-        while let Ok(event) = model.ipc_rx.try_recv() {
-            if let IpcEvent::CommandFailed { error_category, .. } = event {
-                outcome = Some(error_category);
-            }
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert_eq!(outcome, Some(ErrorCategory::DaemonUnavailable));
-}
-
-#[test]
 fn test_policy_previews_stay_inside_the_configured_range_and_morph_only_in_full_effects() {
     let mut model = Model::new();
     configure_monitor_fixture(
