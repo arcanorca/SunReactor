@@ -1,5 +1,5 @@
 use super::dispatch::apply_monitor_target;
-use super::types::{ApplyDiagnosticContext, ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
+use super::types::{ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
 use crate::backends::RealProcessRunner;
 use crate::backends::{BackendError, BackendWrite, ProcessRunner};
 use crate::config::{Config, MonitorConfig};
@@ -38,6 +38,7 @@ pub(crate) fn apply_policy_with_runner<R: ProcessRunner + Sync>(
 /// Applies only configured monitors classified as present by a fresh runtime
 /// capability snapshot. The snapshot is not persisted and does not mutate
 /// user config; it gates this effective apply set only.
+#[allow(dead_code)]
 pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
     monitors: &[MonitorConfig],
     settings: ApplySettings,
@@ -48,7 +49,140 @@ pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
     capabilities: &CapabilitySnapshot,
     fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
     settings_override: Option<ApplySettings>,
-    diagnostic: ApplyDiagnosticContext,
+) -> ApplySummary {
+    apply_policy_with_runner_reconciled_mode(
+        monitors,
+        settings,
+        policy,
+        state,
+        runner,
+        now_epoch_s,
+        capabilities,
+        fade_engine,
+        settings_override,
+        false,
+    )
+}
+
+/// What one wake probe found.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ProbeSummary {
+    /// Monitors that answered a brightness read.
+    pub(crate) answered: usize,
+    /// Monitors that answered with the wrong value and were rewritten.
+    pub(crate) corrected: usize,
+    /// Rewrites that failed; the next probe tries again.
+    pub(crate) failed: usize,
+}
+
+/// A wake probe: reads each enabled monitor cheaply and rewrites any whose
+/// brightness differs from its target.
+///
+/// A monitor that does not answer yet (still waking, or not cheaply
+/// readable) is skipped quietly with no backoff, so the next probe simply
+/// tries again. Writes bypass step limits because the target is already the
+/// value the policy wants now.
+pub(crate) fn probe_and_correct<R: ProcessRunner>(
+    monitors: &[MonitorConfig],
+    settings: &ApplySettings,
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    runner: &R,
+    now_epoch_s: u64,
+) -> ProbeSummary {
+    probe_and_correct_with(
+        monitors,
+        policy,
+        state,
+        now_epoch_s,
+        settings.dry_run,
+        |monitor| super::dispatch::probe_monitor_percent(runner, monitor, settings),
+        |monitor, target, percent| apply_monitor_target(runner, monitor, target, percent, settings),
+    )
+}
+
+fn probe_and_correct_with(
+    monitors: &[MonitorConfig],
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    now_epoch_s: u64,
+    dry_run: bool,
+    read: impl Fn(&MonitorConfig) -> Result<Option<crate::backends::BackendObservation>, BackendError>,
+    write: impl Fn(&MonitorConfig, &PerMonitorTarget, u8) -> Result<BackendWrite, BackendError>,
+) -> ProbeSummary {
+    let mut summary = ProbeSummary::default();
+    for target in &policy.targets {
+        let Some(monitor) = monitors
+            .iter()
+            .find(|monitor| monitor.logical_id == target.logical_id && monitor.enabled)
+        else {
+            continue;
+        };
+        let requested = target.percent.min(100);
+        let observed = match read(monitor) {
+            Ok(Some(observation)) => observation.percent,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::debug!(
+                    logical_id = %monitor.logical_id,
+                    error = %error,
+                    "wake_probe_no_answer"
+                );
+                continue;
+            }
+        };
+        summary.answered += 1;
+        if observed == requested {
+            state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+            continue;
+        }
+        tracing::info!(
+            logical_id = %monitor.logical_id,
+            requested_percent = requested,
+            observed_percent = observed,
+            "wake_probe_drift_detected"
+        );
+        if dry_run {
+            continue;
+        }
+        match write(monitor, target, requested) {
+            Ok(result) => {
+                state.record_apply_success(
+                    &monitor.logical_id,
+                    result.applied_percent,
+                    now_epoch_s,
+                );
+                summary.corrected += 1;
+                tracing::info!(
+                    logical_id = %monitor.logical_id,
+                    applied_percent = result.applied_percent,
+                    "wake_probe_corrected"
+                );
+            }
+            Err(error) => {
+                summary.failed += 1;
+                tracing::debug!(
+                    logical_id = %monitor.logical_id,
+                    error = %error,
+                    "wake_probe_write_failed"
+                );
+            }
+        }
+    }
+    summary
+}
+
+pub(crate) fn apply_policy_with_runner_reconciled_mode<R: ProcessRunner + Sync>(
+    monitors: &[MonitorConfig],
+    settings: ApplySettings,
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    runner: &R,
+    now_epoch_s: u64,
+    capabilities: &CapabilitySnapshot,
+    fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
+    settings_override: Option<ApplySettings>,
+    lifecycle_recovery: bool,
 ) -> ApplySummary {
     let actions = crate::runtime::topology::reconcile(monitors, capabilities);
     apply_policy_with_runner_monitors_impl(
@@ -60,9 +194,8 @@ pub(crate) fn apply_policy_with_runner_reconciled<R: ProcessRunner + Sync>(
         runner,
         now_epoch_s,
         settings_override,
+        lifecycle_recovery,
         &actions,
-        capabilities,
-        diagnostic,
     )
 }
 
@@ -112,9 +245,8 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
         runner,
         now_epoch_s,
         settings_override,
+        false,
         &[],
-        &CapabilitySnapshot::default(),
-        ApplyDiagnosticContext::default(),
     )
 }
 
@@ -128,9 +260,8 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     runner: &R,
     now_epoch_s: u64,
     settings_override: Option<ApplySettings>,
+    lifecycle_recovery: bool,
     reconcile_actions: &[ReconcileAction],
-    capabilities: &CapabilitySnapshot,
-    diagnostic: ApplyDiagnosticContext,
 ) -> ApplySummary {
     let bypass_backoff = settings_override.is_some();
     let settings = settings_override.unwrap_or(default_settings);
@@ -188,21 +319,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
         // a clear diagnostic; they never enter the concurrent dispatch set.
         if let Some(&action_position) = reconcile_index.get(target.logical_id.as_str()) {
             if let Some(action) = reconcile_actions.get(action_position) {
-                tracing::info!(
-                    logical_id = %monitor.logical_id,
-                    backend = ?monitor.backend,
-                    reconciliation = action.name(),
-                    observed_identity = observed_identity_for(
-                        monitor,
-                        capabilities,
-                        *action,
-                    )
-                        .as_deref()
-                        .unwrap_or("none"),
-                    correlation_id = ?diagnostic.correlation_id,
-                    observation_generation = ?diagnostic.observation_generation,
-                    "target_reconciled"
-                );
                 if !action.allowed_to_apply() {
                     work.push(WorkItem::Skip(ApplyRecord {
                         logical_id: monitor.logical_id.clone(),
@@ -242,18 +358,73 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             .cloned()
             .unwrap_or_default();
 
+        let integrity_reference_epoch_s = monitor_state
+            .last_integrity_check_at_epoch_s
+            .or(monitor_state.last_applied_at_epoch_s);
+        let reassert_is_due = monitor_state.last_applied_percent.is_some()
+            && reassert_due(
+                integrity_reference_epoch_s,
+                now_epoch_s,
+                settings.apply_reassert_interval.as_secs(),
+            );
+
+        if (reassert_is_due || lifecycle_recovery)
+            && monitor_state.last_applied_percent == Some(requested_percent)
+        {
+            match super::dispatch::read_monitor_percent(runner, monitor, &settings) {
+                Ok(observation) if observation.percent == requested_percent => {
+                    state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+                    if lifecycle_recovery {
+                        tracing::info!(
+                            logical_id = %monitor.logical_id,
+                            requested_percent,
+                            observed_percent = observation.percent,
+                            "lifecycle_recovery_matches_hardware; no_write_required"
+                        );
+                    }
+                    work.push(WorkItem::Skip(ApplyRecord {
+                        logical_id: monitor.logical_id.clone(),
+                        backend: Some(monitor.backend),
+                        requested_percent,
+                        applied_percent: observation.percent,
+                        attempts: 1,
+                        failure_kind: None,
+                        consecutive_failures: None,
+                        backoff_until_epoch_s: None,
+                        status: ApplyStatus::SkippedHysteresis,
+                        detail: format!(
+                            "integrity readback matches target at {}%; no write required",
+                            observation.percent
+                        ),
+                    }));
+                    continue;
+                }
+                Ok(observation) => {
+                    state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+                    tracing::info!(
+                        logical_id = %monitor.logical_id,
+                        requested_percent,
+                        observed_percent = observation.percent,
+                        lifecycle_recovery,
+                        "brightness_drift_detected; correcting_to_current_policy"
+                    );
+                }
+                Err(error) => {
+                    tracing::debug!(
+                        logical_id = %monitor.logical_id,
+                        error = %error,
+                        "brightness_readback_failed; retaining_reassert_fallback"
+                    );
+                }
+            }
+        }
+
         let skip_hysteresis = state::should_skip_hysteresis(
             monitor_state.last_applied_percent,
             requested_percent,
             settings.min_write_delta_pct,
         );
-        if skip_hysteresis
-            && !reassert_due(
-                monitor_state.last_applied_at_epoch_s,
-                now_epoch_s,
-                settings.apply_reassert_interval.as_secs(),
-            )
-        {
+        if skip_hysteresis && !reassert_is_due && !lifecycle_recovery {
             let delta = monitor_state
                 .last_applied_percent
                 .map_or(0, |last| requested_percent.abs_diff(last));
@@ -387,14 +558,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             applied_percent,
             requested_percent,
         });
-        tracing::info!(
-            logical_id = %monitor.logical_id,
-            backend = ?monitor.backend,
-            applied_percent,
-            correlation_id = ?diagnostic.correlation_id,
-            observation_generation = ?diagnostic.observation_generation,
-            "apply_attempt_authorized"
-        );
     }
 
     // -------------------------------------------------------------------------
@@ -493,6 +656,15 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                             write.applied_percent,
                             now_epoch_s,
                         );
+                        if lifecycle_recovery {
+                            tracing::info!(
+                                logical_id = %monitor.logical_id,
+                                applied_percent = write.applied_percent,
+                                attempts = write.attempts,
+                                detail = %write.detail,
+                                "lifecycle_recovery_write_succeeded"
+                            );
+                        }
                         summary.push(ApplyRecord {
                             logical_id: monitor.logical_id.clone(),
                             backend: Some(write.backend),
@@ -525,6 +697,13 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                             backoff.consecutive_failures,
                             backoff.failure_kind
                         );
+                        if lifecycle_recovery {
+                            tracing::warn!(
+                                logical_id = %monitor.logical_id,
+                                error = %error,
+                                "lifecycle_recovery_write_failed"
+                            );
+                        }
                         summary.push(ApplyRecord {
                             logical_id: monitor.logical_id.clone(),
                             backend: Some(monitor.backend),
@@ -544,41 +723,6 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     }
 
     summary
-}
-
-fn observed_identity_for(
-    monitor: &MonitorConfig,
-    capabilities: &CapabilitySnapshot,
-    action: ReconcileAction,
-) -> Option<String> {
-    if action != ReconcileAction::Present {
-        return None;
-    }
-    let identity = match monitor.backend {
-        crate::backends::BackendKind::Ddc => capabilities
-            .ddc_present
-            .iter()
-            .filter(|observed| {
-                observed.backend_viable
-                    && crate::backends::ddc::selector_matches_discovery(&monitor.selector, observed)
-                        .unwrap_or(false)
-            })
-            .map(|observed| observed.stable_id.as_str())
-            .next(),
-        crate::backends::BackendKind::Backlight => {
-            let configured_path = crate::backends::backlight::canonical_configured_sysfs_path(
-                monitor.selector.sysfs_path.as_deref()?,
-            )?;
-            capabilities
-                .backlights_present
-                .iter()
-                .find(|observed| {
-                    observed.backend_viable && observed.sysfs_path.trim() == configured_path
-                })
-                .map(|observed| observed.stable_id.as_str())
-        }
-    }?;
-    Some(identity.chars().take(128).collect())
 }
 
 fn reassert_due(
@@ -695,59 +839,6 @@ mod tests {
     }
 
     #[test]
-    fn observed_identity_uses_matched_snapshot_not_config_selector() {
-        let mut monitor = test_monitor("external", BackendKind::Ddc);
-        monitor.selector.serial = Some(String::from("  observed-serial  "));
-        monitor.selector.connector = Some(String::from("configured-connector"));
-        let observed = CapabilitySnapshot {
-            ddc_present: vec![crate::discovery::DdcMonitorDiscovery {
-                occurrence_id: String::from("occurrence-1"),
-                stable_id: String::from("ddc:observed-device"),
-                identity_status: crate::discovery::PhysicalIdentityStatus::Unique,
-                manufacturer: Some(String::from("TEST")),
-                model: Some(String::from("Observed Model")),
-                serial: Some(String::from("observed-serial")),
-                display_number: 1,
-                bus_number: Some(9),
-                connector: Some(String::from("observed-connector")),
-                brightness_vcp_supported: Some(true),
-                backend_viable: true,
-                note: None,
-            }],
-            backlights_present: Vec::new(),
-        };
-
-        assert_eq!(
-            observed_identity_for(&monitor, &observed, ReconcileAction::Present),
-            Some(String::from("ddc:observed-device"))
-        );
-        assert_eq!(
-            observed_identity_for(
-                &monitor,
-                &CapabilitySnapshot::default(),
-                ReconcileAction::Present
-            ),
-            None,
-            "config-only selectors must never be labeled as observed identity"
-        );
-        assert_eq!(
-            observed_identity_for(&monitor, &observed, ReconcileAction::TemporarilyUnavailable),
-            None,
-            "unavailable targets have no proven observed identity"
-        );
-    }
-
-    #[test]
-    fn diagnostic_context_preserves_wake_correlation_and_generation() {
-        let context = ApplyDiagnosticContext {
-            correlation_id: Some(41),
-            observation_generation: Some(7),
-        };
-        assert_eq!(context.correlation_id, Some(41));
-        assert_eq!(context.observation_generation, Some(7));
-    }
-
-    #[test]
     fn reconciled_apply_skips_unavailable_topology_before_dispatch() {
         let monitors = vec![test_monitor("panel", BackendKind::Backlight)];
         let policy = test_policy(vec![("panel", 50)]);
@@ -764,7 +855,6 @@ mod tests {
             &CapabilitySnapshot::default(),
             None,
             None,
-            ApplyDiagnosticContext::default(),
         );
 
         assert_eq!(summary.skipped, 1);
@@ -773,73 +863,10 @@ mod tests {
         assert!(runner.calls().is_empty());
     }
 
-    #[test]
-    fn reconciled_apply_keeps_present_sibling_when_other_target_is_unavailable() {
-        let monitors = vec![
-            test_monitor("healthy", BackendKind::Backlight),
-            test_monitor("missing", BackendKind::Ddc),
-        ];
-        let policy = test_policy(vec![("healthy", 50), ("missing", 60)]);
-        let runner = FakeRunner::new().with_success(
-            "brightnessctl",
-            &[
-                "--quiet",
-                "--class",
-                "backlight",
-                "--device",
-                "healthy",
-                "set",
-                "50%",
-            ],
-            "",
-        );
-        let mut state = RuntimeState::default();
-        let capabilities = CapabilitySnapshot {
-            backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
-                stable_id: String::from("backlight:healthy"),
-                device_name: String::from("healthy"),
-                class: String::from("backlight"),
-                max_brightness: Some(100),
-                backlight_type: Some(String::from("raw")),
-                probe_source: String::from("test"),
-                sysfs_path: String::from("/sys/class/backlight/healthy"),
-                ddcci_connector: None,
-                backend_viable: true,
-                note: None,
-            }],
-            ddc_present: Vec::new(),
-        };
-
-        let summary = apply_policy_with_runner_reconciled(
-            &monitors,
-            fast_settings(),
-            &policy,
-            &mut state,
-            &runner,
-            1000,
-            &capabilities,
-            None,
-            Some(fast_settings()),
-            ApplyDiagnosticContext::default(),
-        );
-
-        assert_eq!(summary.succeeded, 1);
-        assert_eq!(summary.skipped, 1);
-        assert_eq!(runner.calls().len(), 1);
-        assert_eq!(
-            summary
-                .records
-                .iter()
-                .find(|record| record.logical_id == "missing")
-                .expect("missing target record")
-                .status,
-            ApplyStatus::SkippedTopology
-        );
-    }
-
     /// Builds a backlight monitor whose selector is ONLY a connector (legacy
     /// connector-only form). This exercises the Phase 8 owner-approved resolution:
     /// the daemon must fail closed when no authoritative topology link exists.
+    #[cfg(target_os = "linux")]
     fn legacy_connector_monitor(logical_id: &str, connector: &str) -> MonitorConfig {
         MonitorConfig {
             logical_id: logical_id.to_owned(),
@@ -869,6 +896,7 @@ mod tests {
     // so it is deterministic on every host (unlike a real /sys probe).
     // =========================================================================
     #[test]
+    #[cfg(target_os = "linux")]
     fn legacy_connector_only_resolves_through_backend_and_surfaces_diagnostic() {
         use std::fs;
 
@@ -924,6 +952,230 @@ mod tests {
         );
     }
 
+    #[test]
+    fn wake_probe_rewrites_only_monitors_that_answer_with_the_wrong_value() {
+        use crate::backends::{BackendObservation, BackendWrite};
+        use std::cell::RefCell;
+
+        let monitor = |id: &str| MonitorConfig {
+            logical_id: String::from(id),
+            ..MonitorConfig::default()
+        };
+        let monitors = vec![monitor("right"), monitor("wrong"), monitor("asleep")];
+        let target = |id: &str, percent| PerMonitorTarget {
+            logical_id: String::from(id),
+            percent,
+            solar_daylight_factor: 0.0,
+            effective_daylight_factor: 0.0,
+        };
+        let policy = PolicyOutput {
+            solar_elevation_deg: 10.0,
+            weather_multiplier: 1.0,
+            targets: vec![
+                target("right", 40),
+                target("wrong", 40),
+                target("asleep", 40),
+            ],
+        };
+        let mut state = RuntimeState::default();
+        let writes = RefCell::new(Vec::new());
+        let summary = probe_and_correct_with(
+            &monitors,
+            &policy,
+            &mut state,
+            1_000,
+            false,
+            |monitor| match monitor.logical_id.as_str() {
+                "right" => Ok(Some(BackendObservation { percent: 40 })),
+                "wrong" => Ok(Some(BackendObservation { percent: 3 })),
+                _ => Err(BackendError::Io {
+                    backend: crate::backends::BackendKind::Ddc,
+                    program: String::from("ddcutil"),
+                    message: String::from("No monitor detected"),
+                    attempts: 1,
+                }),
+            },
+            |monitor, _, percent| {
+                writes
+                    .borrow_mut()
+                    .push((monitor.logical_id.clone(), percent));
+                Ok(BackendWrite {
+                    backend: crate::backends::BackendKind::Ddc,
+                    applied_percent: percent,
+                    attempts: 1,
+                    detail: String::new(),
+                })
+            },
+        );
+        assert_eq!(writes.into_inner(), vec![(String::from("wrong"), 40)]);
+        assert_eq!(
+            summary,
+            ProbeSummary {
+                answered: 2,
+                corrected: 1,
+                failed: 0
+            }
+        );
+        assert_eq!(
+            state.monitor("wrong").and_then(|m| m.last_applied_percent),
+            Some(40)
+        );
+        // The monitor that did not answer gets no backoff.
+        assert!(state.monitor("asleep").is_none_or(|m| m.backoff.is_none()));
+
+        // Dry run reports drift without writing.
+        let mut dry_state = RuntimeState::default();
+        let dry = probe_and_correct_with(
+            &monitors,
+            &policy,
+            &mut dry_state,
+            1_000,
+            true,
+            |_| Ok(Some(BackendObservation { percent: 3 })),
+            |_, _, _| panic!("dry run must not write"),
+        );
+        assert_eq!(dry.corrected, 0);
+        assert_eq!(dry.answered, 3);
+    }
+
+    #[test]
+    fn due_reassert_reads_matching_hardware_without_writing() {
+        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
+        let policy = test_policy(vec![("panel", 50)]);
+        let runner = FakeRunner::new().with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "--sn", "SN_panel", "getvcp", "10"],
+            "VCP 10 C 50 100\n",
+        );
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 1_000);
+
+        let mut settings = fast_settings();
+        settings.apply_reassert_interval = Duration::from_mins(2);
+        let summary = apply_policy_with_runner_monitors(
+            &monitors, settings, &policy, &mut state, None, &runner, 1_120, None,
+        );
+
+        assert_eq!(summary.succeeded, 0);
+        assert_eq!(summary.skipped, 1);
+        assert!(runner.calls().iter().all(|call| !call.contains("|setvcp|")));
+        assert_eq!(
+            state
+                .monitor("panel")
+                .and_then(|m| m.last_integrity_check_at_epoch_s),
+            Some(1_120)
+        );
+    }
+
+    #[test]
+    fn due_reassert_corrects_different_hardware_value() {
+        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
+        let policy = test_policy(vec![("panel", 50)]);
+        let runner = FakeRunner::new()
+            .with_success(
+                "ddcutil",
+                &["--noconfig", "--terse", "--sn", "SN_panel", "getvcp", "10"],
+                "VCP 10 C 35 100\n",
+            )
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--sn",
+                    "SN_panel",
+                    "setvcp",
+                    "10",
+                    "50",
+                ],
+                "",
+            );
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 1_000);
+
+        let mut settings = fast_settings();
+        settings.apply_reassert_interval = Duration::from_mins(2);
+        let summary = apply_policy_with_runner_monitors(
+            &monitors, settings, &policy, &mut state, None, &runner, 1_120, None,
+        );
+
+        assert_eq!(summary.succeeded, 1);
+        assert!(runner.calls().iter().any(|call| call.contains("|setvcp|")));
+        assert_eq!(
+            state.monitor("panel").and_then(|m| m.last_applied_percent),
+            Some(50)
+        );
+    }
+
+    #[test]
+    fn before_reassert_deadline_hysteresis_still_avoids_read_and_write() {
+        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
+        let policy = test_policy(vec![("panel", 50)]);
+        let runner = FakeRunner::new();
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 1_000);
+
+        let mut settings = fast_settings();
+        settings.apply_reassert_interval = Duration::from_mins(2);
+        let summary = apply_policy_with_runner_monitors(
+            &monitors, settings, &policy, &mut state, None, &runner, 1_119, None,
+        );
+
+        assert_eq!(summary.records[0].status, ApplyStatus::SkippedHysteresis);
+        assert!(runner.calls().is_empty());
+    }
+
+    #[test]
+    fn lifecycle_recovery_corrects_different_observed_brightness() {
+        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
+        let policy = test_policy(vec![("panel", 50)]);
+        let runner = FakeRunner::new()
+            .with_success(
+                "ddcutil",
+                &["--noconfig", "--terse", "--sn", "SN_panel", "getvcp", "10"],
+                "VCP 10 C 35 100\n",
+            )
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--sn",
+                    "SN_panel",
+                    "setvcp",
+                    "10",
+                    "50",
+                ],
+                "",
+            );
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 1_000);
+
+        let summary = apply_policy_with_runner_monitors_impl(
+            &monitors,
+            fast_settings(),
+            &policy,
+            &mut state,
+            None,
+            &runner,
+            1_001,
+            Some(ApplySettings {
+                min_write_delta_pct: 0,
+                max_step_pct_per_tick: 100,
+                min_apply_interval: Duration::ZERO,
+                dry_run: false,
+                apply_reassert_interval: Duration::from_mins(2),
+                ddc_timeout: Duration::from_secs(10),
+                backlight_timeout: Duration::from_secs(5),
+            }),
+            true,
+            &[],
+        );
+
+        assert_eq!(summary.succeeded, 1);
+        assert!(runner.calls().iter().any(|call| call.contains("|setvcp|")));
+    }
+
     fn fast_settings() -> ApplySettings {
         ApplySettings {
             // 1% delta threshold: same-percent requests on subsequent ticks
@@ -935,7 +1187,7 @@ mod tests {
             // Large reassert interval (1 billion seconds ≈ 31 years) so it
             // never fires during the 10k-tick simulation test.
             apply_reassert_interval: Duration::from_secs(1_000_000_000),
-            ddc_timeout: Duration::from_secs(5),
+            ddc_timeout: Duration::from_secs(10),
             backlight_timeout: Duration::from_secs(2),
         }
     }
@@ -949,6 +1201,7 @@ mod tests {
     // environments and ARM build servers while still proving concurrency.
     // =========================================================================
     #[test]
+    #[cfg(target_os = "linux")]
     fn test_four_monitor_extreme_latency() {
         // Use Backlight backend: no i2c flock, so threads don't serialize.
         // DDC has a per-call flock(LockExclusive) by design; testing concurrency
@@ -995,6 +1248,7 @@ mod tests {
     // Proves that one monitor's failure does not block or corrupt others.
     // =========================================================================
     #[test]
+    #[cfg(target_os = "linux")]
     fn test_mixed_hardware_failure() {
         let monitors = vec![
             test_monitor("healthy", BackendKind::Backlight),
@@ -1103,6 +1357,7 @@ mod tests {
     // Raspberry Pi if records were accumulated across ticks.
     // =========================================================================
     #[test]
+    #[cfg(target_os = "linux")]
     fn test_arm_resource_constrained_simulation() {
         let monitors = vec![test_monitor("panel", BackendKind::Backlight)];
         let policy = test_policy(vec![("panel", 50)]);

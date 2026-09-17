@@ -1,11 +1,22 @@
+use crate::platform::{DisplayEventSources, DisplayRecoveryReason};
+use crate::runtime::fade::{self, FadeEngine};
 use crate::runtime::idle::DesktopIdleSync;
 use chrono::{DateTime, Utc};
 use std::fs;
 use std::io;
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-use std::os::unix::net::UnixStream;
+
+#[cfg(target_os = "linux")]
+pub(crate) type NativeIpcStream = std::os::unix::net::UnixStream;
+
+#[cfg(target_os = "windows")]
+pub(crate) type NativeIpcStream = crate::platform::windows::pipe::NamedPipeStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 const IPC_DRAIN_MAX_REQUESTS: usize = 16;
@@ -13,31 +24,20 @@ const IPC_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
 
 use tracing::{error, info};
 
-use crate::apply::{
-    self, ApplyDiagnosticContext, ApplyRecord, ApplySettings, ApplyStatus, ApplySummary,
-};
+use crate::apply::{self, ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
 use crate::backends::{FailureKind, ProcessRunner, RealProcessRunner};
 use crate::config::{self, ConfigError, ConfigReport, ConfigSource, MonitorConfig, WeatherConfig};
 use crate::ipc::{self, BoundControlSocket, ControlSocket};
 use crate::paths::{self, PathError};
 use crate::policy::{self, PolicyContext, PolicyError, PolicyOutput};
-use crate::runtime::logind::{LogindEvent, LogindWatcher};
 use crate::runtime::topology::CapabilitySnapshot;
-use crate::runtime::wake::{WakeReassertAction, WakeReassertCoordinator, WakeReassertReason};
+use crate::runtime::wake::{WakeReassertReason, WakeWatch};
 use crate::solar::{self, Location, SolarError, SolarSample};
 use crate::state::{RuntimeState, StateError};
 use crate::weather;
 
-fn logind_wake_reason(event: LogindEvent) -> Option<(WakeReassertReason, Option<u64>)> {
-    match event {
-        LogindEvent::SystemResume { correlation_id } => {
-            Some((WakeReassertReason::SystemResume, Some(correlation_id)))
-        }
-        LogindEvent::PrepareForSleep(_) => None,
-    }
-}
-
 // --- From mod.rs (Types & Impls) ---
+#[cfg(target_os = "linux")]
 const RUNTIME_DIR_MODE: u32 = 0o700;
 
 #[derive(Debug, thiserror::Error)]
@@ -60,86 +60,15 @@ pub enum RuntimeError {
         #[source]
         source: std::io::Error,
     },
-    /// Generation counter exhausted. Fails closed: no new authorization is
-    /// issued and wrapping to zero is forbidden.
-    #[error("observation generation overflow; refusing new authorization")]
-    ObservationGenerationOverflow,
-}
-
-/// Process-local monotonic generation authorizing hardware writes.
-///
-/// Every capability observation (synchronous or asynchronous) reserves a
-/// strictly increasing generation before discovery starts. A completion may
-/// publish its snapshot only while its ticket still owns the newest reserved
-/// generation; an overtaken completion settles its owner but never replaces
-/// current authorization. Generations are process-local and are never
-/// persisted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct ObservationGeneration(u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ObservationCause {
-    ScheduledTick,
-    WakeReassert {
-        attempt: u8,
-        correlation_id: Option<u64>,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ObservationTicket {
-    generation: ObservationGeneration,
-    cause: ObservationCause,
 }
 
 #[derive(Debug)]
-struct ActiveObservation {
-    ticket: ObservationTicket,
-    handle: std::thread::JoinHandle<Option<CapabilitySnapshot>>,
-}
-
-/// Versioned publication of one capability snapshot.
-///
-/// Write authorization is the pair `(generation, snapshot)`, not the bare
-/// snapshot: every apply entrypoint receives the exact generation it was
-/// reconciled against and dispatches hardware writes only while that
-/// generation still equals `current == latest_started == latest_settled`.
-#[derive(Debug, Clone)]
-struct PublishedCapabilities {
-    generation: ObservationGeneration,
-    snapshot: CapabilitySnapshot,
-}
-
-#[derive(Debug, Default)]
-struct ObservationState {
-    next_generation: u64,
-    latest_started: Option<ObservationGeneration>,
-    latest_settled: Option<ObservationGeneration>,
-    current: Option<PublishedCapabilities>,
-    active: Option<ActiveObservation>,
-}
-
-enum StartAsyncOutcome {
-    Started,
-    Busy,
-    FailedToSpawn,
-}
-
-enum CompletionOutcome {
-    Published,
-    Superseded,
-    Rejected,
-}
-
-impl Drop for DaemonRuntime {
-    fn drop(&mut self) {
-        // Shutdown is cleanup, not a publication trigger: join any retained
-        // observation worker (it may own child processes) and discard its
-        // result without publishing or applying it.
-        if let Some(active) = self.observation.active.take() {
-            let _ = active.handle.join();
-        }
-    }
+enum CapabilityRefreshResult {
+    Completed {
+        generation: u64,
+        snapshot: CapabilitySnapshot,
+    },
+    Failed,
 }
 
 #[derive(Debug)]
@@ -151,12 +80,35 @@ pub struct DaemonRuntime {
     pub weather_refresh: WeatherRefreshState,
     pub persisted_state_snapshot: RuntimeState,
     pub last_solar_elevation: Option<f64>,
-    /// Legacy fade state kept only so stale entries from older callers can be
-    /// observed and canceled; production never dispatches hardware from it.
-    pub fade_engine: crate::runtime::fade::FadeEngine,
+    pub fade_engine: fade::FadeEngine,
     pub weather_engine: weather::WeatherEngine,
-    observation: ObservationState,
-    wake_reassert: WakeReassertCoordinator,
+    /// Ephemeral capability observation from the last reconciliation.
+    /// Not persisted; kept separate from user config.
+    pub last_capabilities: Option<CapabilitySnapshot>,
+    capability_refresh_tx: mpsc::SyncSender<CapabilityRefreshResult>,
+    capability_refresh_rx: mpsc::Receiver<CapabilityRefreshResult>,
+    capability_refresh_active: Arc<AtomicBool>,
+    capability_refresh_pending: bool,
+    capability_refresh_handle: Option<std::thread::JoinHandle<()>>,
+    capability_refresh_generation: Arc<AtomicU64>,
+    wake_watch: WakeWatch,
+    display_events: Option<DisplayEventSources>,
+}
+
+impl Drop for DaemonRuntime {
+    fn drop(&mut self) {
+        if let Some(handle) = self.capability_refresh_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+struct CapabilityRefreshGuard(Arc<AtomicBool>);
+
+impl Drop for CapabilityRefreshGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -192,36 +144,25 @@ pub struct WeatherRefreshState {
 }
 
 impl DaemonRuntime {
-    fn observe_capabilities<R: ProcessRunner>(runner: &R) -> CapabilitySnapshot {
-        let report = crate::discovery::discover_with_runner(
-            runner,
-            std::path::Path::new("/sys/class/backlight"),
-        );
-        CapabilitySnapshot::from_discovery(&report)
+    pub fn run_once(&mut self) -> Result<TickReport, RuntimeError> {
+        self.run_once_at_with_runner(Utc::now(), &RealProcessRunner, false)
     }
 
-    /// Perform one complete capability observation and apply one tick under
-    /// the resulting same-generation authorization. A one-shot invocation has
-    /// no daemon loop available for the asynchronous handshake, so discovery
-    /// runs synchronously here and the tick consumes exactly what it observed.
-    pub fn run_once(&mut self) -> Result<TickReport, RuntimeError> {
-        self.run_once_at_with_runner_fresh(Utc::now(), &RealProcessRunner, false)
+    /// Perform one complete capability observation before a one-shot apply.
+    /// A one-shot invocation has no daemon loop available to perform the
+    /// normal asynchronous observation/reconciliation handshake.
+    pub fn refresh_capabilities(&mut self) {
+        let report = crate::discovery::discover_with_runner(
+            &RealProcessRunner,
+            std::path::Path::new("/sys/class/backlight"),
+        );
+        self.last_capabilities = Some(CapabilitySnapshot::from_discovery(&report));
     }
 
     /// Force-apply variant: bypasses throttles so brightness changes
     /// are applied immediately to the physical monitor.
     pub fn run_once_forced(&mut self) -> Result<TickReport, RuntimeError> {
-        self.run_once_at_with_runner_fresh(Utc::now(), &RealProcessRunner, true)
-    }
-
-    fn run_once_at_with_runner_fresh<R: ProcessRunner + Sync>(
-        &mut self,
-        now_utc: DateTime<Utc>,
-        runner: &R,
-        force_immediate: bool,
-    ) -> Result<TickReport, RuntimeError> {
-        self.observe_sync(runner)?;
-        self.run_once_at_with_runner(now_utc, runner, force_immediate)
+        self.run_once_at_with_runner(Utc::now(), &RealProcessRunner, true)
     }
 
     pub(super) fn prepare_apply_resync(&mut self, clear_backoff: bool) {
@@ -241,308 +182,145 @@ impl DaemonRuntime {
         clear_backoff: bool,
     ) -> Result<TickReport, RuntimeError> {
         self.prepare_apply_resync(clear_backoff);
-        self.observe_sync(runner)?;
         self.run_once_at_with_runner(now_utc, runner, true)
     }
 
-    /// Reserve a fresh generation, invalidate prior authorization, and run
-    /// full discovery synchronously on the control thread. Any retained async
-    /// worker stays attached to its (now overtaken) ticket; its completion can
-    /// no longer publish.
-    ///
-    /// The synchronous caller owns its own result: the cause is diagnostic
-    /// only because settlement happens inline on the same thread that
-    /// reserved the ticket.
-    fn observe_sync<R: ProcessRunner>(&mut self, runner: &R) -> Result<(), RuntimeError> {
-        let cause = ObservationCause::ScheduledTick;
-        let ticket = ObservationTicket {
-            generation: self.reserve_generation(cause)?,
-            cause,
-        };
-        self.complete(ticket, Some(Self::observe_capabilities(runner)));
-        Ok(())
-    }
-
-    /// Reserve the next observation generation. Overflow fails closed: no
-    /// authorization is issued and wrapping to zero is forbidden.
-    fn reserve_generation(
-        &mut self,
-        cause: ObservationCause,
-    ) -> Result<ObservationGeneration, RuntimeError> {
-        match self.observation.next_generation.checked_add(1) {
-            Some(next) => {
-                self.observation.next_generation = next;
-                let generation = ObservationGeneration(next);
-                self.observation.latest_started = Some(generation);
-                // Invalidation on start: accepting any newer observation makes
-                // all older snapshots unauthorized.
-                self.observation.current = None;
-                let correlation_id = match cause {
-                    ObservationCause::WakeReassert { correlation_id, .. } => correlation_id,
-                    ObservationCause::ScheduledTick => None,
-                };
-                tracing::info!(
-                    generation = generation.0,
-                    observation_generation = generation.0,
-                    ?cause,
-                    ?correlation_id,
-                    "observation_generation_reserved"
-                );
-                Ok(generation)
-            }
-            None => Err(RuntimeError::ObservationGenerationOverflow),
-        }
-    }
-
-    /// Common completion seam shared by synchronous settlement, async poll,
-    /// and test injection. Publishes the snapshot only when the ticket still
-    /// owns the newest reserved generation; an overtaken completion settles as
-    /// `Superseded` without touching current authorization, and a current
-    /// failure keeps authorization absent (failure is not authority).
-    fn complete(&mut self, ticket: ObservationTicket, snapshot: Option<CapabilitySnapshot>) {
-        if self.observation.latest_started != Some(ticket.generation) {
-            tracing::warn!(
-                generation = ticket.generation.0,
-                observation_generation = ticket.generation.0,
-                ?ticket.cause,
-                correlation_id = ?match ticket.cause {
-                    ObservationCause::WakeReassert { correlation_id, .. } => correlation_id,
-                    ObservationCause::ScheduledTick => None,
-                },
-                "observation_completion_superseded"
-            );
-            return;
-        }
-        self.observation.latest_settled = Some(ticket.generation);
-        if let Some(snapshot) = snapshot {
-            self.observation.current = Some(PublishedCapabilities {
-                generation: ticket.generation,
-                snapshot,
-            });
-            let correlation_id = match ticket.cause {
-                ObservationCause::WakeReassert { correlation_id, .. } => correlation_id,
-                ObservationCause::ScheduledTick => None,
-            };
-            tracing::info!(
-                generation = ticket.generation.0,
-                observation_generation = ticket.generation.0,
-                ?ticket.cause,
-                ?correlation_id,
-                "observation_completion_published"
-            );
-        } else {
-            self.observation.current = None;
-            tracing::warn!(
-                generation = ticket.generation.0,
-                observation_generation = ticket.generation.0,
-                ?ticket.cause,
-                "observation_failed_fail_closed"
-            );
-        }
-    }
-
-    /// Start at most one bounded capability observation away from the control
-    /// loop. On success the returned ticket is owned by exactly one active
-    /// worker; `Busy` reserves nothing and mutates no owner state.
-    fn try_start_async_observation<R>(
-        &mut self,
-        cause: ObservationCause,
-        runner: R,
-    ) -> StartAsyncOutcome
+    /// Starts at most one bounded capability observation away from the control
+    /// loop. Only the completed snapshot is published back to the runtime.
+    pub(crate) fn begin_capability_refresh_with_runner<R>(&mut self, runner: R)
     where
         R: ProcessRunner + Send + Sync + 'static,
     {
-        if self.observation.active.is_some() {
-            return StartAsyncOutcome::Busy;
+        if self.capability_refresh_active.load(Ordering::Acquire) {
+            return;
         }
-        let Ok(generation) = self.reserve_generation(cause) else {
-            return StartAsyncOutcome::FailedToSpawn;
-        };
-        let ticket = ObservationTicket { generation, cause };
-        let handle = std::thread::Builder::new()
-            .name(String::from("sunreactor-observation"))
-            .spawn(move || {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    Some(DaemonRuntime::observe_capabilities(&runner))
-                }))
-                .unwrap_or(None)
-            });
-        if let Ok(handle) = handle {
-            self.observation.active = Some(ActiveObservation { ticket, handle });
-            StartAsyncOutcome::Started
-        } else {
-            // Spawn failure is an owned failure, not a stranded pending
-            // flag: roll the reservation back so owners can retry later
-            // with no authorization and no active worker existing.
-            self.observation.latest_started = None;
-            self.observation.next_generation = self.observation.next_generation.saturating_sub(1);
-            StartAsyncOutcome::FailedToSpawn
-        }
-    }
+        let generation = self
+            .capability_refresh_generation
+            .fetch_add(1, Ordering::AcqRel)
+            .saturating_add(1);
 
-    /// Non-blocking poll of a finished async observation. Joins the exact
-    /// retained handle, settles its exact ticket through the common seam, and
-    /// hands the owned outcome back for owner processing. Returns `None`
-    /// while the worker runs or when nothing is active.
-    ///
-    /// Per ARCH-V1 §6/§7: publication happens only after ownership validation
-    /// (`ticket.generation == latest_started`). A current failed completion is
-    /// `Rejected` (failure is not authority); an older completion is always
-    /// `Superseded` — successful or not, it must neither publish nor roll
-    /// authorization backward.
-    fn poll_async_completion(&mut self) -> Option<(ObservationTicket, CompletionOutcome)> {
-        let finished = self
-            .observation
-            .active
-            .as_ref()
-            .is_some_and(|active| active.handle.is_finished());
-        if !finished {
-            return None;
+        if let Some(handle) = self.capability_refresh_handle.take() {
+            if !handle.is_finished() {
+                self.capability_refresh_handle = Some(handle);
+                return;
+            }
+            let _ = handle.join();
         }
-        let ActiveObservation { ticket, handle } =
-            self.observation.active.take().expect("checked above");
-        let outcome = if let Ok(Some(snapshot)) = handle.join() {
-            if self.observation.latest_started == Some(ticket.generation) {
-                self.complete(ticket, Some(snapshot));
-                CompletionOutcome::Published
-            } else {
-                // Overtaken success: settle the owner without publishing.
-                // A superseded result can never replace newer
-                // authorization.
-                CompletionOutcome::Superseded
-            }
-        } else {
-            let superseded = Some(ticket.generation) < self.observation.latest_started;
-            self.complete(ticket, None);
-            if superseded {
-                CompletionOutcome::Superseded
-            } else {
-                CompletionOutcome::Rejected
-            }
-        };
-        Some((ticket, outcome))
-    }
 
-    fn request_wake_reassert(&mut self, reason: WakeReassertReason, correlation_id: Option<u64>) {
         if self
-            .wake_reassert
-            .request(reason, correlation_id, Instant::now())
+            .capability_refresh_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
         {
-            tracing::info!(
-                reason = ?reason,
-                ?correlation_id,
-                observation_generation = ?self.observation.latest_started.map(|generation| generation.0),
-                "wake_reassert_requested"
-            );
-        } else {
-            tracing::debug!(reason = ?reason, "wake_reassert_coalesced");
-        }
-    }
-
-    fn finish_wake_observation<R: ProcessRunner + Sync>(
-        &mut self,
-        now_utc: DateTime<Utc>,
-        runner: &R,
-        ticket: ObservationTicket,
-        outcome: &CompletionOutcome,
-    ) {
-        let ObservationCause::WakeReassert {
-            attempt,
-            correlation_id,
-        } = ticket.cause
-        else {
             return;
-        };
-        match outcome {
-            CompletionOutcome::Published => {
-                tracing::info!(attempt, ?correlation_id, "observation_completion_published");
-                let generation = self
-                    .observation
-                    .current
-                    .as_ref()
-                    .map(|published| published.generation.0);
-                let _ = self.run_once_at_with_runner_diagnostic(
-                    now_utc,
-                    runner,
-                    true,
-                    ApplyDiagnosticContext {
-                        correlation_id,
-                        observation_generation: generation,
-                    },
+        }
+
+        let sender = self.capability_refresh_tx();
+        let active = Arc::clone(&self.capability_refresh_active);
+        self.capability_refresh_handle = Some(std::thread::spawn(move || {
+            let _active_guard = CapabilityRefreshGuard(active);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let report = crate::discovery::discover_with_runner(
+                    &runner,
+                    std::path::Path::new("/sys/class/backlight"),
                 );
-                if !self
-                    .wake_reassert
-                    .observation_completed(true, Instant::now())
-                {
-                    tracing::warn!(attempt, "wake_reassert_observation_finished");
+                CapabilityRefreshResult::Completed {
+                    generation,
+                    snapshot: CapabilitySnapshot::from_discovery(&report),
                 }
-            }
-            CompletionOutcome::Superseded => {
-                tracing::warn!(
-                    attempt,
-                    ?correlation_id,
-                    "observation_completion_superseded"
-                );
-                if self.wake_reassert.observation_unavailable(Instant::now()) {
-                    tracing::warn!(attempt, "wake_reassert_overtaken_retrying");
+            }))
+            .unwrap_or(CapabilityRefreshResult::Failed);
+            let _ = sender.try_send(result);
+        }));
+    }
+
+    fn capability_refresh_tx(&self) -> mpsc::SyncSender<CapabilityRefreshResult> {
+        self.capability_refresh_tx.clone()
+    }
+
+    fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
+        match self.capability_refresh_rx.try_recv() {
+            Ok(CapabilityRefreshResult::Completed {
+                generation,
+                snapshot,
+            }) => {
+                if generation == self.capability_refresh_generation.load(Ordering::Acquire) {
+                    self.last_capabilities = Some(snapshot);
+                    Some(true)
                 } else {
-                    tracing::warn!(attempt, "wake_reassert_overtaken_finished");
+                    tracing::warn!(generation, "capability_refresh_superseded");
+                    Some(false)
                 }
             }
-            CompletionOutcome::Rejected => {
-                if !self
-                    .wake_reassert
-                    .observation_completed(false, Instant::now())
-                {
-                    tracing::warn!(
-                        observation_ready = false,
-                        "wake_reassert_observation_finished"
-                    );
-                }
-            }
+            Ok(CapabilityRefreshResult::Failed) => Some(false),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => Some(false),
         }
     }
 
-    fn process_wake_reassert(&mut self, now: Instant) -> bool {
-        self.process_wake_reassert_with_runner(now, RealProcessRunner)
+    /// Opens (or extends) the wake watch; probes then fix any brightness a
+    /// waking monitor or the desktop restored on its own.
+    pub(super) fn request_wake_reassert(&mut self, reason: WakeReassertReason) -> bool {
+        let opened = self.wake_watch.start(reason, Instant::now());
+        if opened {
+            tracing::info!(reason = ?reason, "wake_watch_started");
+        } else {
+            tracing::debug!(reason = ?reason, "wake_watch_extended");
+        }
+        opened
     }
 
-    fn process_wake_reassert_with_runner<R>(&mut self, now: Instant, runner: R) -> bool
-    where
-        R: ProcessRunner + Send + Sync + 'static,
-    {
-        match self.wake_reassert.poll(now) {
-            WakeReassertAction::Wait => true,
-            WakeReassertAction::Observe { attempt } => {
-                let correlation_id = self.wake_reassert.correlation_id();
-                tracing::info!(
-                    attempt,
-                    ?correlation_id,
-                    observation_generation = ?self.observation.latest_started.map(|generation| generation.0),
-                    "wake_reassert_observation_started"
-                );
-                // The coordinator enters Observing optimistically inside
-                // poll(); Busy/FailedToSpawn rolls it back to a short retry so
-                // the attempt is re-driven by the loop instead of being lost.
-                match self.try_start_async_observation(
-                    ObservationCause::WakeReassert {
-                        attempt,
-                        correlation_id,
-                    },
-                    runner,
-                ) {
-                    StartAsyncOutcome::Started => true,
-                    StartAsyncOutcome::Busy | StartAsyncOutcome::FailedToSpawn => {
-                        tracing::warn!(attempt, "wake_reassert_observation_start_deferred");
-                        if let Some(due) = self.wake_reassert.defer_observation(now) {
-                            now >= due
-                        } else {
-                            false
-                        }
-                    }
-                }
+    fn handle_display_event(&mut self, reason: DisplayRecoveryReason) {
+        let wake_reason = match reason {
+            DisplayRecoveryReason::DrmHotplug => WakeReassertReason::DrmHotplug,
+            DisplayRecoveryReason::DrmConnectorChange => WakeReassertReason::DrmConnectorChange,
+            DisplayRecoveryReason::Resume => WakeReassertReason::SystemResume,
+        };
+        if self.request_wake_reassert(wake_reason) {
+            // A capability observation that started before the change may
+            // describe the old topology; make sure it is not published.
+            self.capability_refresh_generation
+                .fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// One wake probe: compute the current targets and correct any monitor
+    /// that answers with a different brightness.
+    pub(super) fn run_wake_probe<R: ProcessRunner>(&mut self, now_utc: DateTime<Utc>, runner: &R) {
+        if self.fade_engine.is_fading() {
+            return;
+        }
+        let computed = match self
+            .collect_tick_inputs(now_utc, false)
+            .and_then(|inputs| self.compute_tick_policy(inputs))
+        {
+            Ok(computed) => computed,
+            Err(error) => {
+                tracing::debug!(error = %error, "wake_probe_policy_unavailable");
+                return;
             }
-            WakeReassertAction::Done => false,
+        };
+        if computed.suspended {
+            return;
+        }
+        let settings = self.force_apply_settings();
+        let summary = apply::probe_and_correct(
+            &self.config.monitors,
+            &settings,
+            &computed.policy,
+            &mut self.state,
+            runner,
+            computed.inputs.now_epoch_s,
+        );
+        tracing::debug!(
+            probe = self.wake_watch.probes(),
+            answered = summary.answered,
+            corrected = summary.corrected,
+            failed = summary.failed,
+            "wake_probe_completed"
+        );
+        if summary.corrected > 0 {
+            let _ = self.persist_state_if_changed();
         }
     }
 
@@ -662,36 +440,17 @@ mod config_tests {
     }
 }
 
-#[cfg(test)]
-mod logind_handoff_tests {
-    use super::*;
-
-    #[test]
-    fn logind_resume_is_only_a_system_resume_hint() {
-        assert_eq!(
-            logind_wake_reason(LogindEvent::SystemResume { correlation_id: 7 }),
-            Some((WakeReassertReason::SystemResume, Some(7)))
-        );
-        assert_eq!(
-            logind_wake_reason(LogindEvent::PrepareForSleep(false)),
-            None
-        );
-        assert_ne!(
-            Some((WakeReassertReason::SystemResume, Some(7))),
-            Some((WakeReassertReason::WaylandIdleResume, None))
-        );
-    }
-}
-
 // --- From loop_timing.rs ---
 const SHUTDOWN_SLEEP_SLICE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LoopAction {
     RunTick,
+    RunFadeStep,
     Sleep(Duration),
 }
 
+#[cfg(target_os = "linux")]
 fn wait_for_ipc_or_sleep(listener: &BoundControlSocket, duration: Duration) {
     let mut pollfd = libc::pollfd {
         fd: listener.as_raw_fd(),
@@ -702,6 +461,11 @@ fn wait_for_ipc_or_sleep(listener: &BoundControlSocket, duration: Duration) {
     unsafe {
         libc::poll(&raw mut pollfd, 1, timeout_ms);
     }
+}
+
+#[cfg(target_os = "windows")]
+fn wait_for_ipc_or_sleep(listener: &BoundControlSocket, duration: Duration) {
+    listener.wait_for_ipc_or_sleep(duration);
 }
 
 #[derive(Debug, Clone)]
@@ -729,8 +493,16 @@ impl LoopCadence {
         self.last_tick_started.elapsed()
     }
 
-    pub(super) fn next_action(&self, extra_deadline: Option<Instant>) -> LoopAction {
+    pub(super) fn next_action(
+        &self,
+        extra_deadline: Option<Instant>,
+        is_fading: bool,
+    ) -> LoopAction {
         let elapsed = self.elapsed_since_tick();
+
+        if is_fading {
+            return LoopAction::RunFadeStep;
+        }
 
         if elapsed >= self.tick_interval {
             return LoopAction::RunTick;
@@ -755,7 +527,7 @@ fn drain_ready_connections<F>(
     mut handle: F,
 ) -> Result<IpcDrainOutcome, RuntimeError>
 where
-    F: FnMut(std::os::unix::net::UnixStream),
+    F: FnMut(NativeIpcStream),
 {
     let started = Instant::now();
     let mut outcome = IpcDrainOutcome::default();
@@ -808,12 +580,71 @@ impl DaemonRuntime {
         runner: &R,
         cadence: &mut LoopCadence,
         desktop_idle: &mut DesktopIdleSync,
+        listener: &BoundControlSocket,
     ) {
         match action {
             LoopAction::RunTick => {
                 self.execute_scheduled_tick(now_utc, runner, cadence, desktop_idle);
             }
-            LoopAction::Sleep(duration) => std::thread::sleep(duration),
+            LoopAction::RunFadeStep => {
+                // Fade steps are hardware writes too.  Do not let the high-
+                // cadence path bypass topology authorization while the first
+                // complete capability observation is still pending.
+                if self.last_capabilities.is_none() {
+                    wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
+                    return;
+                }
+                let step_start = Instant::now();
+                let steps = self.fade_engine.process_tick();
+                for (monitor_id, percent) in steps {
+                    if let Some(monitor) = self
+                        .config
+                        .monitors
+                        .iter()
+                        .find(|m| m.logical_id == monitor_id)
+                    {
+                        let target = crate::policy::PerMonitorTarget {
+                            logical_id: monitor_id,
+                            percent,
+                            solar_daylight_factor: 0.0,
+                            effective_daylight_factor: 0.0,
+                        };
+                        let settings = self.config.apply;
+                        match crate::apply::apply_monitor_target(
+                            runner, monitor, &target, percent, &settings,
+                        ) {
+                            Ok(_) => {
+                                self.state.record_apply_success(
+                                    &target.logical_id,
+                                    percent,
+                                    now_utc.timestamp().max(0) as u64,
+                                );
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    monitor = %target.logical_id,
+                                    percent = %percent,
+                                    error = %error,
+                                    "fade_step_failed"
+                                );
+                                self.state.record_apply_failure(
+                                    &target.logical_id,
+                                    monitor.backend,
+                                    error.failure_kind(),
+                                    now_utc.timestamp().max(0) as u64,
+                                );
+                                // Stop fading this monitor if it's failing
+                                self.fade_engine.active_fades.remove(&target.logical_id);
+                            }
+                        }
+                    }
+                }
+                if let Some(remaining) = Duration::from_millis(16).checked_sub(step_start.elapsed())
+                {
+                    wait_for_ipc_or_sleep(listener, remaining);
+                }
+            }
+            LoopAction::Sleep(duration) => wait_for_ipc_or_sleep(listener, duration),
         }
     }
 
@@ -852,6 +683,10 @@ impl DaemonRuntime {
 #[cfg(test)]
 mod loop_timing_tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    use std::os::unix::net::UnixStream;
+    #[cfg(target_os = "linux")]
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn cadence_runs_tick_when_interval_elapsed() {
@@ -860,7 +695,7 @@ mod loop_timing_tests {
             .checked_sub(Duration::from_mins(1))
             .expect("instant subtraction should work");
 
-        assert_eq!(cadence.next_action(None), LoopAction::RunTick);
+        assert_eq!(cadence.next_action(None, false), LoopAction::RunTick);
     }
 
     #[test]
@@ -869,9 +704,10 @@ mod loop_timing_tests {
         cadence.note_tick_attempt();
         let deadline = Some(Instant::now() + Duration::from_millis(10));
 
-        match cadence.next_action(deadline) {
+        match cadence.next_action(deadline, false) {
             LoopAction::Sleep(duration) => assert!(duration <= Duration::from_millis(10)),
             LoopAction::RunTick => panic!("unexpected tick"),
+            LoopAction::RunFadeStep => panic!("unexpected fade step"),
         }
     }
 
@@ -887,16 +723,17 @@ mod loop_timing_tests {
         cadence.last_tick_started = Instant::now()
             .checked_sub(Duration::from_mins(1))
             .expect("instant subtraction should work");
-        assert_eq!(cadence.next_action(None), LoopAction::RunTick);
+        assert_eq!(cadence.next_action(None, false), LoopAction::RunTick);
     }
 
     #[test]
-    fn drain_quantum_bounds_are_stable_contract_values() {
+    fn drain_quantum_is_small_enough_to_yield_to_fade_cadence() {
         assert_eq!(IPC_DRAIN_MAX_REQUESTS, 16);
         assert_eq!(IPC_DRAIN_MAX_DURATION, Duration::from_millis(8));
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn real_listener_drain_respects_count_and_preserves_backlog() {
         let path = std::env::temp_dir().join(format!(
             "sunreactor-drain-test-{}-{}.sock",
@@ -906,12 +743,12 @@ mod loop_timing_tests {
         let socket = ControlSocket { path: path.clone() };
         let listener = socket.bind_listener().expect("listener should bind");
         let mut clients = Vec::new();
-        for _ in 0..=(IPC_DRAIN_MAX_REQUESTS + 2) {
+        for _ in 0..(IPC_DRAIN_MAX_REQUESTS + 2) {
             let mut client = UnixStream::connect(&path).expect("client should connect");
             ipc::write_json_message(
                 &mut client,
                 &ipc::RequestEnvelope::new(ipc::Request::Ping),
-                &path,
+                &path.display().to_string(),
             )
             .expect("request should write");
             clients.push(client);
@@ -931,20 +768,22 @@ mod loop_timing_tests {
             drop(stream);
         })
         .expect("second drain should succeed");
-        assert!(second.processed >= 2);
+        assert!(second.processed >= 1);
         assert_eq!(
             handled.load(std::sync::atomic::Ordering::Relaxed),
-            IPC_DRAIN_MAX_REQUESTS + 3
+            IPC_DRAIN_MAX_REQUESTS + 2
         );
+        drop(clients);
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn malformed_connections_consume_drain_budget() {
         let path = std::env::temp_dir().join(format!(
             "sunreactor-malformed-drain-test-{}-{}.sock",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .expect("system time should work")
                 .as_nanos()
         ));
@@ -969,9 +808,11 @@ mod loop_timing_tests {
             handled.load(std::sync::atomic::Ordering::Relaxed),
             IPC_DRAIN_MAX_REQUESTS
         );
+        drop(clients);
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn one_slow_handler_is_not_preempted_by_drain_budget() {
         let path = std::env::temp_dir().join(format!(
             "sunreactor-slow-drain-test-{}-{}.sock",
@@ -984,7 +825,7 @@ mod loop_timing_tests {
         ipc::write_json_message(
             &mut client,
             &ipc::RequestEnvelope::new(ipc::Request::Ping),
-            &path,
+            &path.display().to_string(),
         )
         .expect("request should write");
         let started = Instant::now();
@@ -1002,7 +843,7 @@ mod loop_timing_tests {
         cadence.last_tick_started = Instant::now()
             .checked_sub(Duration::from_mins(1))
             .expect("instant subtraction should work");
-        assert_eq!(cadence.next_action(None), LoopAction::RunTick);
+        assert_eq!(cadence.next_action(None, false), LoopAction::RunTick);
     }
 }
 
@@ -1069,14 +910,25 @@ pub(super) fn skipped_apply_summary(monitors: usize, _reason: &str) -> ApplySumm
 }
 
 pub(super) fn create_runtime_dir(path: &Path) -> Result<(), RuntimeError> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true).mode(RUNTIME_DIR_MODE);
-    builder.create(path).map_err(|source| RuntimeError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let _ = fs::set_permissions(path, fs::Permissions::from_mode(RUNTIME_DIR_MODE));
-    Ok(())
+    #[cfg(target_os = "linux")]
+    {
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true).mode(RUNTIME_DIR_MODE);
+        builder.create(path).map_err(|source| RuntimeError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(RUNTIME_DIR_MODE));
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        fs::create_dir_all(path).map_err(|source| RuntimeError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Ok(())
+    }
 }
 
 pub(super) fn is_transient_ipc_accept_error(error: &ipc::IpcError) -> bool {
@@ -1200,7 +1052,6 @@ fn runtime_error_kind(error: &RuntimeError) -> &'static str {
         RuntimeError::Solar(_) => "solar",
         RuntimeError::State(_) => "state",
         RuntimeError::Io { .. } => "io",
-        RuntimeError::ObservationGenerationOverflow => "observation_authority",
     }
 }
 
@@ -1235,25 +1086,20 @@ impl DaemonRuntime {
         runner: &R,
         force_immediate: bool,
     ) -> Result<TickReport, RuntimeError> {
-        self.run_once_at_with_runner_diagnostic(
-            now_utc,
-            runner,
-            force_immediate,
-            ApplyDiagnosticContext::default(),
-        )
+        self.run_once_at_with_runner_mode(now_utc, runner, force_immediate, false)
     }
 
-    fn run_once_at_with_runner_diagnostic<R: ProcessRunner + Sync>(
+    fn run_once_at_with_runner_mode<R: ProcessRunner + Sync>(
         &mut self,
         now_utc: DateTime<Utc>,
         runner: &R,
         force_immediate: bool,
-        diagnostic: ApplyDiagnosticContext,
+        lifecycle_recovery: bool,
     ) -> Result<TickReport, RuntimeError> {
         let tick_started = Instant::now();
         let inputs = self.collect_tick_inputs(now_utc, force_immediate)?;
         let computed = self.compute_tick_policy(inputs)?;
-        let applied = self.apply_tick_policy(computed, runner, force_immediate, diagnostic);
+        let applied = self.apply_tick_policy(computed, runner, force_immediate, lifecycle_recovery);
 
         self.finish_tick(applied, tick_started)
     }
@@ -1315,46 +1161,12 @@ impl DaemonRuntime {
         })
     }
 
-    fn authorized_capabilities(
-        &self,
-        generation: ObservationGeneration,
-    ) -> Option<&CapabilitySnapshot> {
-        let published = self.observation.current.as_ref()?;
-        let authorized = published.generation == generation
-            && self.observation.latest_started == Some(published.generation)
-            && self.observation.latest_settled == Some(published.generation);
-        authorized.then_some(&published.snapshot)
-    }
-
-    /// Current same-generation authorization: the settled publication that is
-    /// also the newest reserved observation. `None` means fail-closed.
-    fn current_authorization(&self) -> Option<(ObservationGeneration, &CapabilitySnapshot)> {
-        let published = self.observation.current.as_ref()?;
-        let generation = published.generation;
-        let capabilities = self.authorized_capabilities(generation)?;
-        Some((generation, capabilities))
-    }
-
-    /// Test-only: publish a same-generation authorization directly so unit
-    /// fixtures in sibling modules can exercise the reconciled apply path
-    /// without spawning discovery subprocesses.
-    #[cfg(test)]
-    pub(crate) fn test_publish_capabilities(&mut self, snapshot: CapabilitySnapshot) {
-        let generation = ObservationGeneration(1);
-        self.observation.latest_started = Some(generation);
-        self.observation.latest_settled = Some(generation);
-        self.observation.current = Some(PublishedCapabilities {
-            generation,
-            snapshot,
-        });
-    }
-
     fn apply_tick_policy<R: ProcessRunner + Sync>(
         &mut self,
         computed: ComputedTick,
         runner: &R,
         force_immediate: bool,
-        diagnostic: ApplyDiagnosticContext,
+        lifecycle_recovery: bool,
     ) -> AppliedTick {
         let apply_summary = if computed.suspended {
             skipped_apply_summary(computed.policy.targets.len(), "suspend_until is active")
@@ -1362,34 +1174,24 @@ impl DaemonRuntime {
             let settings_override = force_immediate.then(|| self.force_apply_settings());
             let monitors = self.config.monitors.as_slice();
             let settings = self.config.apply;
-            // Same-generation apply: the tick reconciles against exactly the
-            // generation it observed; an unversioned ambient snapshot cannot
-            // enter this boundary and fails closed instead. Every production
-            // caller reserves its own generation first (synchronous one-shot/
-            // resync observation, or the async completion that scheduled/wake
-            // settlement dispatches from). The snapshot is cloned out of the
-            // authority so `state` can be borrowed mutably during dispatch
-            // while the authorization itself stays version-checked.
-            let authorized = self
-                .current_authorization()
-                .map(|(_, capabilities)| capabilities.clone());
-            match authorized {
-                Some(capabilities) => apply::apply_policy_with_runner_reconciled(
+            if let Some(capabilities) = self.last_capabilities.as_ref() {
+                apply::apply_policy_with_runner_reconciled_mode(
                     monitors,
                     settings,
                     &computed.policy,
                     &mut self.state,
                     runner,
                     computed.inputs.now_epoch_s,
-                    &capabilities,
-                    None,
+                    capabilities,
+                    Some(&mut self.fade_engine),
                     settings_override,
-                    diagnostic,
-                ),
-                None => skipped_apply_summary(
+                    lifecycle_recovery,
+                )
+            } else {
+                skipped_apply_summary(
                     computed.policy.targets.len(),
                     "capability observation is not ready",
-                ),
+                )
             }
         };
 
@@ -1443,21 +1245,47 @@ impl DaemonRuntime {
         &mut self,
         _location: &Location,
         now_epoch_s: u64,
-        _force_refresh: bool,
+        force_refresh: bool,
     ) -> Option<f64> {
         if !self.config.weather.enabled {
             return None;
         }
 
-        if let Ok(Some(snapshot)) = self.weather_engine.latest_snapshot() {
-            self.state.weather = Some(snapshot);
+        if force_refresh {
+            let _ = self.weather_engine.request_refresh();
         }
 
-        if let Some(snapshot) = &self.state.weather {
-            return weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s);
+        if let Ok(service) = self.weather_engine.latest_status() {
+            // A newly started worker is Loading before it has published its
+            // first result. Keep a valid persisted snapshot during that gap so
+            // policy does not abruptly fall back to pure solar input.
+            let snapshot = service
+                .snapshot
+                .clone()
+                .or_else(|| self.state.weather.clone());
+            if let Some(snapshot) = snapshot.as_ref() {
+                self.state.weather = Some(snapshot.clone());
+            }
+
+            // The service owns refresh metadata once it has published a
+            // snapshot. Until then, retain persisted metadata alongside the
+            // explicit service state (for example, NoApiKey) so a startup
+            // attempt cannot erase the last-known-good context.
+            if service.snapshot.is_some() {
+                self.weather_refresh.next_refresh_at_epoch_s = service.next_refresh_at_epoch_s;
+                self.weather_refresh.last_attempted_at_epoch_s = service.last_attempted_at_epoch_s;
+                self.weather_refresh.consecutive_failures = service.consecutive_failures;
+                self.weather_refresh.last_error = service.last_error;
+            }
+
+            return snapshot.as_ref().and_then(|snapshot| {
+                weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s)
+            });
         }
 
-        None
+        self.state.weather.as_ref().and_then(|snapshot| {
+            weather::snapshot_modifier(&self.config.weather, snapshot, now_epoch_s)
+        })
     }
 }
 
@@ -1487,11 +1315,12 @@ impl DaemonRuntime {
             "config={config_source} monitors={} state_file={} socket={}",
             self.config.monitors.len(),
             self.state_path.display(),
-            self.socket.path.display(),
+            self.socket.display_target(),
         )
     }
     /// Performs the internal setup steps, including creating the runtime socket directory,
     /// loading the persistent state file, and normalizing monitor configurations.
+    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn bootstrap_with_paths(
         config: ConfigReport,
         state_path: PathBuf,
@@ -1504,6 +1333,7 @@ impl DaemonRuntime {
         if let Some(state_dir) = state_path.parent() {
             create_runtime_dir(state_dir)?;
         }
+        #[cfg(target_os = "linux")]
         if let Some(socket_dir) = socket_path.parent() {
             create_runtime_dir(socket_dir)?;
         }
@@ -1515,7 +1345,12 @@ impl DaemonRuntime {
         // silently skip applying brightness due to hysteresis if the calculated
         // target matches the persisted value, even if the physical monitor was
         // manually changed while the daemon was offline.
+        #[cfg(target_os = "linux")]
         let socket = ControlSocket { path: socket_path };
+        #[cfg(target_os = "windows")]
+        let socket = ControlSocket {
+            endpoint: crate::paths::IpcEndpoint::NamedPipe(socket_path.display().to_string()),
+        };
         let config = RuntimeConfig::from_report(config)?;
         let persisted_state_snapshot = state.normalized_for_persistence();
         let initial_weather = state.weather.clone();
@@ -1526,6 +1361,7 @@ impl DaemonRuntime {
             initial_weather,
         );
 
+        let (capability_refresh_tx, capability_refresh_rx) = mpsc::sync_channel(1);
         let mut runtime = Self {
             config,
             socket,
@@ -1534,10 +1370,17 @@ impl DaemonRuntime {
             weather_refresh: WeatherRefreshState::default(),
             persisted_state_snapshot,
             last_solar_elevation: None,
-            fade_engine: crate::runtime::fade::FadeEngine::new(),
+            fade_engine: FadeEngine::new(),
             weather_engine,
-            observation: ObservationState::default(),
-            wake_reassert: WakeReassertCoordinator::default(),
+            last_capabilities: None,
+            capability_refresh_tx,
+            capability_refresh_rx,
+            capability_refresh_active: Arc::new(AtomicBool::new(false)),
+            capability_refresh_pending: false,
+            capability_refresh_handle: None,
+            capability_refresh_generation: Arc::new(AtomicU64::new(0)),
+            wake_watch: WakeWatch::default(),
+            display_events: None,
         };
 
         runtime.prepare_apply_resync(false);
@@ -1551,26 +1394,20 @@ impl DaemonRuntime {
                 monitor.backend == crate::backends::BackendKind::Backlight
                     && monitor.selector.sysfs_path.is_some()
             }) {
-                let generation = ObservationGeneration(1);
-                runtime.observation.latest_started = Some(generation);
-                runtime.observation.latest_settled = Some(generation);
-                runtime.observation.current = Some(PublishedCapabilities {
-                    generation,
-                    snapshot: CapabilitySnapshot {
-                        ddc_present: Vec::new(),
-                        backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
-                            stable_id: String::from("test:backlight"),
-                            device_name: String::from("intel_backlight"),
-                            class: String::from("backlight"),
-                            max_brightness: Some(100),
-                            backlight_type: Some(String::from("raw")),
-                            probe_source: String::from("test-fixture"),
-                            sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
-                            ddcci_connector: None,
-                            backend_viable: true,
-                            note: None,
-                        }],
-                    },
+                runtime.last_capabilities = Some(CapabilitySnapshot {
+                    ddc_present: Vec::new(),
+                    backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
+                        stable_id: String::from("test:backlight"),
+                        device_name: String::from("intel_backlight"),
+                        class: String::from("backlight"),
+                        max_brightness: Some(100),
+                        backlight_type: Some(String::from("raw")),
+                        probe_source: String::from("test-fixture"),
+                        sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                        ddcci_connector: None,
+                        backend_viable: true,
+                        note: None,
+                    }],
                 });
             }
         }
@@ -1704,8 +1541,33 @@ impl DaemonRuntime {
                             ipc::ErrorCode::InternalError,
                             error.to_string(),
                         ),
-                        outcome,
+                        IpcOutcome::default(),
                     ),
+                }
+            }
+            ipc::Request::RefreshWeather => {
+                if !self.config.weather.enabled {
+                    return (
+                        ipc::ResponseEnvelope::error(
+                            ipc::ErrorCode::InvalidRequest,
+                            "weather is disabled in configuration",
+                        ),
+                        IpcOutcome::default(),
+                    );
+                }
+                if self.weather_engine.request_refresh() {
+                    (
+                        ipc::ResponseEnvelope::ack("weather refresh requested"),
+                        IpcOutcome::default(),
+                    )
+                } else {
+                    (
+                        ipc::ResponseEnvelope::error(
+                            ipc::ErrorCode::InternalError,
+                            "weather refresh could not be scheduled",
+                        ),
+                        IpcOutcome::default(),
+                    )
                 }
             }
             ipc::Request::Ping => (ipc::ResponseEnvelope::pong(), IpcOutcome::default()),
@@ -1715,7 +1577,7 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
 
-                match self.run_once_at_with_runner_fresh(now_utc, runner, force) {
+                match self.run_once_at_with_runner(now_utc, runner, force) {
                     Ok(report) => {
                         log_tick(&report);
                         (
@@ -1757,40 +1619,22 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 self.state.desktop_idle_dimmed = false;
-                self.request_wake_reassert(WakeReassertReason::WaylandIdleResume, None);
+                let _ = self.request_wake_reassert(WakeReassertReason::WaylandIdleResume);
                 (
                     ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
                     outcome,
                 )
             }
             ipc::Request::ExternalBrightnessChange => {
-                let recently_applied = self.state.monitors.values().any(|m| {
-                    m.last_applied_at_epoch_s
-                        .is_some_and(|at| now_epoch_s.saturating_sub(at) < 10)
-                });
-
-                if recently_applied {
-                    tracing::info!("external_brightness_change_ignored_as_echo");
-                    (
-                        ipc::ResponseEnvelope::ack("ignored as echo"),
-                        IpcOutcome::default(),
-                    )
-                } else {
-                    tracing::info!("external_brightness_change_forcing_resync");
-                    (
-                        self.respond_after_resync(
-                            "external_brightness_change",
-                            "external brightness change detected, reasserting policy",
-                            now_utc,
-                            runner,
-                            false,
-                        ),
-                        IpcOutcome {
-                            tick_attempted: true,
-                            config_reloaded: false,
-                        },
-                    )
-                }
+                tracing::info!(
+                    "external_brightness_change_observed_without_identity; no blind reapply"
+                );
+                (
+                    ipc::ResponseEnvelope::ack(
+                        "external brightness change observed; current hardware value preserved",
+                    ),
+                    IpcOutcome::default(),
+                )
             }
         }
     }
@@ -1811,7 +1655,7 @@ impl DaemonRuntime {
         now_utc: DateTime<Utc>,
         runner: &R,
     ) -> ipc::ResponseEnvelope {
-        self.run_once_at_with_runner_fresh(now_utc, runner, true)
+        self.run_once_at_with_runner(now_utc, runner, true)
             .map_or_else(
                 |error| {
                     tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
@@ -1849,19 +1693,37 @@ impl DaemonRuntime {
     fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
         let control = self.state.effective_control(now_epoch_s);
         let weather = if self.config.weather.enabled {
-            let snapshot_owned = self
-                .weather_engine
-                .latest_snapshot()
-                .ok()
-                .flatten()
+            let service = self.weather_engine.latest_status().ok();
+            let service_has_snapshot = service
+                .as_ref()
+                .is_some_and(|service| service.snapshot.is_some());
+            let snapshot_owned = service
+                .as_ref()
+                .and_then(|service| service.snapshot.clone())
                 .or_else(|| self.state.weather.clone());
             let snapshot = snapshot_owned.as_ref();
             let snapshot_state =
                 weather::snapshot_state(&self.config.weather, snapshot, now_epoch_s);
+            let state = service.as_ref().map_or_else(
+                || match snapshot_state {
+                    weather::WeatherSnapshotState::Ready => weather::WeatherState::Ready,
+                    weather::WeatherSnapshotState::Stale => weather::WeatherState::Stale,
+                    weather::WeatherSnapshotState::Missing
+                    | weather::WeatherSnapshotState::Incomplete => weather::WeatherState::Loading,
+                },
+                |service| service.state,
+            );
+            let multiplier = snapshot.and_then(|weather| {
+                weather::snapshot_modifier(&self.config.weather, weather, now_epoch_s)
+            });
             Some(ipc::WeatherStatus {
                 enabled: true,
-                active: snapshot_state == weather::WeatherSnapshotState::Ready,
-                stale: snapshot_state == weather::WeatherSnapshotState::Stale,
+                state,
+                // Loading is a transport state, not a statement that a
+                // last-known-good snapshot is unusable.
+                active: multiplier.is_some(),
+                stale: state == weather::WeatherState::Stale
+                    || snapshot_state == weather::WeatherSnapshotState::Stale,
                 provider: snapshot
                     .map(|weather| weather.provider.trim().to_owned())
                     .filter(|provider| !provider.is_empty()),
@@ -1870,17 +1732,40 @@ impl DaemonRuntime {
                     (weather.valid_at_epoch_s != 0).then_some(weather.valid_at_epoch_s)
                 }),
                 source_kind: snapshot.map(|weather| weather.source_kind),
-                last_refresh_attempt_epoch_s: self.weather_refresh.last_attempted_at_epoch_s,
-                next_refresh_at_epoch_s: self.weather_refresh.next_refresh_at_epoch_s,
-                consecutive_failures: self.weather_refresh.consecutive_failures,
-                last_error: self.weather_refresh.last_error.clone(),
+                last_refresh_attempt_epoch_s: service
+                    .as_ref()
+                    .filter(|_| service_has_snapshot)
+                    .and_then(|service| service.last_attempted_at_epoch_s)
+                    .or(self.weather_refresh.last_attempted_at_epoch_s),
+                next_refresh_at_epoch_s: service
+                    .as_ref()
+                    .filter(|_| service_has_snapshot)
+                    .and_then(|service| service.next_refresh_at_epoch_s)
+                    .or(self.weather_refresh.next_refresh_at_epoch_s),
+                consecutive_failures: service
+                    .as_ref()
+                    .filter(|_| service_has_snapshot)
+                    .map_or(self.weather_refresh.consecutive_failures, |service| {
+                        service.consecutive_failures
+                    }),
+                last_error: service
+                    .as_ref()
+                    .filter(|_| service_has_snapshot)
+                    .and_then(|service| service.last_error.clone())
+                    .or_else(|| self.weather_refresh.last_error.clone()),
                 cloud_cover_percent: snapshot.and_then(|weather| weather.cloud_cover_percent),
                 temperature: snapshot.and_then(|weather| weather.temperature),
+                condition: snapshot
+                    .map(|weather| weather.condition)
+                    .unwrap_or_default(),
+                condition_description: snapshot
+                    .and_then(|weather| weather.condition_description.clone()),
+                day_phase: snapshot.and_then(|weather| weather.day_phase),
                 forecast: snapshot
                     .map(|weather| weather.forecast.clone())
                     .unwrap_or_default(),
-                multiplier: snapshot
-                    .and_then(|w| weather::snapshot_modifier(&self.config.weather, w, now_epoch_s)),
+                multiplier,
+                details: snapshot.map(|weather| weather.details).unwrap_or_default(),
             })
         } else {
             None
@@ -1910,19 +1795,18 @@ impl DaemonRuntime {
                                 None
                             }
                         }),
-                    topology: self.observation.current.as_ref().and_then(|published| {
-                        crate::runtime::topology::reconcile(
-                            &self.config.monitors,
-                            &published.snapshot,
-                        )
-                        .get(
-                            self.config
-                                .monitors
-                                .iter()
-                                .position(|candidate| candidate.logical_id == monitor.logical_id)
-                                .unwrap_or(usize::MAX),
-                        )
-                        .map(|action| action.name().to_owned())
+                    topology: self.last_capabilities.as_ref().and_then(|capabilities| {
+                        crate::runtime::topology::reconcile(&self.config.monitors, capabilities)
+                            .get(
+                                self.config
+                                    .monitors
+                                    .iter()
+                                    .position(|candidate| {
+                                        candidate.logical_id == monitor.logical_id
+                                    })
+                                    .unwrap_or(usize::MAX),
+                            )
+                            .map(|action| action.name().to_owned())
                     }),
                 }
             })
@@ -2080,7 +1964,7 @@ impl DaemonRuntime {
             if changed {
                 String::from("cleared global manual override")
             } else {
-                String::from("no manual overrides were active")
+                String::from("no global manual override was active")
             }
         } else if changed {
             String::from("cleared all manual overrides")
@@ -2180,12 +2064,12 @@ impl DaemonRuntime {
         let desktop_idle_sync = self.config.daemon.desktop_idle_sync;
         let mut desktop_idle = DesktopIdleSync::new(
             desktop_idle_sync,
-            self.socket.path.clone(),
+            PathBuf::from(self.socket.display_target()),
             self.config.daemon.tick_seconds,
             self.config.daemon.desktop_idle_timeout_minutes,
         );
-        let logind = LogindWatcher::spawn();
         let mut cadence = LoopCadence::new(self.config.daemon.tick_seconds);
+        self.display_events = Some(DisplayEventSources::spawn());
 
         tracing::info!(
             mode = "daemon",
@@ -2217,69 +2101,62 @@ impl DaemonRuntime {
             }
 
             let now_utc = Utc::now();
-            if let Some(logind) = &logind {
-                while let Some(event) = logind.try_recv() {
-                    if let Some((reason, correlation_id)) = logind_wake_reason(event) {
-                        self.request_wake_reassert(reason, correlation_id);
-                    }
-                }
+            let pending_event = self
+                .display_events
+                .as_ref()
+                .and_then(DisplayEventSources::drain);
+            if let Some(request) = pending_event {
+                tracing::info!(reason = ?request.reason, "display_recovery_requested");
+                self.handle_display_event(request.reason);
             }
+            #[cfg(target_os = "linux")]
             desktop_idle.maintain_watcher(&self.socket.path);
+            #[cfg(not(target_os = "linux"))]
+            desktop_idle.maintain_watcher(Path::new(""));
             if desktop_idle.perform_due_action(self, now_utc, &RealProcessRunner, &mut cadence) {
                 continue;
             }
 
-            if let Some((ticket, outcome)) = self.poll_async_completion() {
-                match ticket.cause {
-                    ObservationCause::WakeReassert { .. } => {
-                        self.finish_wake_observation(now_utc, &RealProcessRunner, ticket, &outcome);
-                    }
-                    ObservationCause::ScheduledTick => match outcome {
-                        CompletionOutcome::Published => {
-                            self.execute_scheduled_tick(
-                                now_utc,
-                                &RealProcessRunner,
-                                &mut cadence,
-                                &mut desktop_idle,
-                            );
-                        }
-                        CompletionOutcome::Superseded => {
-                            // Advance cadence as a failed attempt so retry
-                            // happens at the next configured interval rather
-                            // than immediately re-observing every loop pass.
-                            cadence.note_tick_attempt();
-                            tracing::warn!("scheduled_observation_superseded_retry_next_cadence");
-                        }
-                        CompletionOutcome::Rejected => {
-                            cadence.note_tick_attempt();
-                            tracing::warn!("scheduled_observation_failed_retry_next_cadence");
-                        }
-                    },
-                }
+            if DesktopIdleSync::take_input_resume() {
+                let _ = self.request_wake_reassert(WakeReassertReason::WaylandIdleResume);
+            }
+            if self.wake_watch.take_due_probe(Instant::now()) {
+                self.run_wake_probe(now_utc, &RealProcessRunner);
                 continue;
             }
 
-            if self.wake_reassert.is_pending() && self.process_wake_reassert(Instant::now()) {
+            let next_deadline = [
+                desktop_idle.next_deadline(),
+                self.wake_watch.next_deadline(),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            let action = cadence.next_action(next_deadline, self.fade_engine.is_fading());
+            // Phase 9 uses periodic observation only. Refresh immediately
+            // before scheduled ticks, not on every idle loop iteration.
+            if let Some(result) = self.publish_completed_capability_snapshot() {
+                if self.capability_refresh_pending {
+                    self.capability_refresh_pending = false;
+                    if result {
+                        self.execute_scheduled_tick(
+                            now_utc,
+                            &RealProcessRunner,
+                            &mut cadence,
+                            &mut desktop_idle,
+                        );
+                    }
+                    continue;
+                }
+            }
+            if self.capability_refresh_pending {
                 wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                 continue;
             }
 
-            let action = cadence.next_action(desktop_idle.next_deadline());
             if matches!(action, LoopAction::RunTick) {
-                match self
-                    .try_start_async_observation(ObservationCause::ScheduledTick, RealProcessRunner)
-                {
-                    StartAsyncOutcome::Started => {}
-                    StartAsyncOutcome::Busy => {
-                        // Another owner holds the single worker slot; keep the
-                        // scheduled tick due and retry on a later iteration.
-                    }
-                    StartAsyncOutcome::FailedToSpawn => {
-                        // Owned start failure: advance cadence like a failed
-                        // attempt so we do not spin-start every 16 ms pass.
-                        cadence.note_tick_attempt();
-                    }
-                }
+                self.capability_refresh_pending = true;
+                self.begin_capability_refresh_with_runner(RealProcessRunner);
                 wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
                 continue;
             }
@@ -2290,17 +2167,20 @@ impl DaemonRuntime {
                 &RealProcessRunner,
                 &mut cadence,
                 &mut desktop_idle,
+                &listener,
             );
         }
 
+        let _ = self.persist_state_if_changed();
         drop(listener);
 
         tracing::info!(mode = "daemon", reason = "signal", "shutdown");
         Ok(())
     }
 
-    pub(crate) fn handle_ipc_stream(&mut self, mut stream: UnixStream) -> IpcOutcome {
-        let envelope = match ipc::read_request(&mut stream, &self.socket.path) {
+    pub(crate) fn handle_ipc_stream(&mut self, mut stream: NativeIpcStream) -> IpcOutcome {
+        let target = self.socket.display_target();
+        let envelope = match ipc::read_request(&mut stream, &target) {
             Ok(envelope) => envelope,
             Err(error) => {
                 if let ipc::IpcError::Io { source, .. } = &error {
@@ -2316,7 +2196,7 @@ impl DaemonRuntime {
                         ipc::ErrorCode::InvalidRequest,
                         error.to_string(),
                     ),
-                    &self.socket.path,
+                    &target,
                 );
                 return IpcOutcome::default();
             }
@@ -2325,9 +2205,7 @@ impl DaemonRuntime {
         let request = match envelope.validate() {
             Ok(request) => request,
             Err(response) => {
-                if let Err(error) =
-                    ipc::write_response(&mut stream, response.as_ref(), &self.socket.path)
-                {
+                if let Err(error) = ipc::write_response(&mut stream, response.as_ref(), &target) {
                     tracing::error!(error = %error, "ipc_write_failed");
                 }
                 return IpcOutcome::default();
@@ -2343,7 +2221,7 @@ impl DaemonRuntime {
             _ => None,
         };
 
-        if let Err(error) = ipc::write_response(&mut stream, &response, &self.socket.path) {
+        if let Err(error) = ipc::write_response(&mut stream, &response, &target) {
             tracing::error!(
                 request = %request_name,
                 response = %response_kind,
@@ -2378,9 +2256,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::AtomicBool as StdAtomicBool;
-    use std::sync::{Arc, Condvar, Mutex};
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::{TimeZone, Utc};
 
@@ -2394,98 +2270,6 @@ mod tests {
     use crate::state::{
         FailureBackoffState, ManualOverrideState, RuntimeState, WeatherSnapshotMetadata,
     };
-    use tracing_subscriber::layer::{Context, SubscriberExt};
-    use tracing_subscriber::registry::LookupSpan;
-
-    #[derive(Clone, Debug)]
-    struct CapturedEvent {
-        message: String,
-        fields: Vec<(String, String)>,
-    }
-
-    #[derive(Clone, Default)]
-    struct EventCollector {
-        events: Arc<Mutex<Vec<CapturedEvent>>>,
-    }
-
-    impl<S> tracing_subscriber::Layer<S> for EventCollector
-    where
-        S: tracing::Subscriber + for<'a> LookupSpan<'a>,
-    {
-        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
-            struct Visitor {
-                message: String,
-                fields: Vec<(String, String)>,
-            }
-
-            impl tracing::field::Visit for Visitor {
-                fn record_debug(
-                    &mut self,
-                    field: &tracing::field::Field,
-                    value: &dyn std::fmt::Debug,
-                ) {
-                    let rendered = format!("{value:?}");
-                    if field.name() == "message" {
-                        self.message = rendered.trim_matches('"').to_owned();
-                    } else {
-                        self.fields.push((field.name().to_owned(), rendered));
-                    }
-                }
-
-                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-                    if field.name() == "message" {
-                        self.message = value.to_owned();
-                    } else {
-                        self.fields
-                            .push((field.name().to_owned(), format!("{value:?}")));
-                    }
-                }
-            }
-
-            let mut visitor = Visitor {
-                message: String::new(),
-                fields: Vec::new(),
-            };
-            event.record(&mut visitor);
-            self.events.lock().unwrap().push(CapturedEvent {
-                message: visitor.message,
-                fields: visitor.fields,
-            });
-        }
-    }
-
-    impl EventCollector {
-        fn messages(&self) -> Vec<String> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|event| event.message.clone())
-                .collect()
-        }
-
-        fn has_field(&self, message: &str, name: &str, value: &str) -> bool {
-            self.events.lock().unwrap().iter().any(|event| {
-                event.message == message
-                    && event
-                        .fields
-                        .iter()
-                        .any(|(field, rendered)| field == name && rendered == value)
-            })
-        }
-
-        fn field(&self, message: &str, name: &str) -> Option<String> {
-            self.events.lock().unwrap().iter().find_map(|event| {
-                (event.message == message).then(|| {
-                    event
-                        .fields
-                        .iter()
-                        .find(|(field, _)| field == name)
-                        .map(|(_, value)| value.clone())
-                })
-            })?
-        }
-    }
 
     struct RecordingRunner {
         calls: std::sync::Mutex<Vec<String>>,
@@ -2494,53 +2278,8 @@ mod tests {
     #[derive(Clone)]
     struct SlowObservationRunner {
         delay: Duration,
-        started: Arc<StdAtomicBool>,
+        started: Arc<AtomicBool>,
         calls: Arc<std::sync::atomic::AtomicUsize>,
-    }
-
-    /// Counts observation cycles (full discovery passes), not individual
-    /// subprocess calls: one observation invokes the runner once for
-    /// `ddcutil detect` and once for `brightnessctl --list`.
-    #[derive(Clone)]
-    struct ObservationCycleRunner {
-        delay: Duration,
-        started: Arc<StdAtomicBool>,
-        observations: Arc<std::sync::atomic::AtomicUsize>,
-    }
-
-    impl ObservationCycleRunner {
-        fn new(delay: Duration) -> Self {
-            Self {
-                delay,
-                started: Arc::new(StdAtomicBool::new(false)),
-                observations: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-            }
-        }
-    }
-
-    struct GatedRunner {
-        gate: Arc<(Mutex<bool>, Condvar)>,
-        entered: Arc<StdAtomicBool>,
-    }
-
-    impl ProcessRunner for GatedRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[String],
-            _timeout: Duration,
-        ) -> Result<CommandOutput, CommandError> {
-            self.entered
-                .store(true, std::sync::atomic::Ordering::Release);
-            let (lock, condvar) = &*self.gate;
-            let mut open = lock.lock().expect("gate mutex");
-            while !*open {
-                open = condvar.wait(open).expect("gate condvar");
-            }
-            Err(CommandError::Missing {
-                program: String::from("ddcutil"),
-            })
-        }
     }
 
     impl ProcessRunner for SlowObservationRunner {
@@ -2550,10 +2289,8 @@ mod tests {
             _args: &[String],
             _timeout: Duration,
         ) -> Result<CommandOutput, CommandError> {
-            self.started
-                .store(true, std::sync::atomic::Ordering::Release);
-            self.calls
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.started.store(true, Ordering::Release);
+            self.calls.fetch_add(1, Ordering::Relaxed);
             std::thread::sleep(self.delay);
             Err(CommandError::Missing {
                 program: program.to_owned(),
@@ -2562,26 +2299,6 @@ mod tests {
     }
 
     struct PanicObservationRunner;
-
-    impl ProcessRunner for ObservationCycleRunner {
-        fn run(
-            &self,
-            program: &str,
-            _args: &[String],
-            _timeout: Duration,
-        ) -> Result<CommandOutput, CommandError> {
-            if program == "ddcutil" {
-                self.started
-                    .store(true, std::sync::atomic::Ordering::Release);
-                self.observations
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-            std::thread::sleep(self.delay);
-            Err(CommandError::Missing {
-                program: program.to_owned(),
-            })
-        }
-    }
 
     impl ProcessRunner for PanicObservationRunner {
         fn run(
@@ -2604,13 +2321,6 @@ mod tests {
         fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
         }
-
-        fn write_calls(&self) -> Vec<String> {
-            self.calls()
-                .into_iter()
-                .filter(|call| call.contains("|set|"))
-                .collect()
-        }
     }
 
     impl ProcessRunner for RecordingRunner {
@@ -2626,15 +2336,8 @@ mod tests {
                 call.push_str(arg);
             }
             self.calls.lock().unwrap().push(call);
-            let stdout = if program == "brightnessctl"
-                && args == ["--list", "--machine-readable", "--class", "backlight"]
-            {
-                "intel_backlight,backlight,50,50%,100\n"
-            } else {
-                ""
-            };
             Ok(CommandOutput {
-                stdout: stdout.to_owned(),
+                stdout: String::new(),
                 stderr: String::new(),
                 exit_code: Some(0),
             })
@@ -2668,28 +2371,24 @@ mod tests {
             temp.path().join("run/control.sock"),
         )
         .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-        let runner = ObservationCycleRunner::new(Duration::from_millis(150));
-        let observations = Arc::clone(&runner.observations);
+        runtime.last_capabilities = None;
+        let runner = SlowObservationRunner {
+            delay: Duration::from_millis(150),
+            started: Arc::new(AtomicBool::new(false)),
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let calls = Arc::clone(&runner.calls);
         let started = Arc::clone(&runner.started);
 
-        let first_outcome =
-            runtime.try_start_async_observation(ObservationCause::ScheduledTick, runner.clone());
-        assert!(matches!(first_outcome, StartAsyncOutcome::Started));
-        let started_deadline = Instant::now() + Duration::from_secs(2);
-        while !started.load(std::sync::atomic::Ordering::Acquire)
-            && Instant::now() < started_deadline
-        {
+        runtime.begin_capability_refresh_with_runner(runner.clone());
+        let started_deadline = Instant::now() + Duration::from_millis(100);
+        while !started.load(Ordering::Acquire) && Instant::now() < started_deadline {
             std::thread::yield_now();
         }
-        assert!(matches!(
-            runtime.try_start_async_observation(ObservationCause::ScheduledTick, runner,),
-            StartAsyncOutcome::Busy
-        ));
-        assert!(runtime.observation.current.is_none());
-        assert_eq!(observations.load(std::sync::atomic::Ordering::Relaxed), 1);
+        runtime.begin_capability_refresh_with_runner(runner);
+        assert!(started.load(Ordering::Acquire));
+        assert!(runtime.last_capabilities.is_none());
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
 
         let status_started = Instant::now();
         let (response, outcome) = runtime.handle_ipc_request_with_runner(
@@ -2707,19 +2406,9 @@ mod tests {
         );
 
         std::thread::sleep(Duration::from_millis(600));
-        assert!(matches!(
-            runtime.poll_async_completion(),
-            Some((
-                ObservationTicket {
-                    cause: ObservationCause::ScheduledTick,
-                    ..
-                },
-                CompletionOutcome::Published
-            ))
-        ));
-        assert!(runtime.observation.current.is_some());
-        assert_eq!(observations.load(std::sync::atomic::Ordering::Relaxed), 1);
-        assert!(runtime.poll_async_completion().is_none());
+        runtime.publish_completed_capability_snapshot();
+        assert!(runtime.last_capabilities.is_some());
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -2732,276 +2421,22 @@ mod tests {
         )
         .expect("runtime should bootstrap");
 
-        runtime
-            .try_start_async_observation(ObservationCause::ScheduledTick, PanicObservationRunner);
-        let finished_deadline = Instant::now() + Duration::from_secs(1);
-        while runtime
-            .observation
-            .active
-            .as_ref()
-            .is_some_and(|active| !active.handle.is_finished())
-            && Instant::now() < finished_deadline
-        {
-            std::thread::yield_now();
-        }
-        let polled = matches!(
-            runtime.poll_async_completion(),
-            Some((_, CompletionOutcome::Rejected))
-        );
-        assert!(polled);
-        assert!(runtime.observation.current.is_none());
-
-        // A failed observation must not strand ownership: a fresh worker can
-        // still start afterwards (exactly one new observation cycle).
-        let runner = ObservationCycleRunner::new(Duration::from_millis(1));
-        let started = Arc::clone(&runner.started);
-        assert!(matches!(
-            runtime.try_start_async_observation(ObservationCause::ScheduledTick, runner),
-            StartAsyncOutcome::Started
-        ));
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while !started.load(std::sync::atomic::Ordering::Acquire) && Instant::now() < deadline {
-            std::thread::yield_now();
-        }
-        assert!(started.load(std::sync::atomic::Ordering::Acquire));
-    }
-
-    #[test]
-    fn overtaken_async_completion_cannot_clobber_newer_sync_publication() {
-        let temp = TempDir::new();
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            temp.path().join("state/runtime-state.json"),
-            temp.path().join("run/control.sock"),
-        )
-        .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-
-        // Async scheduled observation A starts with a runner held behind a
-        // gate so it cannot complete before B deterministically overtakes;
-        // opening the gate later lets A finish so runtime Drop can join it
-        // (a worker parked forever would hang shutdown cleanup).
-        let gate = Arc::new((Mutex::new(false), Condvar::new()));
-        let entered = Arc::new(StdAtomicBool::new(false));
-        assert!(matches!(
-            runtime.try_start_async_observation(
-                ObservationCause::ScheduledTick,
-                GatedRunner {
-                    gate: Arc::clone(&gate),
-                    entered: Arc::clone(&entered),
-                },
-            ),
-            StartAsyncOutcome::Started
-        ));
-        let entered_deadline = Instant::now() + Duration::from_secs(5);
-        while !entered.load(std::sync::atomic::Ordering::Acquire)
-            && Instant::now() < entered_deadline
-        {
-            std::thread::yield_now();
-        }
-
-        // Forced/resync-style synchronous observation B overtakes A while A is
-        // still parked; B publishes at generation 2.
-        observe_sync_with_recording_runner(&mut runtime).expect("sync observation should settle");
-        assert_eq!(
-            runtime
-                .observation
-                .current
-                .as_ref()
-                .expect("B published")
-                .generation
-                .0,
-            2
-        );
-
-        // Release A, then consume it: it must settle superseded and leave B's
-        // authorization intact.
-        {
-            let (lock, condvar) = &*gate;
-            *lock.lock().expect("gate mutex") = true;
-            condvar.notify_all();
-        }
-        let consumed_deadline = Instant::now() + Duration::from_secs(5);
-        while runtime
-            .observation
-            .active
-            .as_ref()
-            .is_some_and(|active| !active.handle.is_finished())
-            && Instant::now() < consumed_deadline
-        {
-            std::thread::yield_now();
-        }
-        let consumed = matches!(
-            runtime.poll_async_completion(),
-            Some((
-                ObservationTicket {
-                    cause: ObservationCause::ScheduledTick,
-                    ..
-                },
-                CompletionOutcome::Superseded
-            ))
-        );
-        assert!(consumed);
-        let current = runtime
-            .observation
-            .current
-            .as_ref()
-            .expect("B's publication must survive A");
-        assert_eq!(
-            current.generation,
-            runtime.observation.latest_started.expect("B reserved"),
-        );
-        assert_eq!(current.generation.0, 2);
-    }
-
-    #[test]
-    fn fabricated_ticket_is_rejected_before_publication() {
-        let temp = TempDir::new();
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            temp.path().join("state/runtime-state.json"),
-            temp.path().join("run/control.sock"),
-        )
-        .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-
-        assert!(matches!(
-            runtime.try_start_async_observation(
-                ObservationCause::ScheduledTick,
-                RecordingRunner::new(),
-            ),
-            StartAsyncOutcome::Started
-        ));
-
-        // Inject a mismatched ticket at the pure completion seam while the
-        // real worker is still active: nothing may be published and the real
-        // owner must remain untouched.
-        runtime.complete(
-            ObservationTicket {
-                generation: ObservationGeneration(9_999),
-                cause: ObservationCause::WakeReassert {
-                    attempt: 7,
-                    correlation_id: None,
-                },
-            },
-            Some(test_capability_snapshot()),
-        );
-        assert!(runtime.observation.current.is_none());
-        assert!(runtime.observation.active.is_some());
-
-        // The genuine completion still settles normally afterwards.
+        runtime.begin_capability_refresh_with_runner(PanicObservationRunner);
         std::thread::sleep(Duration::from_millis(50));
-        assert!(matches!(
-            runtime.poll_async_completion(),
-            Some((
-                ObservationTicket {
-                    cause: ObservationCause::ScheduledTick,
-                    ..
-                },
-                CompletionOutcome::Published
-            ))
-        ));
-        assert!(runtime.observation.current.is_some());
-    }
+        assert_eq!(runtime.publish_completed_capability_snapshot(), Some(false));
 
-    #[test]
-    fn generation_overflow_fails_closed_without_wrap() {
-        let temp = TempDir::new();
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            temp.path().join("state/runtime-state.json"),
-            temp.path().join("run/control.sock"),
-        )
-        .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-        runtime.observation.next_generation = u64::MAX;
-
-        let reserved = runtime.reserve_generation(ObservationCause::ScheduledTick);
-        assert!(matches!(
-            reserved,
-            Err(RuntimeError::ObservationGenerationOverflow)
-        ));
-        assert_eq!(runtime.observation.next_generation, u64::MAX);
-        assert!(runtime.observation.current.is_none());
-    }
-
-    #[test]
-    fn stale_generation_cannot_enter_the_apply_boundary() {
-        let temp = TempDir::new();
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            temp.path().join("state/runtime-state.json"),
-            temp.path().join("run/control.sock"),
-        )
-        .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-
-        observe_sync_with_recording_runner(&mut runtime).expect("first sync observation");
-        let stale = runtime.observation.latest_settled;
-
-        observe_sync_with_recording_runner(&mut runtime).expect("second sync observation");
-
-        // The stale settled generation is no longer authorized after a newer
-        // reservation invalidates it.
-        let stale = stale.expect("stale generation recorded");
-        assert!(runtime.authorized_capabilities(stale).is_none());
-        assert!(runtime
-            .authorized_capabilities(runtime.observation.latest_settled.unwrap())
-            .is_some());
-    }
-
-    #[test]
-    fn busy_start_does_not_create_pending_work_without_a_worker() {
-        let temp = TempDir::new();
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            temp.path().join("state/runtime-state.json"),
-            temp.path().join("run/control.sock"),
-        )
-        .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-
-        assert!(matches!(
-            runtime.try_start_async_observation(
-                ObservationCause::ScheduledTick,
-                SlowObservationRunner {
-                    delay: Duration::from_millis(200),
-                    started: Arc::new(StdAtomicBool::new(false)),
-                    calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-                },
-            ),
-            StartAsyncOutcome::Started
-        ));
-
-        // While one owner holds the worker slot there is no separate pending
-        // flag to consult and no second reservation exists.
-        assert!(runtime.observation.latest_started.is_some());
-        assert!(runtime.observation.active.is_some());
-        assert!(runtime.observation.current.is_none());
-
-        // The single-slot invariant means a second start cannot reserve a
-        // generation of its own.
-        assert!(matches!(
-            runtime.try_start_async_observation(
-                ObservationCause::ScheduledTick,
-                RecordingRunner::new(),
-            ),
-            StartAsyncOutcome::Busy
-        ));
-    }
-
-    fn observe_sync_with_recording_runner(runtime: &mut DaemonRuntime) -> Result<(), RuntimeError> {
-        runtime.observe_sync(&RecordingRunner::new())
+        let runner = SlowObservationRunner {
+            delay: Duration::from_millis(1),
+            started: Arc::new(AtomicBool::new(false)),
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let started = Arc::clone(&runner.started);
+        runtime.begin_capability_refresh_with_runner(runner);
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while !started.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(started.load(Ordering::Acquire));
     }
 
     #[test]
@@ -3177,10 +2612,14 @@ mod tests {
             fetched_at_epoch_s: 1_800_000_000,
             valid_at_epoch_s: 1_700_000_000,
             source_kind: crate::weather::WeatherSourceKind::Forecast,
-            cloud_cover_percent: Some(80),
-            smoothed_cloud_cover_percent: Some(80),
-            temperature: Some(4.0),
+            cloud_cover_percent: Some(81),
+            smoothed_cloud_cover_percent: Some(77),
+            temperature: Some(0.0),
+            condition: crate::weather::WeatherCondition::Cloudy,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         });
 
         assert!(runtime
@@ -3214,6 +2653,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn run_once_applies_manual_override_and_persists_state() {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
@@ -3230,6 +2670,7 @@ mod tests {
             targets: std::collections::BTreeMap::from([(String::from("internal"), 33)]),
             expires_at_epoch_s: Some(1_800_000_100),
         });
+        runtime.last_capabilities = Some(test_capability_snapshot());
         let runner = FakeRunner::new().with_success(
             "brightnessctl",
             &[
@@ -3274,160 +2715,6 @@ mod tests {
     }
 
     #[test]
-    fn wake_diagnostic_fields_cross_runtime_and_apply_event_seams() {
-        let collector = EventCollector::default();
-        let subscriber = tracing_subscriber::registry().with(collector.clone());
-        tracing::subscriber::with_default(subscriber, || {
-            let temp = TempDir::new();
-            let mut runtime = DaemonRuntime::bootstrap_with_paths(
-                test_config_report(),
-                temp.path().join("state/runtime-state.json"),
-                temp.path().join("run/control.sock"),
-            )
-            .expect("runtime should bootstrap");
-            runtime.request_wake_reassert(WakeReassertReason::SystemResume, Some(41));
-            let wake_runner = RecordingRunner::new();
-            assert!(runtime.process_wake_reassert_with_runner(
-                Instant::now() + Duration::from_secs(2),
-                wake_runner,
-            ));
-            let (ticket, outcome) = loop {
-                if let Some(completion) = runtime.poll_async_completion() {
-                    break completion;
-                }
-                std::thread::yield_now();
-            };
-            runtime.finish_wake_observation(
-                Utc.timestamp_opt(1_800_000_000, 0)
-                    .single()
-                    .expect("valid time"),
-                &RecordingRunner::new(),
-                ticket,
-                &outcome,
-            );
-
-            let messages = collector.messages();
-            let index_of = |message: &str| {
-                messages
-                    .iter()
-                    .position(|candidate| candidate == message)
-                    .unwrap_or_else(|| panic!("missing event {message}: {messages:?}"))
-            };
-            assert_eq!(
-                collector.field("wake_reassert_requested", "correlation_id"),
-                Some("Some(41)".into())
-            );
-            assert_eq!(
-                collector.field("wake_reassert_requested", "observation_generation"),
-                Some("Some(1)".into())
-            );
-            assert_eq!(
-                collector.field(
-                    "wake_reassert_observation_started",
-                    "observation_generation"
-                ),
-                Some("Some(1)".into())
-            );
-            assert_eq!(
-                collector.field("observation_generation_reserved", "correlation_id"),
-                Some("Some(41)".into())
-            );
-            assert_eq!(
-                collector.field("observation_generation_reserved", "observation_generation"),
-                Some("1".into())
-            );
-            assert!(
-                index_of("wake_reassert_requested") < index_of("wake_reassert_observation_started")
-            );
-            assert!(
-                index_of("wake_reassert_observation_started")
-                    < index_of("observation_generation_reserved")
-            );
-            assert!(
-                index_of("observation_generation_reserved")
-                    < index_of("observation_completion_published")
-            );
-            assert!(index_of("observation_completion_published") < index_of("target_reconciled"));
-            assert!(index_of("target_reconciled") < index_of("apply_attempt_authorized"));
-            for message in [
-                "observation_completion_published",
-                "target_reconciled",
-                "apply_attempt_authorized",
-            ] {
-                assert_eq!(
-                    collector.field(message, "correlation_id"),
-                    Some("Some(41)".into())
-                );
-                assert!(matches!(
-                    collector
-                        .field(message, "observation_generation")
-                        .as_deref(),
-                    Some("1" | "Some(1)")
-                ));
-            }
-        });
-    }
-
-    #[test]
-    fn non_wake_and_superseded_observations_are_distinct_and_fail_closed() {
-        let collector = EventCollector::default();
-        let subscriber = tracing_subscriber::registry().with(collector.clone());
-        tracing::subscriber::with_default(subscriber, || {
-            let temp = TempDir::new();
-            let mut runtime = DaemonRuntime::bootstrap_with_paths(
-                test_config_report(),
-                temp.path().join("state/runtime-state.json"),
-                temp.path().join("run/control.sock"),
-            )
-            .expect("runtime should bootstrap");
-            runtime.request_wake_reassert(WakeReassertReason::WaylandIdleResume, None);
-            assert_eq!(
-                collector.field("wake_reassert_requested", "correlation_id"),
-                Some("None".into())
-            );
-
-            let old_cause = ObservationCause::WakeReassert {
-                attempt: 1,
-                correlation_id: Some(9),
-            };
-            let old_generation = runtime
-                .reserve_generation(old_cause)
-                .expect("old generation");
-            runtime
-                .reserve_generation(ObservationCause::ScheduledTick)
-                .expect("new generation");
-            runtime.complete(
-                ObservationTicket {
-                    generation: old_generation,
-                    cause: old_cause,
-                },
-                Some(test_capability_snapshot()),
-            );
-
-            assert!(collector
-                .messages()
-                .contains(&String::from("observation_completion_superseded")));
-            assert_eq!(
-                collector.field("observation_completion_superseded", "generation"),
-                Some("1".into())
-            );
-            assert_eq!(
-                collector
-                    .messages()
-                    .iter()
-                    .filter(|message| message.as_str() == "apply_attempt_authorized")
-                    .count(),
-                0
-            );
-            assert!(collector.has_field(
-                "observation_generation_reserved",
-                "cause",
-                "ScheduledTick"
-            ));
-        });
-    }
-
-    #[test]
     fn run_once_without_capability_snapshot_fails_closed() {
         let temp = TempDir::new();
         let mut runtime = DaemonRuntime::bootstrap_with_paths(
@@ -3436,7 +2723,7 @@ mod tests {
             temp.path().join("run/control.sock"),
         )
         .expect("runtime should bootstrap");
-        runtime.observation.current = None;
+        runtime.last_capabilities = None;
         runtime.state.manual_override = Some(ManualOverrideState {
             global_percent: Some(33),
             global_expires_at_epoch_s: None,
@@ -3455,7 +2742,7 @@ mod tests {
             )
             .expect("tick should complete with a skipped apply");
 
-        assert!(runtime.observation.current.is_none());
+        assert!(runtime.last_capabilities.is_none());
         assert_eq!(report.apply_summary.attempted, 0);
         assert_eq!(report.apply_summary.skipped, 1);
         assert!(runner.calls.lock().unwrap().is_empty());
@@ -3496,6 +2783,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn run_once_applies_global_override() {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
@@ -3509,6 +2797,7 @@ mod tests {
             targets: std::collections::BTreeMap::new(),
             expires_at_epoch_s: None,
         });
+        runtime.last_capabilities = Some(test_capability_snapshot());
         let runner = FakeRunner::new().with_success(
             "brightnessctl",
             &[
@@ -3563,7 +2852,11 @@ mod tests {
             cloud_cover_percent: Some(100),
             smoothed_cloud_cover_percent: Some(100),
             temperature: Some(0.0),
+            condition: crate::weather::WeatherCondition::Cloudy,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
         runtime.state.weather = Some(weather_snapshot);
         runtime.state.manual_override = Some(ManualOverrideState {
@@ -3572,34 +2865,23 @@ mod tests {
             targets: std::collections::BTreeMap::from([(String::from("internal"), 25)]),
             expires_at_epoch_s: Some(1_800_000_100),
         });
-        // Same-generation authorization requires a real observation before the
-        // tick can dispatch: provide the exact discovery chain the observation
-        // runs, then the expected `set` write. The weather multiplier scales
-        // the solar target to 25%, so that is the percent actually dispatched.
-        let runner = FakeRunner::new()
-            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
-            .with_success(
-                "brightnessctl",
-                &["--list", "--machine-readable", "--class", "backlight"],
-                "intel_backlight,backlight,50,50%,100\n",
-            )
-            .with_success(
-                "brightnessctl",
-                &[
-                    "--quiet",
-                    "--class",
-                    "backlight",
-                    "--device",
-                    "intel_backlight",
-                    "set",
-                    "25%",
-                ],
-                "",
-            );
+        let runner = FakeRunner::new().with_success(
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "intel_backlight",
+                "set",
+                "25%",
+            ],
+            "",
+        );
 
         let report = runtime
-            .run_once_at_with_runner_fresh(
-                Utc.timestamp_opt(1_800_000_000, 0)
+            .run_once_at_with_runner(
+                Utc.timestamp_opt(1_800_000_030, 0)
                     .single()
                     .expect("valid time"),
                 &runner,
@@ -3608,35 +2890,41 @@ mod tests {
             .expect("tick should succeed");
 
         assert!(report.weather_modifier_applied);
-        assert_eq!(report.apply_summary.succeeded, 1);
     }
 
     #[test]
-    fn run_once_treats_stale_weather_metadata_as_diagnostic_only() {
-        // The weather cache is validated against fetch time (2x refresh TTL).
-        // A fixture older than that must degrade to a pure-solar tick instead
-        // of acting as an active policy modifier.
+    #[cfg(target_os = "linux")]
+    fn apply_failure_backoff_persists_state() {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
         let socket_path = temp.path().join("run/control.sock");
         let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_weather_config_report(),
-            state_path,
+            test_config_report(),
+            state_path.clone(),
             socket_path,
         )
         .expect("runtime should bootstrap");
-        runtime.state.weather = Some(WeatherSnapshotMetadata {
-            provider: String::from("openweather"),
-            fetched_at_epoch_s: 1_799_900_000,
-            valid_at_epoch_s: 1_700_000_000,
-            source_kind: crate::weather::WeatherSourceKind::Forecast,
-            cloud_cover_percent: Some(100),
-            smoothed_cloud_cover_percent: Some(100),
-            temperature: Some(0.0),
-            forecast: vec![],
+        runtime.state.manual_override = Some(ManualOverrideState {
+            global_percent: None,
+            global_expires_at_epoch_s: None,
+            targets: std::collections::BTreeMap::from([(String::from("internal"), 33)]),
+            expires_at_epoch_s: Some(1_800_000_100),
         });
-
-        let runner = FakeRunner::new();
+        let runner = FakeRunner::new().with_output(
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "intel_backlight",
+                "set",
+                "33%",
+            ],
+            Some(1),
+            "",
+            "temporarily unavailable",
+        );
 
         let report = runtime
             .run_once_at_with_runner(
@@ -3648,12 +2936,133 @@ mod tests {
             )
             .expect("tick should succeed");
 
-        assert!(!report.weather_modifier_applied);
-        assert!((report.policy.weather_multiplier - 1.0).abs() < f64::EPSILON);
+        assert_eq!(report.apply_summary.failed, 1);
+        let persisted = RuntimeState::load_from_path(&state_path).expect("state should persist");
+        let backoff = persisted
+            .monitor("internal")
+            .and_then(|monitor| monitor.backoff.as_ref())
+            .expect("backoff state should persist");
+        assert_eq!(backoff.backend, BackendKind::Backlight);
+        assert_eq!(backoff.failure_kind, FailureKind::Transient);
     }
 
     #[test]
-    fn ipc_set_override_applies_fresh_observation_result() {
+    fn ipc_status_reports_config_and_last_applied_values() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_weather_config_report(),
+            state_path,
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        runtime.state.suspend_until_epoch_s = Some(1_800_000_100);
+        runtime
+            .state
+            .record_apply_success("internal", 41, 1_800_000_000);
+        runtime.state.weather = Some(crate::state::WeatherSnapshotMetadata {
+            provider: String::from("openweather"),
+            fetched_at_epoch_s: 1_800_000_000,
+            valid_at_epoch_s: 1_700_000_000,
+            source_kind: crate::weather::WeatherSourceKind::Forecast,
+            cloud_cover_percent: Some(50),
+            smoothed_cloud_cover_percent: Some(50),
+            temperature: Some(0.0),
+            condition: crate::weather::WeatherCondition::PartlyCloudy,
+            condition_description: Some(String::from("broken clouds")),
+            day_phase: Some(crate::weather::WeatherDayPhase::Day),
+            forecast: vec![],
+            ..Default::default()
+        });
+        runtime.weather_refresh.last_attempted_at_epoch_s = Some(1_800_000_020);
+        runtime.weather_refresh.next_refresh_at_epoch_s = Some(1_800_001_800);
+        runtime.weather_refresh.consecutive_failures = 2;
+        runtime.weather_refresh.last_error =
+            Some(String::from("openweather request failed: network timeout"));
+
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            Request::Status,
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_030, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(!outcome.tick_attempted);
+
+        let Response::Status { status } = response.response else {
+            panic!("status request should return a status response");
+        };
+
+        assert!(status.daemon_alive);
+        assert_eq!(status.tick_seconds, 60);
+        assert_eq!(status.configured_monitors, 1);
+        assert_eq!(status.stateful_monitors, 1);
+        assert!(status.suspended);
+        assert!(!status.manual_override_active);
+        assert_eq!(status.monitors[0].last_applied_percent, Some(41));
+        let weather = status.weather.expect("weather status should exist");
+        assert!(weather.active);
+        assert!(!weather.stale);
+        assert_eq!(weather.last_refresh_attempt_epoch_s, Some(1_800_000_020));
+        assert_eq!(weather.next_refresh_at_epoch_s, Some(1_800_001_800));
+        assert_eq!(weather.consecutive_failures, 2);
+        assert_eq!(
+            weather.condition,
+            crate::weather::WeatherCondition::PartlyCloudy
+        );
+        assert_eq!(
+            weather.condition_description.as_deref(),
+            Some("broken clouds")
+        );
+        assert_eq!(
+            weather.day_phase,
+            Some(crate::weather::WeatherDayPhase::Day)
+        );
+        assert_eq!(
+            weather.last_error.as_deref(),
+            Some("openweather request failed: network timeout")
+        );
+    }
+
+    #[test]
+    fn ipc_status_hides_expired_manual_overrides() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime =
+            DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
+                .expect("runtime should bootstrap");
+        runtime.state.manual_override = Some(ManualOverrideState {
+            global_percent: Some(33),
+            global_expires_at_epoch_s: Some(1_800_000_000),
+            targets: std::collections::BTreeMap::from([(String::from("internal"), 27)]),
+            expires_at_epoch_s: Some(1_800_000_000),
+        });
+
+        let (response, _) = runtime.handle_ipc_request_with_runner(
+            Request::Status,
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_001, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        let Response::Status { status } = response.response else {
+            panic!("status request should return a status response");
+        };
+
+        assert!(!status.manual_override_active);
+        assert_eq!(status.global_override_percent, None);
+        assert_eq!(status.global_override_until_epoch_s, None);
+        assert_eq!(status.per_monitor_override_until_epoch_s, None);
+        assert_eq!(status.monitors[0].override_percent, None);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn ipc_suspend_and_resume_persist_state() {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
         let socket_path = temp.path().join("run/control.sock");
@@ -3663,28 +3072,249 @@ mod tests {
             socket_path,
         )
         .expect("runtime should bootstrap");
-        let runner = FakeRunner::new()
-            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
-            .with_success(
-                "brightnessctl",
-                &["--list", "--machine-readable", "--class", "backlight"],
-                "intel_backlight,backlight,50,50%,100\n",
-            )
-            .with_output(
-                "brightnessctl",
-                &[
-                    "--quiet",
-                    "--class",
-                    "backlight",
-                    "--device",
-                    "intel_backlight",
-                    "set",
-                    "36%",
-                ],
-                Some(1),
-                "",
-                "permission denied",
-            );
+        let now = Utc
+            .timestamp_opt(1_800_000_000, 0)
+            .single()
+            .expect("valid time");
+        runtime.state.manual_override = Some(ManualOverrideState {
+            global_percent: Some(40),
+            global_expires_at_epoch_s: Some(1_800_000_100),
+            targets: std::collections::BTreeMap::from([(String::from("internal"), 27)]),
+            expires_at_epoch_s: Some(1_800_000_100),
+        });
+
+        let (suspend_response, suspend_outcome) = runtime.handle_ipc_request_with_runner(
+            Request::Suspend { minutes: Some(15) },
+            &FakeRunner::new(),
+            now,
+        );
+        assert!(!suspend_outcome.tick_attempted);
+        assert!(matches!(suspend_response.response, Response::Ack { .. }));
+        assert_eq!(runtime.state.suspend_until_epoch_s, Some(1_800_000_900));
+        assert_eq!(
+            RuntimeState::load_from_path(&state_path)
+                .expect("state file should load")
+                .suspend_until_epoch_s,
+            Some(1_800_000_900)
+        );
+
+        let runner = RecordingRunner::new();
+        let (resume_response, resume_outcome) =
+            runtime.handle_ipc_request_with_runner(Request::Resume, &runner, now);
+        assert!(resume_outcome.tick_attempted);
+        assert!(matches!(resume_response.response, Response::Ack { .. }));
+        assert_eq!(runtime.state.suspend_until_epoch_s, None);
+        assert_eq!(runtime.state.manual_override, None);
+        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(
+            RuntimeState::load_from_path(&state_path)
+                .expect("state file should load")
+                .suspend_until_epoch_s,
+            None
+        );
+        assert_eq!(
+            RuntimeState::load_from_path(&state_path)
+                .expect("state file should load")
+                .manual_override,
+            None
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn ipc_indefinite_suspend_persists_state_until_resume() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            state_path.clone(),
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        let now = Utc
+            .timestamp_opt(1_800_000_000, 0)
+            .single()
+            .expect("valid time");
+
+        let (suspend_response, suspend_outcome) = runtime.handle_ipc_request_with_runner(
+            Request::Suspend { minutes: None },
+            &FakeRunner::new(),
+            now,
+        );
+        assert!(!suspend_outcome.tick_attempted);
+        assert!(matches!(suspend_response.response, Response::Ack { .. }));
+        assert!(runtime.state.suspend_indefinite);
+        assert_eq!(runtime.state.suspend_until_epoch_s, None);
+        assert!(
+            RuntimeState::load_from_path(&state_path)
+                .expect("state file should load")
+                .suspend_indefinite
+        );
+
+        let runner = RecordingRunner::new();
+        let (resume_response, resume_outcome) =
+            runtime.handle_ipc_request_with_runner(Request::Resume, &runner, now);
+        assert!(resume_outcome.tick_attempted);
+        assert!(matches!(resume_response.response, Response::Ack { .. }));
+        assert!(!runtime.state.suspend_indefinite);
+        assert_eq!(runtime.state.suspend_until_epoch_s, None);
+        assert_eq!(runner.calls().len(), 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn ipc_resume_forces_reapply_and_clears_monitor_backoff() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            state_path.clone(),
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        let now = Utc
+            .timestamp_opt(1_800_000_000, 0)
+            .single()
+            .expect("valid time");
+        runtime.state.suspend_until_epoch_s = Some(1_800_000_900);
+        runtime.state.manual_override = Some(ManualOverrideState {
+            global_percent: Some(40),
+            global_expires_at_epoch_s: Some(1_800_000_100),
+            targets: std::collections::BTreeMap::from([(String::from("internal"), 27)]),
+            expires_at_epoch_s: Some(1_800_000_100),
+        });
+        runtime.state.monitor_mut("internal").last_applied_percent = Some(90);
+        runtime
+            .state
+            .monitor_mut("internal")
+            .last_applied_at_epoch_s = Some(1_799_999_940);
+        runtime.state.monitor_mut("internal").backoff = Some(FailureBackoffState {
+            backend: BackendKind::Backlight,
+            failure_kind: FailureKind::Transient,
+            consecutive_failures: 4,
+            suppress_until_epoch_s: Some(1_800_000_500),
+        });
+
+        let runner = RecordingRunner::new();
+        let (response, outcome) =
+            runtime.handle_ipc_request_with_runner(Request::Resume, &runner, now);
+
+        assert!(outcome.tick_attempted);
+        assert!(matches!(response.response, Response::Ack { .. }));
+        assert_eq!(runner.calls().len(), 1);
+        assert!(runner.calls()[0]
+            .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
+        assert_eq!(runtime.state.suspend_until_epoch_s, None);
+        assert_eq!(runtime.state.manual_override, None);
+        assert_eq!(
+            runtime
+                .state
+                .monitor("internal")
+                .and_then(|monitor| monitor.backoff.as_ref()),
+            None
+        );
+        assert_eq!(
+            runtime
+                .state
+                .monitor("internal")
+                .and_then(|monitor| monitor.last_applied_at_epoch_s),
+            Some(1_800_000_000)
+        );
+        assert_eq!(
+            RuntimeState::load_from_path(&state_path)
+                .expect("state file should load")
+                .monitor("internal")
+                .and_then(|monitor| monitor.backoff.as_ref()),
+            None
+        );
+    }
+
+    #[test]
+    fn ipc_set_and_clear_override_persist_state() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_dry_run_config_report(),
+            state_path.clone(),
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        let now = Utc
+            .timestamp_opt(1_800_000_000, 0)
+            .single()
+            .expect("valid time");
+
+        let (set_response, set_outcome) = runtime.handle_ipc_request_with_runner(
+            Request::SetOverride {
+                monitor_id: Some(String::from("internal")),
+                percent: 36,
+                minutes: Some(10),
+            },
+            &FakeRunner::new(),
+            now,
+        );
+        assert!(set_outcome.tick_attempted);
+        assert!(matches!(set_response.response, Response::Ack { .. }));
+        assert_eq!(
+            runtime.state.manual_override.as_ref().and_then(
+                |manual_override| manual_override.target_percent("internal", 1_800_000_000)
+            ),
+            Some(36)
+        );
+        assert_eq!(
+            RuntimeState::load_from_path(&state_path)
+                .expect("state file should load")
+                .manual_override
+                .as_ref()
+                .and_then(
+                    |manual_override| manual_override.target_percent("internal", 1_800_000_000)
+                ),
+            Some(36)
+        );
+
+        let (clear_response, clear_outcome) = runtime.handle_ipc_request_with_runner(
+            Request::ClearOverride {
+                monitor_id: Some(String::from("internal")),
+                global: false,
+            },
+            &FakeRunner::new(),
+            now,
+        );
+        assert!(clear_outcome.tick_attempted);
+        assert!(matches!(clear_response.response, Response::Ack { .. }));
+        assert_eq!(runtime.state.manual_override, None);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn ipc_set_override_reports_immediate_apply_failures_without_losing_state() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            state_path.clone(),
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        let runner = FakeRunner::new().with_output(
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "intel_backlight",
+                "set",
+                "36%",
+            ],
+            Some(1),
+            "",
+            "permission denied",
+        );
 
         let (response, outcome) = runtime.handle_ipc_request_with_runner(
             Request::SetOverride {
@@ -3719,47 +3349,6 @@ mod tests {
                 .and_then(
                     |manual_override| manual_override.target_percent("internal", 1_800_000_000)
                 ),
-            Some(36)
-        );
-    }
-
-    #[test]
-    fn ipc_set_override_skips_write_when_fresh_observation_loses_target() {
-        let temp = TempDir::new();
-        let state_path = temp.path().join("state/runtime-state.json");
-        let socket_path = temp.path().join("run/control.sock");
-        let missing_path = "/sys/class/backlight/__sunreactor_missing__";
-        let mut report = test_config_report();
-        report.config.monitors[0].selector.sysfs_path = Some(String::from(missing_path));
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
-            .expect("runtime should bootstrap");
-        let runner = FakeRunner::new()
-            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
-            .with_success(
-                "brightnessctl",
-                &["--list", "--machine-readable", "--class", "backlight"],
-                "",
-            );
-
-        let (response, outcome) = runtime.handle_ipc_request_with_runner(
-            Request::SetOverride {
-                monitor_id: Some(String::from("internal")),
-                percent: 36,
-                minutes: Some(10),
-            },
-            &runner,
-            Utc.timestamp_opt(1_800_000_000, 0)
-                .single()
-                .expect("valid time"),
-        );
-
-        assert!(outcome.tick_attempted);
-        assert!(matches!(response.response, Response::Ack { .. }));
-        assert!(!runner.calls().iter().any(|call| call.contains("|set|")));
-        assert_eq!(
-            runtime.state.manual_override.as_ref().and_then(
-                |manual_override| manual_override.target_percent("internal", 1_800_000_000)
-            ),
             Some(36)
         );
     }
@@ -3803,16 +3392,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn ipc_run_once_executes_tick_and_returns_summary() {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
         let socket_path = temp.path().join("run/control.sock");
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            state_path.clone(),
-            socket_path,
-        )
-        .expect("runtime should bootstrap");
+        let mut runtime =
+            DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
+                .expect("runtime should bootstrap");
         runtime.state.manual_override = Some(ManualOverrideState {
             global_percent: None,
             global_expires_at_epoch_s: None,
@@ -3825,26 +3412,19 @@ mod tests {
             consecutive_failures: 3,
             suppress_until_epoch_s: Some(1_800_000_500),
         });
-        let runner = FakeRunner::new()
-            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
-            .with_success(
-                "brightnessctl",
-                &["--list", "--machine-readable", "--class", "backlight"],
-                "intel_backlight,backlight,50,50%,100\n",
-            )
-            .with_success(
-                "brightnessctl",
-                &[
-                    "--quiet",
-                    "--class",
-                    "backlight",
-                    "--device",
-                    "intel_backlight",
-                    "set",
-                    "27%",
-                ],
-                "",
-            );
+        let runner = FakeRunner::new().with_success(
+            "brightnessctl",
+            &[
+                "--quiet",
+                "--class",
+                "backlight",
+                "--device",
+                "intel_backlight",
+                "set",
+                "27%",
+            ],
+            "",
+        );
 
         let (response, outcome) = runtime.handle_ipc_request_with_runner(
             Request::RunOnce { force: true },
@@ -3864,93 +3444,6 @@ mod tests {
         assert_eq!(run_once.writes_attempted, 1);
         assert_eq!(run_once.writes_skipped, 0);
         assert_eq!(run_once.writes_succeeded, 1);
-    }
-
-    #[test]
-    fn forced_run_once_skips_write_when_fresh_observation_loses_target() {
-        let temp = TempDir::new();
-        let state_path = temp.path().join("state/runtime-state.json");
-        let socket_path = temp.path().join("run/control.sock");
-        let missing_path = "/sys/class/backlight/__sunreactor_missing__";
-        let mut report = test_config_report();
-        report.config.monitors[0].selector.sysfs_path = Some(String::from(missing_path));
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
-            .expect("runtime should bootstrap");
-        runtime.state.manual_override = Some(ManualOverrideState {
-            global_percent: None,
-            global_expires_at_epoch_s: None,
-            targets: std::collections::BTreeMap::from([(String::from("internal"), 27)]),
-            expires_at_epoch_s: Some(1_800_000_100),
-        });
-        let runner = FakeRunner::new()
-            .with_success("ddcutil", &["--noconfig", "--terse", "detect"], "")
-            .with_success(
-                "brightnessctl",
-                &["--list", "--machine-readable", "--class", "backlight"],
-                "",
-            );
-
-        let (response, outcome) = runtime.handle_ipc_request_with_runner(
-            Request::RunOnce { force: true },
-            &runner,
-            Utc.timestamp_opt(1_800_000_000, 0)
-                .single()
-                .expect("valid time"),
-        );
-
-        assert!(outcome.tick_attempted);
-        let Response::RunOnce { run_once, .. } = response.response else {
-            panic!("run_once request should return a run_once response");
-        };
-        assert_eq!(run_once.writes_attempted, 0);
-        assert_eq!(run_once.writes_succeeded, 0);
-        assert_eq!(run_once.writes_skipped, 1);
-        assert!(!runner.calls().iter().any(|call| call.contains("|set|")));
-    }
-
-    #[test]
-    fn injected_active_fade_is_never_dispatched_as_hardware_write() {
-        // Production passes no fade engine into the reconciled apply engine:
-        // large deltas dispatch once through the normal path, and any legacy
-        // injected fade state must be canceled without discovery or backend
-        // calls.
-        let temp = TempDir::new();
-        let state_path = temp.path().join("state/runtime-state.json");
-        let socket_path = temp.path().join("run/control.sock");
-        let missing_path = "/sys/class/backlight/__sunreactor_missing__";
-        let mut report = test_config_report();
-        report.config.monitors[0].selector.sysfs_path = Some(String::from(missing_path));
-        let mut runtime =
-            DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path.clone())
-                .expect("runtime should bootstrap");
-        runtime.observation.current = None;
-        runtime.observation.latest_started = None;
-        runtime.observation.latest_settled = None;
-
-        // Simulate legacy fade state left behind by an older caller.
-        runtime.fade_engine.maybe_enqueue("internal", 80, 20);
-        let listener = runtime
-            .socket
-            .bind_listener()
-            .expect("listener should bind");
-        let runner = RecordingRunner::new();
-        let mut cadence = LoopCadence::new(60);
-        let mut desktop_idle = DesktopIdleSync::new(false, socket_path, 60, 15);
-
-        // The production loop has no RunFadeStep action; a due-tick pass
-        // performs one full observation cycle and never touches the backend.
-        runtime.execute_scheduled_tick(
-            Utc.timestamp_opt(1_800_000_000, 0)
-                .single()
-                .expect("valid time"),
-            &runner,
-            &mut cadence,
-            &mut desktop_idle,
-        );
-
-        assert!(runner.write_calls().is_empty());
-        drop(listener);
-        drop(desktop_idle);
     }
 
     #[test]
@@ -4085,15 +3578,11 @@ mod tests {
         }
     }
 
-    fn test_dry_run_config_report() -> ConfigReport {
-        let mut report = test_config_report();
-        report.config.daemon.dry_run = true;
-        report
-    }
-
     fn test_weather_config_report() -> ConfigReport {
         let mut report = test_config_report();
         report.config.weather.enabled = true;
+        report.config.weather.refresh_minutes = 30;
+        report.config.weather.min_multiplier = 0.75;
         report
     }
 
@@ -4101,12 +3590,12 @@ mod tests {
         CapabilitySnapshot {
             ddc_present: Vec::new(),
             backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
-                stable_id: String::from("test:backlight"),
+                stable_id: String::from("backlight:intel_backlight"),
                 device_name: String::from("intel_backlight"),
                 class: String::from("backlight"),
                 max_brightness: Some(100),
                 backlight_type: Some(String::from("raw")),
-                probe_source: String::from("test-fixture"),
+                probe_source: String::from("test"),
                 sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
                 ddcci_connector: None,
                 backend_viable: true,
@@ -4115,32 +3604,53 @@ mod tests {
         }
     }
 
+    fn test_dry_run_config_report() -> ConfigReport {
+        let mut report = test_config_report();
+        report.config.daemon.dry_run = true;
+        report
+    }
+
+    fn count_temp_state_files(state_path: &Path) -> usize {
+        let Some(state_dir) = state_path.parent() else {
+            return 0;
+        };
+        let prefix = format!(
+            "{}.tmp-",
+            state_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("runtime-state.json")
+        );
+        fs::read_dir(state_dir)
+            .expect("state dir should be readable")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+            .count()
+    }
+
     struct TempDir {
-        inner: tempfile::TempDir,
+        path: PathBuf,
     }
 
     impl TempDir {
         fn new() -> Self {
-            let inner = tempfile::tempdir().expect("temp dir should be created");
-            Self { inner }
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("sunreactor-runtime-test-{unique}"));
+            fs::create_dir_all(&path).expect("temp dir should be created");
+            Self { path }
         }
 
         fn path(&self) -> &Path {
-            self.inner.path()
+            &self.path
         }
     }
 
-    fn count_temp_state_files(state_path: &Path) -> usize {
-        state_path.parent().map_or(0, |dir| {
-            fs::read_dir(dir)
-                .expect("state dir should be readable")
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    name.starts_with(".runtime-state.json.tmp-") || name.contains(".corrupt-")
-                })
-                .count()
-        })
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.path).ok();
+        }
     }
 }

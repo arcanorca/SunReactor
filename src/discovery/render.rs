@@ -7,7 +7,7 @@ use super::model::{
 use crate::backends::ddc::{
     selector_match_count, selector_plan, selector_relation, DdcSelectorRelation,
 };
-use crate::config::MonitorSelector;
+use crate::config::{MonitorConfig, MonitorSelector};
 
 pub(super) fn build_report(snapshot: DiscoverySnapshot) -> DiscoveryReport {
     let mut notes = build_notes(
@@ -15,18 +15,31 @@ pub(super) fn build_report(snapshot: DiscoverySnapshot) -> DiscoveryReport {
         &snapshot.summary,
         &snapshot.backlight_devices,
     );
-    let (config_snippet, config_notes) =
-        build_config_snippet(&snapshot.ddc_monitors, &snapshot.backlight_devices);
+    let (config_candidates, config_notes) =
+        build_monitor_config_candidates(&snapshot.ddc_monitors, &snapshot.backlight_devices);
+    let config_snippet = render_config_snippet(&config_candidates);
     notes.extend(config_notes);
 
     DiscoveryReport {
         summary: snapshot.summary,
         backends: snapshot.backends,
+        ddc_observation_complete: snapshot.ddc_observation_complete,
         ddc_monitors: snapshot.ddc_monitors,
         backlight_devices: snapshot.backlight_devices,
+        windows_displays: Vec::new(),
         notes,
         config_snippet,
     }
+}
+
+/// Returns only candidates which discovery has proved safe to enable without
+/// asking the user to opt into topology retargeting.
+pub(super) fn importable_monitor_configs(report: &DiscoveryReport) -> Vec<MonitorConfig> {
+    build_monitor_config_candidates(&report.ddc_monitors, &report.backlight_devices)
+        .0
+        .into_iter()
+        .filter(|monitor| monitor.enabled)
+        .collect()
 }
 
 #[allow(clippy::too_many_lines)]
@@ -148,6 +161,90 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
         sections.push(format!("Notes\n{}", report.notes.join("\n")));
     }
 
+    if !report.windows_displays.is_empty() {
+        use std::fmt::Write;
+        let mut win_section = String::from("Windows display topology\n");
+        for disp in &report.windows_displays {
+            let primary_tag = if disp.is_primary { " (Primary)" } else { "" };
+            let title = disp.name.as_deref().unwrap_or("Display");
+            let num = disp.display_number;
+            let _ = writeln!(win_section, "  [{num}] {title}{primary_tag}");
+            let _ = writeln!(
+                win_section,
+                "      Kind:              {} ({})",
+                disp.kind, disp.output_technology
+            );
+            let status = if disp.active && disp.target_available {
+                "Active / Connected"
+            } else if disp.active {
+                "Active / Temporarily Unavailable"
+            } else {
+                "Inactive"
+            };
+            let _ = writeln!(win_section, "      Status:            {status}");
+            if let Some(ref gdi) = disp.gdi_device_name {
+                let rect = disp
+                    .desktop_rect
+                    .as_deref()
+                    .unwrap_or("coordinates unknown");
+                let _ = writeln!(win_section, "      GDI Device:        {gdi} ({rect})");
+            }
+            let _ = writeln!(
+                win_section,
+                "      CCD Path:          Adapter {} / Target {} (Connector #{})",
+                disp.adapter_luid, disp.target_id, disp.connector_instance
+            );
+            let _ = writeln!(
+                win_section,
+                "      Physical Monitors: {} (Handles transient & destroyed via RAII)",
+                disp.physical_monitors_count
+            );
+            if let Some(ref cid) = disp.container_id {
+                let _ = writeln!(win_section, "      Container ID:      {cid}");
+            }
+            if let Some(ref inst) = disp.device_instance_id {
+                let _ = writeln!(win_section, "      Device Instance:   {inst}");
+            }
+            let _ = writeln!(
+                win_section,
+                "      Identity Quality:  {}",
+                disp.identity_quality
+            );
+            let _ = writeln!(
+                win_section,
+                "      W3 Mutation Tier:  {}",
+                disp.mutation_eligibility
+            );
+            if let Some(ref cid) = disp.canonical_id {
+                let _ = writeln!(win_section, "      Canonical ID:      {cid}");
+            }
+            if let Some(ref label) = disp.display_label {
+                let _ = writeln!(win_section, "      Display Label:     {label}");
+            }
+            if let Some(ref capable) = disp.brightness_capable {
+                if *capable {
+                    let min = disp.native_min.unwrap_or(0);
+                    let cur = disp.native_current.unwrap_or(0);
+                    let max = disp.native_max.unwrap_or(100);
+                    let pct = disp.normalized_current_percent.unwrap_or(0);
+                    let _ = writeln!(
+                        win_section,
+                        "      Brightness Backend: Capable (DXVA2 High-Level, Native: {min}..{max}, Current: {cur} [{pct}%])"
+                    );
+                } else if let Some(ref note) = disp.capability_note {
+                    let _ = writeln!(win_section, "      Brightness Backend: {note}");
+                }
+            } else if let Some(ref note) = disp.capability_note {
+                let _ = writeln!(win_section, "      Brightness Backend: {note}");
+            }
+            if let Some(ref note) = disp.note {
+                let _ = writeln!(win_section, "      Note:              {note}");
+            }
+            win_section.push('\n');
+        }
+        sections.push(win_section.trim_end().to_string());
+    }
+
     sections.push(format!(
         "Candidate config snippet\n{}",
         report.config_snippet
@@ -184,11 +281,11 @@ fn build_notes(
 }
 
 #[allow(clippy::too_many_lines)]
-fn build_config_snippet(
+fn build_monitor_config_candidates(
     ddc_monitors: &[DdcMonitorDiscovery],
     backlight_devices: &[BacklightDeviceDiscovery],
-) -> (String, Vec<String>) {
-    let mut blocks = Vec::new();
+) -> (Vec<MonitorConfig>, Vec<String>) {
+    let mut configs = Vec::new();
     let mut used_ids = HashSet::new();
     let mut ambiguity_notes = Vec::new();
     let candidates = ddc_monitors
@@ -247,64 +344,104 @@ fn build_config_snippet(
                 monitor.target_label()
             ));
         }
-        let mut lines = vec![
-            String::from("[[monitors]]"),
-            format!("logical_id = \"{logical_id}\""),
-            String::from("backend = \"ddc\""),
-            format!("enabled = {enabled}"),
-            String::from("allow_topology_retargeting = false"),
-            String::from(
-                "# Bus-only selectors follow a topology slot; opt in explicitly before enabling.",
-            ),
-            String::from("min_pct = 0"),
-            String::from("max_pct = 100"),
-            String::from("gain = 1.0"),
-        ];
-
-        if let Some(model) = &monitor.model {
-            lines.push(format!("model = \"{}\"", escape_toml_string(model)));
-        }
-        if let Some(serial) = &monitor.serial {
-            lines.push(format!("serial = \"{}\"", escape_toml_string(serial)));
-        }
-        if let Some(connector) = &monitor.connector {
-            lines.push(format!("connector = \"{}\"", escape_toml_string(connector)));
-        }
-        if let Some(bus_number) = monitor.bus_number {
-            lines.push(format!("ddc_bus = {bus_number}"));
-        }
-
-        blocks.push(lines.join("\n"));
+        configs.push(MonitorConfig {
+            logical_id,
+            backend: crate::backends::BackendKind::Ddc,
+            enabled,
+            allow_topology_retargeting: false,
+            min_pct: 0,
+            max_pct: 100,
+            gain: 1.0,
+            // Reuse the exact selector considered during ambiguity analysis.
+            // Adding a bus alongside model/serial changes `ddcutil` selector
+            // precedence and can turn an otherwise disjoint pair into an
+            // unsafe bus-vs-identity overlap.
+            selector: selector.clone(),
+            ..MonitorConfig::default()
+        });
     }
 
     for device in backlight_devices.iter().filter(|device| {
         device.backend_viable && !super::is_ddcci_alias_of_viable_ddc(device, ddc_monitors)
     }) {
-        let logical_id = allocate_logical_id(backlight_logical_id_base(device), &mut used_ids);
-        let lines = [
-            String::from("[[monitors]]"),
-            format!("logical_id = \"{logical_id}\""),
-            String::from("backend = \"backlight\""),
-            String::from("enabled = true"),
-            String::from("min_pct = 0"),
-            String::from("max_pct = 100"),
-            String::from("gain = 1.0"),
-            format!(
-                "sysfs_path = \"{}\"",
-                escape_toml_string(&device.sysfs_path)
-            ),
-        ];
-        blocks.push(lines.join("\n"));
+        configs.push(MonitorConfig {
+            logical_id: allocate_logical_id(backlight_logical_id_base(device), &mut used_ids),
+            backend: crate::backends::BackendKind::Backlight,
+            enabled: true,
+            min_pct: 0,
+            max_pct: 100,
+            gain: 1.0,
+            selector: MonitorSelector {
+                sysfs_path: Some(device.sysfs_path.clone()),
+                ..MonitorSelector::default()
+            },
+            ..MonitorConfig::default()
+        });
     }
 
-    if blocks.is_empty() {
-        (
-            String::from("# No viable brightness-capable devices were discovered."),
-            ambiguity_notes,
-        )
-    } else {
-        (blocks.join("\n\n"), ambiguity_notes)
+    (configs, ambiguity_notes)
+}
+
+fn render_config_snippet(configs: &[MonitorConfig]) -> String {
+    if configs.is_empty() {
+        return String::from("# No viable brightness-capable devices were discovered.");
     }
+
+    configs
+        .iter()
+        .map(render_monitor_config)
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn render_monitor_config(monitor: &MonitorConfig) -> String {
+    let backend = match monitor.backend {
+        crate::backends::BackendKind::Ddc => "ddc",
+        crate::backends::BackendKind::Backlight => "backlight",
+    };
+    let mut lines = vec![
+        String::from("[[monitors]]"),
+        format!(
+            "logical_id = \"{}\"",
+            escape_toml_string(&monitor.logical_id)
+        ),
+        format!("backend = \"{backend}\""),
+        format!("enabled = {}", monitor.enabled),
+    ];
+
+    if monitor.backend == crate::backends::BackendKind::Ddc {
+        lines.push(format!(
+            "allow_topology_retargeting = {}",
+            monitor.allow_topology_retargeting
+        ));
+        lines.push(String::from(
+            "# Bus-only selectors follow a topology slot; opt in explicitly before enabling.",
+        ));
+    }
+
+    lines.extend([
+        format!("min_pct = {}", monitor.min_pct),
+        format!("max_pct = {}", monitor.max_pct),
+        format!("gain = {}", monitor.gain),
+    ]);
+
+    if let Some(model) = &monitor.selector.model {
+        lines.push(format!("model = \"{}\"", escape_toml_string(model)));
+    }
+    if let Some(serial) = &monitor.selector.serial {
+        lines.push(format!("serial = \"{}\"", escape_toml_string(serial)));
+    }
+    if let Some(connector) = &monitor.selector.connector {
+        lines.push(format!("connector = \"{}\"", escape_toml_string(connector)));
+    }
+    if let Some(path) = &monitor.selector.sysfs_path {
+        lines.push(format!("sysfs_path = \"{}\"", escape_toml_string(path)));
+    }
+    if let Some(bus) = monitor.selector.ddc_bus {
+        lines.push(format!("ddc_bus = {bus}"));
+    }
+
+    lines.join("\n")
 }
 
 fn discovery_selector(monitor: &DdcMonitorDiscovery) -> MonitorSelector {

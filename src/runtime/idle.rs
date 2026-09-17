@@ -1,38 +1,48 @@
 use crate::backends::ProcessRunner;
 use crate::runtime::orchestrator::{DaemonRuntime, LoopCadence};
 use chrono::{DateTime, Utc};
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 use std::os::fd::AsRawFd;
+#[cfg(target_os = "linux")]
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::{Child, Command, Stdio};
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "linux")]
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 use wayland_client::globals::registry_queue_init;
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 use wayland_client::protocol::{wl_registry, wl_seat::WlSeat};
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 use wayland_protocols::ext::idle_notify::v1::client::{
     ext_idle_notification_v1::{Event as IdleNotificationEvent, ExtIdleNotificationV1},
     ext_idle_notifier_v1::ExtIdleNotifierV1,
 };
+
+/// Raised by the Wayland idle watcher when input resumes after idling; the
+/// daemon loop takes it to open a wake watch. The watcher runs inside the
+/// daemon, so it signals directly instead of spawning `sunreactorctl`.
+#[cfg(target_os = "linux")]
+static INPUT_RESUMED: AtomicBool = AtomicBool::new(false);
 
 // --- From desktop_idle.rs ---
 const STARTUP_WAKE_SYNC_DELAY: Duration = Duration::from_secs(8);
 const FOLLOWUP_WAKE_SYNC_DELAY: Duration = Duration::from_secs(15);
 const SUSPEND_DRIFT_THRESHOLD_SECONDS: u64 = 5;
 
-/// How often the xprintidle polling thread checks user idle time.
+#[cfg(target_os = "linux")]
 const XPRINTIDLE_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Timeout for each individual `xprintidle` subprocess invocation.
+#[cfg(target_os = "linux")]
 const XPRINTIDLE_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 const WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS: u32 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,9 +53,11 @@ enum IdleSyncAction {
 
 pub(super) struct DesktopIdleSync {
     enabled: bool,
+    #[cfg(target_os = "linux")]
     watcher: Option<IdleWatcher>,
     delayed_sync_at: Option<Instant>,
     last_tick_utc: DateTime<Utc>,
+    #[cfg(target_os = "linux")]
     last_spawn_attempt: Option<Instant>,
     timeout_minutes: u64,
 }
@@ -57,8 +69,9 @@ impl DesktopIdleSync {
         tick_seconds: u64,
         timeout_minutes: u64,
     ) -> Self {
-        let watcher = {
-            #[cfg(feature = "wayland")]
+        #[cfg(target_os = "linux")]
+        let watcher: Option<IdleWatcher> = {
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
             if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
                 spawn_wayland_idle()
             } else if enabled {
@@ -73,23 +86,33 @@ impl DesktopIdleSync {
                 None
             }
         };
+        #[cfg(not(target_os = "linux"))]
+        let _ = (socket_path, timeout_minutes);
 
-        Self::new_with_watcher(enabled, watcher, tick_seconds, timeout_minutes)
+        Self::new_with_watcher(
+            enabled,
+            #[cfg(target_os = "linux")]
+            watcher,
+            tick_seconds,
+            timeout_minutes,
+        )
     }
 
     fn new_with_watcher(
         enabled: bool,
-        watcher: Option<IdleWatcher>,
+        #[cfg(target_os = "linux")] watcher: Option<IdleWatcher>,
         tick_seconds: u64,
         timeout_minutes: u64,
     ) -> Self {
         Self {
             enabled,
+            #[cfg(target_os = "linux")]
             watcher,
             delayed_sync_at: enabled.then_some(Instant::now() + STARTUP_WAKE_SYNC_DELAY),
             last_tick_utc: Utc::now()
                 .checked_sub_signed(chrono::Duration::seconds(tick_seconds as i64))
                 .unwrap_or_else(Utc::now),
+            #[cfg(target_os = "linux")]
             last_spawn_attempt: enabled.then_some(Instant::now()),
             timeout_minutes,
         }
@@ -99,7 +122,10 @@ impl DesktopIdleSync {
         if self.enabled != enabled || self.timeout_minutes != timeout_minutes {
             self.enabled = enabled;
             self.timeout_minutes = timeout_minutes;
-            self.watcher = None; // Force respawn in maintain_watcher if enabled
+            #[cfg(target_os = "linux")]
+            {
+                self.watcher = None; // Force respawn in maintain_watcher if enabled
+            }
         }
     }
 
@@ -112,24 +138,43 @@ impl DesktopIdleSync {
             return;
         }
 
-        let needs_restart = match &self.watcher {
-            Some(watcher) => !watcher.is_alive(),
-            None => self
-                .last_spawn_attempt
-                .is_none_or(|last| last.elapsed() > Duration::from_mins(1)),
-        };
+        #[cfg(target_os = "linux")]
+        {
+            let needs_restart = match &self.watcher {
+                Some(watcher) => !watcher.is_alive(),
+                None => self
+                    .last_spawn_attempt
+                    .is_none_or(|last| last.elapsed() > Duration::from_mins(1)),
+            };
 
-        if needs_restart {
-            if self.watcher.is_some() {
-                tracing::info!("idle_watcher_died_restarting");
+            if needs_restart {
+                if self.watcher.is_some() {
+                    tracing::info!("idle_watcher_died_restarting");
+                }
+                self.last_spawn_attempt = Some(Instant::now());
+                self.watcher = spawn(socket_path.to_path_buf(), self.timeout_minutes);
             }
-            self.last_spawn_attempt = Some(Instant::now());
-            self.watcher = spawn(socket_path.to_path_buf(), self.timeout_minutes);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = socket_path;
         }
     }
 
     pub(super) fn next_deadline(&self) -> Option<Instant> {
         self.delayed_sync_at
+    }
+
+    /// Whether user input resumed after idling since the last call.
+    pub(super) fn take_input_resume() -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            INPUT_RESUMED.swap(false, Ordering::AcqRel)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
     }
 
     pub(super) fn perform_due_action<R: ProcessRunner + Sync>(
@@ -151,6 +196,9 @@ impl DesktopIdleSync {
             IdleSyncAction::DriftRecovery { drift_seconds } => {
                 tracing::info!(drift_secs = %drift_seconds, "time_jump_detected");
                 runtime.execute_resync_tick(now_utc, runner, cadence, self, true);
+                // Monitors may still be waking after a suspend.
+                let _ = runtime
+                    .request_wake_reassert(crate::runtime::wake::WakeReassertReason::SystemResume);
             }
         }
         true
@@ -195,10 +243,12 @@ impl DesktopIdleSync {
 ///
 /// Dropping the watcher cleans up the underlying resource (kills the child
 /// process or signals the polling thread to shut down).
+#[cfg(target_os = "linux")]
 pub struct IdleWatcher {
     inner: IdleWatcherInner,
 }
 
+#[cfg(target_os = "linux")]
 enum IdleWatcherInner {
     /// A long-lived child process (e.g. swayidle) that directly executes
     /// sunreactorctl idle-dim / idle-wake on timeout / resume events.
@@ -210,13 +260,14 @@ enum IdleWatcherInner {
         shutdown: Arc<AtomicBool>,
         handle: Option<std::thread::JoinHandle<()>>,
     },
-    #[cfg(feature = "wayland")]
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
     WaylandThread {
         shutdown: Arc<AtomicBool>,
         handle: Option<std::thread::JoinHandle<()>>,
     },
 }
 
+#[cfg(target_os = "linux")]
 impl IdleWatcher {
     pub(super) fn is_alive(&self) -> bool {
         match &self.inner {
@@ -231,7 +282,7 @@ impl IdleWatcher {
                 !shutdown.load(Ordering::Relaxed)
                     && handle.as_ref().is_some_and(|h| !h.is_finished())
             }
-            #[cfg(feature = "wayland")]
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
             IdleWatcherInner::WaylandThread { shutdown, handle } => {
                 !shutdown.load(Ordering::Relaxed)
                     && handle.as_ref().is_some_and(|h| !h.is_finished())
@@ -240,6 +291,7 @@ impl IdleWatcher {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for IdleWatcher {
     fn drop(&mut self) {
         match &mut self.inner {
@@ -255,7 +307,7 @@ impl Drop for IdleWatcher {
                     let _ = handle.join();
                 }
             }
-            #[cfg(feature = "wayland")]
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
             IdleWatcherInner::WaylandThread { shutdown, handle } => {
                 shutdown.store(true, Ordering::Relaxed);
                 if let Some(handle) = handle.take() {
@@ -276,8 +328,9 @@ impl Drop for IdleWatcher {
 /// 2. **xprintidle polling** — X11 sessions (DISPLAY set, WAYLAND_DISPLAY absent)
 /// 3. **None** — drift-only fallback (suspend/resume still detected by
 ///    `DesktopIdleSync::due_action`)
+#[cfg(target_os = "linux")]
 pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleWatcher> {
-    #[cfg(feature = "wayland")]
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
     if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
         if let Some(watcher) = spawn_wayland_idle() {
             return Some(watcher);
@@ -304,13 +357,13 @@ pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleW
     None
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 struct WaylandIdleState {
     shutdown: Arc<AtomicBool>,
     _notification: Option<ExtIdleNotificationV1>,
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 impl Dispatch<wl_registry::WlRegistry, wayland_client::globals::GlobalListContents>
     for WaylandIdleState
 {
@@ -325,7 +378,7 @@ impl Dispatch<wl_registry::WlRegistry, wayland_client::globals::GlobalListConten
     }
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 #[allow(clippy::ignored_unit_patterns)]
 impl Dispatch<WlSeat, ()> for WaylandIdleState {
     fn event(
@@ -339,7 +392,7 @@ impl Dispatch<WlSeat, ()> for WaylandIdleState {
     }
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 #[allow(clippy::ignored_unit_patterns)]
 impl Dispatch<ExtIdleNotifierV1, ()> for WaylandIdleState {
     fn event(
@@ -353,7 +406,7 @@ impl Dispatch<ExtIdleNotifierV1, ()> for WaylandIdleState {
     }
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 #[allow(clippy::ignored_unit_patterns)]
 impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
     fn event(
@@ -365,12 +418,12 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
         _: &QueueHandle<Self>,
     ) {
         if matches!(event, IdleNotificationEvent::Resumed) {
-            fire_sunreactorctl("idle-wake");
+            INPUT_RESUMED.store(true, Ordering::Release);
         }
     }
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 fn spawn_wayland_idle() -> Option<IdleWatcher> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let thread_shutdown = Arc::clone(&shutdown);
@@ -420,7 +473,7 @@ fn spawn_wayland_idle() -> Option<IdleWatcher> {
     })
 }
 
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 fn dispatch_wayland_once(
     queue: &mut wayland_client::EventQueue<WaylandIdleState>,
     state: &mut WaylandIdleState,
@@ -462,6 +515,7 @@ fn dispatch_wayland_once(
 /// on timeout and `sunreactorctl idle-wake` on resume.
 ///
 /// Returns `None` if swayidle is not installed or fails to start.
+#[cfg(target_os = "linux")]
 fn spawn_swayidle(timeout_minutes: u64) -> Option<IdleWatcher> {
     let timeout_seconds = timeout_minutes * 60;
 
@@ -473,9 +527,9 @@ fn spawn_swayidle(timeout_minutes: u64) -> Option<IdleWatcher> {
             .arg("-w")
             .arg("timeout")
             .arg(timeout_seconds.to_string())
-            .arg("sunreactorctl idle-dim")
+            .arg(format!("{} idle-dim", cli_binary().display()))
             .arg("resume")
-            .arg("sunreactorctl idle-wake")
+            .arg(format!("{} idle-wake", cli_binary().display()))
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .pre_exec(|| {
@@ -513,6 +567,7 @@ fn spawn_swayidle(timeout_minutes: u64) -> Option<IdleWatcher> {
 /// Only attempted when `DISPLAY` is set and `WAYLAND_DISPLAY` is absent,
 /// indicating a pure X11 session. Returns `None` if xprintidle is not
 /// installed or the session is not X11.
+#[cfg(target_os = "linux")]
 fn spawn_xprintidle_poll(timeout_minutes: u64) -> Option<IdleWatcher> {
     // Only try on X11 sessions: DISPLAY must be set, WAYLAND_DISPLAY must not.
     let has_display = std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty());
@@ -559,6 +614,7 @@ fn spawn_xprintidle_poll(timeout_minutes: u64) -> Option<IdleWatcher> {
 
 /// Checks whether `xprintidle` is installed and returns a plausible idle-time
 /// value. A single bounded invocation; output is treated as untrusted.
+#[cfg(target_os = "linux")]
 fn is_xprintidle_available() -> bool {
     let output = Command::new("xprintidle")
         .stdout(Stdio::piped())
@@ -610,6 +666,7 @@ fn is_xprintidle_available() -> bool {
 /// Calls `xprintidle` every `XPRINTIDLE_POLL_INTERVAL` seconds, compares the
 /// reported idle time against `timeout_ms`, and dispatches the appropriate
 /// `sunreactorctl` command when state transitions occur.
+#[cfg(target_os = "linux")]
 fn xprintidle_poll_loop(shutdown: &Arc<AtomicBool>, timeout_ms: u64) {
     let mut is_idle = false;
 
@@ -642,6 +699,7 @@ fn xprintidle_poll_loop(shutdown: &Arc<AtomicBool>, timeout_ms: u64) {
 /// Invokes `xprintidle` with a bounded timeout and parses the idle-time output
 /// (milliseconds). Returns `None` on any failure (missing binary, timeout,
 /// non-numeric output). Output is treated as untrusted.
+#[cfg(target_os = "linux")]
 fn read_xprintidle() -> Option<u64> {
     let mut child = Command::new("xprintidle")
         .stdout(Stdio::piped())
@@ -679,11 +737,23 @@ fn read_xprintidle() -> Option<u64> {
     }
 }
 
+/// `sunreactorctl` installed next to the running daemon, falling back to
+/// `PATH`. User services often run without `~/.local/bin` on `PATH`.
+#[cfg(target_os = "linux")]
+fn cli_binary() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(crate::CLI_BINARY)))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| PathBuf::from(crate::CLI_BINARY))
+}
+
 /// Fires a `sunreactorctl` subcommand (`idle-dim` or `idle-wake`) as a
 /// short-lived child process. Failures are logged but do not stop the
 /// polling loop.
+#[cfg(target_os = "linux")]
 fn fire_sunreactorctl(subcommand: &str) {
-    let result = Command::new(crate::CLI_BINARY)
+    let result = Command::new(cli_binary())
         .arg(subcommand)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -732,7 +802,7 @@ fn fire_sunreactorctl(subcommand: &str) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use crate::backends::{BackendKind, FailureKind};
@@ -762,13 +832,6 @@ mod tests {
         fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
         }
-
-        fn write_calls(&self) -> Vec<String> {
-            self.calls()
-                .into_iter()
-                .filter(|call| call.contains("|set|"))
-                .collect()
-        }
     }
 
     impl ProcessRunner for RecordingRunner {
@@ -784,15 +847,8 @@ mod tests {
                 call.push_str(arg);
             }
             self.calls.lock().unwrap().push(call);
-            let stdout = if program == "brightnessctl"
-                && args == ["--list", "--machine-readable", "--class", "backlight"]
-            {
-                "intel_backlight,backlight,50,50%,100\n"
-            } else {
-                ""
-            };
             Ok(CommandOutput {
-                stdout: stdout.to_owned(),
+                stdout: String::new(),
                 stderr: String::new(),
                 exit_code: Some(0),
             })
@@ -863,7 +919,7 @@ mod tests {
         let mut runtime =
             DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
                 .expect("runtime should bootstrap");
-        runtime.test_publish_capabilities(crate::runtime::topology::CapabilitySnapshot {
+        runtime.last_capabilities = Some(crate::runtime::topology::CapabilitySnapshot {
             ddc_present: Vec::new(),
             backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
                 stable_id: String::from("test:backlight"),
@@ -892,8 +948,8 @@ mod tests {
         let now = Utc.timestamp_opt(1_800_000_000, 0).single().expect("valid");
 
         assert!(idle_sync.perform_due_action(&mut runtime, now, &runner, &mut cadence));
-        assert_eq!(runner.write_calls().len(), 1);
-        assert!(runner.write_calls()[0]
+        assert_eq!(runner.calls().len(), 1);
+        assert!(runner.calls()[0]
             .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
         assert_eq!(
             runtime

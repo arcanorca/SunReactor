@@ -219,12 +219,28 @@ fn child_exited_without_reaping(child: &Child) -> io::Result<bool> {
     Ok(status.is_some_and(|status| status.exited()))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+#[allow(clippy::unnecessary_wraps)]
 fn child_exited_without_reaping(child: &Child) -> io::Result<bool> {
-    match child.try_wait()? {
-        Some(_) => Ok(true),
-        None => Ok(false),
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    };
+
+    let pid = child.id();
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            pid,
+        )
+    };
+    if handle.is_null() {
+        return Ok(true);
     }
+    let wait_res = unsafe { WaitForSingleObject(handle, 0) };
+    unsafe { CloseHandle(handle) };
+    Ok(wait_res == WAIT_OBJECT_0)
 }
 
 #[cfg(unix)]
@@ -238,9 +254,23 @@ fn terminate_process_group(child: &std::process::Child) -> io::Result<()> {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(target_os = "windows")]
 fn terminate_process_group(child: &std::process::Child) -> io::Result<()> {
-    child.kill()
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+
+    let pid = child.id();
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+    if handle.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    let res = unsafe { TerminateProcess(handle, 1) };
+    unsafe { CloseHandle(handle) };
+    if res != 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 fn map_spawn_error(program: &str, error: &io::Error) -> CommandError {

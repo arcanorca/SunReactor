@@ -236,6 +236,107 @@ Independent read-only reviews agreed that the pure snapshot and apply gate prese
 
 Use exact command output for final matrix and live status; do not reuse previous PASS claims.
 
+## Phase 9.3: Identity Restoration, Interaction Salience & Product-Language Cleanup
+
+### 1. Root Cause of Masthead Flattening
+During theme style semantic consolidation, `styles.focus_marker` was mapped to `palette.accent`. In `src/tui/ui/chrome.rs`, the middle row of the ASCII logo was assigned `styles.focus_marker`, while the remaining rows used `styles.chrome_title` (also `palette.accent`). This unintentionally collapsed the original dual-tone sunrise/reactor aesthetic into a monochrome wordmark across all themes.
+
+### 2. Historical Provenance
+Historical investigation traced to commits `a535983` and `c9418cb` (`src/tui/ui/chrome.rs:106-130`), confirming that row 2 (`\___ \|...`) originally rendered with `palette.secondary_accent`, while rows 0, 1, 3, 4 rendered with `palette.accent`.
+
+### 3. Dual-Tone Recovery Mechanism
+Added `chrome_title_secondary: Style` to `SemanticStyles`, initialized from `palette.secondary_accent`. Line 2 in `logo_lines` uses `styles.chrome_title_secondary`. Zero hardcoded RGB colors are used. The power-on sweep transitions through:
+`historical dual-tone initial state` -> `temporary highlight band` -> `historical dual-tone settled state`.
+
+### 4. Product-Language Audit & Cleanup
+Applied GNOME HIG and Unix ergonomics: stripped theatrical marketing, pseudo-avionics, and repetitive title prefixes across the TUI.
+
+| Component | Before | After | Rationale |
+|:---|:---|:---|:---|
+| Chrome Help | `OPERATOR REFERENCE` | `HELP` | Plain Unix copy; operator is unnecessary jargon |
+| Chrome Symbols | `INSTRUMENT LEGEND` | `SYMBOLS` | Concise, familiar GNOME HIG vocabulary |
+| Chrome Footer | `OBSERVE` | `WEATHER` | Direct tab identity rather than obscure mode name |
+| Location | `Solar Location` | `Location` | Redundant modifier removed |
+| Location | `LOCATION IDENTITY` | *(Removed)* | Unnecessary sub-heading when field is obviously City |
+| Location | `DRIVES AUTOMATION` | *(Removed)* | Theatrical marketing slogan stripped from status bar |
+| Location | `World Position` | `Map` | Crisp instrument panel title |
+| Location Form | `POS <coords>` (bottom of left form) | *(Removed when map visible)* | Redundant duplicate with map metadata footer; only renders when map is omitted |
+| Weather Empty | `ATMOSPHERIC SUBSYSTEM` + 3 prose paragraphs | `WEATHER` / `○ Off` / `Enable in Settings > Weather.` | Clean, quiet empty state; no architectural lecture |
+| Weather Status | `ATMOSPHERIC TELEMETRY` / `WEATHER STATUS` | `STATUS` | Direct, familiar terminology without repetitive prefix |
+| Weather Input | `ATMOSPHERIC INPUT` / `WEATHER INPUT` | `INPUT` | Direct, familiar terminology with `VALID <time>` tag |
+| Weather Policy | `WEATHER / SOLAR POLICY` / `WEATHER POLICY` | `BRIGHTNESS` | Direct domain noun matching monitor brightness effect |
+| Weather Compact | `ATMOSPHERIC INPUT & POLICY` / `WEATHER & POLICY` | `INPUT & BRIGHTNESS` | Concise combined header for compact mode |
+| Settings Section | `POWER MANAGEMENT` | `POWER` | Balanced section title |
+| Settings Section | `ATMOSPHERE` | `WEATHER` | Aligned with Tab 4 and user mental model |
+| Settings Section | `SYSTEM & DAEMON` | `SERVICE` | Concise heading for daemon and write controls |
+| Settings Label | `Dim automatically after idle` | `Dim after idle` | Concise label |
+| Settings Label | `OpenWeather API key` | `API key` | Concise label |
+| Settings Hints | Permanent `(0 to disable)` etc. | Progressive disclosure | Hints only appear when focused or editing |
+| Service Status | `(daemon service unreachable)` / `(applying solar curve)` | Concise `Offline` / `Enabled` | Duplicate detail eliminated |
+
+### 5. Settings Layout & Spacing
+- Fit-based layout calculation:
+  - Responsive mode requires both height ($\ge 11$) and width ($\ge 64$) before committing to two columns. Narrower viewports cleanly use single-column minimal stacked layout without truncation.
+  - **Left column:** `INTERFACE` (5 settings) + explicit gap + `SERVICE` (Daemon, Writes, Actions).
+  - **Right column:** `POWER` (2 settings) + explicit gap + `WEATHER` (4 settings).
+- **Hard invariant:** Minimum 1 blank row between sections in compact workspaces; 2 blank rows when terminal height $\ge 14$. Separator lines do not count as the blank row.
+- Both columns are intrinsically balanced at 10-12 rows each, eliminating right-column cramping.
+
+### 6. Active Selection & Focus Architecture
+- Implemented three distinct visual channels:
+  - **Focus rail:** `▌` in bold accent color.
+  - **Label contrast:** Enhanced typography (`text_heading` / bold).
+  - **Value capsule:** Dedicated `[ <value> ]` brackets and filled background capsule with contrast-safe foreground text.
+- **Progressive disclosure:** Hints appear only on active/focused rows.
+- **Contrast safety:** Function `contrast_fg_for_palette(bg, palette)` derives contrast-safe foreground text (`palette.bg` or `palette.fg`) directly from the active theme's palette, preserving theme identity across all 24 themes.
+- **Editing state semantics:** Editing is NOT a warning condition. `value_capsule_editing` uses `palette.secondary_accent` (`Modifier::BOLD | Modifier::UNDERLINED`) with editing cursor `▏` in `focus_marker` color, reserving warning colors strictly for actual alerts and degraded states.
+- **Read-only distinction:** Non-interactive rows (`Provider`, `Refresh interval`) use muted styling and never display focus rails or brackets.
+
+### 7. Phase 9.3.1: World Map Aspect Ratio Root Cause & Resolution
+- **Root Cause:** When terminal emulators report character counts rather than physical pixels (e.g. `pixel_width == columns && pixel_height == rows`), the raw aspect ratio evaluated to $1.0$. The loose validity check `(0.25..=1.5).contains(&aspect)` accepted $1.0$ as physical terminal pixels. This caused `desired_cell_ratio = WORLD_ASPECT / 1.0 = 2.0 / 1.0 = 2.0`, crushing the horizontal width of the world map in half and rendering a vertically stretched "giraffe" silhouette.
+- **Correction:**
+  - Plausible terminal monospace font cell aspect ratio clamped strictly to `[0.35, 0.65]`. Bogus $1.0$ character counts are rejected and fall back to conservative `DEFAULT_CELL_ASPECT = 0.45` (matching typical Linux monospace geometry, e.g. 9px $\times$ 20px).
+  - Equirectangular projection ratio: $\text{cols} / \text{rows} = 2.0 / 0.45 = 4.44$, ensuring physical pixel aspect ratio $L_x / L_y = 2.00$ on real displays.
+  - Form layout split: Replaced rigid 44%/56% split with `Constraint::Min(36), Constraint::Percentage(60)`, giving the world map canvas maximum horizontal span.
+  - Redundant coordinate display: Removed clipped `POS ...` line from left form when map is visible.
+
+### 8. Phase 9.4: Monitor-Aware Automation + Brightness Range Instrument + Adaptive Map Semantic Zoom
+- **Pre-Flight Policy Model Trace:**
+  - `transition_gamma`: Stored per-monitor in `MonitorConfig.transition_gamma` (default `0.50`, valid range `0.0 < gamma <= 5.0`).
+  - Transfer function: $y = x^\gamma$ where $x \in [0.0, 1.0]$ is pure solar daylight factor. Midpoint elevation yields higher brightness earlier when $\gamma < 1.0$ and delays brightening when $\gamma > 1.0$.
+  - Projection: $\text{scaled} = \text{min} + y \times \text{gain} \times (\text{max} - \text{min})$, clamped to $[\text{min}, \text{max}]$.
+  - Weather modifier adjusts effective factor before hardware projection. Manual overrides bypass the solar curve entirely until expiry.
+- **Ownership Realignment:**
+  - *Monitors tab (Tab 1)* owns safe hardware boundaries and applied status: `BRIGHTNESS RANGE` (Min% and Max%). Removed deceptive non-interactive `Gamma correction` row.
+  - *Automation tab (Tab 2)* owns solar brightness curve policy: `Curve shape`, milestone schedule, and solar-derived targets.
+- **Automation Monitor Context & Navigation:**
+  - Added dedicated header line at the top of Automation: `MONITOR <name> <idx> / <total> [ / ] switch`.
+  - Added dedicated monitor-switching keys `[` (previous) and `]` (next) on Tab 2, avoiding conflict with `← / →` milestone offsets.
+  - Unified monitor selection: Tab 1 and Tab 2 share `app.selected_monitor` seamlessly.
+  - Recomputing targets: Switching monitors immediately recomputes milestone table targets via core policy (`crate::policy::milestones`) for that monitor's min, max, gamma, and gain.
+- **Curve Shape Interactive Control in Automation:**
+  - Added `AutomationRegionFocus`: `Curve` vs `Milestones`.
+  - Up / Down (`k` / `j`): Moves smoothly between Curve control and Milestone table.
+  - `← / →`: Fine-adjusts curve exponent by $\pm 0.05$ (clamped to $[0.05, 3.0]$).
+  - `Enter`: Exact numeric edit mode in `value_capsule_editing` with live preview. `Esc` cancels edit.
+  - Validation: Clamped to finite numbers in $0.0 < \text{val} \le 5.0$.
+- **Unified Tactile Brightness Range Instrument in Monitors Tab:**
+  - Replaced disconnected Min and Max text rows with a single cohesive range instrument:
+    `0 ────────┃━━━━━━━━━━━━━━━━━━━━┃──────────────── 100`
+    `          MIN 7%              MAX 60%`
+  - Truthful proportional positions: $\text{min\_idx} \propto \text{min\_pct} / 100$, $\text{max\_idx} \propto \text{max\_pct} / 100$. Unoccupied ranges $0 \dots \text{min}$ and $\text{max} \dots 100$ remain visible.
+  - Handle focus: Active handle transforms to bold `█` with `[ MIN 7% ]` or `[ MAX 60% ]` capsule below.
+  - Direct adjustment: `← / →` steps focused handle by $\pm 1\%$. `Enter` enters exact numeric edit. `Esc` returns to monitor list.
+- **Adaptive Map Semantic Zoom in Location Tab:**
+  - Implemented discrete semantic zoom levels:
+    - `World`: $360^\circ \times 180^\circ$ span ($2.0$ ratio) for large viewports ($\ge 54 \times 12$).
+    - `Continental`: $180^\circ \times 90^\circ$ span ($2.0$ ratio) for medium viewports ($\ge 36 \times 8$), centered on configured location.
+    - `Regional`: $90^\circ \times 45^\circ$ span ($2.0$ ratio) for small viewports ($< 36 \times 8$), centered on configured location.
+  - Aspect Ratio Invariance: Exact $2:1$ equirectangular ratio maintained at EVERY zoom level.
+  - Geographic Clamping: All views clamped strictly to valid ranges $[-180, 180]$ and $[-90, 90]$ with Date Line and Polar bounds safety.
+  - Unified Projection: Reticle, crosshair, acquisition ping, target point, and border ticks scale and align identically to the active zoom level without spatial drift.
+  - Frame titles: `Map · World`, `Map · Continental`, `Map · Regional`.
+
 ## End of engineering record
 
 Phase 9 only.

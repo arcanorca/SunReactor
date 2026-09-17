@@ -1,5 +1,10 @@
-use std::fs::{self, File};
+use std::fs;
+#[cfg(target_os = "linux")]
+use std::fs::File;
+#[cfg(target_os = "linux")]
 use std::io::Write;
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use crate::paths;
@@ -90,10 +95,15 @@ pub(crate) fn write_default_to(path: &Path) -> Result<PathBuf, ConfigError> {
     write_rendered_to_path(path, DEFAULT_CONFIG_TEMPLATE)
 }
 
+#[cfg(target_os = "linux")]
 fn write_rendered_to_path(path: &Path, rendered: &str) -> Result<PathBuf, ConfigError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     if !parent.exists() {
-        fs::create_dir_all(parent).map_err(|source| ConfigError::Io {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        builder.mode(0o700);
+        builder.create(parent).map_err(|source| ConfigError::Io {
             path: parent.to_path_buf(),
             source,
         })?;
@@ -107,6 +117,8 @@ fn write_rendered_to_path(path: &Path, rendered: &str) -> Result<PathBuf, Config
             path: parent.to_path_buf(),
             source,
         })?;
+
+    let _ = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600));
 
     temp_file
         .write_all(rendered.as_bytes())
@@ -131,6 +143,18 @@ fn write_rendered_to_path(path: &Path, rendered: &str) -> Result<PathBuf, Config
     Ok(path.to_path_buf())
 }
 
+#[cfg(target_os = "windows")]
+fn write_rendered_to_path(path: &Path, rendered: &str) -> Result<PathBuf, ConfigError> {
+    crate::platform::windows::atomic_write_file(path, rendered.as_bytes()).map_err(|source| {
+        ConfigError::Io {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    Ok(path.to_path_buf())
+}
+
+#[cfg(target_os = "linux")]
 fn sync_parent_dir(path: &Path) -> Result<(), ConfigError> {
     let Some(parent) = path.parent() else {
         return Ok(());

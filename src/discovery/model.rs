@@ -119,12 +119,61 @@ pub struct BacklightDeviceDiscovery {
     pub note: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct WindowsDisplayDiscovery {
+    pub display_number: u32,
+    pub canonical_id: Option<String>,
+    pub display_label: Option<String>,
+    pub stable_id: Option<String>,
+    pub identity_quality: String,
+    pub mutation_eligibility: String,
+    pub name: Option<String>,
+    pub kind: String,
+    pub active: bool,
+    pub target_available: bool,
+    pub is_primary: bool,
+    pub output_technology: String,
+    pub gdi_device_name: Option<String>,
+    pub adapter_luid: String,
+    pub source_id: u32,
+    pub target_id: u32,
+    pub connector_instance: u32,
+    pub container_id: Option<String>,
+    pub device_instance_id: Option<String>,
+    pub hardware_ids: Vec<String>,
+    pub edid_manufacturer: Option<String>,
+    pub edid_product_code: Option<u16>,
+    pub physical_monitors_count: u32,
+    pub physical_monitor_description: Option<String>,
+    pub desktop_rect: Option<String>,
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brightness_capable: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_min: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_current: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_max: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalized_current_percent: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_note: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DiscoveryReport {
     pub summary: DiscoverySummary,
     pub backends: DiscoveryBackends,
+    /// False when ddcutil emitted an invalid/partial detection record. Such a
+    /// scan may describe some displays correctly, but is not authoritative
+    /// enough for automatic monitor onboarding.
+    #[serde(default)]
+    pub ddc_observation_complete: bool,
     pub ddc_monitors: Vec<DdcMonitorDiscovery>,
     pub backlight_devices: Vec<BacklightDeviceDiscovery>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub windows_displays: Vec<WindowsDisplayDiscovery>,
     pub notes: Vec<String>,
     pub config_snippet: String,
 }
@@ -133,6 +182,7 @@ pub struct DiscoveryReport {
 pub(crate) struct DiscoverySnapshot {
     pub(crate) summary: DiscoverySummary,
     pub(crate) backends: DiscoveryBackends,
+    pub(crate) ddc_observation_complete: bool,
     pub(crate) ddc_monitors: Vec<DdcMonitorDiscovery>,
     pub(crate) backlight_devices: Vec<BacklightDeviceDiscovery>,
 }
@@ -236,4 +286,52 @@ fn build_ddc_stable_id(raw: &RawDdcMonitor) -> String {
     }
 
     parts.join(":")
+}
+
+#[cfg(not(target_os = "linux"))]
+#[allow(dead_code)]
+#[must_use]
+pub fn windows_discovery_deferred_report() -> DiscoveryReport {
+    DiscoveryReport {
+        summary: DiscoverySummary {
+            ddc_monitors: 0,
+            backlight_devices: 0,
+            viable_targets: 0,
+        },
+        ddc_observation_complete: false,
+        backends: DiscoveryBackends {
+            ddcutil: BackendStatus {
+                backend: String::from("ddcutil"),
+                available: false,
+                status: BackendStatusKind::Unavailable,
+                message: String::from("DDC monitor discovery on Windows is deferred to Phase W2"),
+                guidance: None,
+            },
+            brightnessctl: BackendStatus {
+                backend: String::from("brightnessctl"),
+                available: false,
+                status: BackendStatusKind::Unavailable,
+                message: String::from(
+                    "brightnessctl is Linux-specific; native Windows backlight deferred to W2",
+                ),
+                guidance: None,
+            },
+            sysfs: BackendStatus {
+                backend: String::from("sysfs"),
+                available: false,
+                status: BackendStatusKind::Unavailable,
+                message: String::from(
+                    "sysfs is Linux-specific; native Windows display topology deferred to W2",
+                ),
+                guidance: None,
+            },
+        },
+        ddc_monitors: Vec::new(),
+        backlight_devices: Vec::new(),
+        windows_displays: Vec::new(),
+        notes: vec![String::from(
+            "Windows monitor discovery is deferred to W2; hardware enumeration not supported in W1",
+        )],
+        config_snippet: String::new(),
+    }
 }

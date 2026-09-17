@@ -32,15 +32,31 @@ impl Location {
         let timezone_name = timezone_name.trim();
         let path = std::path::Path::new("/usr/share/zoneinfo").join(timezone_name);
 
-        // Use dynamically parsed OS timezone data to prevent static tzdata drift, fallback to POSIX
-        let tz = if let Ok(data) = std::fs::read(&path) {
-            TimeZone::from_tz_data(&data).map_err(|_| SolarError::InvalidTimezone {
-                timezone: timezone_name.to_owned(),
-            })?
+        // 1. Try reading dynamically from OS zoneinfo (Linux dynamic tzdata)
+        let tz = if path.is_file() {
+            std::fs::read(&path)
+                .ok()
+                .and_then(|data| TimeZone::from_tz_data(&data).ok())
         } else {
-            TimeZone::from_posix_tz(timezone_name).map_err(|_| SolarError::InvalidTimezone {
-                timezone: timezone_name.to_owned(),
-            })?
+            None
+        };
+
+        // 2. Fall back to embedded IANA tzdb (Windows or minimal Linux without tzdata pkg)
+        let tz = match tz {
+            Some(t) => t,
+            None => {
+                if let Some(raw_data) = tzdb::raw_tz_by_name(timezone_name) {
+                    TimeZone::from_tz_data(raw_data).map_err(|_| SolarError::InvalidTimezone {
+                        timezone: timezone_name.to_owned(),
+                    })?
+                } else {
+                    TimeZone::from_posix_tz(timezone_name).map_err(|_| {
+                        SolarError::InvalidTimezone {
+                            timezone: timezone_name.to_owned(),
+                        }
+                    })?
+                }
+            }
         };
 
         Ok(Self {

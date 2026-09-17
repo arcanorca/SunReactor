@@ -13,7 +13,8 @@
     clippy::ref_option,
     clippy::return_self_not_must_use,
     clippy::must_use_candidate,
-    clippy::doc_markdown
+    clippy::doc_markdown,
+    clippy::result_large_err
 )]
 
 pub mod apply;
@@ -22,6 +23,7 @@ pub mod config;
 pub mod discovery;
 pub mod ipc;
 pub mod paths;
+pub mod platform;
 pub mod policy;
 mod process;
 pub mod runtime;
@@ -99,6 +101,8 @@ Commands:
   ping                      Check whether the daemon socket is alive
   run-once [--force]        Trigger one immediate daemon tick
   discover                  Probe brightness-capable devices locally
+  test-brightness --monitor-id <id>
+                            Execute a controlled, reversible hardware brightness test
   config init               Write the default config template
   config validate           Parse and validate the config file
   tui                       Launch the interactive terminal interface

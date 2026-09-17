@@ -1,239 +1,136 @@
+//! Wake watch: after a monitor or the session wakes up, probe brightness
+//! briefly and often.
+//!
+//! Desktop compositors (KWin, for example) may restore their own saved
+//! brightness a few seconds after a display comes back, and monitors answer
+//! DDC/CI only once they have finished waking. Instead of a fixed number of
+//! retries, any wake signal opens a short window in which the daemon reads
+//! each monitor every couple of seconds and rewrites any wrong value. A new
+//! signal during the window extends it.
+
 use std::time::{Duration, Instant};
 
-const STABILIZATION_DELAY: Duration = Duration::from_secs(2);
-const RETRY_DELAY: Duration = Duration::from_secs(2);
+/// How long probes continue after the latest wake signal.
+pub const WATCH_WINDOW: Duration = Duration::from_mins(1);
+/// Time between probes while the window is open.
+pub const PROBE_INTERVAL: Duration = Duration::from_secs(2);
+/// Short pause before the first probe so a monitor can start answering.
+pub const FIRST_PROBE_DELAY: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeReassertReason {
+    Startup,
     WaylandIdleResume,
-    KdeDpmsResume,
     SystemResume,
     ManualWake,
+    DrmHotplug,
+    DrmConnectorChange,
     TopologyRecovery,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WakeReassertAction {
-    Observe { attempt: u8 },
-    Wait,
-    Done,
+#[derive(Debug, Clone, Default)]
+pub struct WakeWatch {
+    until: Option<Instant>,
+    next_probe: Option<Instant>,
+    reason: Option<WakeReassertReason>,
+    probes: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    Idle,
-    Stabilizing,
-    Observing,
-    Retry,
-    Completed,
-}
-
-#[derive(Debug, Clone)]
-pub struct WakeReassertCoordinator {
-    phase: Phase,
-    due_at: Option<Instant>,
-    attempts: u8,
-    last_reason: Option<WakeReassertReason>,
-    correlation_id: Option<u64>,
-}
-
-impl Default for WakeReassertCoordinator {
-    fn default() -> Self {
-        Self {
-            phase: Phase::Idle,
-            due_at: None,
-            attempts: 0,
-            last_reason: None,
-            correlation_id: None,
+impl WakeWatch {
+    /// Opens the watch window, or extends it when one is already open.
+    /// Returns `true` when this signal opened a new window.
+    pub fn start(&mut self, reason: WakeReassertReason, now: Instant) -> bool {
+        let already_open = self.is_active(now);
+        self.until = Some(now + WATCH_WINDOW);
+        self.reason = Some(reason);
+        if !already_open {
+            self.next_probe = Some(now + FIRST_PROBE_DELAY);
+            self.probes = 0;
         }
+        !already_open
     }
-}
 
-impl WakeReassertCoordinator {
     #[must_use]
-    pub fn request(
-        &mut self,
-        reason: WakeReassertReason,
-        correlation_id: Option<u64>,
-        now: Instant,
-    ) -> bool {
-        self.last_reason = Some(reason);
-        if !matches!(self.phase, Phase::Idle | Phase::Completed) {
+    pub fn is_active(&self, now: Instant) -> bool {
+        self.until.is_some_and(|until| now < until)
+    }
+
+    /// Whether a probe should run now; schedules the following one.
+    pub fn take_due_probe(&mut self, now: Instant) -> bool {
+        if !self.is_active(now) {
+            self.until = None;
+            self.next_probe = None;
             return false;
         }
-        self.correlation_id = correlation_id;
-        self.phase = Phase::Stabilizing;
-        self.attempts = 0;
-        self.due_at = Some(now + STABILIZATION_DELAY);
-        true
-    }
-
-    #[must_use]
-    pub fn poll(&mut self, now: Instant) -> WakeReassertAction {
-        if !matches!(self.phase, Phase::Stabilizing | Phase::Retry) {
-            return WakeReassertAction::Done;
-        }
-        if self.due_at.is_some_and(|due| now < due) {
-            return WakeReassertAction::Wait;
-        }
-        self.attempts = self.attempts.saturating_add(1);
-        self.phase = Phase::Observing;
-        WakeReassertAction::Observe {
-            attempt: self.attempts,
+        match self.next_probe {
+            Some(due) if now >= due => {
+                self.next_probe = Some(now + PROBE_INTERVAL);
+                self.probes = self.probes.saturating_add(1);
+                true
+            }
+            _ => false,
         }
     }
 
+    /// When the loop should next wake up for a probe.
     #[must_use]
-    pub fn observation_completed(&mut self, present: bool, now: Instant) -> bool {
-        if !matches!(self.phase, Phase::Observing) {
-            return false;
-        }
-        if present {
-            self.finish();
-            true
-        } else {
-            self.observation_unavailable(now)
-        }
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.until.and(self.next_probe)
     }
 
     #[must_use]
-    pub fn observation_unavailable(&mut self, now: Instant) -> bool {
-        if self.attempts >= 2 {
-            self.finish();
-            return false;
-        }
-        self.phase = Phase::Retry;
-        self.due_at = Some(now + RETRY_DELAY);
-        true
-    }
-
-    /// Roll back an `Observe` poll when no worker could actually start.
-    ///
-    /// `poll` optimistically enters `Observing`; the caller starts the worker
-    /// afterwards. If start returned `Busy`/`FailedToSpawn`, the phase must
-    /// return to `Retry` with a short due time so the attempt is re-driven by
-    /// the loop instead of being lost. Returns the retry deadline, or `None`
-    /// when the coordinator was not in the `Observing` phase.
-    #[must_use]
-    pub fn defer_observation(&mut self, now: Instant) -> Option<Instant> {
-        if !matches!(self.phase, Phase::Observing) {
-            return None;
-        }
-        self.attempts = self.attempts.saturating_sub(1);
-        self.phase = Phase::Retry;
-        let due = now + RETRY_DELAY;
-        self.due_at = Some(due);
-        Some(due)
-    }
-
-    pub fn finish(&mut self) {
-        self.phase = Phase::Completed;
-        self.due_at = None;
+    pub fn reason(&self) -> Option<WakeReassertReason> {
+        self.reason
     }
 
     #[must_use]
-    pub fn is_pending(&self) -> bool {
-        matches!(
-            self.phase,
-            Phase::Stabilizing | Phase::Observing | Phase::Retry
-        )
-    }
-
-    #[must_use]
-    pub fn attempts(&self) -> u8 {
-        self.attempts
-    }
-
-    #[must_use]
-    pub fn last_reason(&self) -> Option<WakeReassertReason> {
-        self.last_reason
-    }
-
-    #[must_use]
-    pub fn correlation_id(&self) -> Option<u64> {
-        self.correlation_id
+    pub fn probes(&self) -> u32 {
+        self.probes
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{WakeReassertAction, WakeReassertCoordinator, WakeReassertReason};
-    use std::time::{Duration, Instant};
+    use super::*;
 
     #[test]
-    fn hint_waits_then_allows_one_observation() {
+    fn a_wake_signal_probes_after_a_short_delay_then_every_interval() {
         let start = Instant::now();
-        let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::ManualWake, None, start));
-        assert_eq!(coordinator.poll(start), WakeReassertAction::Wait);
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(2)),
-            WakeReassertAction::Observe { attempt: 1 }
-        );
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(2)),
-            WakeReassertAction::Done
-        );
-        assert!(coordinator.observation_completed(true, start));
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(4)),
-            WakeReassertAction::Done
-        );
+        let mut watch = WakeWatch::default();
+        assert!(!watch.take_due_probe(start));
+        assert!(watch.start(WakeReassertReason::DrmHotplug, start));
+        assert!(!watch.take_due_probe(start));
+        assert_eq!(watch.next_deadline(), Some(start + FIRST_PROBE_DELAY));
+
+        let first = start + FIRST_PROBE_DELAY;
+        assert!(watch.take_due_probe(first));
+        assert!(!watch.take_due_probe(first + Duration::from_millis(100)));
+        assert!(watch.take_due_probe(first + PROBE_INTERVAL));
+        assert_eq!(watch.probes(), 2);
     }
 
     #[test]
-    fn duplicate_hints_are_coalesced_until_episode_finishes() {
+    fn a_new_signal_extends_the_window_without_resetting_the_cadence() {
         let start = Instant::now();
-        let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::KdeDpmsResume, None, start));
-        assert!(!coordinator.request(WakeReassertReason::WaylandIdleResume, None, start));
-        coordinator.finish();
-        assert!(coordinator.request(WakeReassertReason::SystemResume, None, start));
+        let mut watch = WakeWatch::default();
+        watch.start(WakeReassertReason::DrmHotplug, start);
+        let later = start + Duration::from_secs(50);
+        assert!(watch.take_due_probe(later));
+        assert!(!watch.start(WakeReassertReason::WaylandIdleResume, later));
+        assert_eq!(watch.reason(), Some(WakeReassertReason::WaylandIdleResume));
+        // The first window would have closed at 60 s; the extension keeps it open.
+        assert!(watch.is_active(start + Duration::from_secs(100)));
+        assert!(!watch.take_due_probe(later + Duration::from_secs(1)));
     }
 
     #[test]
-    fn coalesced_wayland_hint_cannot_replace_system_resume_correlation() {
+    fn the_window_closes_and_stops_probing() {
         let start = Instant::now();
-        let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::SystemResume, Some(41), start));
-        assert!(!coordinator.request(WakeReassertReason::WaylandIdleResume, None, start));
-        assert_eq!(coordinator.correlation_id(), Some(41));
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(2)),
-            WakeReassertAction::Observe { attempt: 1 }
-        );
-        assert_eq!(coordinator.correlation_id(), Some(41));
-    }
-
-    #[test]
-    fn coalesced_system_resume_cannot_replace_wayland_episode_correlation() {
-        let start = Instant::now();
-        let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::WaylandIdleResume, None, start));
-        assert!(!coordinator.request(WakeReassertReason::SystemResume, Some(42), start));
-        assert_eq!(coordinator.correlation_id(), None);
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(2)),
-            WakeReassertAction::Observe { attempt: 1 }
-        );
-        assert_eq!(coordinator.correlation_id(), None);
-    }
-
-    #[test]
-    fn unavailable_observation_has_one_bounded_retry_then_stops() {
-        let start = Instant::now();
-        let mut coordinator = WakeReassertCoordinator::default();
-        assert!(coordinator.request(WakeReassertReason::TopologyRecovery, None, start));
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(2)),
-            WakeReassertAction::Observe { attempt: 1 }
-        );
-        assert!(coordinator.observation_unavailable(start));
-        assert_eq!(
-            coordinator.poll(start + Duration::from_secs(4)),
-            WakeReassertAction::Observe { attempt: 2 }
-        );
-        assert!(!coordinator.observation_completed(false, start));
-        assert!(!coordinator.is_pending());
+        let mut watch = WakeWatch::default();
+        watch.start(WakeReassertReason::SystemResume, start);
+        let after = start + WATCH_WINDOW;
+        assert!(!watch.take_due_probe(after));
+        assert!(!watch.is_active(after));
+        assert_eq!(watch.next_deadline(), None);
     }
 }

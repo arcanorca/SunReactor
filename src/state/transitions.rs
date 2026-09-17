@@ -281,7 +281,12 @@ impl RuntimeState {
         let monitor = self.monitor_mut(logical_id);
         monitor.last_applied_percent = Some(applied_percent.min(100));
         monitor.last_applied_at_epoch_s = Some(now_epoch_s);
+        monitor.last_integrity_check_at_epoch_s = None;
         monitor.backoff = None;
+    }
+
+    pub fn record_integrity_check(&mut self, logical_id: &str, now_epoch_s: u64) {
+        self.monitor_mut(logical_id).last_integrity_check_at_epoch_s = Some(now_epoch_s);
     }
 
     pub fn record_apply_failure(
@@ -315,6 +320,7 @@ impl RuntimeState {
             normalize_monitor_backoff(monitor);
             monitor.last_applied_percent.is_some()
                 || monitor.last_applied_at_epoch_s.is_some()
+                || monitor.last_integrity_check_at_epoch_s.is_some()
                 || monitor.backoff.is_some()
         });
 
@@ -728,7 +734,7 @@ mod tests {
             MonitorRuntimeState {
                 last_applied_percent: Some(30),
                 last_applied_at_epoch_s: Some(100),
-                backoff: None,
+                ..MonitorRuntimeState::default()
             },
         );
         state.manual_override = Some(ManualOverrideState {

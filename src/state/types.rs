@@ -54,6 +54,8 @@ impl Default for RuntimeState {
 pub struct MonitorRuntimeState {
     pub last_applied_percent: Option<u8>,
     pub last_applied_at_epoch_s: Option<u64>,
+    #[serde(default)]
+    pub last_integrity_check_at_epoch_s: Option<u64>,
     pub backoff: Option<FailureBackoffState>,
 }
 
@@ -65,11 +67,42 @@ pub struct ManualOverrideState {
     pub targets: BTreeMap<String, u8>,
     pub expires_at_epoch_s: Option<u64>,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ForecastPoint {
     pub dt_epoch_s: u64,
     pub cloud_cover_percent: u8,
     pub temperature: f32,
+    #[serde(default)]
+    pub condition: crate::weather::WeatherCondition,
+    #[serde(default)]
+    pub day_phase: Option<crate::weather::WeatherDayPhase>,
+    /// Probability of precipitation for the interval.
+    #[serde(default)]
+    pub precipitation_percent: Option<u8>,
+}
+
+/// Secondary readings for the forecast interval in use. Every value is
+/// optional: providers and older state files may not supply them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WeatherDetails {
+    pub feels_like: Option<f32>,
+    pub humidity_percent: Option<u8>,
+    pub pressure_hpa: Option<u16>,
+    pub wind_speed_mps: Option<f32>,
+    pub wind_direction_deg: Option<u16>,
+    pub visibility_m: Option<u32>,
+    pub precipitation_percent: Option<u8>,
+    pub air_quality: Option<AirQuality>,
+}
+
+/// Air quality near the configured location.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AirQuality {
+    /// US EPA air quality index derived from PM2.5.
+    pub us_aqi: u16,
+    pub pm2_5: f32,
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -84,7 +117,14 @@ pub struct WeatherSnapshotMetadata {
     pub cloud_cover_percent: Option<u8>,
     pub smoothed_cloud_cover_percent: Option<u8>,
     pub temperature: Option<f32>,
+    #[serde(default)]
+    pub condition: crate::weather::WeatherCondition,
+    #[serde(default)]
+    pub condition_description: Option<String>,
+    #[serde(default)]
+    pub day_phase: Option<crate::weather::WeatherDayPhase>,
     pub forecast: Vec<ForecastPoint>,
+    pub details: WeatherDetails,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

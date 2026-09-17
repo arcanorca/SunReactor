@@ -216,7 +216,7 @@ fn configured_backlight_path(monitor: &MonitorConfig) -> Option<String> {
         .and_then(crate::backends::backlight::canonical_configured_sysfs_path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use crate::discovery::PhysicalIdentityStatus;

@@ -70,3 +70,5 @@ min_multiplier = 0.75
 
 [tui]
 fps = 8
+show_logo = true
+# effects = "instrument" # "instrument", "reduced", or "off"

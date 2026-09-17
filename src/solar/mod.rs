@@ -2,8 +2,8 @@ pub(crate) mod ephemeris;
 pub(crate) mod search;
 pub mod types;
 
-pub use ephemeris::calculate_lunar_phase;
 pub use ephemeris::LunarPhase;
+pub use ephemeris::{calculate_lunar_phase, lunar_age_fraction};
 pub use types::*;
 
 use crate::solar::ephemeris::solar_elevation_utc;

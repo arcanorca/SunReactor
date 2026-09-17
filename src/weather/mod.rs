@@ -125,8 +125,8 @@ mod tests {
 
     use super::{
         cloud_cover_to_multiplier, refresh_interval, resolve_modifier_with_provider,
-        snapshot_modifier, snapshot_state, EnvironmentReader, WeatherError, WeatherProvider,
-        WeatherRequest, WeatherSnapshot, WeatherSnapshotState, WeatherSourceKind,
+        snapshot_modifier, snapshot_state, EnvironmentReader, WeatherCondition, WeatherError,
+        WeatherProvider, WeatherRequest, WeatherSnapshot, WeatherSnapshotState, WeatherSourceKind,
     };
 
     #[test]
@@ -138,7 +138,11 @@ mod tests {
             source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 65,
             temperature: 0.0,
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         });
 
         let resolution = resolve_modifier_with_provider(
@@ -169,7 +173,11 @@ mod tests {
             source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 100,
             temperature: 0.0,
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
@@ -179,7 +187,11 @@ mod tests {
             cloud_cover_percent: Some(80),
             smoothed_cloud_cover_percent: Some(70),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
 
         let resolution = resolve_modifier_with_provider(
@@ -220,7 +232,11 @@ mod tests {
                 source_kind: WeatherSourceKind::Forecast,
                 cloud_cover_percent: 40,
                 temperature: 0.0,
+                condition: WeatherCondition::Unknown,
+                condition_description: None,
+                day_phase: None,
                 forecast: vec![],
+                ..Default::default()
             },
         );
         let mut config = weather_config(true);
@@ -255,7 +271,11 @@ mod tests {
             source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 0,
             temperature: 0.0,
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
@@ -265,7 +285,11 @@ mod tests {
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(60),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
 
         let resolution = resolve_modifier_with_provider(
@@ -302,7 +326,11 @@ mod tests {
             cloud_cover_percent: Some(90),
             smoothed_cloud_cover_percent: Some(90),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
         let environment =
             FakeEnvironment::with([(String::from("OPENWEATHER_API_KEY"), String::from("env-key"))]);
@@ -345,7 +373,11 @@ mod tests {
             source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 0,
             temperature: 0.0,
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         });
         let cached = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
@@ -355,7 +387,11 @@ mod tests {
             cloud_cover_percent: Some(100),
             smoothed_cloud_cover_percent: Some(100),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
         let resolution = resolve_modifier_with_provider(
             &weather_config(true),
@@ -398,7 +434,11 @@ mod tests {
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(55),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
 
         assert!(snapshot_modifier(&config, &snapshot, 1_800_000_100).is_some());
@@ -474,7 +514,11 @@ mod tests {
             source_kind: WeatherSourceKind::Forecast,
             cloud_cover_percent: 35,
             temperature: 0.0,
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         });
 
         let resolution = resolve_modifier_with_provider(
@@ -511,7 +555,11 @@ mod tests {
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(55),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
         let incomplete_snapshot = WeatherSnapshotMetadata {
             provider: String::from("openweather"),
@@ -521,7 +569,11 @@ mod tests {
             cloud_cover_percent: None,
             smoothed_cloud_cover_percent: None,
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
 
         assert_eq!(
@@ -557,7 +609,11 @@ mod tests {
             cloud_cover_percent: Some(60),
             smoothed_cloud_cover_percent: Some(60),
             temperature: Some(0.0),
+            condition: WeatherCondition::Unknown,
+            condition_description: None,
+            day_phase: None,
             forecast: vec![],
+            ..Default::default()
         };
         assert_eq!(
             snapshot_state(&config, Some(&snapshot), 1_800_000_100),

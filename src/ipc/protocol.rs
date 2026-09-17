@@ -3,7 +3,6 @@ use crate::paths::PathError;
 use crate::solar::LunarPhase;
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::PathBuf;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -67,6 +66,7 @@ pub enum Request {
         global: bool,
     },
     ReloadConfig,
+    RefreshWeather,
     Ping,
     RunOnce {
         force: bool,
@@ -86,6 +86,7 @@ impl Request {
             Self::SetOverride { .. } => "set_override",
             Self::ClearOverride { .. } => "clear_override",
             Self::ReloadConfig => "reload_config",
+            Self::RefreshWeather => "refresh_weather",
             Self::Ping => "ping",
             Self::RunOnce { .. } => "run_once",
             Self::ExternalBrightnessChange => "external_brightness_change",
@@ -251,6 +252,8 @@ pub struct MonitorStatus {
 #[serde(default)]
 pub struct WeatherStatus {
     pub enabled: bool,
+    #[serde(default)]
+    pub state: crate::weather::WeatherState,
     pub active: bool,
     pub stale: bool,
     pub provider: Option<String>,
@@ -263,8 +266,15 @@ pub struct WeatherStatus {
     pub last_error: Option<String>,
     pub cloud_cover_percent: Option<u8>,
     pub temperature: Option<f32>,
+    #[serde(default)]
+    pub condition: crate::weather::WeatherCondition,
+    #[serde(default)]
+    pub condition_description: Option<String>,
+    #[serde(default)]
+    pub day_phase: Option<crate::weather::WeatherDayPhase>,
     pub forecast: Vec<crate::state::ForecastPoint>,
     pub multiplier: Option<f64>,
+    pub details: crate::state::WeatherDetails,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -281,9 +291,9 @@ pub struct RunOnceResponse {
 pub enum IpcError {
     #[error(transparent)]
     Path(#[from] PathError),
-    #[error("failed to access {}: {}", path.display(), source)]
+    #[error("failed to access {target}: {source}")]
     Io {
-        path: PathBuf,
+        target: String,
         #[source]
         source: io::Error,
     },
@@ -294,12 +304,12 @@ pub enum IpcError {
     },
     #[error("{message}")]
     Protocol { message: String },
-    #[error("daemon is not reachable via {}: {message}", path.display())]
-    Unavailable { path: PathBuf, message: String },
-    #[error("refusing to replace {}: {message}", path.display())]
-    UnsafeSocketPath { path: PathBuf, message: String },
-    #[error("another daemon appears to be listening on {}", path.display())]
-    SocketInUse { path: PathBuf },
+    #[error("daemon is not reachable via {target}: {message}")]
+    Unavailable { target: String, message: String },
+    #[error("refusing to replace {target}: {message}")]
+    UnsafeSocketPath { target: String, message: String },
+    #[error("another daemon appears to be listening on {target}")]
+    SocketInUse { target: String },
 }
 
 #[cfg(test)]

@@ -323,6 +323,7 @@ pub(crate) fn resolve_explicit_sysfs_path(raw_path: &str) -> Result<String, Back
         })
 }
 
+#[allow(dead_code)]
 pub(crate) fn apply_with_runner<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -351,6 +352,60 @@ pub(crate) fn apply_with_runner_roots_for_test<R: ProcessRunner>(
     apply_with_runner_roots(runner, monitor, percent, timeout, drm_root, backlight_root)
 }
 
+#[allow(dead_code)]
+pub(crate) fn read_with_runner<R: ProcessRunner>(
+    _runner: &R,
+    monitor: &MonitorConfig,
+    _timeout: Duration,
+) -> Result<super::BackendObservation, BackendError> {
+    let Some(path) = normalized(&monitor.selector.sysfs_path) else {
+        return Err(BackendError::MissingSelector {
+            backend: BackendKind::Backlight,
+            expected: "sysfs_path for brightness readback",
+        });
+    };
+    let device_dir = Path::new(&path);
+    let brightness =
+        fs::read_to_string(device_dir.join("brightness")).map_err(|error| BackendError::Io {
+            backend: BackendKind::Backlight,
+            program: String::from("sysfs"),
+            message: format!("failed to read brightness: {error}"),
+            attempts: 1,
+        })?;
+    let max = fs::read_to_string(device_dir.join("max_brightness"))
+        .map_err(|error| BackendError::Io {
+            backend: BackendKind::Backlight,
+            program: String::from("sysfs"),
+            message: format!("failed to read max_brightness: {error}"),
+            attempts: 1,
+        })?
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| BackendError::Io {
+            backend: BackendKind::Backlight,
+            program: String::from("sysfs"),
+            message: String::from("invalid max_brightness value"),
+            attempts: 1,
+        })?;
+    let current = brightness
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| BackendError::Io {
+            backend: BackendKind::Backlight,
+            program: String::from("sysfs"),
+            message: String::from("invalid brightness value"),
+            attempts: 1,
+        })?;
+    Ok(super::BackendObservation {
+        percent: if max == 0 {
+            0
+        } else {
+            ((current.saturating_mul(100)).checked_div(max).unwrap_or(0)).min(100) as u8
+        },
+    })
+}
+
+#[allow(dead_code)]
 fn apply_with_runner_roots<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -489,7 +544,7 @@ fn normalized(value: &Option<String>) -> Option<String> {
         .map(str::to_owned)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use std::fs;
     use std::path::Path;

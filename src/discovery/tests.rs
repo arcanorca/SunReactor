@@ -40,12 +40,12 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "1", "capabilities"],
+            &["--noconfig", "--bus", "7", "capabilities"],
             "Feature: 10 (Brightness)\nFeature: 12 (Contrast)\n",
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "2", "capabilities"],
+            &["--noconfig", "--bus", "9", "capabilities"],
             "Feature: 12 (Contrast)\n",
         )
         .with_missing(
@@ -66,8 +66,95 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
     assert_eq!(report.ddc_monitors[0].brightness_vcp_supported, Some(true));
     assert_eq!(report.ddc_monitors[1].brightness_vcp_supported, Some(false));
     assert!(report.config_snippet.contains("backend = \"ddc\""));
-    assert!(report.config_snippet.contains("ddc_bus = 7"));
+    assert!(report.config_snippet.contains("model = \"Mi Monitor\""));
+    assert!(!report.config_snippet.contains("ddc_bus = 7"));
     assert!(!report.config_snippet.contains("V305PTDA"));
+}
+
+#[test]
+fn importable_ddc_candidates_keep_stronger_identity_over_bus_selectors() {
+    // This matches the live two-monitor topology that exposed the onboarding
+    // regression. DDC uses a bus selector before model/serial selectors, so a
+    // generated bus field would make these otherwise-disjoint candidates fail
+    // config validation as a possible overlap.
+    let runner = FakeRunner::new()
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "detect"],
+            "Display 1\n   I2C bus:          /dev/i2c-7\n   DRM connector:    card1-DP-1\n   Monitor:          XMI:Mi Monitor:\n\nDisplay 2\n   I2C bus:          /dev/i2c-9\n   DRM connector:    card1-DP-3\n   Monitor:          LEN:LEN P24h-20:V305PTDA\n",
+        )
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--bus", "7", "capabilities"],
+            "Feature: 10 (Brightness)\n",
+        )
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--bus", "9", "capabilities"],
+            "Feature: 10 (Brightness)\n",
+        )
+        .with_missing(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+        );
+
+    let sysfs_root = TempSysfs::new(true);
+    let report = discover_with_runner(&runner, sysfs_root.path());
+    let imports = report.importable_monitor_configs();
+
+    assert_eq!(imports.len(), 2);
+    assert!(imports.iter().all(|monitor| monitor.enabled));
+    assert!(imports
+        .iter()
+        .all(|monitor| monitor.selector.ddc_bus.is_none()));
+    assert!(report.config_snippet.contains("model = \"Mi Monitor\""));
+    assert!(report.config_snippet.contains("serial = \"V305PTDA\""));
+    assert!(!report.config_snippet.contains("ddc_bus ="));
+
+    let config = crate::config::Config {
+        monitors: imports,
+        ..crate::config::Config::default()
+    };
+    config
+        .validate()
+        .expect("safe discovery candidates should be directly importable");
+}
+
+#[test]
+fn legacy_ddcutil_without_noconfig_detect_falls_back_and_succeeds() {
+    let runner = FakeRunner::new()
+        .with_error(
+            "ddcutil",
+            &["--noconfig", "--terse", "detect"],
+            "ddcutil option parsing failed: Unknown option --noconfig\n",
+        )
+        .with_success(
+            "ddcutil",
+            &["--terse", "detect"],
+            "Display 1\n   I2C bus:          /dev/i2c-7\n   DRM connector:    card1-DP-1\n   Monitor:          XMI:Mi Monitor:\n",
+        )
+        .with_error(
+            "ddcutil",
+            &["--noconfig", "--bus", "7", "capabilities"],
+            "ddcutil option parsing failed: Unknown option --noconfig\n",
+        )
+        .with_success(
+            "ddcutil",
+            &["--bus", "7", "capabilities"],
+            "Feature: 10 (Brightness)\n",
+        )
+        .with_missing(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+        );
+
+    let sysfs_root = TempSysfs::new(true);
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert_eq!(report.backends.ddcutil.status, BackendStatusKind::Ok);
+    assert_eq!(report.summary.ddc_monitors, 1);
+    assert_eq!(report.summary.viable_targets, 1);
+    assert_eq!(report.ddc_monitors[0].brightness_vcp_supported, Some(true));
 }
 
 #[test]
@@ -80,7 +167,7 @@ fn bus_only_generated_candidate_is_disabled_by_default() {
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "1", "capabilities"],
+            &["--noconfig", "--bus", "7", "capabilities"],
             "Feature: 10 (Brightness)\\n",
         )
         .with_missing(
@@ -100,6 +187,7 @@ fn bus_only_generated_candidate_is_disabled_by_default() {
         .notes
         .iter()
         .any(|note| note.contains("topology slot")));
+    assert!(report.importable_monitor_configs().is_empty());
 }
 
 #[test]
@@ -115,7 +203,7 @@ fn mixed_internal_and_external_monitors_in_single_discovery_run() {
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "1", "capabilities"],
+            &["--noconfig", "--bus", "7", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
         .with_success(
@@ -140,13 +228,14 @@ fn mixed_internal_and_external_monitors_in_single_discovery_run() {
     assert_eq!(report.backlight_devices[0].probe_source, "brightnessctl");
     assert!(report.config_snippet.contains("backend = \"ddc\""));
     assert!(report.config_snippet.contains("backend = \"backlight\""));
-    assert!(report.config_snippet.contains("ddc_bus = 7"));
+    assert!(!report.config_snippet.contains("ddc_bus = 7"));
     assert!(report
         .config_snippet
         .contains("allow_topology_retargeting = false"));
     assert!(report.config_snippet.contains("enabled = true"));
     assert!(report.config_snippet.contains("model = \"Mi Monitor\""));
     assert!(report.config_snippet.contains("sysfs_path = \""));
+    assert_eq!(report.importable_monitor_configs().len(), 2);
 }
 
 #[cfg(unix)]
@@ -164,7 +253,7 @@ fn ddc_primary_suppresses_authoritative_ddcci_alias_from_generated_config() {
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "1", "capabilities"],
+            &["--noconfig", "--bus", "7", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
         .with_success(
@@ -230,12 +319,12 @@ fn duplicate_effective_ddc_selectors_are_withheld_from_generated_config() {
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "1", "capabilities"],
+            &["--noconfig", "--bus", "7", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "2", "capabilities"],
+            &["--noconfig", "--bus", "8", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
         .with_success("brightnessctl", &["--list", "--machine-readable"], "");
@@ -317,10 +406,10 @@ fn ddc_capabilities_timeout_keeps_other_ddc_monitor_viable() {
             &["--noconfig", "--terse", "detect"],
             "Display 1\n   I2C bus:          /dev/i2c-7\n   DRM connector:    card1-DP-1\n   Monitor:          XMI:Mi Monitor:\n\nDisplay 2\n   I2C bus:          /dev/i2c-9\n   DRM connector:    card1-DP-2\n   Monitor:          LEN:LEN P24h-20:V305PTDA\n",
         )
-        .with_timeout("ddcutil", &["--noconfig", "--display", "1", "capabilities"])
+        .with_timeout("ddcutil", &["--noconfig", "--bus", "7", "capabilities"])
         .with_success(
             "ddcutil",
-            &["--noconfig", "--display", "2", "capabilities"],
+            &["--noconfig", "--bus", "9", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
         .with_missing(
@@ -346,6 +435,34 @@ fn ddc_capabilities_timeout_keeps_other_ddc_monitor_viable() {
         .unwrap_or("")
         .contains("timed out"));
     assert_eq!(report.summary.viable_targets, 1);
+    assert!(report.has_incomplete_ddc_probe());
+}
+
+#[test]
+fn invalid_ddc_display_record_marks_observation_incomplete() {
+    let runner = FakeRunner::new()
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "detect"],
+            "Invalid display\n   I2C bus: /dev/i2c-7\n   DRM connector: card1-DP-1\n   Monitor: XMI:Mi Monitor:\n\nDisplay 1\n   I2C bus: /dev/i2c-9\n   DRM connector: card1-DP-3\n   Monitor: LEN:LEN P24h-20:V305PTDA\n",
+        )
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--bus", "9", "capabilities"],
+            "Feature: 10 (Brightness)\n",
+        )
+        .with_missing(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+        );
+
+    let sysfs_root = TempSysfs::new(true);
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert_eq!(report.summary.viable_targets, 1);
+    assert!(!report.ddc_observation_complete);
+    assert!(report.has_incomplete_ddc_probe());
+    assert_eq!(report.importable_monitor_configs().len(), 1);
 }
 
 #[test]

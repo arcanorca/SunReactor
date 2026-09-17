@@ -3,15 +3,6 @@ use crate::config::Config;
 use serde::Serialize;
 use std::time::Duration;
 
-/// Diagnostic-only provenance for one reconciliation/apply cycle.
-///
-/// These values are never consulted for target selection or authorization.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct ApplyDiagnosticContext {
-    pub correlation_id: Option<u64>,
-    pub observation_generation: Option<u64>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApplySettings {
     pub min_write_delta_pct: u8,

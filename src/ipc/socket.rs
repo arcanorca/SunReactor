@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use super::protocol::{IpcError, RequestEnvelope, ResponseEnvelope};
 use super::transport::{
     configure_client_stream, configure_server_stream, read_response, write_json_message,
@@ -5,12 +7,14 @@ use super::transport::{
 use crate::paths::{self, PathError};
 use std::fs;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
 const SOCKET_DIR_MODE: u32 = 0o700;
 const SOCKET_FILE_MODE: u32 = 0o600;
+const MAX_UNIX_SOCKET_PATH_LEN: usize = 107;
 
 #[derive(Debug, Clone, Default)]
 pub struct ControlSocket {
@@ -24,17 +28,30 @@ impl ControlSocket {
         })
     }
 
+    #[must_use]
+    pub fn display_target(&self) -> String {
+        self.path.display().to_string()
+    }
+
     pub fn bind_listener(&self) -> Result<BoundControlSocket, IpcError> {
         prepare_socket_path(&self.path)?;
 
-        let listener = UnixListener::bind(&self.path).map_err(|source| IpcError::Io {
-            path: self.path.clone(),
-            source,
+        let listener = UnixListener::bind(&self.path).map_err(|source| {
+            if source.kind() == io::ErrorKind::AddrInUse {
+                IpcError::SocketInUse {
+                    target: self.path.display().to_string(),
+                }
+            } else {
+                IpcError::Io {
+                    target: self.path.display().to_string(),
+                    source,
+                }
+            }
         })?;
         listener
             .set_nonblocking(true)
             .map_err(|source| IpcError::Io {
-                path: self.path.clone(),
+                target: self.path.display().to_string(),
                 source,
             })?;
         #[cfg(unix)]
@@ -53,6 +70,8 @@ impl ControlSocket {
     }
 
     pub fn send_request(&self, request: &RequestEnvelope) -> Result<ResponseEnvelope, IpcError> {
+        validate_socket_path_length(&self.path)?;
+        let target = self.path.display().to_string();
         let mut stream = match UnixStream::connect(&self.path) {
             Ok(stream) => stream,
             Err(source)
@@ -62,31 +81,45 @@ impl ControlSocket {
                 ) =>
             {
                 return Err(IpcError::Unavailable {
-                    path: self.path.clone(),
+                    target,
                     message: source.to_string(),
                 });
             }
             Err(source) => {
-                return Err(IpcError::Io {
-                    path: self.path.clone(),
-                    source,
-                });
+                return Err(IpcError::Io { target, source });
             }
         };
 
-        configure_client_stream(&stream, &self.path)?;
-        write_json_message(&mut stream, request, &self.path)?;
-        read_response(&mut stream, &self.path)?.validate()
+        configure_client_stream(&stream, &target)?;
+        write_json_message(&mut stream, request, &target)?;
+        read_response(&mut stream, &target)?.validate()
+    }
+
+    #[must_use]
+    pub fn endpoint(&self) -> paths::IpcEndpoint {
+        paths::IpcEndpoint::UnixSocket(self.path.clone())
     }
 }
 
+#[derive(Debug)]
 pub struct BoundControlSocket {
     listener: UnixListener,
     path: PathBuf,
 }
 
 impl BoundControlSocket {
+    #[must_use]
+    pub fn endpoint(&self) -> paths::IpcEndpoint {
+        paths::IpcEndpoint::UnixSocket(self.path.clone())
+    }
+
+    #[must_use]
+    pub fn display_target(&self) -> String {
+        self.path.display().to_string()
+    }
+
     pub fn accept(&self) -> Result<Option<UnixStream>, IpcError> {
+        let target = self.path.display().to_string();
         match self.listener.accept() {
             Ok((stream, _)) => {
                 #[cfg(unix)]
@@ -118,14 +151,11 @@ impl BoundControlSocket {
                     }
                 }
 
-                configure_server_stream(&stream, &self.path)?;
+                configure_server_stream(&stream, &target)?;
                 Ok(Some(stream))
             }
             Err(source) if source.kind() == io::ErrorKind::WouldBlock => Ok(None),
-            Err(source) => Err(IpcError::Io {
-                path: self.path.clone(),
-                source,
-            }),
+            Err(source) => Err(IpcError::Io { target, source }),
         }
     }
 }
@@ -142,12 +172,27 @@ impl std::os::unix::io::AsRawFd for BoundControlSocket {
     }
 }
 
+fn validate_socket_path_length(path: &Path) -> Result<(), IpcError> {
+    let bytes_len = path.as_os_str().as_bytes().len();
+    if bytes_len > MAX_UNIX_SOCKET_PATH_LEN {
+        return Err(IpcError::UnsafeSocketPath {
+            target: path.display().to_string(),
+            message: format!(
+                "IPC socket path exceeds maximum Unix domain socket length ({MAX_UNIX_SOCKET_PATH_LEN} bytes, got {bytes_len})"
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn prepare_socket_path(path: &Path) -> Result<(), IpcError> {
+    validate_socket_path_length(path)?;
+    let target = path.display().to_string();
     if let Some(parent) = path.parent() {
         let mut builder = fs::DirBuilder::new();
         builder.recursive(true).mode(SOCKET_DIR_MODE);
         builder.create(parent).map_err(|source| IpcError::Io {
-            path: parent.to_path_buf(),
+            target: parent.display().to_string(),
             source,
         })?;
         let _ = fs::set_permissions(parent, fs::Permissions::from_mode(SOCKET_DIR_MODE));
@@ -157,24 +202,19 @@ fn prepare_socket_path(path: &Path) -> Result<(), IpcError> {
         Ok(metadata) => metadata,
         Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
-            return Err(IpcError::Io {
-                path: path.to_path_buf(),
-                source,
-            });
+            return Err(IpcError::Io { target, source });
         }
     };
 
     if !metadata.file_type().is_socket() {
         return Err(IpcError::UnsafeSocketPath {
-            path: path.to_path_buf(),
+            target,
             message: String::from("path exists but is not a Unix socket"),
         });
     }
 
     match UnixStream::connect(path) {
-        Ok(_) => Err(IpcError::SocketInUse {
-            path: path.to_path_buf(),
-        }),
+        Ok(_) => Err(IpcError::SocketInUse { target }),
         Err(source)
             if matches!(
                 source.kind(),
@@ -182,13 +222,13 @@ fn prepare_socket_path(path: &Path) -> Result<(), IpcError> {
             ) =>
         {
             fs::remove_file(path).map_err(|remove_error| IpcError::Io {
-                path: path.to_path_buf(),
+                target,
                 source: remove_error,
             })?;
             Ok(())
         }
         Err(source) => Err(IpcError::UnsafeSocketPath {
-            path: path.to_path_buf(),
+            target,
             message: source.to_string(),
         }),
     }
@@ -196,6 +236,7 @@ fn prepare_socket_path(path: &Path) -> Result<(), IpcError> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::protocol::{IpcError, Request, RequestEnvelope};
     use super::ControlSocket;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -237,6 +278,76 @@ mod tests {
 
         drop(bound);
         assert!(!socket_path.exists());
+    }
+
+    #[test]
+    fn second_daemon_bind_rejected_when_active() {
+        let temp = TempDir::new();
+        let socket_path = temp.path().join("run/control.sock");
+        let socket = ControlSocket {
+            path: socket_path.clone(),
+        };
+
+        let bound = socket.bind_listener().expect("first bind should succeed");
+        assert_eq!(
+            bound.endpoint(),
+            crate::paths::IpcEndpoint::UnixSocket(socket_path.clone())
+        );
+
+        let second_socket = ControlSocket {
+            path: socket_path.clone(),
+        };
+        let error = second_socket
+            .bind_listener()
+            .expect_err("second bind must be rejected while first daemon is active");
+
+        assert!(matches!(error, super::IpcError::SocketInUse { .. }));
+        drop(bound);
+    }
+
+    #[test]
+    fn unsafe_non_socket_path_rejected_and_preserved() {
+        let temp = TempDir::new();
+        let regular_file = temp.path().join("not-a-socket.txt");
+        fs::write(&regular_file, "important user data\n").expect("regular file write");
+
+        let socket = ControlSocket {
+            path: regular_file.clone(),
+        };
+        let error = socket
+            .bind_listener()
+            .expect_err("binding over regular file must be rejected");
+
+        assert!(matches!(error, super::IpcError::UnsafeSocketPath { .. }));
+        assert!(regular_file.exists(), "regular file must NOT be deleted");
+        assert_eq!(
+            fs::read_to_string(&regular_file).expect("read"),
+            "important user data\n"
+        );
+    }
+
+    #[test]
+    fn excessively_long_socket_path_fails_safely() {
+        let long_path = PathBuf::from(format!("/run/user/1000/{}/control.sock", "a".repeat(120)));
+        let socket = ControlSocket {
+            path: long_path.clone(),
+        };
+        let bind_err = socket
+            .bind_listener()
+            .expect_err("excessively long path must fail");
+        assert!(matches!(bind_err, IpcError::UnsafeSocketPath { .. }));
+        assert!(bind_err
+            .to_string()
+            .contains("exceeds maximum Unix domain socket length"));
+
+        let request = RequestEnvelope {
+            version: 1,
+            request: Request::Status,
+        };
+        let send_err = socket
+            .send_request(&request)
+            .expect_err("excessively long send must fail");
+        assert!(matches!(send_err, IpcError::UnsafeSocketPath { .. }));
     }
 
     struct TempDir {

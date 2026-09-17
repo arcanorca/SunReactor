@@ -47,6 +47,10 @@ enum CliCommand {
     Discover {
         json: bool,
     },
+    TestBrightness {
+        monitor_id: String,
+        json: bool,
+    },
     ConfigInit,
     ConfigValidate,
     #[cfg(feature = "tui")]
@@ -99,6 +103,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
         Some("ping") => Ok(CliCommand::Ping),
         Some("run-once" | "apply-once") => parse_run_once_command(&args[1..]),
         Some("discover") => parse_discover_command(&args[1..]),
+        Some("test-brightness" | "test-hardware") => parse_test_brightness_command(&args[1..]),
         Some("config") => match args.get(1).map(String::as_str) {
             Some("init") => Ok(CliCommand::ConfigInit),
             Some("validate") => Ok(CliCommand::ConfigValidate),
@@ -156,6 +161,35 @@ fn parse_discover_command(args: &[String]) -> anyhow::Result<CliCommand> {
     }
 
     Ok(CliCommand::Discover { json })
+}
+
+fn parse_test_brightness_command(args: &[String]) -> anyhow::Result<CliCommand> {
+    let mut monitor_id = None;
+    let mut json = false;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--monitor-id" | "-m" => {
+                monitor_id = iter.next().cloned();
+            }
+            "--json" | "-j" => {
+                json = true;
+            }
+            other => {
+                if !other.starts_with('-') && monitor_id.is_none() {
+                    monitor_id = Some(other.to_string());
+                } else {
+                    anyhow::bail!(
+                        "usage: sunreactorctl test-brightness --monitor-id <CANONICAL_ID> [--json]"
+                    );
+                }
+            }
+        }
+    }
+    let monitor_id = monitor_id.ok_or_else(|| {
+        anyhow::anyhow!("usage: sunreactorctl test-brightness --monitor-id <CANONICAL_ID> [--json]")
+    })?;
+    Ok(CliCommand::TestBrightness { monitor_id, json })
 }
 
 fn parse_set_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -243,6 +277,7 @@ fn parse_optional_minutes(args: &[String], usage: &str) -> anyhow::Result<Option
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_command(command: CliCommand) -> anyhow::Result<String> {
     match command {
         CliCommand::Status => run_status_command(),
@@ -277,6 +312,71 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
                 Ok(report.render_json())
             } else {
                 Ok(report.render_human())
+            }
+        }
+        CliCommand::TestBrightness { monitor_id, json } => {
+            #[cfg(target_os = "windows")]
+            {
+                if std::env::var("SUNREACTOR_ALLOW_HARDWARE_TESTS").map_or(true, |v| v != "1") {
+                    anyhow::bail!(
+                        "hardware mutation requires explicit confirmation: set SUNREACTOR_ALLOW_HARDWARE_TESTS=1 in your environment"
+                    );
+                }
+                let api = sunreactor::platform::windows::brightness::Win32MonitorConfigApi;
+                let report =
+                    sunreactor::platform::windows::brightness::test_physical_monitor_brightness(
+                        &api,
+                        &monitor_id,
+                    )
+                    .map_err(|e| anyhow::anyhow!("hardware qualification failed: {e}"))?;
+                if json {
+                    Ok(serde_json::to_string_pretty(&report)?)
+                } else {
+                    let mut out = format!(
+                        "Physical Monitor Qualification Report\nCanonical ID:     {}\nDisplay Label:    {}\nManufacturer:     {}\nProduct Code:     {}\nOutput Tech:      {}\nPhysical Handles: {}\n\nNative Range:     {}..{}\nOriginal Native:  {} ({}%)\nTest Target:      {} ({}%)\n\nLatencies:\n  Pre-write read: {:?}\n  Write latency:  {:?}\n  Readback read:  {:?}\n  Restore write:  {:?}\n  Restore read:   {:?}\n\nReadback Observed:   {}\nRestored Observed:   {}\nQualified:           {}\n",
+                        report.canonical_id,
+                        report.display_label.as_deref().unwrap_or("none"),
+                        report.manufacturer.as_deref().unwrap_or("unknown"),
+                        report
+                            .product_code
+                            .map_or(String::from("unknown"), |c| format!("0x{c:04x}")),
+                        report.output_technology,
+                        report.physical_handles_count,
+                        report.native_min,
+                        report.native_max,
+                        report.native_original,
+                        report.original_percent,
+                        report.test_target_native,
+                        report.test_target_percent,
+                        report.pre_write_read_latency,
+                        report.write_latency,
+                        report.readback_latency,
+                        report.restoration_write_latency,
+                        report.restoration_readback_latency,
+                        report.readback_observed_native,
+                        report.restored_observed_native,
+                        if report.qualified {
+                            "YES (PASSED)"
+                        } else {
+                            "NO (FAILED)"
+                        }
+                    );
+                    if !report.notes.is_empty() {
+                        use std::fmt::Write;
+                        out.push_str("\nNotes:\n");
+                        for note in &report.notes {
+                            let _ = writeln!(out, "  - {note}");
+                        }
+                    }
+                    Ok(out)
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = (monitor_id, json);
+                anyhow::bail!(
+                    "test-brightness is only available on Windows for native external monitors"
+                );
             }
         }
         CliCommand::ConfigInit => {
@@ -356,6 +456,7 @@ fn render_status(status: &StatusResponse) -> String {
     match &status.weather {
         Some(weather) => {
             lines.push(format!("weather_enabled: {}", weather.enabled));
+            lines.push(format!("weather_state: {:?}", weather.state).to_lowercase());
             lines.push(format!("weather_active: {}", weather.active));
             lines.push(format!("weather_stale: {}", weather.stale));
             lines.push(format!(
@@ -449,7 +550,7 @@ fn render_offline_status(socket: &ipc::ControlSocket) -> String {
 
     [
         String::from("daemon_alive: false"),
-        format!("socket_path: {}", socket.path.display()),
+        format!("socket_path: {}", socket.display_target()),
         format!("config_path: {config_path}"),
         format!("tick_seconds: {tick_seconds}"),
         format!("dry_run: {dry_run}"),
@@ -669,6 +770,7 @@ mod tests {
             weather: Some(WeatherStatus {
                 multiplier: Some(1.0),
                 enabled: true,
+                state: sunreactor::weather::WeatherState::Stale,
                 active: false,
                 stale: true,
                 provider: Some(String::from("openweather")),
@@ -681,7 +783,11 @@ mod tests {
                 last_error: Some(String::from("network timeout")),
                 cloud_cover_percent: Some(80),
                 temperature: Some(10.0),
+                condition: sunreactor::weather::WeatherCondition::Cloudy,
+                condition_description: Some(String::from("overcast clouds")),
+                day_phase: Some(sunreactor::weather::WeatherDayPhase::Day),
                 forecast: vec![],
+                ..Default::default()
             }),
             monitors: vec![MonitorStatus {
                 logical_id: String::from("desk"),

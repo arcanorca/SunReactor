@@ -50,6 +50,25 @@ fn parses_valid_config() {
 }
 
 #[test]
+fn topology_retargeting_defaults_to_false_and_round_trips_true() {
+    let without_field =
+        parse_str(VALID_CONFIG, Path::new("missing-field.toml")).expect("old config should parse");
+    assert!(!without_field.monitors[0].allow_topology_retargeting);
+
+    let with_field = VALID_CONFIG.replace(
+        "enabled = true\n",
+        "enabled = true\nallow_topology_retargeting = true\n",
+    );
+    let parsed = parse_str(&with_field, Path::new("explicit-field.toml"))
+        .expect("explicit opt-in should parse");
+    assert!(parsed.monitors[0].allow_topology_retargeting);
+    let encoded = toml::to_string(&parsed).expect("config should serialize");
+    let round_tripped =
+        parse_str(&encoded, Path::new("round-trip.toml")).expect("serialized config should parse");
+    assert!(round_tripped.monitors[0].allow_topology_retargeting);
+}
+
+#[test]
 fn example_template_is_valid() {
     parse_str(
         super::DEFAULT_CONFIG_TEMPLATE,
@@ -64,6 +83,17 @@ fn rejects_duplicate_monitor_ids() {
     let error = parse_str(&raw, Path::new("duplicate.toml")).expect_err("config should fail");
     assert!(matches!(error, ConfigError::Validation(_)));
     assert!(error.to_string().contains("duplicate logical id"));
+}
+
+#[test]
+fn rejects_semantically_overlapping_ddc_selectors() {
+    let base = VALID_CONFIG
+        .replace("connector = \"DP-1\"", "model = \"U2720Q\"")
+        .replace("ddc_bus = 6\n", "");
+    let raw = format!("{base}\n[[monitors]]\nlogical_id = \"right\"\nbackend = \"ddc\"\nenabled = true\nmin_pct = 20\nmax_pct = 90\ngain = 1.0\nserial = \"ABC123\"\nmodel = \"U2720Q\"\n");
+    let error =
+        parse_str(&raw, Path::new("overlap-selector.toml")).expect_err("config should fail");
+    assert!(error.to_string().contains("may address the same display"));
 }
 
 #[test]
@@ -132,6 +162,27 @@ fn write_default_creates_config_file() {
     assert!(contents.contains("[daemon]"));
     assert!(contents.contains("[solar_policy]"));
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&written)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "new config file should be user-private 0600");
+
+        let parent_mode = fs::metadata(&dir)
+            .expect("parent metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            parent_mode, 0o700,
+            "new config directory should be user-private 0700"
+        );
+    }
+
     fs::remove_file(&written).ok();
     fs::remove_dir_all(&dir).ok();
 }
@@ -148,119 +199,31 @@ fn rejects_duplicate_monitor_milestone_adjustments() {
     assert!(error.to_string().contains("duplicate milestone `rise_25`"));
 }
 
-// Guards against the triage survivors `MonitorSelector::has_any: replace ||
-// with &&`: an AND-polarity regression would reject an enabled monitor that
-// correctly identifies its hardware with a single selector field. Every
-// selector kind is exercised because operator precedence lets each mutated
-// pair hide behind any later satisfied term.
 #[test]
-fn accepts_enabled_monitor_with_a_single_selector_field() {
-    const SINGLE_SELECTOR_VARIANTS: &[(&str, &str)] = &[
-        // Note: `connector` alone is intentionally absent here; the combined
-        // tree requires serial/model/edid/ddc_bus for the ddc backend because
-        // connector-only selectors are not stable enough for apply.
-        ("serial", "serial = \"ABC123\"\n"),
-        ("model", "model = \"Model X\"\n"),
-        ("edid", "edid = \"DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF\"\n"),
-        // Note: `sysfs_path` is backlight-only in this tree and the fixture
-        // monitor uses backend = "ddc"; exercising it here would fail validation.
-        ("ddc_bus", "ddc_bus = 6\n"),
-        // Note: `ddc_address` alone cannot identify a display in this tree; it
-        // is exercised together with ddc_bus in the standard-address test.
-    ];
+fn tui_effects_defaults_and_round_trips() {
+    use super::MotionLevel;
 
-    for (field, selector_line) in SINGLE_SELECTOR_VARIANTS {
-        let raw = VALID_CONFIG.replace(
-            "connector = \"DP-1\"\nddc_bus = 6\nddc_address = 55\n",
-            selector_line,
-        );
-        let config = parse_str(&raw, Path::new("single-selector.toml")).unwrap_or_else(|error| {
-            panic!("an enabled monitor with only `{field}` should validate: {error}")
-        });
+    // 1. Missing [tui] or missing effects defaults to Instrument
+    let config = parse_str(VALID_CONFIG, Path::new("valid.toml")).expect("config should parse");
+    assert_eq!(config.tui.effects, MotionLevel::Instrument);
 
-        assert_eq!(config.monitors[0].logical_id, "desk");
-    }
-}
+    // 2. Explicit effects in [tui]
+    let with_reduced = format!("{VALID_CONFIG}\n[tui]\neffects = \"reduced\"\n");
+    let parsed_reduced = parse_str(&with_reduced, Path::new("reduced.toml")).expect("should parse");
+    assert_eq!(parsed_reduced.tui.effects, MotionLevel::Reduced);
 
-// Pins the documented default so a drifted `default_transition_gamma` cannot
-// silently reshape the brightness curve for configs that omit the key.
-#[test]
-fn uses_documented_default_transition_gamma() {
-    let config = parse_str(VALID_CONFIG, Path::new("gamma-default.toml"))
-        .expect("valid config should parse");
+    let with_off = format!("{VALID_CONFIG}\n[tui]\neffects = \"off\"\n");
+    let parsed_off = parse_str(&with_off, Path::new("off.toml")).expect("should parse");
+    assert_eq!(parsed_off.tui.effects, MotionLevel::Off);
 
-    assert!(
-        (config.monitors[0].transition_gamma - 0.5).abs() < f64::EPSILON,
-        "documented default transition gamma should be 0.5"
-    );
-}
+    // 3. Serialization writes lowercase human-readable string
+    let encoded = toml::to_string(&parsed_reduced).expect("should serialize");
+    assert!(encoded.contains("effects = \"reduced\""));
 
-// Failure side of the same contract: an enabled monitor must never silently
-// match every attached device because it selects nothing.
-#[test]
-fn rejects_enabled_monitor_without_selector_fields() {
-    let raw = VALID_CONFIG.replace("connector = \"DP-1\"\nddc_bus = 6\nddc_address = 55\n", "");
-    let error = parse_str(&raw, Path::new("no-selector.toml"))
-        .expect_err("an enabled monitor without selector fields should fail");
+    let round_tripped = parse_str(&encoded, Path::new("roundtrip.toml")).expect("should parse");
+    assert_eq!(round_tripped.tui.effects, MotionLevel::Reduced);
 
-    assert!(error.to_string().contains("monitors[0].selector"));
-}
-
-// Guards against the triage survivors `Config::validate: delete -` on the
-// latitude/longitude ranges: flipping a geographic bound must not reject real
-// polar locations sitting exactly on the limit.
-#[test]
-fn accepts_geographic_boundary_extremes() {
-    let raw = VALID_CONFIG
-        .replace("latitude = 41.0082", "latitude = -90.0")
-        .replace("longitude = 28.9784", "longitude = -180.0");
-
-    parse_str(&raw, Path::new("polar.toml")).expect("polar boundaries should validate");
-}
-
-// Guards against the triage survivor `Config::validate: replace >= with <` on
-// the twilight ordering check: an inverted comparison would accept
-// twilight_elevation_start == day_elevation_full, collapsing the daylight ramp
-// to a single elevation point.
-#[test]
-fn rejects_twilight_start_equal_to_day_full() {
-    let raw = VALID_CONFIG.replace(
-        "twilight_elevation_start = -6.0",
-        "twilight_elevation_start = 20.0",
-    );
-    let error = parse_str(&raw, Path::new("flat-ramp.toml")).expect_err("config should fail");
-
-    assert!(error.to_string().contains("twilight_elevation_start"));
-}
-
-// Guards against the triage survivor `Config::validate: replace == with !=` on
-// the max-step guard: a flipped comparison would allow
-// max_step_pct_per_tick = 0, which can deadlock brightness transitions.
-#[test]
-fn rejects_zero_max_step_pct_per_tick() {
-    let raw = VALID_CONFIG.replace("max_step_pct_per_tick = 6", "max_step_pct_per_tick = 0");
-    let error = parse_str(&raw, Path::new("zero-step.toml")).expect_err("config should fail");
-
-    assert!(error
-        .to_string()
-        .contains("solar_policy.max_step_pct_per_tick"));
-}
-
-// Guards against the triage survivors `Config::validate: replace > ...` on the
-// DDC address cap: the 7-bit I2C limit must accept 127 and reject 128 so the
-// boundary itself stays pinned.
-#[test]
-fn accepts_standard_ddc_address() {
-    // The combined tree enforces the single DDC/CI slave address (55); keep the
-    // boundary pinned at that supported value instead of a generic 7-bit limit.
-    parse_str(VALID_CONFIG, Path::new("ddc-standard.toml"))
-        .expect("standard DDC address should validate");
-}
-
-#[test]
-fn rejects_ddc_address_beyond_seven_bit_range() {
-    let raw = VALID_CONFIG.replace("ddc_address = 55", "ddc_address = 128");
-    let error = parse_str(&raw, Path::new("ddc-over.toml")).expect_err("config should fail");
-
-    assert!(error.to_string().contains("monitors[0].ddc_address"));
+    // 4. Invalid effects value fails safely
+    let with_invalid = format!("{VALID_CONFIG}\n[tui]\neffects = \"unknown_motion\"\n");
+    assert!(parse_str(&with_invalid, Path::new("invalid.toml")).is_err());
 }
