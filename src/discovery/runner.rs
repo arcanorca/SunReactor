@@ -1,4 +1,5 @@
-#[allow(unused_imports)]
+#[cfg(test)]
+pub(crate) use crate::process::CommandOutput;
 pub(crate) use crate::process::{
-    command_failure_detail, CommandError, CommandOutput, ProcessRunner, RealProcessRunner,
+    command_failure_detail, CommandError, ProcessRunner, RealProcessRunner,
 };

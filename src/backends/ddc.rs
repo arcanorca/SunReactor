@@ -110,7 +110,6 @@ fn apply_with_runner_in<R: ProcessRunner>(
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn read_with_runner<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
