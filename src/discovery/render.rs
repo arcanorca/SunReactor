@@ -34,6 +34,7 @@ pub(super) fn build_report(snapshot: DiscoverySnapshot) -> DiscoveryReport {
 
 /// Returns only candidates which discovery has proved safe to enable without
 /// asking the user to opt into topology retargeting.
+#[cfg(any(feature = "tui", test))]
 pub(super) fn importable_monitor_configs(report: &DiscoveryReport) -> Vec<MonitorConfig> {
     build_monitor_config_candidates(&report.ddc_monitors, &report.backlight_devices)
         .0

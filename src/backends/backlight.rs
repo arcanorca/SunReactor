@@ -352,7 +352,6 @@ pub(crate) fn apply_with_runner_roots_for_test<R: ProcessRunner>(
     apply_with_runner_roots(runner, monitor, percent, timeout, drm_root, backlight_root)
 }
 
-#[allow(dead_code)]
 pub(crate) fn read_with_runner<R: ProcessRunner>(
     _runner: &R,
     monitor: &MonitorConfig,

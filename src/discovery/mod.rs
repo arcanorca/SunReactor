@@ -5,7 +5,9 @@ mod runner;
 
 use std::path::Path;
 
-use crate::{backends::BackendKind, config::MonitorConfig};
+use crate::backends::BackendKind;
+#[cfg(any(feature = "tui", test))]
+use crate::config::MonitorConfig;
 
 pub use model::{
     BackendStatus, BackendStatusKind, BacklightDeviceDiscovery, DdcMonitorDiscovery,
@@ -428,6 +430,7 @@ impl DiscoveryReport {
     /// Candidates that can be added without enabling a bus-only selector or
     /// accepting an ambiguous DDC match. This is intentionally the same
     /// safety gate used by the generated config snippet.
+    #[cfg(any(feature = "tui", test))]
     #[must_use]
     pub(crate) fn importable_monitor_configs(&self) -> Vec<MonitorConfig> {
         render::importable_monitor_configs(self)
@@ -436,6 +439,7 @@ impl DiscoveryReport {
     /// `None` means ddcutil could not complete a VCP capability probe. A
     /// caller may retry that transient observation, but must not treat it as
     /// proof that the display lacks brightness support.
+    #[cfg(any(feature = "tui", test))]
     #[must_use]
     pub(crate) fn has_incomplete_ddc_probe(&self) -> bool {
         !self.ddc_observation_complete
