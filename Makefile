@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check clippy test check ci
+.PHONY: fmt fmt-check clippy test test-no-default-features check ci
 
 fmt:
 	cargo fmt --all
@@ -11,6 +11,10 @@ clippy:
 
 test:
 	cargo test --workspace --all-targets --all-features
+	cargo test --workspace --no-default-features
+
+test-no-default-features:
+	cargo test --workspace --no-default-features
 
 check:
 	cargo check --workspace --all-targets --all-features
@@ -19,3 +23,4 @@ ci:
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
 	cargo test --workspace --all-targets --all-features
+	cargo test --workspace --no-default-features

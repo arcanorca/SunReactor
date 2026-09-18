@@ -4,18 +4,24 @@ sunreactor keeps its engineering baseline intentionally small:
 
 - `rustfmt` for formatting
 - `clippy` for linting
-- `cargo test` for correctness
+- `cargo test` for correctness across both `--all-features` and `--no-default-features`
 - one lean GitHub Actions workflow that runs the same checks as local development
 
 The repo intentionally uses stock `rustfmt` behavior. There is no custom formatting profile unless a real project-wide need appears.
 
 ## Toolchain
 
-Install a stable Rust toolchain with `rustfmt` and `clippy`:
+The project pins Rust `1.97.1` via `rust-toolchain.toml`. When using `rustup`, the pinned toolchain and its components (`rustfmt`, `clippy`) are activated automatically in the repository:
 
 ```bash
-rustup toolchain install stable --component rustfmt --component clippy
-rustup default stable
+rustup show
+```
+
+To install manually:
+
+```bash
+rustup toolchain install 1.97.1 --component rustfmt --component clippy
+rustup default 1.97.1
 ```
 
 ## Local Workflow
@@ -36,6 +42,7 @@ cargo fmt --all
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo
 cargo test --workspace --all-targets --all-features
+cargo test --workspace --no-default-features
 ```
 
 ## Lint Policy
@@ -50,11 +57,12 @@ The project does not currently deny broader Clippy groups such as `pedantic` or 
 
 ## CI Parity
 
-CI runs the same three gates as local development:
+CI runs the same gates as local development:
 
 1. `cargo fmt --all --check`
 2. `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::dbg_macro -D clippy::todo`
 3. `cargo test --workspace --all-targets --all-features`
+4. `cargo test --workspace --no-default-features`
 
 Before opening a PR, also run the lightweight binary smoke checks used during local verification:
 

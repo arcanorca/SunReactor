@@ -116,14 +116,14 @@ The installer itself requires Bash. Automatic service integration currently mean
 
 **For x86_64 (Intel/AMD):**
 ```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-x86_64.tar.gz
-tar xzf sunreactor-v0.1.0-linux-x86_64.tar.gz
+curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-x86_64-gnu.tar.gz
+tar xzf sunreactor-v0.1.0-linux-x86_64-gnu.tar.gz
 ```
 
 **For ARM64 (aarch64):**
 ```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-aarch64.tar.gz
-tar xzf sunreactor-v0.1.0-linux-aarch64.tar.gz
+curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-aarch64-gnu.tar.gz
+tar xzf sunreactor-v0.1.0-linux-aarch64-gnu.tar.gz
 ```
 
 2. Move the binaries to your local PATH:
@@ -203,7 +203,7 @@ Navigate to the **Location** tab and search for your city, or enter coordinates 
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp sunreactord.service ~/.config/systemd/user/
+cp contrib/systemd/sunreactord.service ~/.config/systemd/user/
 
 systemctl --user daemon-reload
 systemctl --user enable --now sunreactord.service
