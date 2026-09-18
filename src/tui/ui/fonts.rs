@@ -35,7 +35,43 @@ pub(crate) fn rounded_number_rows(text: &str) -> [String; 3] {
     rows
 }
 
+/// Three-row pixel art block glyphs for weather temperature displays.
+const WEATHER_PIXEL_DIGITS: [[&str; 3]; 10] = [
+    ["▄▀▀▄", "█  █", " ▀▀ "], // 0
+    [" ▄█ ", "  █ ", " ▀▀▀"], // 1
+    ["█▀▀▄", " ▄▀ ", "▀▀▀▀"], // 2
+    ["▀▀▀█", " ▀▀█", " ▀▀ "], // 3
+    ["█  █", "▀▀▀█", "   ▀"], // 4
+    ["█▀▀▀", "▀▀▀▄", " ▀▀ "], // 5
+    ["▄▀▀▀", "█▀▀▄", " ▀▀ "], // 6
+    ["▀▀▀█", "  █ ", "  ▀ "], // 7
+    ["▄▀▀▄", "█▀▀█", " ▀▀ "], // 8
+    ["▄▀▀▄", " ▀▀█", " ▀▀ "], // 9
+];
+
+/// Renders `text` in the three-row weather pixel block font, with one cell between
+/// glyphs. Characters other than digits and `-` are skipped.
+pub(crate) fn weather_pixel_font_rows(text: &str) -> [String; 3] {
+    let mut rows: [String; 3] = Default::default();
+    let glyphs = text.chars().filter_map(|character| match character {
+        '-' => Some(["    ", "▀▀▀▀", "    "]),
+        digit => digit
+            .to_digit(10)
+            .map(|digit| WEATHER_PIXEL_DIGITS[digit as usize]),
+    });
+    for (index, glyph) in glyphs.enumerate() {
+        for (row, line) in rows.iter_mut().enumerate() {
+            if index > 0 {
+                line.push(' ');
+            }
+            line.push_str(glyph[row]);
+        }
+    }
+    rows
+}
+
 /// A 5x7 dot-matrix font, like an LED display.
+#[allow(dead_code)]
 const DOT_MATRIX_GLYPHS: [(char, [&str; 7]); 11] = [
     (
         '0',
@@ -107,6 +143,7 @@ const DOT_MATRIX_GLYPHS: [(char, [&str; 7]); 11] = [
 
 /// Renders `text` as four Braille dot-matrix rows. Every font dot is one
 /// Braille dot, two dot positions apart in both directions.
+#[allow(dead_code)]
 pub(crate) fn braille_dot_matrix_rows(text: &str) -> [String; 4] {
     let glyphs: Vec<&[&str; 7]> = text
         .chars()
@@ -142,7 +179,7 @@ pub(crate) fn braille_dot_matrix_rows(text: &str) -> [String; 4] {
 
 #[cfg(test)]
 mod tests {
-    use super::{braille_dot_matrix_rows, rounded_number_rows};
+    use super::{braille_dot_matrix_rows, rounded_number_rows, weather_pixel_font_rows};
 
     #[test]
     fn rounded_number_font_skips_unsupported_characters() {
@@ -150,6 +187,24 @@ mod tests {
             rounded_number_rows("1x-"),
             ["╶╮     ", " │  ╶─╴", "╶┴╴    "]
         );
+    }
+
+    #[test]
+    fn weather_pixel_font_skips_unsupported_characters() {
+        assert_eq!(
+            weather_pixel_font_rows("1x-"),
+            [" ▄█      ", "  █  ▀▀▀▀", " ▀▀▀     "]
+        );
+    }
+
+    #[test]
+    fn weather_pixel_font_preserves_digit_geometry() {
+        let single = weather_pixel_font_rows("7");
+        assert_eq!(single, ["▀▀▀█", "  █ ", "  ▀ "]);
+        let pair = weather_pixel_font_rows("23");
+        assert!(pair.iter().all(|row| row.chars().count() == 9));
+        let negative = weather_pixel_font_rows("-4");
+        assert_eq!(negative[1], "▀▀▀▀ ▀▀▀█");
     }
 
     #[test]

@@ -80,6 +80,7 @@ pub(crate) struct WeatherForecastPoint {
     pub epoch_s: u64,
     pub condition: WeatherCondition,
     pub day_phase: Option<WeatherDayPhase>,
+    #[allow(dead_code)]
     pub precipitation_percent: Option<u8>,
 }
 

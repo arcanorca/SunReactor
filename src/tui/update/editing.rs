@@ -141,3 +141,129 @@ fn accepts_char(kind: Option<ActiveInputKind>, c: char) -> bool {
         Some(ActiveInputKind::Toggle) | None => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::tui::model::{ActionState, ActiveModal, ErrorCategory};
+    use crate::tui::update::{self, Message};
+    use crate::tui::{ui, InputMode, Model, Tab};
+
+    #[test]
+    fn test_editor_input_precedence_isolates_global_keys() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Location;
+        model.active_setting = 3;
+        model.form.timezone_input = tui_input::Input::default().with_value(String::from("UTC"));
+
+        model.start_editing();
+        assert_eq!(model.input_mode, InputMode::Editing);
+
+        // Number keys switch tabs in Normal mode, but MUST be consumed as text in Editing mode!
+        for digit in ['1', '2', '3', '4', '5'] {
+            update::update(
+                &mut model,
+                Message::Key(KeyEvent::new(KeyCode::Char(digit), KeyModifiers::NONE)),
+            );
+            // Tab must STILL be Location!
+            assert_eq!(model.active_tab, Tab::Location);
+        }
+        assert_eq!(model.form.timezone_input.value(), "UTC12345");
+
+        // 'q' must NOT quit SunReactor
+        update::update(
+            &mut model,
+            Message::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+        );
+        assert_eq!(model.form.timezone_input.value(), "UTC12345q");
+
+        // '?' must NOT open help modal
+        update::update(
+            &mut model,
+            Message::Key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)),
+        );
+        assert!(matches!(model.active_modal, ActiveModal::None));
+
+        // Up/Down must NOT navigate to different settings while editing
+        update::update(
+            &mut model,
+            Message::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
+        );
+        assert_eq!(model.active_setting, 3);
+        update::update(
+            &mut model,
+            Message::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+        );
+        assert_eq!(model.active_setting, 3);
+
+        // Esc cancels editing and restores original value
+        update::update(
+            &mut model,
+            Message::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        );
+        assert_eq!(model.input_mode, InputMode::Normal);
+        assert_eq!(model.form.timezone_input.value(), "UTC");
+    }
+
+    #[test]
+    fn test_editor_validation_failure_keeps_editing_mode_with_dirty_input() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Location;
+        model.active_setting = 1; // Latitude field
+        model.form.lat_input = tui_input::Input::default().with_value(String::new());
+
+        model.start_editing();
+
+        // Type invalid latitude "999.0" (> 90.0)
+        for c in "999.0".chars() {
+            model.insert_char_to_active_input(c);
+        }
+        assert_eq!(model.form.lat_input.value(), "999.0");
+
+        // Press Enter to commit
+        update::update(
+            &mut model,
+            Message::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        );
+
+        // SUT requirement: on validation error, remain in Editing mode so user can correct it!
+        assert_eq!(model.input_mode, InputMode::Editing);
+        assert_eq!(model.form.lat_input.value(), "999.0");
+        assert!(model.config_dirty);
+        assert!(matches!(
+            model.action_state,
+            ActionState::Error {
+                category: ErrorCategory::Validation,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_editor_responsive_rendering_across_viewports() {
+        let dimensions = [(80, 24), (60, 20), (40, 16)];
+
+        for (w, h) in dimensions {
+            let backend = TestBackend::new(w, h);
+            let mut terminal = Terminal::new(backend).unwrap();
+            let mut model = Model::new();
+            model.active_tab = Tab::Location;
+            model.active_setting = 3;
+            model.form.timezone_input =
+                tui_input::Input::default().with_value(String::from("Europe/Istanbul"));
+
+            model.start_editing();
+            assert_eq!(model.input_mode, InputMode::Editing);
+
+            // Render editing state
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+
+            // Move cursor to middle and render
+            model.move_cursor_left();
+            model.move_cursor_left();
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        }
+    }
+}

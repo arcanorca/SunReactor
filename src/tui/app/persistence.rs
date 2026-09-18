@@ -250,3 +250,203 @@ impl Model {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use crate::tui::model::{ActionKind, ActionState, ErrorCategory};
+    use crate::tui::update::{self, Message};
+    use crate::tui::worker::IpcEvent;
+    use crate::tui::Model;
+
+    #[test]
+    fn test_validation_error_does_not_invoke_ipc() {
+        let mut model = Model::new();
+
+        // Type invalid zero duration into suspend input
+        model.form.suspend_minutes_input = tui_input::Input::new(String::from("0"));
+
+        model.suspend_writes();
+
+        // Action state reflects validation error
+        assert!(matches!(
+            model.action_state,
+            ActionState::Error {
+                action: ActionKind::Suspend,
+                category: ErrorCategory::Validation,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_duplicate_command_suppression() {
+        let mut model = Model::new();
+
+        // First suspend sets Pending
+        model.suspend_writes();
+        assert!(matches!(
+            model.action_state,
+            ActionState::Pending {
+                action: ActionKind::Suspend,
+                ..
+            }
+        ));
+
+        let initial_pending_time = match &model.action_state {
+            ActionState::Pending { started_at, .. } => *started_at,
+            _ => unreachable!(),
+        };
+
+        // Second suspend is suppressed
+        model.suspend_writes();
+        let second_pending_time = match &model.action_state {
+            ActionState::Pending { started_at, .. } => *started_at,
+            _ => unreachable!(),
+        };
+
+        assert_eq!(initial_pending_time, second_pending_time);
+    }
+
+    #[test]
+    fn test_action_state_expiration() {
+        let mut model = Model::new();
+
+        // Success expires after 3 seconds
+        model.action_state = ActionState::Success {
+            action: ActionKind::Suspend,
+            message: String::from("Done"),
+            completed_at: Instant::now().checked_sub(Duration::from_secs(4)).unwrap(),
+        };
+        model.check_action_state_expiration();
+        assert_eq!(model.action_state, ActionState::Idle);
+
+        // Warning expires after 6 seconds
+        model.action_state = ActionState::Warning {
+            action: ActionKind::SaveConfig,
+            category: ErrorCategory::DaemonUnavailable,
+            message: String::from("Saved to disk — daemon offline"),
+            completed_at: Instant::now().checked_sub(Duration::from_secs(7)).unwrap(),
+        };
+        model.check_action_state_expiration();
+        assert_eq!(model.action_state, ActionState::Idle);
+
+        // Error expires after 6 seconds
+        model.action_state = ActionState::Error {
+            action: ActionKind::Suspend,
+            category: ErrorCategory::Transport,
+            message: String::from("failed"),
+            completed_at: Instant::now().checked_sub(Duration::from_secs(7)).unwrap(),
+        };
+        model.check_action_state_expiration();
+        assert_eq!(model.action_state, ActionState::Idle);
+
+        // Pending times out after 8 seconds
+        model.action_state = ActionState::Pending {
+            command_id: 1,
+            action: ActionKind::Suspend,
+            description: String::from("Waiting"),
+            started_at: Instant::now().checked_sub(Duration::from_secs(9)).unwrap(),
+        };
+        model.check_action_state_expiration();
+        assert!(matches!(
+            model.action_state,
+            ActionState::Error {
+                action: ActionKind::Suspend,
+                category: ErrorCategory::Timeout,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_save_config_validation_failure_surfaces_error_without_claiming_success() {
+        let mut model = Model::new();
+        model.config_dirty = true;
+
+        // Invalid FPS (out of range 1..=120)
+        model.form.fps_input = tui_input::Input::new(String::from("9999"));
+        let saved = model.save_config();
+        assert!(!saved);
+        assert!(matches!(
+            model.action_state,
+            ActionState::Error {
+                action: ActionKind::SaveConfig,
+                category: ErrorCategory::Validation,
+                ..
+            }
+        ));
+
+        // Must not claim success or clear dirty flag
+        assert!(model.config_dirty);
+    }
+
+    #[test]
+    fn test_save_config_full_success_flow() {
+        let mut model = Model::new();
+        model.config_dirty = true;
+
+        // Trigger save
+        let saved = model.save_config();
+        assert!(saved);
+        assert!(!model.config_dirty);
+
+        let ActionState::Pending {
+            command_id,
+            action: ActionKind::SaveConfig,
+            ..
+        } = model.action_state
+        else {
+            panic!("expected pending save_config");
+        };
+
+        // Daemon acknowledges reload
+        update::update(
+            &mut model,
+            Message::Ipc(IpcEvent::CommandSucceeded {
+                command_id,
+                action: ActionKind::SaveConfig,
+                message: String::from("reloaded config"),
+            }),
+        );
+
+        match &model.action_state {
+            ActionState::Success { message, .. } => {
+                assert_eq!(message, "Settings saved and applied");
+            }
+            _ => panic!("expected Success action_state"),
+        }
+    }
+
+    #[test]
+    fn test_save_config_persisted_but_timeout_yields_warning() {
+        let mut model = Model::new();
+        let command_id =
+            model.send_command(ActionKind::SaveConfig, crate::ipc::Request::ReloadConfig);
+
+        model.action_state = ActionState::Pending {
+            command_id,
+            action: ActionKind::SaveConfig,
+            description: String::from("Saving configuration…"),
+            started_at: Instant::now().checked_sub(Duration::from_secs(9)).unwrap(),
+        };
+
+        model.check_action_state_expiration();
+
+        // Must be Warning because config is already saved on disk
+        match &model.action_state {
+            ActionState::Warning {
+                action,
+                category,
+                message,
+                ..
+            } => {
+                assert_eq!(*action, ActionKind::SaveConfig);
+                assert_eq!(*category, ErrorCategory::Timeout);
+                assert_eq!(message, "Saved — daemon did not respond");
+            }
+            _ => panic!("expected Warning state for save_config timeout"),
+        }
+    }
+}

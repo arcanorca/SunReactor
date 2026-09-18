@@ -747,3 +747,263 @@ impl Model {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+    use crate::tui::form::FormState;
+    use crate::tui::model::Tab;
+    use crate::tui::test_support::dummy_status;
+    use crate::tui::update::{self, Message};
+    use crate::tui::worker::IpcEvent;
+    use crate::tui::Model;
+
+    #[test]
+    fn test_monitor_navigation_zero_monitors() {
+        let mut model = Model::new();
+        model.config = Config::default();
+        model.config.monitors.clear();
+        model.form = FormState::new(&model.config);
+        model.selected_monitor = 0;
+        model.selected_monitor_id = None;
+        model.status = Some(dummy_status(0));
+
+        model.clamp_monitor_selection();
+        assert_eq!(model.selected_monitor, 0);
+        assert_eq!(model.monitor_list_state.selected(), None);
+        model.move_selection_down();
+        assert_eq!(model.selected_monitor, 0);
+        model.move_selection_up();
+        assert_eq!(model.selected_monitor, 0);
+        model.page_down();
+        assert_eq!(model.selected_monitor, 0);
+        model.page_up();
+        assert_eq!(model.selected_monitor, 0);
+        model.move_to_first();
+        assert_eq!(model.selected_monitor, 0);
+        model.move_to_last();
+        assert_eq!(model.selected_monitor, 0);
+    }
+
+    #[test]
+    fn test_monitor_navigation_single_monitor() {
+        let mut model = Model::new();
+        model.status = Some(dummy_status(1));
+
+        model.clamp_monitor_selection();
+        assert_eq!(model.selected_monitor, 0);
+        assert_eq!(model.monitor_list_state.selected(), Some(0));
+        model.move_selection_down();
+        assert_eq!(model.selected_monitor, 0);
+        model.move_selection_up();
+        assert_eq!(model.selected_monitor, 0);
+    }
+
+    #[test]
+    fn test_monitor_navigation_multiple_monitors() {
+        let mut model = Model::new();
+        model.status = Some(dummy_status(10));
+        model.clamp_monitor_selection();
+
+        assert_eq!(model.selected_monitor, 0);
+        assert_eq!(model.monitor_list_state.selected(), Some(0));
+        model.move_selection_down();
+        assert_eq!(model.selected_monitor, 1);
+        assert_eq!(model.monitor_list_state.selected(), Some(1));
+        model.move_selection_up();
+        assert_eq!(model.selected_monitor, 0);
+        model.page_down();
+        assert_eq!(model.selected_monitor, 4);
+        model.page_down();
+        assert_eq!(model.selected_monitor, 8);
+        model.page_down();
+        assert_eq!(model.selected_monitor, 9);
+        model.page_up();
+        assert_eq!(model.selected_monitor, 5);
+        model.move_to_last();
+        assert_eq!(model.selected_monitor, 9);
+        model.move_to_first();
+        assert_eq!(model.selected_monitor, 0);
+    }
+
+    #[test]
+    fn test_monitor_removal_clamps_selection() {
+        let mut model = Model::new();
+        model.status = Some(dummy_status(6));
+        model.selected_monitor = 5;
+        model.clamp_monitor_selection();
+        assert_eq!(model.selected_monitor, 5);
+
+        model.status = Some(dummy_status(2));
+        model.clamp_monitor_selection();
+        assert_eq!(model.selected_monitor, 1);
+        assert_eq!(model.monitor_list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_settings_scrolling_and_navigation() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Limits;
+        let mut config = Config::default();
+        config.monitors.clear();
+        for index in 0..4 {
+            config.monitors.push(crate::config::MonitorConfig {
+                logical_id: format!("mon-{index}"),
+                ..Default::default()
+            });
+        }
+        model.config = config;
+        model.form = FormState::new(&model.config);
+        model.active_setting = 0;
+
+        assert_eq!(model.tab_field_count(Tab::Limits) - 1, 8);
+        model.move_selection_down();
+        assert_eq!(model.active_setting, 1);
+        model.page_down();
+        assert_eq!(model.active_setting, 5);
+        model.page_down();
+        assert_eq!(model.active_setting, 8);
+        model.move_selection_down();
+        assert_eq!(model.active_setting, 8);
+        model.page_up();
+        assert_eq!(model.active_setting, 4);
+        model.move_to_first();
+        assert_eq!(model.active_setting, 0);
+        model.move_to_last();
+        assert_eq!(model.active_setting, 8);
+    }
+
+    #[test]
+    fn test_help_modal_scrolling() {
+        let mut model = Model::new();
+        model.show_help = true;
+        model.help_scroll = 0;
+
+        model.scroll_help_down(2, 20);
+        assert_eq!(model.help_scroll, 2);
+        model.scroll_help_down(30, 20);
+        assert_eq!(model.help_scroll, 20);
+        model.scroll_help_up(5);
+        assert_eq!(model.help_scroll, 15);
+        model.scroll_help_up(25);
+        assert_eq!(model.help_scroll, 0);
+        model.scroll_help_end(20);
+        assert_eq!(model.help_scroll, 20);
+        model.scroll_help_home();
+        assert_eq!(model.help_scroll, 0);
+    }
+
+    #[test]
+    fn test_preflight_operational_mode_precedence() {
+        use crate::tui::model::{DaemonConnection, OperationalMode};
+
+        let mut model = Model::new();
+        let mut status = dummy_status(1);
+
+        // 1. Disconnected -> Offline
+        model.daemon_connection = DaemonConnection::Disconnected;
+        model.status = Some(status.clone());
+        assert_eq!(model.operational_mode(), OperationalMode::Offline);
+
+        // 2. Connected but daemon_alive == false -> Offline
+        model.daemon_connection = DaemonConnection::Connected;
+        status.daemon_alive = false;
+        model.status = Some(status.clone());
+        assert_eq!(model.operational_mode(), OperationalMode::Offline);
+
+        // 3. Alive + Suspended -> Suspended (even if idle_dimmed and override are true)
+        status.daemon_alive = true;
+        status.suspended = true;
+        status.desktop_idle_dimmed = true;
+        status.manual_override_active = true;
+        model.status = Some(status.clone());
+        assert_eq!(model.operational_mode(), OperationalMode::Suspended);
+
+        // 4. Alive + Not Suspended + IdleDimmed -> IdleDimmed (even if override is true)
+        status.suspended = false;
+        status.desktop_idle_dimmed = true;
+        status.manual_override_active = true;
+        model.status = Some(status.clone());
+        assert_eq!(model.operational_mode(), OperationalMode::IdleDimmed);
+
+        // 5. Alive + Not Suspended + Not Idle + Override -> Override
+        status.desktop_idle_dimmed = false;
+        status.manual_override_active = true;
+        model.status = Some(status.clone());
+        assert_eq!(model.operational_mode(), OperationalMode::Override);
+
+        // 6. Normal curve -> Automatic
+        status.manual_override_active = false;
+        model.status = Some(status);
+        assert_eq!(model.operational_mode(), OperationalMode::Automatic);
+    }
+
+    #[test]
+    fn test_phase9_4_selected_monitor_identity_survives_status_reorder() {
+        let mut model = Model::new();
+        model.config.monitors = vec![
+            crate::config::MonitorConfig {
+                logical_id: String::from("mon-0"),
+                min_pct: 7,
+                max_pct: 60,
+                transition_gamma: 0.5,
+                ..Default::default()
+            },
+            crate::config::MonitorConfig {
+                logical_id: String::from("mon-1"),
+                min_pct: 15,
+                max_pct: 90,
+                transition_gamma: 2.0,
+                ..Default::default()
+            },
+        ];
+        model.form = FormState::new(&model.config);
+        model.status = Some(dummy_status(2));
+        model.selected_monitor = 1;
+        model.clamp_monitor_selection();
+        assert_eq!(model.selected_monitor_logical_id(), Some("mon-1"));
+
+        let mut reordered = dummy_status(2);
+        reordered.monitors.swap(0, 1);
+        update::update(
+            &mut model,
+            Message::Ipc(IpcEvent::Status(Box::new(reordered))),
+        );
+
+        assert_eq!(model.selected_monitor, 0);
+        assert_eq!(model.selected_monitor_logical_id(), Some("mon-1"));
+        assert_eq!(model.monitor_list_state.selected(), Some(0));
+
+        model.step_monitor_curve(0.05);
+        assert!((model.config.monitors[0].transition_gamma - 0.5).abs() < f64::EPSILON);
+        assert!((model.config.monitors[1].transition_gamma - 2.05).abs() < f64::EPSILON);
+        assert_eq!(model.form.monitor_curve_inputs[1].value(), "2.05");
+    }
+
+    #[test]
+    fn test_phase9_4_removed_selected_monitor_uses_nearest_configured_context() {
+        let mut model = Model::new();
+        model.config.monitors = (0..3)
+            .map(|index| crate::config::MonitorConfig {
+                logical_id: format!("mon-{index}"),
+                ..Default::default()
+            })
+            .collect();
+        model.form = FormState::new(&model.config);
+        model.status = Some(dummy_status(3));
+        model.selected_monitor = 1;
+        model.clamp_monitor_selection();
+        assert_eq!(model.selected_monitor_logical_id(), Some("mon-1"));
+
+        model.config.monitors.remove(1);
+        model.form = FormState::new(&model.config);
+        let mut without_selected = dummy_status(3);
+        without_selected.monitors.remove(1);
+        model.status = Some(without_selected);
+        model.clamp_monitor_selection();
+
+        assert_eq!(model.selected_monitor, 1);
+        assert_eq!(model.selected_monitor_logical_id(), Some("mon-2"));
+        assert_eq!(model.monitor_list_state.selected(), Some(1));
+    }
+}

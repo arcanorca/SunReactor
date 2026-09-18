@@ -16,7 +16,7 @@ pub mod update;
 mod worker;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_support;
 
 pub use app::EditBufferPolicy;
 pub use command::{CommandId, CommandSpec, ContextCommands, UiCommandContext};
