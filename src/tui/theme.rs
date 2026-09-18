@@ -957,4 +957,90 @@ mod tests {
         assert_eq!(from_ref, from_val);
         assert_eq!(from_ref, from_theme);
     }
+
+    #[test]
+    fn test_all_themes_resolve_palette_and_deserialize() {
+        let expected_themes = [
+            ("amber", Theme::Amber),
+            ("ayudark", Theme::AyuDark),
+            ("ayumirage", Theme::AyuMirage),
+            ("casiodigital", Theme::CasioDigital),
+            ("catppuccinmocha", Theme::CatppuccinMocha),
+            ("classicmacintosh", Theme::ClassicMacintosh),
+            ("commodore64", Theme::Commodore64),
+            ("cyberpunk", Theme::Cyberpunk),
+            ("dracula", Theme::Dracula),
+            ("everforest", Theme::Everforest),
+            ("grayscale", Theme::Grayscale),
+            ("gruvbox", Theme::Gruvbox),
+            ("hackergreen", Theme::HackerGreen),
+            ("kanagawa", Theme::Kanagawa),
+            ("materialocean", Theme::MaterialOcean),
+            ("monokai", Theme::Monokai),
+            ("nightowl", Theme::NightOwl),
+            ("nord", Theme::Nord),
+            ("nothing", Theme::Nothing),
+            ("onedark", Theme::OneDark),
+            ("phosphorblue", Theme::PhosphorBlue),
+            ("rosepine", Theme::RosePine),
+            ("solarizeddark", Theme::SolarizedDark),
+            ("synthwave84", Theme::Synthwave84),
+            ("terminal", Theme::Terminal),
+            ("thinkpad", Theme::ThinkPad),
+            ("tokyonight", Theme::TokyoNight),
+            ("zenburn", Theme::Zenburn),
+        ];
+
+        assert_eq!(Theme::ALL.len(), 28);
+        assert_eq!(expected_themes.len(), 28);
+
+        for (key, expected_theme) in expected_themes {
+            let toml_str = format!("theme = \"{key}\"\n");
+            let parsed: Result<crate::config::TuiConfig, _> = toml::from_str(&toml_str);
+            assert!(
+                parsed.is_ok(),
+                "Failed to deserialize theme '{key}': {:?}",
+                parsed.err()
+            );
+            assert_eq!(parsed.unwrap().theme, expected_theme);
+
+            let palette = expected_theme.palette();
+            assert_ne!(palette.bg, palette.fg);
+            assert!(!expected_theme.name().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_phase9_3_contrast_safety_across_representative_themes() {
+        for theme in [
+            Theme::Amber,
+            Theme::Terminal,
+            Theme::Nord,
+            Theme::TokyoNight,
+            Theme::HackerGreen,
+            Theme::Grayscale,
+            Theme::Commodore64,
+            Theme::Synthwave84,
+        ] {
+            let palette = theme.palette();
+            let styles = palette.styles();
+
+            // 1. Dual-tone masthead colors are distinct and valid
+            assert_ne!(styles.chrome_title, styles.chrome_title_secondary);
+
+            // 2. Focused value capsule uses palette accent and has contrasting text
+            assert_eq!(styles.value_capsule_focused.bg, Some(palette.accent));
+            assert_eq!(
+                styles.value_capsule_editing.bg,
+                Some(palette.secondary_accent)
+            );
+            assert_ne!(styles.value_capsule_editing.bg, Some(palette.warning));
+
+            // 3. Capsule fg is derived from palette bg or fg or black/white
+            let fg = styles.value_capsule_focused.fg.unwrap();
+            assert!(
+                fg == palette.bg || fg == palette.fg || fg == Color::Black || fg == Color::White
+            );
+        }
+    }
 }

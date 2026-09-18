@@ -770,3 +770,172 @@ pub const OFFICIAL_SYMBOLS: &[SymbolLegendItem] = &[
         meaning: "detail for the row above",
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::{InputMode, Model, Tab};
+
+    #[test]
+    fn test_official_symbols_not_empty() {
+        assert!(!OFFICIAL_SYMBOLS.is_empty());
+        for item in OFFICIAL_SYMBOLS {
+            assert!(!item.symbol.is_empty());
+            assert!(!item.meaning.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_single_source_of_truth_footer_and_help() {
+        let mut model = Model::new();
+
+        // Verify for every tab that commands_for_context provides both Help and Footer labels
+        for tab in [
+            Tab::Monitors,
+            Tab::Limits,
+            Tab::Location,
+            Tab::Weather,
+            Tab::Settings,
+        ] {
+            model.active_tab = tab;
+            model.input_mode = InputMode::Normal;
+            let ctx_cmd = commands_for_workspace(&model);
+
+            // Every command must have non-empty keys, action, and footer_label
+            for cmd in ctx_cmd.current_commands {
+                assert!(!cmd.keys.is_empty());
+                assert!(!cmd.compact_keys.is_empty());
+                assert!(!cmd.action.is_empty());
+                assert!(!cmd.footer_label.is_empty());
+            }
+
+            for cmd in ctx_cmd.global_commands {
+                assert!(!cmd.keys.is_empty());
+                assert!(!cmd.compact_keys.is_empty());
+                assert!(!cmd.action.is_empty());
+                assert!(!cmd.footer_label.is_empty());
+            }
+        }
+    }
+
+    fn commands_for_test_context(ctx: UiCommandContext) -> ContextCommands {
+        match ctx {
+            UiCommandContext::MonitorsList => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Monitors;
+                m.monitor_pane_focus = crate::tui::model::MonitorPaneFocus::List;
+                m
+            }),
+            UiCommandContext::MonitorsDetail => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Monitors;
+                m.monitor_pane_focus = crate::tui::model::MonitorPaneFocus::Detail;
+                m
+            }),
+            UiCommandContext::Automation => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Limits;
+                m
+            }),
+            UiCommandContext::AutomationCurve => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Limits;
+                m.automation_focus = crate::tui::model::AutomationRegionFocus::Curve;
+                m
+            }),
+            UiCommandContext::LocationNav => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Location;
+                m
+            }),
+            UiCommandContext::WeatherObservational => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Weather;
+                m
+            }),
+            UiCommandContext::SettingsNav => commands_for_workspace(&{
+                let mut m = Model::new();
+                m.active_tab = Tab::Settings;
+                m
+            }),
+            _ => commands_for_footer(&{
+                let mut m = Model::new();
+                m.show_help = matches!(ctx, UiCommandContext::HelpModal);
+                m
+            }),
+        }
+    }
+
+    #[test]
+    fn test_footer_help_consistency_invariant() {
+        let contexts = [
+            UiCommandContext::MonitorsList,
+            UiCommandContext::MonitorsDetail,
+            UiCommandContext::MonitorsEdit,
+            UiCommandContext::Automation,
+            UiCommandContext::AutomationCurve,
+            UiCommandContext::AutomationEdit,
+            UiCommandContext::LocationNav,
+            UiCommandContext::LocationCityEdit,
+            UiCommandContext::LocationFieldEdit,
+            UiCommandContext::WeatherObservational,
+            UiCommandContext::SettingsNav,
+            UiCommandContext::SettingsEdit,
+            UiCommandContext::HelpModal,
+        ];
+
+        let prohibited_terms = [
+            "Limits",
+            "LIMITS",
+            "fine-tuning",
+            "fine-tune",
+            "fine-adjust",
+        ];
+
+        for ctx in contexts {
+            let cmds = commands_for_test_context(ctx);
+            let mut seen_ids = std::collections::HashSet::new();
+            for cmd in cmds.current_commands {
+                assert!(!cmd.keys.is_empty(), "keys empty for {:?}", cmd.id);
+                assert!(
+                    !cmd.compact_keys.is_empty(),
+                    "compact_keys empty for {:?}",
+                    cmd.id
+                );
+                assert!(!cmd.action.is_empty(), "action empty for {:?}", cmd.id);
+                assert!(
+                    !cmd.footer_label.is_empty(),
+                    "footer_label empty for {:?}",
+                    cmd.id
+                );
+                assert!(
+                    cmd.footer_label.chars().count() <= 10,
+                    "footer label too long: {}",
+                    cmd.footer_label
+                );
+
+                for term in prohibited_terms {
+                    assert!(
+                        !cmd.action.contains(term),
+                        "Action contains prohibited term '{}': {}",
+                        term,
+                        cmd.action
+                    );
+                    assert!(
+                        !cmd.footer_label.contains(term),
+                        "Footer label contains prohibited term '{}': {}",
+                        term,
+                        cmd.footer_label
+                    );
+                }
+
+                assert!(
+                    seen_ids.insert(cmd.id),
+                    "Duplicate command ID {:?} in context {:?}",
+                    cmd.id,
+                    ctx
+                );
+            }
+        }
+    }
+}

@@ -500,4 +500,73 @@ mod tests {
             assert!(motion.active_transient.is_none());
         }
     }
+
+    #[test]
+    fn test_phase5_6_motion_architecture_timing_and_phases() {
+        let now = Instant::now();
+        let duration = Duration::from_millis(500);
+        let transient =
+            TransientMotion::new(TransientKind::RangeCommit { min: true }, now, duration);
+
+        // 1. Initial phase at start is 0.0
+        assert_eq!(transient.phase(now), Some(0.0));
+
+        // 2. Phase halfway (250ms) is approximately 0.5
+        let half = now + Duration::from_millis(250);
+        let p_half = transient.phase(half).expect("halfway phase");
+        assert!((p_half - 0.5).abs() < 0.02);
+
+        // 3. Phase at exact duration or later self-expires (returns None)
+        let end = now + Duration::from_millis(500);
+        assert!(transient.phase(end).is_none());
+        let past = now + Duration::from_millis(800);
+        assert!(transient.phase(past).is_none());
+
+        // 4. MotionLevel policies
+        let mut state = UiMotionState::new_at(now);
+        assert_eq!(state.level, MotionLevel::Instrument);
+
+        // Under MotionLevel::Off, triggers do nothing
+        state.level = MotionLevel::Off;
+        state.trigger(TransientKind::RangeCommit { min: true }, now, duration);
+        assert!(state.active_transient.is_none());
+        assert!(state.masthead_sweep_phase(now).is_none());
+        assert!(state.heartbeat_pulse_phase(now).is_none());
+
+        // Under MotionLevel::Reduced, broad acquisition rings are suppressed
+        state.level = MotionLevel::Reduced;
+        state.trigger(
+            TransientKind::LocationAcquisition {
+                lon: 10.0,
+                lat: 20.0,
+            },
+            now,
+            duration,
+        );
+        assert!(state.active_transient.is_none());
+    }
+
+    #[test]
+    fn test_tab_slide_and_globe_arrival_follow_the_effects_level() {
+        use crate::tui::{Model, Tab};
+
+        let mut model = Model::new();
+        model.motion.level = MotionLevel::Instrument;
+        model.switch_to_tab(Tab::Location);
+        let now = Instant::now();
+        assert!(model.motion.tab_slide_position(now).is_some());
+        assert!(model.motion.globe_rotation_phase(now).is_some());
+
+        let mut reduced = Model::new();
+        reduced.motion.level = MotionLevel::Reduced;
+        reduced.switch_to_tab(Tab::Location);
+        let now = Instant::now();
+        assert!(reduced.motion.tab_slide_position(now).is_none());
+        assert!(reduced.motion.globe_rotation_phase(now).is_none());
+
+        let mut off = Model::new();
+        off.motion.level = MotionLevel::Off;
+        off.switch_to_tab(Tab::Weather);
+        assert!(!off.motion.needs_animation_frame(Instant::now()));
+    }
 }

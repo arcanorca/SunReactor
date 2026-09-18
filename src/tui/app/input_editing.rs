@@ -246,4 +246,165 @@ mod tests {
         model.cancel_editing();
         assert_eq!(model.form.api_key_input.value(), "existing_secret_123");
     }
+    #[test]
+    fn test_editor_cursor_insert_middle_and_boundary() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Location;
+        model.active_setting = 3; // Timezone field
+        model.form.timezone_input = tui_input::Input::default().with_value(String::from("UTC"));
+
+        model.start_editing();
+        assert_eq!(model.input_mode, InputMode::Editing);
+        // Cursor starts at end
+        assert_eq!(model.form.timezone_input.cursor(), 3);
+
+        // Home moves to start
+        model.move_cursor_start();
+        assert_eq!(model.form.timezone_input.cursor(), 0);
+
+        // Insert at beginning
+        model.insert_char_to_active_input('A');
+        assert_eq!(model.form.timezone_input.value(), "AUTC");
+        assert_eq!(model.form.timezone_input.cursor(), 1);
+
+        // End moves to end
+        model.move_cursor_end();
+        assert_eq!(model.form.timezone_input.cursor(), 4);
+
+        // Left moves back 1
+        model.move_cursor_left();
+        assert_eq!(model.form.timezone_input.cursor(), 3);
+
+        // Insert in middle
+        model.insert_char_to_active_input('B');
+        assert_eq!(model.form.timezone_input.value(), "AUTBC");
+        assert_eq!(model.form.timezone_input.cursor(), 4);
+
+        // Backspace deletes 'B'
+        model.backspace_active_input();
+        assert_eq!(model.form.timezone_input.value(), "AUTC");
+        assert_eq!(model.form.timezone_input.cursor(), 3);
+
+        // Delete deletes 'C' at cursor
+        model.delete_active_input();
+        assert_eq!(model.form.timezone_input.value(), "AUT");
+        assert_eq!(model.form.timezone_input.cursor(), 3);
+
+        // Delete at end is a safe no-op
+        model.delete_active_input();
+        assert_eq!(model.form.timezone_input.value(), "AUT");
+        assert_eq!(model.form.timezone_input.cursor(), 3);
+
+        // Home then Backspace at start is a safe no-op
+        model.move_cursor_start();
+        assert_eq!(model.form.timezone_input.cursor(), 0);
+        model.backspace_active_input();
+        assert_eq!(model.form.timezone_input.value(), "AUT");
+        assert_eq!(model.form.timezone_input.cursor(), 0);
+    }
+
+    #[test]
+    fn test_editor_unicode_multibyte_correctness() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Location;
+        model.active_setting = 3;
+
+        // "İstanbul" contains 2-byte 'İ' (U+0130)
+        model.form.timezone_input =
+            tui_input::Input::default().with_value(String::from("İstanbul"));
+        model.start_editing();
+        assert_eq!(model.form.timezone_input.cursor(), 8);
+
+        // Move left across Unicode characters
+        for _ in 0..7 {
+            model.move_cursor_left();
+        }
+        // Cursor is now at index 1 (between 'İ' and 's')
+        assert_eq!(model.form.timezone_input.cursor(), 1);
+
+        // Insert character after 'İ'
+        model.insert_char_to_active_input('X');
+        assert_eq!(model.form.timezone_input.value(), "İXstanbul");
+        assert_eq!(model.form.timezone_input.cursor(), 2);
+
+        // Delete at cursor ('s')
+        model.delete_active_input();
+        assert_eq!(model.form.timezone_input.value(), "İXtanbul");
+
+        // Backspace deletes 'X'
+        model.backspace_active_input();
+        assert_eq!(model.form.timezone_input.value(), "İtanbul");
+        assert_eq!(model.form.timezone_input.cursor(), 1);
+
+        // Backspace deletes 'İ'
+        model.backspace_active_input();
+        assert_eq!(model.form.timezone_input.value(), "tanbul");
+        assert_eq!(model.form.timezone_input.cursor(), 0);
+
+        // CJK and Umlaut test without panic
+        model.form.timezone_input =
+            tui_input::Input::default().with_value(String::from("日本/München"));
+        model.move_cursor_start();
+        model.move_cursor_right(); // after '日'
+        model.insert_char_to_active_input('★');
+        assert_eq!(model.form.timezone_input.value(), "日★本/München");
+    }
+
+    #[test]
+    fn test_editor_word_deletion_and_movement() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Location;
+        model.active_setting = 3;
+
+        // Test 1: "Europe/Istanbul"
+        model.form.timezone_input =
+            tui_input::Input::default().with_value(String::from("Europe/Istanbul"));
+        model.start_editing();
+        assert_eq!(model.form.timezone_input.cursor(), 15);
+
+        // Ctrl-W deletes "Istanbul"
+        model.delete_prev_word_active_input();
+        assert_eq!(model.form.timezone_input.value(), "Europe/");
+        assert_eq!(model.form.timezone_input.cursor(), 7);
+
+        // Ctrl-W deletes "Europe/"
+        model.delete_prev_word_active_input();
+        assert_eq!(model.form.timezone_input.value(), "");
+        assert_eq!(model.form.timezone_input.cursor(), 0);
+
+        // Test 2: "My Monitor"
+        model.form.timezone_input =
+            tui_input::Input::default().with_value(String::from("My Monitor"));
+        model.move_cursor_end();
+        model.delete_prev_word_active_input();
+        assert_eq!(model.form.timezone_input.value(), "My ");
+
+        // Test 3: "foo   bar"
+        model.form.timezone_input =
+            tui_input::Input::default().with_value(String::from("foo   bar"));
+        model.move_cursor_end();
+        model.delete_prev_word_active_input();
+        assert_eq!(model.form.timezone_input.value(), "foo   ");
+
+        // Test 4: Word navigation on "192.168.1.1"
+        model.form.timezone_input =
+            tui_input::Input::default().with_value(String::from("192.168.1.1"));
+        model.move_cursor_end();
+        assert_eq!(model.form.timezone_input.cursor(), 11);
+
+        model.move_cursor_prev_word();
+        assert_eq!(model.form.timezone_input.cursor(), 10); // start of "1"
+
+        model.move_cursor_prev_word();
+        assert_eq!(model.form.timezone_input.cursor(), 8); // start of "1"
+
+        model.move_cursor_prev_word();
+        assert_eq!(model.form.timezone_input.cursor(), 4); // start of "168"
+
+        model.move_cursor_prev_word();
+        assert_eq!(model.form.timezone_input.cursor(), 0); // start of "192"
+
+        model.move_cursor_next_word();
+        assert_eq!(model.form.timezone_input.cursor(), 4);
+    }
 }

@@ -464,3 +464,519 @@ pub(crate) fn compute_horizontal_viewport(
         cursor_col,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::tui::model::{settings_index, DaemonConnection, Tab};
+    use crate::tui::test_support::{
+        buffer_row, dummy_status, dummy_weather_status, find_in_buffer, press, two_monitor_model,
+    };
+    use crate::tui::ui;
+    use crate::tui::Model;
+    #[test]
+    fn test_power_management_in_settings() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut model = Model::new();
+        model.active_tab = Tab::Settings;
+        model.active_setting = settings_index::IDLE_DIM;
+
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        assert!(find_in_buffer(&buffer, "Dim when idle").is_some());
+        assert!(find_in_buffer(&buffer, "Power").is_some());
+    }
+
+    #[test]
+    fn test_phase7_settings_workspace_comfortable_layout() {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut model = Model::new();
+        model.config.tui.effects = crate::config::MotionLevel::Instrument;
+        model.motion.level = crate::config::MotionLevel::Instrument;
+        model.active_tab = Tab::Settings;
+        model.active_setting = 0; // Theme
+        model.daemon_connection = DaemonConnection::Connected;
+        model.status = Some(dummy_status(2));
+
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        for group in ["Interface ─", "Power ─", "Weather ─", "Service ─"] {
+            assert!(find_in_buffer(&buffer, group).is_some(), "{group} missing");
+        }
+        for label in [
+            "Theme",
+            "Effects",
+            "Animation rate",
+            "Time format",
+            "Temperature",
+            "Dim when idle",
+            "Suspend for",
+            "Daemon",
+            "Display writes",
+        ] {
+            assert!(find_in_buffer(&buffer, label).is_some(), "{label} missing");
+        }
+        assert!(find_in_buffer(&buffer, "Running").is_some());
+        assert!(find_in_buffer(&buffer, "Enabled").is_some());
+        assert!(find_in_buffer(&buffer, model.config.tui.theme.name()).is_some());
+        assert!(find_in_buffer(&buffer, "Full").is_some());
+        assert!(find_in_buffer(&buffer, "24-hour").is_some());
+        assert!(find_in_buffer(&buffer, "°C").is_some());
+
+        // The panel beside the list explains the focused setting.
+        assert!(find_in_buffer(&buffer, "Colour palette for every screen").is_some());
+
+        // The about panel's title also says "Theme", so locate the list rows by
+        // their cursor gutter.
+        assert!(find_in_buffer(&buffer, "❯ Theme").is_some());
+        assert!(find_in_buffer(&buffer, "❯ Effects").is_none());
+        assert!(find_in_buffer(&buffer, "  Effects").is_some());
+    }
+
+    #[test]
+    fn test_phase7_settings_power_management_semantic_display() {
+        let backend = TestBackend::new(85, 26);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut model = Model::new();
+        model.config.tui.effects = crate::config::MotionLevel::Instrument;
+        model.motion.level = crate::config::MotionLevel::Instrument;
+        model.active_tab = Tab::Settings;
+        model.config.daemon.desktop_idle_sync = false;
+        model.config.daemon.desktop_idle_timeout_minutes = 0;
+        model.form.desktop_idle_timeout_minutes_input =
+            tui_input::Input::default().with_value(String::from("0"));
+        model.form.suspend_minutes_input = tui_input::Input::default();
+
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        // Zero idle minutes displays as Off without min unit
+        assert!(find_in_buffer(&buffer, "Off").is_some());
+        assert!(find_in_buffer(&buffer, "Until resume").is_some());
+
+        // Configure 15 minutes idle and 45 minutes suspend
+        model.config.daemon.desktop_idle_sync = true;
+        model.config.daemon.desktop_idle_timeout_minutes = 15;
+        model.form.desktop_idle_timeout_minutes_input =
+            tui_input::Input::default().with_value(String::from("15"));
+        model.form.suspend_minutes_input =
+            tui_input::Input::default().with_value(String::from("45"));
+
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer2 = terminal.backend().buffer().clone();
+
+        assert!(find_in_buffer(&buffer2, "15").is_some());
+        assert!(find_in_buffer(&buffer2, "45").is_some());
+        assert!(find_in_buffer(&buffer2, "min").is_some());
+    }
+
+    #[test]
+    fn test_phase7_settings_responsive_compact_and_minimal() {
+        // 1. Compact (65x20)
+        {
+            let backend = TestBackend::new(65, 20);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let mut model = Model::new();
+            model.config.tui.effects = crate::config::MotionLevel::Instrument;
+            model.motion.level = crate::config::MotionLevel::Instrument;
+            model.active_tab = Tab::Settings;
+            model.active_setting = settings_index::REFRESH_RATE;
+            model.daemon_connection = DaemonConnection::Connected;
+            model.status = Some(dummy_status(1));
+
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+
+            assert!(find_in_buffer(&buffer, "Interface").is_some());
+            assert!(find_in_buffer(&buffer, "Power").is_some());
+            assert!(find_in_buffer(&buffer, "Effects").is_some());
+            let (rx, ry, _) =
+                find_in_buffer(&buffer, "Animation rate").expect("focused row visible");
+            assert_eq!(buffer.get(rx - 2, ry).symbol(), "❯");
+        }
+
+        // 2. Minimal (50x13)
+        {
+            let backend = TestBackend::new(50, 13);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let mut model = Model::new();
+            model.config.tui.effects = crate::config::MotionLevel::Instrument;
+            model.motion.level = crate::config::MotionLevel::Instrument;
+            model.active_tab = Tab::Settings;
+            model.active_setting = 1; // Effects
+            model.daemon_connection = DaemonConnection::Connected;
+            model.status = Some(dummy_status(1));
+
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+
+            // Focused setting is visible in sliding window
+            assert!(find_in_buffer(&buffer, "Effects").is_some());
+            let (ex, ey, _) = find_in_buffer(&buffer, "Effects").unwrap();
+            assert_eq!(buffer.get(ex - 2, ey).symbol(), "❯");
+        }
+    }
+
+    #[test]
+    fn test_phase7_settings_themes_visual_hierarchy() {
+        for theme in [
+            crate::config::Theme::Amber,
+            crate::config::Theme::Nord,
+            crate::config::Theme::HackerGreen,
+            crate::config::Theme::Grayscale,
+            crate::config::Theme::Commodore64,
+        ] {
+            let backend = TestBackend::new(85, 26);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let mut model = Model::new();
+            model.config.tui.theme = theme;
+            model.config.tui.effects = crate::config::MotionLevel::Instrument;
+            model.motion.level = crate::config::MotionLevel::Instrument;
+            model.active_tab = Tab::Settings;
+            model.active_setting = 1; // Effects focused
+            model.daemon_connection = DaemonConnection::Connected;
+            model.status = Some(dummy_status(1));
+
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+
+            assert!(find_in_buffer(&buffer, "Interface").is_some());
+            assert!(find_in_buffer(&buffer, "Effects").is_some());
+            assert!(find_in_buffer(&buffer, "Full").is_some());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Phase 8: Weather v2 — Atmospheric Control Instrument Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_phase9_3_settings_layout_spacing_and_balance() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Settings;
+        model.daemon_connection = DaemonConnection::Connected;
+        model.status = Some(dummy_status(1));
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        let heading = |text: &str| find_in_buffer(&buffer, text).unwrap();
+        let (interface_x, interface_y, _) = heading("Interface ─");
+        let (power_x, power_y, _) = heading("Power ─");
+        let (weather_x, weather_y, _) = heading("Weather ─");
+        let (service_x, service_y, _) = heading("Service ─");
+
+        // One column in focus order: ↑/↓ never jump sideways.
+        assert_eq!(interface_x, power_x);
+        assert_eq!(power_x, weather_x);
+        assert_eq!(weather_x, service_x);
+        assert!(interface_y < power_y && power_y < weather_y && weather_y < service_y);
+
+        // A blank row separates each group from the last row of the previous one.
+        let (_, temperature_y, _) = find_in_buffer(&buffer, "Temperature").unwrap();
+        assert_eq!(power_y, temperature_y + 2);
+        assert!(
+            buffer_row(&buffer, temperature_y + 1)[..usize::from(interface_x) + 40]
+                .trim_matches(|c| c == ' ' || c == '│')
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_settings_focus_moves_straight_down_one_column() {
+        let mut model = two_monitor_model();
+        model.active_tab = Tab::Settings;
+        model.active_setting = 0;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+
+        let mut previous: Option<(u16, u16)> = None;
+        for step in 0..settings_index::COUNT {
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            let (x, y, _) = find_in_buffer(&buffer, "❯ ").expect("focused row");
+            if let Some((px, py)) = previous {
+                assert_eq!(x, px, "step {step}: the cursor moved sideways");
+                assert!(y > py, "step {step}: ↓ must move down");
+            }
+            previous = Some((x, y));
+            press(&mut model, KeyCode::Down, KeyModifiers::NONE);
+        }
+    }
+    #[test]
+    fn test_editor_horizontal_viewport_clamping_and_scrolling() {
+        use super::compute_horizontal_viewport;
+
+        // Text fits completely in viewport
+        let res = compute_horizontal_viewport("hello", 2, 10);
+        assert_eq!(res.display_text, "hello");
+        assert_eq!(res.cursor_col, 2);
+
+        // Long text with cursor at start (Home)
+        let res = compute_horizontal_viewport("0123456789ABCDEF", 0, 8);
+        assert_eq!(res.display_text, "01234567");
+        assert_eq!(res.cursor_col, 0);
+
+        // Long text with cursor at end (End)
+        let res = compute_horizontal_viewport("0123456789ABCDEF", 16, 8);
+        assert_eq!(res.display_text, "89ABCDEF");
+        assert_eq!(res.cursor_col, 8);
+
+        // Long text with cursor in middle
+        let res = compute_horizontal_viewport("0123456789ABCDEF", 10, 8);
+        assert!(res.cursor_col <= 8);
+        let expected_char = "0123456789ABCDEF".chars().nth(10).unwrap();
+        // Cursor points to 'A' which must be in display_text
+        assert!(res.display_text.contains(expected_char));
+
+        // Unicode test
+        let res = compute_horizontal_viewport("İstanbul/Türkiye", 10, 8);
+        assert!(res.cursor_col <= 8);
+        assert_eq!(res.display_text.chars().count(), 8);
+    }
+
+    #[test]
+    fn test_phase7_settings_navigation_and_effects_toggle_live() {
+        let mut model = Model::new();
+        model.config.tui.effects = crate::config::MotionLevel::Instrument;
+        model.motion.level = crate::config::MotionLevel::Instrument;
+        model.active_tab = Tab::Settings;
+        model.active_setting = 0;
+        assert_eq!(model.tab_field_count(Tab::Settings), 10);
+
+        // 1. Navigate down to Effects (index 1)
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Down,
+            )),
+        );
+        assert_eq!(model.active_setting, 1);
+        assert_eq!(
+            model.config.tui.effects,
+            crate::config::MotionLevel::Instrument
+        );
+        assert_eq!(model.motion.level, crate::config::MotionLevel::Instrument);
+
+        // 2. Press Enter to cycle to Reduced
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Enter,
+            )),
+        );
+        assert_eq!(
+            model.config.tui.effects,
+            crate::config::MotionLevel::Reduced
+        );
+        assert_eq!(model.motion.level, crate::config::MotionLevel::Reduced);
+
+        // 3. Press Space to cycle to Off
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Char(' '),
+            )),
+        );
+        assert_eq!(model.config.tui.effects, crate::config::MotionLevel::Off);
+        assert_eq!(model.motion.level, crate::config::MotionLevel::Off);
+        assert!(model.motion.active_transient.is_none());
+
+        // 4. Press Right to cycle back to Instrument
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Right,
+            )),
+        );
+        assert_eq!(
+            model.config.tui.effects,
+            crate::config::MotionLevel::Instrument
+        );
+        assert_eq!(model.motion.level, crate::config::MotionLevel::Instrument);
+
+        // 5. Press Left to cycle backwards to Off
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Left,
+            )),
+        );
+        assert_eq!(model.config.tui.effects, crate::config::MotionLevel::Off);
+        assert_eq!(model.motion.level, crate::config::MotionLevel::Off);
+    }
+
+    #[test]
+    fn test_phase7_settings_operational_state_and_actions() {
+        let backend = TestBackend::new(85, 26);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut model = Model::new();
+        model.config.tui.effects = crate::config::MotionLevel::Instrument;
+        model.motion.level = crate::config::MotionLevel::Instrument;
+        model.active_tab = Tab::Settings;
+
+        // 1. Disconnected/Offline state
+        model.daemon_connection = crate::tui::model::DaemonConnection::Disconnected;
+        model.status = None;
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer_offline = terminal.backend().buffer().clone();
+        assert!(find_in_buffer(&buffer_offline, "Offline").is_some());
+        assert!(find_in_buffer(&buffer_offline, "daemon service unreachable").is_none());
+
+        // 2. Connected and Suspended state
+        model.daemon_connection = crate::tui::model::DaemonConnection::Connected;
+        let mut status = dummy_status(1);
+        status.suspended = true;
+        status.suspend_until_epoch_s = Some(1_800_000_000);
+        model.status = Some(status);
+
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer_suspended = terminal.backend().buffer().clone();
+        assert!(find_in_buffer(&buffer_suspended, "Suspended").is_some());
+
+        // 3. Suspend & Resume key triggers on Tab::Settings
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Char('s'),
+            )),
+        );
+        assert!(matches!(
+            model.action_state,
+            crate::tui::model::ActionState::Pending {
+                action: crate::tui::model::ActionKind::Suspend,
+                ..
+            }
+        ));
+
+        crate::tui::update::update(
+            &mut model,
+            crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                crossterm::event::KeyCode::Char('r'),
+            )),
+        );
+        assert!(matches!(
+            model.action_state,
+            crate::tui::model::ActionState::Pending {
+                action: crate::tui::model::ActionKind::Resume,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_phase8_2_settings_atmosphere_consolidation_and_editing() {
+        let mut model = Model::new();
+        model.active_tab = Tab::Settings;
+        model.active_setting = crate::tui::model::settings_index::WEATHER_ENABLED;
+        model.daemon_connection = crate::tui::model::DaemonConnection::Connected;
+        model.status = Some(dummy_status(1));
+
+        // 1. Settings shows ATMOSPHERE section with all 4 rows
+        {
+            let backend = TestBackend::new(85, 26);
+            let mut terminal = Terminal::new(backend).unwrap();
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+
+            assert!(find_in_buffer(&buffer, "Weather ─").is_some());
+            assert!(find_in_buffer(&buffer, "Use weather").is_some());
+            assert!(find_in_buffer(&buffer, "Provider").is_some());
+            assert!(find_in_buffer(&buffer, "OpenWeather").is_some());
+            assert!(find_in_buffer(&buffer, "Refresh").is_some());
+            assert!(find_in_buffer(&buffer, "30 min").is_some());
+            assert!(find_in_buffer(&buffer, "API key").is_some());
+        }
+
+        // 2. Weather Tab is purely observational: field count is 0, no API key row
+        {
+            assert_eq!(model.tab_field_count(Tab::Weather), 0);
+            model.active_tab = Tab::Weather;
+            model.config.weather.enabled = true;
+            let mut status = dummy_status(1);
+            status.weather = Some(dummy_weather_status(
+                true,
+                true,
+                false,
+                Some(50),
+                Some(0.8),
+                8,
+            ));
+            model.status = Some(status);
+
+            let backend = TestBackend::new(85, 26);
+            let mut terminal = Terminal::new(backend).unwrap();
+            terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+
+            assert!(find_in_buffer(&buffer, "OpenWeather API key").is_none());
+            assert!(find_in_buffer(&buffer, "OpenWeather API Key").is_none());
+            assert!(find_in_buffer(&buffer, "Up to date").is_some());
+            assert!(find_in_buffer(&buffer, "Current weather").is_none());
+        }
+
+        // 3. Toggle Weather enabled in Settings
+        {
+            model.active_tab = Tab::Settings;
+            model.active_setting = crate::tui::model::settings_index::WEATHER_ENABLED;
+            let initial_enabled = model.config.weather.enabled;
+
+            crate::tui::update::update(
+                &mut model,
+                crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                    crossterm::event::KeyCode::Enter,
+                )),
+            );
+            assert_eq!(model.config.weather.enabled, !initial_enabled);
+        }
+
+        // 4. API Key editing and cancel/save in Settings
+        {
+            model.active_setting = crate::tui::model::settings_index::WEATHER_API_KEY;
+            crate::tui::update::update(
+                &mut model,
+                crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                    crossterm::event::KeyCode::Enter,
+                )),
+            );
+            assert!(matches!(
+                model.input_mode,
+                crate::tui::model::InputMode::Editing
+            ));
+
+            // Type new secret
+            crate::tui::update::update(
+                &mut model,
+                crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                    crossterm::event::KeyCode::Char('k'),
+                )),
+            );
+
+            // Cancel with Esc
+            crate::tui::update::update(
+                &mut model,
+                crate::tui::update::Message::Key(crossterm::event::KeyEvent::from(
+                    crossterm::event::KeyCode::Esc,
+                )),
+            );
+            assert!(matches!(
+                model.input_mode,
+                crate::tui::model::InputMode::Normal
+            ));
+        }
+    }
+}

@@ -395,3 +395,27 @@ pub struct Model {
     /// so ←/→ rather than ↑/↓ change monitor there.
     pub(crate) monitor_selector_horizontal: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ResponsiveMode;
+
+    #[test]
+    fn test_responsive_mode_detection() {
+        assert_eq!(
+            ResponsiveMode::from_size(80, 24),
+            ResponsiveMode::Comfortable
+        );
+        assert_eq!(
+            ResponsiveMode::from_size(100, 30),
+            ResponsiveMode::Comfortable
+        );
+        assert_eq!(ResponsiveMode::from_size(60, 20), ResponsiveMode::Compact);
+        assert_eq!(ResponsiveMode::from_size(70, 18), ResponsiveMode::Compact);
+        assert_eq!(ResponsiveMode::from_size(40, 16), ResponsiveMode::Minimal);
+        assert_eq!(ResponsiveMode::from_size(50, 14), ResponsiveMode::Minimal);
+        assert_eq!(ResponsiveMode::from_size(35, 16), ResponsiveMode::TooSmall);
+        assert_eq!(ResponsiveMode::from_size(60, 10), ResponsiveMode::TooSmall);
+        assert_eq!(ResponsiveMode::from_size(20, 8), ResponsiveMode::TooSmall);
+    }
+}
