@@ -24,6 +24,7 @@ pub(super) struct RuntimeDaemonConfig {
     pub desktop_idle_sync: bool,
     pub desktop_idle_timeout_minutes: u64,
     pub apply_reassert_minutes: u64,
+    pub probe_seconds: u64,
     pub ddc_timeout_seconds: u64,
     pub backlight_timeout_seconds: u64,
 }
@@ -45,6 +46,7 @@ impl RuntimeConfig {
                 desktop_idle_sync: report.config.daemon.desktop_idle_sync,
                 desktop_idle_timeout_minutes: report.config.daemon.desktop_idle_timeout_minutes,
                 apply_reassert_minutes: report.config.daemon.apply_reassert_minutes,
+                probe_seconds: report.config.daemon.probe_seconds,
                 ddc_timeout_seconds: report.config.daemon.ddc_timeout_seconds,
                 backlight_timeout_seconds: report.config.daemon.backlight_timeout_seconds,
             },

@@ -174,6 +174,17 @@ fn read_verified_bus_in<R: ProcessRunner>(
     else {
         return Ok(None);
     };
+    // A display the kernel reports as powered off cannot answer, and asking
+    // over I2C would only add bus traffic. Reading the connector's power state
+    // costs microseconds and works on every desktop and display server.
+    if connector_is_powered_off(&monitor.selector, drm) {
+        return Err(BackendError::Io {
+            backend: BackendKind::Ddc,
+            program: String::from("drm"),
+            message: String::from("display is powered off"),
+            attempts: 0,
+        });
+    }
     let mut args = vec![String::from("--noconfig"), String::from("--terse")];
     args.extend(selection.args.iter().cloned());
     args.push(String::from("getvcp"));
@@ -279,6 +290,25 @@ fn drm_root() -> &'static Path {
 /// the same identity evidence locally, and its I2C bus is then addressed
 /// directly. Every configured identity field must match; otherwise the normal
 /// ddcutil selection is used.
+/// Whether the kernel reports this monitor's connector as powered off
+/// (DPMS off or disconnected). Unknown states count as powered on, so a
+/// system without the `dpms` attribute keeps probing over DDC.
+fn connector_is_powered_off(selector: &MonitorSelector, root: &Path) -> bool {
+    let Some(connector) = normalized(&selector.connector) else {
+        return false;
+    };
+    if connector.contains('/') || connector.starts_with('.') {
+        return false;
+    }
+    let directory = root.join(&connector);
+    let off = |file: &str, on: &str| {
+        std::fs::read_to_string(directory.join(file))
+            .ok()
+            .is_some_and(|value| !value.trim().eq_ignore_ascii_case(on))
+    };
+    off("status", "connected") || off("dpms", "on")
+}
+
 fn verified_bus_selection(
     identity: &DdcSelectorPlan,
     selector: &MonitorSelector,
@@ -723,6 +753,52 @@ mod tests {
         .expect("no error")
         .is_none());
         assert!(none.calls().is_empty());
+    }
+
+    #[test]
+    fn a_powered_off_display_is_reported_without_touching_the_bus() {
+        let root = tempfile::tempdir().unwrap();
+        let dp = connector(
+            root.path(),
+            "card1-DP-1",
+            "connected",
+            &edid("Mi Monitor", "X1"),
+        );
+        std::fs::create_dir(dp.join("i2c-7")).unwrap();
+        let monitor = ddc_monitor(identified("card1-DP-1", "Mi Monitor", None));
+        let read = || {
+            let runner = FakeRunner::new().with_success(
+                "ddcutil",
+                &["--noconfig", "--terse", "--bus", "7", "getvcp", "10"],
+                "VCP 10 C 41 100\n",
+            );
+            let result =
+                super::read_verified_bus_in(&runner, &monitor, Duration::from_secs(1), root.path());
+            (result, runner.calls().len())
+        };
+
+        // No `dpms` attribute: the kernel tells us nothing, so DDC is used.
+        let (result, calls) = read();
+        assert_eq!(result.expect("read").map(|value| value.percent), Some(41));
+        assert_eq!(calls, 1);
+
+        std::fs::write(dp.join("dpms"), "On\n").unwrap();
+        let (result, calls) = read();
+        assert_eq!(result.expect("read").map(|value| value.percent), Some(41));
+        assert_eq!(calls, 1);
+
+        // Powered off: reported as unreachable with no ddcutil call at all.
+        std::fs::write(dp.join("dpms"), "Off\n").unwrap();
+        let (result, calls) = read();
+        assert!(result.is_err());
+        assert_eq!(calls, 0, "no bus traffic while powered off");
+
+        // A disconnected connector has nothing to verify against.
+        std::fs::write(dp.join("dpms"), "On\n").unwrap();
+        std::fs::write(dp.join("status"), "disconnected\n").unwrap();
+        let (result, calls) = read();
+        assert!(result.expect("no verified connector").is_none());
+        assert_eq!(calls, 0);
     }
 
     #[test]

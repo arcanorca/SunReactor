@@ -21,7 +21,7 @@ use crate::policy::{PolicyError, PolicyOutput};
 use crate::runtime::capabilities::{CapabilityRefreshPublication, CapabilityRefreshState};
 use crate::runtime::runtime_config::RuntimeConfig;
 use crate::runtime::topology::CapabilitySnapshot;
-use crate::runtime::wake::{WakeReason, WakeWatch};
+use crate::runtime::wake::{ProbeOutcome, ProbeSchedule, WakeReason};
 use crate::runtime::weather_refresh::WeatherRefreshState;
 use crate::solar::{SolarError, SolarSample};
 use crate::state::{RuntimeState, StateError};
@@ -68,7 +68,7 @@ pub struct DaemonRuntime {
     /// Not persisted; kept separate from user config.
     pub last_capabilities: Option<CapabilitySnapshot>,
     pub(super) capability_refresh: CapabilityRefreshState,
-    pub(super) wake_watch: WakeWatch,
+    pub(super) probe_schedule: ProbeSchedule,
     pub(super) display_events: Option<DisplayEventSources>,
 }
 
@@ -155,14 +155,15 @@ impl DaemonRuntime {
         }
     }
 
-    /// Opens (or extends) the wake watch; probes then fix any brightness a
-    /// waking monitor or the desktop restored on its own.
+    /// Speeds probes up after a wake hint; probes then fix any brightness a
+    /// waking monitor or the desktop restored on its own. Hints are optional:
+    /// the schedule finds the same wake by itself, just a little later.
     pub(super) fn request_wake_reassert(&mut self, reason: WakeReason) -> bool {
-        let opened = self.wake_watch.start(reason, Instant::now());
+        let opened = self.probe_schedule.signal(reason, Instant::now());
         if opened {
-            tracing::info!(reason = ?reason, "wake_watch_started");
+            tracing::info!(reason = ?reason, "probe_fast_window_opened");
         } else {
-            tracing::debug!(reason = ?reason, "wake_watch_extended");
+            tracing::debug!(reason = ?reason, "probe_fast_window_extended");
         }
         opened
     }
@@ -180,11 +181,16 @@ impl DaemonRuntime {
         }
     }
 
-    /// One wake probe: compute the current targets and correct any monitor
-    /// that answers with a different brightness.
-    pub(super) fn run_wake_probe<R: ProcessRunner>(&mut self, now_utc: DateTime<Utc>, runner: &R) {
+    /// One probe: read every monitor that can be read cheaply and correct any
+    /// whose brightness differs from its target. The outcome drives the next
+    /// probe time, so a sleeping monitor is polled until it answers.
+    pub(super) fn run_wake_probe<R: ProcessRunner>(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        runner: &R,
+    ) -> ProbeOutcome {
         if self.fade_engine.is_fading() {
-            return;
+            return ProbeOutcome::default();
         }
         let computed = match self
             .collect_tick_inputs(now_utc, false)
@@ -193,11 +199,11 @@ impl DaemonRuntime {
             Ok(computed) => computed,
             Err(error) => {
                 tracing::debug!(error = %error, "wake_probe_policy_unavailable");
-                return;
+                return ProbeOutcome::default();
             }
         };
         if computed.suspended {
-            return;
+            return ProbeOutcome::default();
         }
         let settings = self.force_apply_settings();
         let summary = apply::probe_and_correct(
@@ -209,14 +215,20 @@ impl DaemonRuntime {
             computed.inputs.now_epoch_s,
         );
         tracing::debug!(
-            probe = self.wake_watch.probes(),
+            probe = self.probe_schedule.probes(),
             answered = summary.answered,
+            unreachable = summary.unreachable,
             corrected = summary.corrected,
             failed = summary.failed,
-            "wake_probe_completed"
+            "probe_completed"
         );
         if summary.corrected > 0 {
             let _ = self.persist_state_if_changed();
+        }
+        ProbeOutcome {
+            answered: summary.answered,
+            unreachable: summary.unreachable,
+            corrected: summary.corrected,
         }
     }
 
@@ -455,6 +467,10 @@ impl DaemonRuntime {
             endpoint: crate::paths::IpcEndpoint::NamedPipe(socket_path.display().to_string()),
         };
         let config = RuntimeConfig::from_report(config)?;
+        let probe_schedule = ProbeSchedule::new(
+            Duration::from_secs(config.daemon.probe_seconds),
+            Instant::now(),
+        );
         let persisted_state_snapshot = state.normalized_for_persistence();
         let initial_weather = state.weather.clone();
 
@@ -476,7 +492,7 @@ impl DaemonRuntime {
             weather_engine,
             last_capabilities: None,
             capability_refresh: CapabilityRefreshState::default(),
-            wake_watch: WakeWatch::default(),
+            probe_schedule,
             display_events: None,
         };
 
@@ -1888,6 +1904,7 @@ mod tests {
                     desktop_idle_timeout_minutes: 0,
                     log_level: LogLevel::Info,
                     apply_reassert_minutes: 2,
+                    probe_seconds: 15,
                     ddc_timeout_seconds: 4,
                     backlight_timeout_seconds: 2,
                 },

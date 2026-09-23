@@ -5,6 +5,12 @@ dry_run = false
 # dims/locks and re-sync brightness after wake. Disable it if your desktop power
 # manager should keep full control over idle/wake brightness behavior.
 desktop_idle_sync = true
+# Seconds between brightness read-backs. This is how sunreactor notices that a
+# monitor woke up, or that the desktop changed brightness behind its back, on
+# any distribution or desktop. Sleeping monitors are detected through the
+# kernel and cost no monitor traffic. Set to 0 to rely on desktop wake signals
+# only.
+probe_seconds = 15
 log_level = "info"
 
 [location]
