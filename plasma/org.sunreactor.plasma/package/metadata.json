@@ -1,0 +1,26 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "SunReactor Developers",
+                "Email": "noreply@sunreactor.org"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Screen brightness that follows the sun and the weather",
+        "EnabledByDefault": true,
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "org.sunreactor.plasma",
+        "Id": "org.sunreactor.plasma",
+        "License": "MIT",
+        "Name": "SunReactor",
+        "Version": "1.0.0",
+        "Website": "https://github.com/arcanorca/SunReactor"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "Keywords": "Brightness;Display;Monitor;Screen;Backlight;Sun;Solar;Daylight;Night;Weather;DDC;SunReactor",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationAreaCategory": "Hardware"
+}

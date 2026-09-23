@@ -33,3 +33,7 @@ cities15000.zip
 .backups/
 AGENTS.md
 OPTIMIZATIONS.md
+
+.claude/
+plasma/**/build/
+plasma/**/__pycache__/
