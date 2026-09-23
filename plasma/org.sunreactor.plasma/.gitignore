@@ -1,0 +1,6 @@
+build/
+.cache/
+__pycache__/
+*.kdev4
+.idea/
+.vscode/

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <kcfgfile name=""/>
+    <group name="General">
+        <!-- Empty means the default socket under XDG_RUNTIME_DIR. -->
+        <entry name="socketPath" type="String">
+            <default></default>
+        </entry>
+        <!-- Panel: the outside temperature next to the weather sprite. -->
+        <entry name="showTemperature" type="Bool">
+            <default>true</default>
+        </entry>
+        <!-- Panel and popup: how high the sun stands, in degrees. -->
+        <entry name="showSolarElevation" type="Bool">
+            <default>false</default>
+        </entry>
+        <!-- How long a pause lasts, in minutes; 0 means until resumed. -->
+        <entry name="defaultSuspendMinutes" type="Int">
+            <default>60</default>
+        </entry>
+        <!-- How long a brightness set by hand lasts, in minutes; 0 never expires. -->
+        <entry name="overrideDurationMinutes" type="Int">
+            <default>60</default>
+        </entry>
+    </group>
+</kcfg>

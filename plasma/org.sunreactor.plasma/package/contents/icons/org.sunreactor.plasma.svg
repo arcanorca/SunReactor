@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <title>Adaptive brightness</title>
+  <!--
+    The sun on the horizon: the lit half above the line is the part of the day
+    the daemon reacts to, the muted half below it is night. Flat Breeze
+    geometry, no gradients or filters, so it stays legible down to 22px.
+  -->
+  <g stroke-linecap="round" fill="none">
+    <!-- Horizon, drawn only beside the disc so the split edge stays crisp -->
+    <g stroke="#2980b9" stroke-width="3">
+      <path d="M5 29h6.5"/>
+      <path d="M36.5 29H43"/>
+    </g>
+    <!-- Rays -->
+    <g stroke="#f67400" stroke-width="3">
+      <path d="M24 15v-4.5"/>
+      <path d="M33.9 19.1 37.1 15.9"/>
+      <path d="M14.1 19.1 10.9 15.9"/>
+    </g>
+  </g>
+  <!-- Below the horizon -->
+  <path d="M13.5 29a10.5 10.5 0 0 0 21 0z" fill="#2980b9"/>
+  <!-- Above the horizon -->
+  <path d="M13.5 29a10.5 10.5 0 0 1 21 0z" fill="#f67400"/>
+</svg>

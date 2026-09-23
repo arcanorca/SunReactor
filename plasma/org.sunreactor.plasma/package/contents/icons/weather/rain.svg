@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"
+     width="16" height="16" shape-rendering="crispEdges">
+  <title>rain</title>
+  <rect x="5" y="1" width="4" height="1" fill="#dee3ec"/>
+  <rect x="3" y="2" width="2" height="1" fill="#dee3ec"/>
+  <rect x="5" y="2" width="4" height="1" fill="#c2c9d5"/>
+  <rect x="9" y="2" width="2" height="1" fill="#dee3ec"/>
+  <rect x="2" y="3" width="1" height="1" fill="#dee3ec"/>
+  <rect x="3" y="3" width="8" height="1" fill="#c2c9d5"/>
+  <rect x="11" y="3" width="1" height="1" fill="#dee3ec"/>
+  <rect x="13" y="3" width="2" height="1" fill="#dee3ec"/>
+  <rect x="1" y="4" width="1" height="1" fill="#dee3ec"/>
+  <rect x="2" y="4" width="10" height="1" fill="#c2c9d5"/>
+  <rect x="12" y="4" width="1" height="1" fill="#dee3ec"/>
+  <rect x="13" y="4" width="2" height="1" fill="#c2c9d5"/>
+  <rect x="15" y="4" width="1" height="1" fill="#dee3ec"/>
+  <rect x="0" y="5" width="1" height="1" fill="#dee3ec"/>
+  <rect x="1" y="5" width="14" height="1" fill="#c2c9d5"/>
+  <rect x="15" y="5" width="1" height="1" fill="#a2abba"/>
+  <rect x="0" y="6" width="2" height="1" fill="#a2abba"/>
+  <rect x="2" y="6" width="12" height="1" fill="#c2c9d5"/>
+  <rect x="14" y="6" width="1" height="1" fill="#a2abba"/>
+  <rect x="15" y="6" width="1" height="1" fill="#7e8798"/>
+  <rect x="1" y="7" width="2" height="1" fill="#7e8798"/>
+  <rect x="3" y="7" width="10" height="1" fill="#a2abba"/>
+  <rect x="13" y="7" width="2" height="1" fill="#7e8798"/>
+  <rect x="3" y="10" width="1" height="1" fill="#a9daff"/>
+  <rect x="11" y="10" width="1" height="1" fill="#a9daff"/>
+  <rect x="3" y="11" width="1" height="1" fill="#5da9ef"/>
+  <rect x="7" y="11" width="1" height="1" fill="#a9daff"/>
+  <rect x="11" y="11" width="1" height="1" fill="#5da9ef"/>
+  <rect x="3" y="12" width="1" height="1" fill="#5da9ef"/>
+  <rect x="7" y="12" width="1" height="1" fill="#5da9ef"/>
+  <rect x="11" y="12" width="1" height="1" fill="#5da9ef"/>
+  <rect x="7" y="13" width="1" height="1" fill="#5da9ef"/>
+</svg>
