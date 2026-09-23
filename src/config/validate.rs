@@ -9,6 +9,9 @@ const MAX_GAIN: f64 = 4.0;
 /// persisted configuration validation would reject.
 pub const MAX_TRANSITION_GAMMA: f64 = 4.0;
 const MIN_TICK_SECONDS: u64 = 5;
+/// Below this the daemon would keep the I2C bus needlessly busy.
+const MIN_PROBE_SECONDS: u64 = 2;
+const MAX_PROBE_SECONDS: u64 = 3600;
 const MIN_WEATHER_REFRESH_MINUTES: u32 = 10;
 
 impl Config {
@@ -20,6 +23,15 @@ impl Config {
             errors.push(ValidationError::new(
                 "daemon.tick_seconds",
                 format!("must be at least {MIN_TICK_SECONDS} to avoid busy polling"),
+            ));
+        }
+
+        if self.daemon.probe_seconds != 0
+            && !(MIN_PROBE_SECONDS..=MAX_PROBE_SECONDS).contains(&self.daemon.probe_seconds)
+        {
+            errors.push(ValidationError::new(
+                "daemon.probe_seconds",
+                format!("must be 0 (disabled) or within {MIN_PROBE_SECONDS}..={MAX_PROBE_SECONDS}"),
             ));
         }
 

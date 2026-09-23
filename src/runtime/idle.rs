@@ -975,6 +975,7 @@ mod tests {
                     desktop_idle_timeout_minutes: 0,
                     log_level: LogLevel::Info,
                     apply_reassert_minutes: 2,
+                    probe_seconds: 15,
                     ddc_timeout_seconds: 4,
                     backlight_timeout_seconds: 2,
                 },

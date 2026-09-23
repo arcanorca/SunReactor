@@ -336,14 +336,16 @@ impl DaemonRuntime {
             if DesktopIdleSync::take_input_resume() {
                 let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
             }
-            if self.wake_watch.take_due_probe(Instant::now()) {
-                self.run_wake_probe(now_utc, &RealProcessRunner);
+            let probe_at = Instant::now();
+            if self.probe_schedule.take_due_probe(probe_at) {
+                let outcome = self.run_wake_probe(now_utc, &RealProcessRunner);
+                self.probe_schedule.note_outcome(outcome, Instant::now());
                 continue;
             }
 
             let next_deadline = [
                 desktop_idle.next_deadline(),
-                self.wake_watch.next_deadline(),
+                self.probe_schedule.next_deadline(),
             ]
             .into_iter()
             .flatten()

@@ -122,22 +122,32 @@ observed value; blindly reapplying policy in that case could overwrite an unrela
 
 ### Linux Lifecycle Recovery
 
-On Linux, DRM connector kobject-uevents, the systemd-logind `PrepareForSleep(false)` transition,
-a detected suspend time jump, the Wayland `ext-idle-notify` resume event, and the `idle-wake`
-request are wake hints. Listener threads only raise a flag or enqueue a bounded request; they never
-call a brightness backend. The Wayland watcher runs inside the daemon and signals it directly, so it
-does not depend on `sunreactorctl` being on the service's `PATH`.
+Brightness can be changed behind the daemon's back: desktop compositors such as KWin keep their
+own saved DDC/CI value and write it when a display wakes, and a monitor that has just powered on
+may come back at its own stored level. Wake signals are not dependable for this. DRM uevents,
+logind `PrepareForSleep(false)`, and idle-resume exist only on some systems, and a DPMS transition
+does not have to produce any of them, so a session can pass without a single hint.
 
-Any wake hint opens a one-minute **wake watch** (a newer hint extends it). Half a second after the
-hint, and then every two seconds, the daemon computes the current solar, weather, and override
-policy and probes each enabled monitor: DDC monitors are read only over their EDID-verified
-connector bus (about 40 ms, no identity search), backlights through sysfs. A monitor that does not
-answer yet, because it is still waking, is skipped quietly with no backoff and probed again next
-time. A matching value produces no write; a different value is corrected at once to the current
-target. The watch exists because desktop compositors such as KWin keep their own saved DDC/CI
-brightness and write it back a few seconds after a display wakes; the probes overwrite that within
-about two seconds instead of waiting for the next integrity deadline. DDC monitors without a
-verifiable connector are left to regular ticks.
+The daemon therefore treats the hardware as the source of truth and runs a **probe schedule**
+(`runtime/wake.rs`) that does not depend on any signal:
+
+- Every `daemon.probe_seconds` (15 by default, `0` disables it) each enabled monitor is read back:
+  DDC monitors over their EDID-verified connector bus (about 40 ms, no identity search), backlights
+  through sysfs. A matching value produces no write; a different value is corrected at once.
+- Before any DDC read, the connector's kernel power state (`status` and `dpms` under
+  `/sys/class/drm`) is checked. A display the kernel reports as off or disconnected is counted as
+  unreachable without any monitor traffic. This works the same on X11, Wayland, and a bare console.
+- While a monitor is unreachable, probes pulse every two seconds. Those pulses are just kernel
+  attribute reads, so waiting for a display to wake costs effectively nothing.
+- When an unreachable monitor answers again, that **is** the wake, whatever the desktop is. It
+  opens a one-minute fast window with probes every two seconds, which catches the value a
+  compositor writes a few seconds after the display returns.
+- A correction opens the same fast window, because whatever wrote once may write again.
+- Wake signals, when a system does provide them, only open that window sooner. They are an
+  accelerator, never a requirement.
+
+Monitors without a verifiable connector cannot be probed cheaply and are left to regular ticks and
+the periodic integrity deadline.
 
 DRM events are filtered to display connector events; unrelated uevents are ignored. Logind and DRM
 listener failure is non-fatal, and periodic capability observation/integrity reconciliation remains

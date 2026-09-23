@@ -72,6 +72,9 @@ pub(crate) struct ProbeSummary {
     pub(crate) corrected: usize,
     /// Rewrites that failed; the next probe tries again.
     pub(crate) failed: usize,
+    /// Monitors that should answer but did not: asleep, or still waking.
+    /// Monitors that cannot be probed cheaply are not counted here.
+    pub(crate) unreachable: usize,
 }
 
 /// A wake probe: reads each enabled monitor cheaply and rewrites any whose
@@ -122,6 +125,7 @@ fn probe_and_correct_with(
             Ok(Some(observation)) => observation.percent,
             Ok(None) => continue,
             Err(error) => {
+                summary.unreachable += 1;
                 tracing::debug!(
                     logical_id = %monitor.logical_id,
                     error = %error,
@@ -981,7 +985,8 @@ mod tests {
             ProbeSummary {
                 answered: 2,
                 corrected: 1,
-                failed: 0
+                failed: 0,
+                unreachable: 1,
             }
         );
         assert_eq!(

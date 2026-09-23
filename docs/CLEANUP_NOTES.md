@@ -65,21 +65,20 @@ compiler still warns.
 - `light_cycle::mix` is used by weather code as a general colour helper; it
   belongs in `theme.rs` or `kit.rs`.
 
-## Left behind by the wake watch
+## Probe schedule
 
-- `lifecycle_recovery` in `DaemonRuntime::run_once_at_with_runner_mode` and
-  `apply::apply_policy_with_runner_reconciled_mode` is now always `false`; the
-  wake watch (`runtime/wake.rs`, `apply::probe_and_correct`) replaced its only
-  caller. The parameter and its log branches can go.
-- `WakeReassertReason::{Startup, ManualWake, TopologyRecovery}` are never
-  constructed; the enum could also be renamed `WakeReason`.
+- The signal-driven wake watch became `runtime/wake.rs::ProbeSchedule`, which
+  probes on a steady cadence (`daemon.probe_seconds`) and derives wakes from
+  the hardware. The earlier `lifecycle_recovery` apply mode and the unused
+  `WakeReason` variants are gone.
 
 ## Behaviour worth a follow-up (not cleanup)
 
 - The daemon runs a full `ddcutil detect` (~5 s of I2C traffic) before every
-  tick. Presence could be checked each tick with the EDID-verified connector
-  lookup added in `backends/ddc.rs`, keeping the full scan for startup,
-  hotplug, and resume.
+  tick. That is now the heaviest recurring cost, far above the probe schedule.
+  Presence could be checked each tick with the EDID-verified connector lookup
+  and the connector power state in `backends/ddc.rs`, keeping the full scan for
+  startup, hotplug, and resume.
 - `ddcutil detect` occasionally reports a display as invalid when another
   ddcutil process holds the bus, which marks that monitor unavailable for one
   tick.
