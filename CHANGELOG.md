@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - 2026-09-25
+## [0.12.0] - 2026-09-25
 
 ### Added
 - **KDE Plasma 6 Native Panel Integration (`plasma/org.sunreactor.plasma/`)**:
