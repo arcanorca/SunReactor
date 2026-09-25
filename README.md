@@ -25,8 +25,7 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` featuri
   <img src="docs/images/SunReactor_4.png" alt="Weather Forecast & Temperature (Cyberpunk Theme)" width="31%" style="margin: 0.5%; border-radius: 8px;" />
   <img src="docs/images/SunReactor_5.png" alt="Theme Selector Modal (Synthwave '84 Theme)" width="31%" style="margin: 0.5%; border-radius: 8px;" />
 </div>
-
-*Shown above: **Monitors** (Amber), **Automation & Daylight Curve** (Terminal), **Location & Orthographic Earth Globe** (Commodore 64), **24h Forecast & Solar Radiance** (Cyberpunk), and the **Theme Picker Modal** (Synthwave '84).*
+<br/>
 
 ---
 
