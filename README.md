@@ -2,162 +2,175 @@
   <img src="docs/images/banner.svg" alt="SunReactor Logo" width="95%">
   <br/>
   <a href="https://ratatui.rs"><img src="https://img.shields.io/badge/Built_with-Ratatui-000?logo=ratatui&logoColor=fff&labelColor=201a16&color=ffd970" alt="Built with Ratatui" /></a>
+  <img src="https://img.shields.io/badge/Language-Rust_1.80+-orange?logo=rust&logoColor=white" alt="Rust" />
+  <img src="https://img.shields.io/badge/Platform-Linux_|_Windows-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License" />
 </div>
 
-
-**SunReactor** is a lightweight, headless Rust daemon designed to automate monitor hardware brightness. By calculating solar elevation based on your exact geolocation and time, it generates a brightness curve that adapts to seasonal daylight shifts. Combined with real-time cloudiness data from the OpenWeather API and customizable limits via a dedicated TUI, the daemon manages your displays in the background.
-
-## // PREVIEW
-
-<div align="center">
-  <img src="docs/images/SunReactor_1.png" alt="Dashboard" width="48%" style="margin: 0.5%; border-radius: 8px;" />
-  <img src="docs/images/SunReactor_2.png" alt="Monitor Focus" width="48%" style="margin: 0.5%; border-radius: 8px;" />
-  <br/>
-  <img src="docs/images/SunReactor_3.png" alt="Theme Menu" width="31%" style="margin: 0.5%; border-radius: 8px;" />
-  <img src="docs/images/SunReactor_4.png" alt="Weather Chart" width="31%" style="margin: 0.5%; border-radius: 8px;" />
-  <img src="docs/images/SunReactor_5.png" alt="Settings" width="31%" style="margin: 0.5%; border-radius: 8px;" />
-</div>
 <br/>
 
-## // THE AUTOMATION
-
-A fixed clock schedule (like dimming the screen exactly at 8:00 PM) falls out of sync because daylight hours shift between seasons in many regions.  SunReactor uses the sun's elevation above the horizon to calculate brightness change.
-
-```text
-        ☀ (Solar Noon) --> Max Brightness
-       /  \
-     /      \ (Smoothly dimming via gamma curve)
-   /          \
-- 0° (Horizon) ------------------------------
-                \
-                  \ ☾ (Night) --> Min Brightness
-```
-
-> ### 🧮 The Math
-> **1. Smoothstep:** `t = (Elevation - NightFloor) / (DayPeak - NightFloor)`, then `s(t) = t²(3 - 2t)`
-> **2. Response exponent:** `curve = s(t)^γ`; `transition_gamma` is a user-tunable easing/response exponent, not a calibrated perceptual model
-> **3. Projection:** map the curve into each monitor's `[min_pct, max_pct]`, then apply monitor gain and the bounded weather multiplier with clamping
-
-- **Local by Default:** SunReactor does all the daylight math locally. Basically, it generates an adaptive brightness curve based on your selected city’s sunrise/sunset times for the current date. Since that is deterministic, it can work completely offline, with the sole exception of the optional weather integration.
-
-- **Multi-Monitor Support:** 50% brightness on an IPS panel looks different than 50% on a VA or OLED. You can set distinct minimum, maximum, gamma curvature, and gain values for each display. The daemon calculates each monitor's brightness independently.
-
-## // ARCHITECTURE & CONSTRAINTS
-
-SunReactor is built to be predictable and stay out of the way:
-
-- **Hardware Control:** Adjusts the actual backlight via `ddcutil` (external) and `sysfs` / `brightnessctl` (internal).
-- **Synchronous:** No async runtime. It executes a simple synchronous loop: wake, compute, write to hardware, sleep..
-- **Unprivileged:** Runs as a systemd user service. No root access or dbus required.
-- **Idle Sync:** Includes its own automatic screen dimming feature by integrating directly with Wayland/X11 idle protocols. This allows you to turn off native DE power management to prevent conflicting brightness states, ensuring displays wake up directly to the latest solar calculation rather than a cached value.
-- **Optional Weather:** If you provide a free OpenWeather API key, the daemon reads cloud cover from the OpenWeather 5-day / 3-hour forecast endpoint and slightly dims your displays on overcast days. The first returned value is a forecast interval, not a current meteorological observation; it is retained as a bounded forecast-derived product heuristic and acts only as a multiplier over the base solar calculation. Additionally, the TUI provides forecast rows and charts from the remaining forecast intervals.
-
-## // Installation
-
-### Release artifacts and verification
-
-Linux archives use explicit architecture and libc names: `x86_64-gnu`, `aarch64-gnu`, `x86_64-musl`, and `aarch64-musl`. The installer detects architecture and libc, downloads the matching archive plus `SHA256SUMS`, verifies SHA-256 before extraction, validates archive members, and rejects unknown libc environments. Checksums protect transfer integrity but do not independently prove provenance; release archives are additionally covered by GitHub artifact attestations. Optional verification:
-
-```sh
-gh attestation verify sunreactor-<version>-linux-x86_64-gnu.tar.gz -R arcanorca/SunReactor
-```
-
-Release builds use the pinned Rust toolchain, `Cargo.lock`, `--locked`, and native x86_64/aarch64 runners where available. GNU/musl claims are limited to tested targets and environments; `ddcutil` and `brightnessctl` remain optional backend-specific runtime dependencies.
-
-### Supported Linux Distributions
-
-SunReactor officially supports modern systemd-based x86_64 Linux distributions across Wayland and X11 desktop environments, including:
-* **Arch Linux / CachyOS / EndeavourOS** (Rolling)
-* **Ubuntu 26.04 LTS & 24.04 LTS** (and compatible derivatives such as Linux Mint 22.x, Pop!_OS)
-* **Debian 13 (Trixie)** (Stable)
-* **Fedora 44 & 43** (and Nobara Linux)
-* **openSUSE Tumbleweed**
-
-Prebuilt release binaries are compiled against a conservative `GLIBC_2.34` baseline and run on glibc >= 2.34 systems (including Ubuntu 22.04 LTS). For detailed distribution matrices, ddcutil version policies, and session qualification notes, see [Distribution Compatibility](docs/DISTRIBUTION_COMPATIBILITY.md).
-
-### Prerequisites
-
-SunReactor relies on standard userspace utilities to control hardware brightness:
-
-- **For External Monitors (DDC/CI):** Ensure `ddcutil` is installed (minimum v1.4.1, recommended >= 2.2.0).
-  - Arch: `sudo pacman -S ddcutil`
-  - Fedora: `sudo dnf install ddcutil`
-  - Ubuntu/Debian: `sudo apt install ddcutil`
-  - openSUSE: `sudo zypper install ddcutil`
-- **For Laptop Panels:** Ensure `brightnessctl` is installed (or rely on sysfs fallback).
-  - Arch: `sudo pacman -S brightnessctl`
-  - Fedora: `sudo dnf install brightnessctl`
-  - Ubuntu/Debian: `sudo apt install brightnessctl`
-  - openSUSE: `sudo zypper install brightnessctl`
-
-> [!NOTE]
-> On modern systemd distributions, the `ddcutil` package installs udev rules that grant the active desktop user access automatically via `uaccess`. If your user lacks access, add your user to the `i2c` group (`sudo usermod -aG i2c $USER`), ensure the `i2c-dev` module is loaded (`sudo modprobe i2c-dev`), and relogin.
+**SunReactor** is an ultra-low overhead, deterministic hardware brightness automation engine written in pure Rust. Operating as an unprivileged background daemon, it continuously aligns display luminance with the astronomical solar elevation curve calculated for your exact geographic coordinates. The engine combines local astronomical ephemeris algorithms, bounded meteorological cloud-cover heuristics, and hardware-truth reconciliation loops to deliver jitter-free, failure-isolated backlight management across multi-display workspaces.
 
 ---
 
-### Option A: Automated Installer
+## // PREVIEW (TUI WORKSPACES & THEMES)
 
-The easiest way to install SunReactor is using our automated installation script. It downloads the latest pre-built binary, installs the user-local files, and uses a systemd user service when a usable user manager is available.
+SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 28 built-in themes, orthographic daylight globes, and real-time hardware telemetry:
 
+<div align="center">
+  <img src="docs/images/SunReactor_1.png" alt="Monitors Workspace (Amber Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
+  <img src="docs/images/SunReactor_2.png" alt="Automation & Light Cycle (Terminal Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
+  <br/>
+  <img src="docs/images/SunReactor_3.png" alt="Solar Location & Globe (Commodore 64 Theme)" width="31%" style="margin: 0.5%; border-radius: 8px;" />
+  <img src="docs/images/SunReactor_4.png" alt="Weather Forecast & Temperature (Cyberpunk Theme)" width="31%" style="margin: 0.5%; border-radius: 8px;" />
+  <img src="docs/images/SunReactor_5.png" alt="Theme Selector Modal (Synthwave '84 Theme)" width="31%" style="margin: 0.5%; border-radius: 8px;" />
+</div>
+
+*Shown above: **Monitors** (Amber), **Automation & Daylight Curve** (Terminal), **Location & Orthographic Earth Globe** (Commodore 64), **24h Forecast & Solar Radiance** (Cyberpunk), and the **Theme Picker Modal** (Synthwave '84).*
+
+---
+
+## // HARDENED SYSTEM ARCHITECTURE
+
+SunReactor's runtime architecture is engineered around strict failure isolation, non-blocking hardware control, and zero runtime dependencies:
+
+```text
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │                         SunReactor Core Daemon                         │
+ │                                                                        │
+ │  ┌───────────────────────┐              ┌───────────────────────────┐  │
+ │  │ Solar Ephemeris Math  │              │ Weather Client (Forecast) │  │
+ │  │ Deterministic Curves  │              │ Bounded Attenuation Coeff │  │
+ │  └───────────┬───────────┘              └─────────────┬─────────────┘  │
+ │              │                                        │                │
+ │              └───────────────────┬────────────────────┘                │
+ │                                  ▼                                     │
+ │                     ┌─────────────────────────┐                        │
+ │                     │ Target Policy Evaluator │                        │
+ │                     └────────────┬────────────┘                        │
+ │                                  │                                     │
+ │  ┌───────────────────────────────┴───────────────────────────────┐     │
+ │  │         Hardware Truth Reconciliation & Probe Engine          │     │
+ │  │  - DRM Sysfs Power Gate (/sys/class/drm/*/dpms, status)       │     │
+ │  │  - Connector Direct Bus Addressing (Zero DDC scan bus locks)  │     │
+ │  │  - Readback Verification (Prevents compositor/KWin thrashing) │     │
+ │  │  - Per-Device Exponential Backoff (5s -> 300s)                │     │
+ │  └───────────────┬───────────────────────────────┬───────────────┘     │
+ │                  │                               │                     │
+ └──────────────────┼───────────────────────────────┼─────────────────────┘
+                    ▼                               ▼
+       ┌────────────────────────┐      ┌─────────────────────────┐
+       │ External Monitors (DDC)│      │ Internal Laptop Panels  │
+       │  I2C / ddcutil bus     │      │   Linux sysfs backlight │
+       └────────────────────────┘      └─────────────────────────┘
+```
+
+### 1. Hardware Truth & Fail-Closed Monitor Wake
+- **DRM Kernel State Gating:** Before dispatching DDC transactions over I2C, the daemon queries connector status directly from kernel DRM attributes (`/sys/class/drm/*/status` and `dpms`). If a display is in standby, suspend, or disconnected, hardware writes are skipped immediately—eliminating I2C bus locks and timeout penalties.
+- **Signal-Independent Probe Schedule:** Desktop wake notifications (e.g. logind, DRM uevents) can be dropped or skipped during compositor transitions. SunReactor implements a scheduled hardware probe loop (`runtime/wake.rs`). Every `probe_seconds` (default: 15s), the daemon directly verifies physical monitor registers.
+- **Fast-Recovery Windows:** When a monitor returns from an unreachable state, a 60-second fast-probe window (2-second pulses) activates. This immediately counteracts compositor state restores (such as KWin's internal saved DDC cache) and locks the display back to the active astronomical curve.
+
+### 2. Failure Classification & Resilient Backoff
+- **Transient vs. Persistent Faults:** Hardware communication errors are isolated per monitor. Transient timeouts (busy DDC buses, hotplug debounce) and persistent device missing states are classified and tracked independently.
+- **Exponential Backoff:** If a monitor fails to acknowledge a write or read, it enters per-device exponential backoff (`5s, 10s, 20s, ... 300s`). Healthy displays continue applying curve updates smoothly without being blocked or delayed by an unresponsive display.
+- **Automatic Recovery:** When a degraded or disconnected monitor responds successfully, its backoff state is cleared immediately without requiring daemon restarts.
+
+### 3. IPC Hardening & Starvation Prevention
+- **Bounded Main-Loop Quantum:** The daemon IPC subsystem accepts Unix domain socket connections through a cooperative drain quantum (maximum 16 accepted requests or 8ms wall-clock duration per loop tick). Incoming IPC traffic can never starve or desynchronize the core brightness fade ticks.
+- **Strict Payload Boundaries:** Every IPC message is framed with newline-delimited JSON and bounded to a strict 64 KiB payload limit. Absolute operation deadlines protect against lingering sockets and slow-read attacks.
+- **Non-Destructive Socket Cleanup:** Stale socket cleanup strictly validates file metadata and active listeners, preventing accidental unlinking of foreign runtime resources.
+
+### 4. Fail-Safe Configuration & State Pruning
+- **Atomic Config Reloads:** Live configuration reloads (`sunreactorctl reload-config` or TUI writebacks) validate schema integrity, monitor IDs, and boundary constraints before updating runtime state. If validation fails, previous active configurations remain in memory.
+- **Automatic Stale State Pruning:** Whenever a display is removed from `config.toml`, orphan runtime backoff trackers and monitor override state are cleanly purged during bootstrap and reload cycles.
+
+---
+
+## // MATHEMATICAL FORMULATION
+
+SunReactor computes target brightness deterministically without requiring constant network connectivity:
+
+```text
+        ☀ (Solar Noon) --> Max Brightness (DayPeak)
+       /  \
+     /      \ (Smooth transition via parametric gamma curve)
+    /        \
+- 0° (Horizon) -----------------------------------------------
+                \
+                  \ ☾ (Astronomical Night) --> Min Brightness (NightFloor)
+```
+
+1. **Normalized Solar Position ($t$):**
+   $$t = \text{clamp}\left(\frac{\theta - \theta_{\text{night}}}{\theta_{\text{day}} - \theta_{\text{night}}}, 0, 1\right)$$
+   Where $\theta$ represents the instantaneous solar elevation angle calculated from the local latitude, longitude, and UTC timestamp.
+
+2. **Smoothstep Hermite Interpolation ($s(t)$):**
+   $$s(t) = t^2 (3 - 2t)$$
+
+3. **Per-Monitor Curvature Easing:**
+   $$\text{Curve}(t) = [s(t)]^\gamma$$
+   Where $\gamma$ is a user-tunable easing exponent configured independently per display (`transition_gamma`).
+
+4. **Multi-Factor Clamped Projection:**
+   $$\text{Brightness}_{\text{target}} = \text{clamp}\Big(\text{MinPct} + (\text{MaxPct} - \text{MinPct}) \cdot \text{Curve}(t) \cdot \text{Gain} \cdot W_{\text{mult}}, \;\text{MinPct}, \;\text{MaxPct}\Big)$$
+   Where $W_{\text{mult}} \in [0.75, 1.0]$ is the bounded cloud-cover multiplier derived from OpenWeather forecast intervals.
+
+---
+
+## // ECOSYSTEM & INTEGRATIONS
+
+### 1. Interactive Terminal UI (`sunreactorctl tui`)
+- Full keyboard-driven navigation with browser-style shortcuts (`1`-`5` tabs, `Tab`/`Shift+Tab`).
+- Real-time ASCII light cycle and 24-hour solar trajectory visualizer.
+- Interactive orthographic globe with real-time solar terminator rendering.
+- 28 built-in palettes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha.
+
+### 2. Native KDE Plasma 6 Desktop Integration
+SunReactor includes an integrated KDE Plasma 6 panel widget and C++ IPC plugin located in [`plasma/`](plasma/):
+- View real-time solar elevation, current display outputs, and active weather status directly from the desktop taskbar.
+- Toggle automation modes, suspend daemon adjustments, or apply manual monitor overrides without opening a terminal.
+
+### 3. Scriptable Control CLI (`sunreactorctl`)
+```bash
+sunreactorctl status               # Inspect live daemon state, solar angles, and device topology
+sunreactorctl discover             # Probe and identify all connected DDC and sysfs monitors
+sunreactorctl set desk 75          # Apply a manual brightness override to a single monitor
+sunreactorctl set --global 60      # Temporarily lock all displays to 60%
+sunreactorctl suspend --minutes 90 # Pause brightness updates for 90 minutes
+sunreactorctl resume               # Clear overrides and return to the active solar curve
+sunreactorctl reload-config        # Atomically validate and reload config.toml
+```
+
+---
+
+## // INSTALLATION & COMPATIBILITY
+
+### System Requirements
+- **OS:** Linux (Kernel $\ge 5.15$, glibc $\ge 2.34$ or musl) or Windows 10/11.
+- **Arch / CachyOS / Fedora / Debian / Ubuntu / openSUSE** fully qualified.
+- **Hardware Backends:**
+  - External Displays: `ddcutil` ($\ge 1.4.1$, recommended $\ge 2.2.0$) with user access to `/dev/i2c-*` (`uaccess` or `i2c` group).
+  - Laptop Panels: Linux `sysfs` or `brightnessctl`.
+
+### Quick Automated Installation
 ```bash
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash
 ```
 
-*The installer places the executables securely in `~/.local/bin` and does **not** require `sudo`.*
+*The installer verifies SHA-256 and GitHub attestations, deploys unprivileged binaries to `~/.local/bin`, and registers a systemd user service (`sunreactord.service`).*
 
-The installer honors `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` (all must be absolute paths). Before enabling or starting the service, it asks the running systemd user manager for `FragmentPath` and requires the result to equal the unit file installed by SunReactor; this prevents a higher-precedence same-name unit from being mistaken for the installed unit. When no usable systemd user manager is available, files are still installed and the installer prints the command for running `sunreactord` manually. Use `--no-service` to explicitly skip service setup. The installer does not enable systemd linger.
-
-The installer itself requires Bash. Automatic service integration currently means systemd user services only; OpenRC, runit, and s6 are not installed or configured automatically.
-
-<details>
-<summary><b>View Manual Installation Steps</b></summary>
-
-1. Download the latest pre-built binary from [Releases](https://github.com/arcanorca/SunReactor/releases). Make sure to check for the latest version tag (e.g., `v0.1.0`) and choose the correct architecture (`x86_64` or `aarch64`):
-
-**For x86_64 (Intel/AMD):**
-```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-x86_64-gnu.tar.gz
-tar xzf sunreactor-v0.1.0-linux-x86_64-gnu.tar.gz
-```
-
-**For ARM64 (aarch64):**
-```bash
-curl -LO https://github.com/arcanorca/SunReactor/releases/latest/download/sunreactor-v0.1.0-linux-aarch64-gnu.tar.gz
-tar xzf sunreactor-v0.1.0-linux-aarch64-gnu.tar.gz
-```
-
-2. Move the binaries to your local PATH:
-```bash
-mkdir -p ~/.local/bin
-install -m 755 sunreactord sunreactorctl ~/.local/bin/
-```
-
-3. Start the daemon (systemd user manager required for this manual path):
-```bash
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-sed -e "s|@CONFIG_HOME@|${XDG_CONFIG_HOME:-$HOME/.config}|g" \
-    -e "s|@STATE_HOME@|${XDG_STATE_HOME:-$HOME/.local/state}|g" \
-    -e "s|@CACHE_HOME@|${XDG_CACHE_HOME:-$HOME/.cache}|g" \
-    -e "s|@BIN_DIR@|$HOME/.local/bin|g" \
-    contrib/systemd/sunreactord.service > "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sunreactord.service"
-systemctl --user daemon-reload
-systemctl --user enable --now sunreactord.service
-```
-Without a systemd user manager, run `~/.local/bin/sunreactord` in the foreground or use a service manager configured separately.
-</details>
-
-### Option B: Build from Source
-
-If you have Rust installed, you can build from source:
-
+### Building from Source (Optimized Native Profile)
 ```bash
 git clone https://github.com/arcanorca/SunReactor.git
 cd SunReactor
 
-# Install binaries to ~/.cargo/bin
-cargo install --path .
+# Build with maximum CPU vectorization and locked dependencies
+RUSTFLAGS="-C target-cpu=native" cargo build --release --locked
 
-# Start the systemd daemon
+# Install binaries to ~/.local/bin
+install -m 755 target/release/sunreactord target/release/sunreactorctl ~/.local/bin/
+
+# Enable user daemon
 mkdir -p ~/.config/systemd/user
 cp contrib/systemd/sunreactord.service ~/.config/systemd/user/
 systemctl --user daemon-reload
@@ -166,101 +179,70 @@ systemctl --user enable --now sunreactord.service
 
 ---
 
-## Uninstallation
+## // CONFIGURATION SPECIFICATION
 
-To remove SunReactor and its background daemon from your system, run:
-
-```bash
-curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash -s -- --uninstall
-```
-
-Uninstallation removes the user service file and installed binaries. User configuration (`~/.config/sunreactor`) and runtime state (`~/.local/state/sunreactor`) are preserved by default. To completely purge all configuration, state, and cache data, add `--purge`:
-
-```bash
-curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash -s -- --uninstall --purge
-```
-
-## // QUICK START
-
-**1. Initialize config and discover monitors:**
-
-```bash
-sunreactorctl config init
-sunreactorctl discover
-```
-
-The `discover` command detects your connected monitors and prints config snippets you can paste into `~/.config/sunreactor/config.toml`.
-
-**2. Set your location** (via the TUI or by editing the config file directly):
-
-```bash
-sunreactorctl tui
-```
-
-Navigate to the **Location** tab and search for your city, or enter coordinates manually. Without a location set, the daemon defaults to the equator (0°, 0°) which gives a generic 12h/12h day-night cycle.
-
-**3. Start the daemon:**
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp contrib/systemd/sunreactord.service ~/.config/systemd/user/
-
-systemctl --user daemon-reload
-systemctl --user enable --now sunreactord.service
-```
-
-> **Note:** If installed via `cargo install`, ensure the `ExecStart` path in the unit file points to `~/.cargo/bin/sunreactord`. If installed from the release tarball to `~/.local/bin/`, update it to `~/.local/bin/sunreactord`.
-
-## // INTERFACE & CONTROL
-
-You can configure and monitor the daemon using the built-in terminal interface (`ratatui`). It connects to the daemon over a local IPC socket.
-
-```bash
-sunreactorctl tui
-```
-
-The TUI includes real-time monitoring, weather charts, theme options, and config management.
-
-The CLI also provides direct commands for scripting or quick overrides:
-```bash
-sunreactorctl status               # View current solar state and monitor levels
-sunreactorctl suspend --minutes 60 # Temporarily pause automation
-sunreactorctl set desk 50          # Manually override a specific monitor
-sunreactorctl clear-override       # Resume automatic solar policy
-```
-
-## // UNDER THE HOOD
-
-The TUI writes your settings to a standard TOML file at `~/.config/sunreactor/config.toml`. Here is an example:
+The daemon configuration is stored in standard TOML format at `~/.config/sunreactor/config.toml`:
 
 ```toml
+[daemon]
+tick_seconds = 60
+dry_run = false
+desktop_idle_sync = false
+apply_reassert_minutes = 2
+ddc_timeout_seconds = 4
+probe_seconds = 15
+
 [location]
-city = "Istanbul"
+city = "Istanbul, TR"
+latitude = 41.01384
+longitude = 28.94966
 timezone = "Europe/Istanbul"
 
-[[monitors]]
-logical_id = "desk"
-backend = "ddc"
-min_pct = 20
-max_pct = 90
-gain = 1.0
+[solar_policy]
+twilight_elevation_start = -6.0
+day_elevation_full = 20.0
+use_adaptive_zenith = true
+max_step_pct_per_tick = 6
+min_write_delta_pct = 1
 
 [[monitors]]
-logical_id = "laptop"
-backend = "backlight"
+logical_id = "desk-primary"
+backend = "ddc"
+enabled = true
 min_pct = 5
+max_pct = 60
+gain = 1.0
+transition_gamma = 0.65
+connector = "card1-DP-1"
+
+[[monitors]]
+logical_id = "laptop-internal"
+backend = "backlight"
+enabled = true
+min_pct = 2
 max_pct = 100
-gain = 1.2
+gain = 1.1
+transition_gamma = 0.5
 sysfs_path = "/sys/class/backlight/amdgpu_bl1"
 
 [weather]
 enabled = true
 provider = "openweather"
 api_key_env = "OPENWEATHER_API_KEY"
+refresh_minutes = 30
+min_multiplier = 0.75
+
+[tui]
+fps = 60
+theme = "amber"
+effects = "instrument"
+show_logo = true
 ```
 
-## // DETAILS
+---
 
-- **Developer:** arcanorca
+## // DETAILS & LICENSING
+
+- **Author:** [arcanorca](https://github.com/arcanorca)
 - **License:** GPL-3.0-or-later
-- **Stack:** Rust | ratatui | systemd (user) | Unix IPC | ddcutil | brightnessctl
+- **Core Technologies:** Rust | Ratatui | DRM Sysfs | DDC/CI (`ddcutil`) | KDE Plasma 6 QML/C++
