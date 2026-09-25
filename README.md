@@ -30,6 +30,21 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` featuri
 
 ---
 
+## // WHAT'S NEW (V0.12.0 CHANGELOG HIGHLIGHTS)
+
+SunReactor **v0.12.0** introduces critical reliability, performance, and failure-isolation engineering across the entire runtime pipeline:
+
+- **DRM Kernel Power Gating:** Eliminates I2C driver lockouts and bus freezes. External monitor state is verified directly through kernel sysfs attributes (`/sys/class/drm/*/dpms` and `status`) before dispatching DDC commands, skipping unreachable or sleeping displays immediately.
+- **Fail-Closed Monitor Wake Loop:** Resolves desynchronization caused by dropped desktop wake signals (e.g., logind/compositor churn). A deterministic 15s hardware probe schedule paired with an aggressive 60s post-wake fast-recovery window (2s cadence) forcefully re-asserts astronomical brightness over compositor-level resets.
+- **Per-Device Fault Isolation & Exponential Backoff:** Isolates communication failures per physical display. Transient timeouts and missing-device faults back off independently (`5s, 10s, 20s, ... 300s`), ensuring a sluggish or disconnected monitor never stalls or delays updates on healthy displays.
+- **Starvation-Free IPC Quantum:** Restricts incoming Unix domain socket traffic to a cooperative budget (max 16 requests or 8ms per daemon loop tick). Heavy client polling cannot starve or jitter smooth brightness fade animations.
+- **Defended IPC Framing & Deadlines:** Strictly bounds socket communication with newline-delimited framing and a 64 KiB payload ceiling. Rigid read/write deadlines eliminate slow-read vulnerabilities and hanging socket descriptors.
+- **Atomic Configuration Reloads:** Pre-validates config schema and monitor selectors before applying in-memory updates. Malformed edits trigger automatic rollbacks, and orphan monitor states are cleanly pruned.
+- **Modular TUI with 28 Built-In Themes:** Re-architected into dedicated domain workspaces (`Monitors`, `Automation`, `Location`, `Weather`, `Settings`) featuring custom half-block fonts, 28 linear-blended retro color palettes, and real-time orthographic solar terminator globes.
+- **Native KDE Plasma 6 Desktop Integration:** First-party QML desktop panel widget powered by a non-blocking C++ Unix domain socket client (`SunReactorClient`), adhering to KDE Human Interface Guidelines with strict mode precedence.
+
+---
+
 ## // HARDENED SYSTEM ARCHITECTURE
 
 SunReactor's runtime architecture is engineered around strict failure isolation, non-blocking hardware control, and zero runtime dependencies:
