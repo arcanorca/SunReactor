@@ -171,7 +171,7 @@ sunreactorctl reload-config        # Atomically validate and reload config.toml
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash
 ```
 
-*The installer verifies SHA-256 and GitHub attestations, deploys unprivileged binaries to `~/.local/bin`, and registers a systemd user service (`sunreactord.service`).*
+*The installer verifies the release SHA-256 manifest, installs unprivileged binaries to `~/.local/bin`, and registers the packaged `sunreactord.service` user unit when a systemd user manager is available.*
 
 ### Building from Source (Optimized Native Profile)
 ```bash

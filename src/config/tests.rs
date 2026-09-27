@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{load_from_path, parse_str, write_default_to, ConfigError, ConfigSource};
+use super::{load_from_path, parse_str, render, write_default_to, ConfigError, ConfigSource};
 
 const VALID_CONFIG: &str = r#"
 [daemon]
@@ -47,6 +47,31 @@ fn parses_valid_config() {
     let config = parse_str(VALID_CONFIG, Path::new("valid.toml")).expect("config should parse");
     assert_eq!(config.monitors.len(), 1);
     assert_eq!(config.monitors[0].logical_id, "desk");
+    assert!(!config.daemon.smooth_transition);
+}
+
+#[test]
+fn parses_smooth_transition_opt_in() {
+    let raw = VALID_CONFIG.replace(
+        "dry_run = false",
+        "dry_run = false\nsmooth_transition = true",
+    );
+    let config = parse_str(&raw, Path::new("smooth-transition.toml")).expect("config should parse");
+
+    assert!(config.daemon.smooth_transition);
+}
+
+#[test]
+fn tui_refresh_rate_is_persisted() {
+    let raw = format!("{VALID_CONFIG}\n[tui]\nfps = 8\n");
+    let config =
+        parse_str(&raw, Path::new("tui-refresh-rate.toml")).expect("TUI refresh rate should parse");
+    assert_eq!(config.tui.fps, 8);
+
+    let rendered = render(&config).expect("config should serialize");
+    let round_tripped = parse_str(&rendered, Path::new("round-trip-tui-fps.toml"))
+        .expect("serialized TUI refresh rate should parse");
+    assert_eq!(round_tripped.tui.fps, 8);
 }
 
 #[test]

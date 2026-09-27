@@ -1,4 +1,3 @@
-#![warn(clippy::pedantic)]
 #![allow(
     clippy::unnecessary_wraps,
     clippy::struct_excessive_bools,
@@ -46,6 +45,7 @@ enum CliCommand {
     },
     Discover {
         json: bool,
+        apply: bool,
     },
     TestBrightness {
         monitor_id: String,
@@ -53,6 +53,10 @@ enum CliCommand {
     },
     ConfigInit,
     ConfigValidate,
+    #[cfg(target_os = "linux")]
+    Doctor {
+        json: bool,
+    },
     #[cfg(feature = "tui")]
     Tui,
 }
@@ -109,6 +113,8 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
             Some("validate") => Ok(CliCommand::ConfigValidate),
             _ => anyhow::bail!("usage: sunreactorctl config <init|validate>"),
         },
+        #[cfg(target_os = "linux")]
+        Some("doctor") => parse_doctor_command(&args[1..]),
         #[cfg(feature = "tui")]
         Some("tui") => Ok(CliCommand::Tui),
         Some(other) => anyhow::bail!("unknown command: {other}"),
@@ -152,15 +158,29 @@ fn parse_run_once_command(args: &[String]) -> anyhow::Result<CliCommand> {
 
 fn parse_discover_command(args: &[String]) -> anyhow::Result<CliCommand> {
     let mut json = false;
+    let mut apply = false;
 
     for arg in args {
         match arg.as_str() {
             "--json" | "-j" => json = true,
-            _ => anyhow::bail!("usage: sunreactorctl discover [--json]"),
+            "--apply" => apply = true,
+            _ => anyhow::bail!("usage: sunreactorctl discover [--json] [--apply]"),
         }
     }
 
-    Ok(CliCommand::Discover { json })
+    Ok(CliCommand::Discover { json, apply })
+}
+
+#[cfg(target_os = "linux")]
+fn parse_doctor_command(args: &[String]) -> anyhow::Result<CliCommand> {
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--json" | "-j" => json = true,
+            _ => anyhow::bail!("usage: sunreactorctl doctor [--json]"),
+        }
+    }
+    Ok(CliCommand::Doctor { json })
 }
 
 fn parse_test_brightness_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -306,8 +326,33 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
         CliCommand::ReloadConfig => run_ipc_command(Request::ReloadConfig),
         CliCommand::Ping => run_ipc_command(Request::Ping),
         CliCommand::RunOnce { force } => run_ipc_command(Request::RunOnce { force }),
-        CliCommand::Discover { json } => {
+        CliCommand::Discover { json, apply } => {
             let report = discovery::discover();
+            if apply {
+                let path = paths::config_file()?;
+                let result = config::apply_discovered_transaction(&path, &report, || {
+                    verify_reloaded_config().map_err(|error| error.to_string())
+                })?;
+                if json {
+                    return Ok(serde_json::to_string_pretty(&result)?);
+                }
+                if result.unchanged {
+                    return Ok(format!(
+                        "no config changes: all viable monitors are already present in {}",
+                        result.path.display()
+                    ));
+                }
+                let backup = result.backup_path.as_ref().map_or_else(
+                    || String::from("none (new config)"),
+                    |path| path.display().to_string(),
+                );
+                return Ok(format!(
+                    "added monitor(s): {}\nconfig: {}\nbackup: {}\ndaemon reload and IPC verification: ok",
+                    result.added_monitor_ids.join(", "),
+                    result.path.display(),
+                    backup
+                ));
+            }
             if json {
                 Ok(report.render_json())
             } else {
@@ -384,9 +429,43 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
             Ok(format!("wrote default config to {}", path.display()))
         }
         CliCommand::ConfigValidate => validate_config(),
+        #[cfg(target_os = "linux")]
+        CliCommand::Doctor { json } => {
+            let report = sunreactor::doctor::run_diagnostics();
+            if json {
+                Ok(serde_json::to_string_pretty(&report)?)
+            } else {
+                let mut lines = Vec::new();
+                lines.push(
+                    if report.overall_healthy {
+                        "Overall Health: OK"
+                    } else {
+                        "Overall Health: ISSUES FOUND"
+                    }
+                    .to_string(),
+                );
+                lines.push(String::new());
+                for check in &report.checks {
+                    let status = match check.status {
+                        sunreactor::doctor::CheckStatus::Pass => "[PASS]",
+                        sunreactor::doctor::CheckStatus::Warn => "[WARN]",
+                        sunreactor::doctor::CheckStatus::Error => "[FAIL]",
+                    };
+                    lines.push(format!("{} {}: {}", status, check.code, check.message));
+                }
+                Ok(lines.join("\n"))
+            }
+        }
         #[cfg(feature = "tui")]
         CliCommand::Tui => sunreactor::tui::run().map_err(|e| anyhow::anyhow!("{e}")),
     }
+}
+
+fn verify_reloaded_config() -> anyhow::Result<()> {
+    let socket = ipc::ControlSocket::from_runtime()?;
+    render_ipc_response(socket.send_request(&RequestEnvelope::new(Request::ReloadConfig))?)?;
+    render_ipc_response(socket.send_request(&RequestEnvelope::new(Request::Ping))?)?;
+    Ok(())
 }
 
 fn run_status_command() -> anyhow::Result<String> {

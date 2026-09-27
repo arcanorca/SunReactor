@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.12.1] - 2026-09-27
+
+### Fixed
+- Validate release binaries against the Cargo version before packaging and against the selected tag before installation, preventing stale executables from being published or installed under a newer release.
+- Include the systemd user service template in every release archive and render it from the downloaded archive.
+- Align `v`-prefixed Git tags, unprefixed archive names, SHA-256 manifests, and ABI metadata between packaging, CI, and the installer.
+- Build musl release binaries without a dynamic loader and reject musl artifacts that still request an interpreter or shared libraries.
+- Restore the previous binaries and service unit after a failed update, restart an already active daemon, and verify IPC readiness before reporting service setup as successful.
+
 ## [0.12.0] - 2026-09-25
 
 ### Added

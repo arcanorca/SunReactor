@@ -51,7 +51,8 @@ fn discovers_ddc_monitors_and_marks_vcp_brightness_support() {
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -96,7 +97,8 @@ fn importable_ddc_candidates_keep_stronger_identity_over_bus_selectors() {
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -121,32 +123,20 @@ fn importable_ddc_candidates_keep_stronger_identity_over_bus_selectors() {
 }
 
 #[test]
-fn legacy_ddcutil_without_noconfig_detect_falls_back_and_succeeds() {
+fn ddcutil_122_uses_brief_without_noconfig_or_terse() {
+    let fixture = include_str!("../../tests/fixtures/ddcutil/msi_then_invalid_boe.txt");
     let runner = FakeRunner::new()
-        .with_error(
-            "ddcutil",
-            &["--noconfig", "--terse", "detect"],
-            "ddcutil option parsing failed: Unknown option --noconfig\n",
-        )
+        .with_success("ddcutil", &["--brief", "detect"], fixture)
         .with_success(
             "ddcutil",
-            &["--terse", "detect"],
-            "Display 1\n   I2C bus:          /dev/i2c-7\n   DRM connector:    card1-DP-1\n   Monitor:          XMI:Mi Monitor:\n",
-        )
-        .with_error(
-            "ddcutil",
-            &["--noconfig", "--bus", "7", "capabilities"],
-            "ddcutil option parsing failed: Unknown option --noconfig\n",
-        )
-        .with_success(
-            "ddcutil",
-            &["--bus", "7", "capabilities"],
+            &["--bus", "4", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_ddcutil_help("--brief");
 
     let sysfs_root = TempSysfs::new(true);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -154,6 +144,12 @@ fn legacy_ddcutil_without_noconfig_detect_falls_back_and_succeeds() {
     assert_eq!(report.backends.ddcutil.status, BackendStatusKind::Ok);
     assert_eq!(report.summary.ddc_monitors, 1);
     assert_eq!(report.summary.viable_targets, 1);
+    assert_eq!(report.ddc_monitors[0].manufacturer.as_deref(), Some("MSI"));
+    assert_eq!(report.ddc_monitors[0].bus_number, Some(4));
+    assert_eq!(
+        report.ddc_monitors[0].connector.as_deref(),
+        Some("card1-DP-1")
+    );
     assert_eq!(report.ddc_monitors[0].brightness_vcp_supported, Some(true));
 }
 
@@ -173,7 +169,8 @@ fn bus_only_generated_candidate_is_disabled_by_default() {
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -210,7 +207,8 @@ fn mixed_internal_and_external_monitors_in_single_discovery_run() {
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
             "intel_backlight,backlight,4712,50%,9375\n",
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
@@ -260,7 +258,8 @@ fn ddc_primary_suppresses_authoritative_ddcci_alias_from_generated_config() {
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
             "ddcci_backlight_0,backlight,4712,50%,100\n",
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let roots = tempfile::tempdir().expect("tempdir");
     let sysfs_root = roots.path().join("backlight");
@@ -327,7 +326,8 @@ fn duplicate_effective_ddc_selectors_are_withheld_from_generated_config() {
             &["--noconfig", "--bus", "8", "capabilities"],
             "Feature: 10 (Brightness)\n",
         )
-        .with_success("brightnessctl", &["--list", "--machine-readable"], "");
+        .with_success("brightnessctl", &["--list", "--machine-readable"], "")
+        .with_modern_ddcutil_profile();
     let report = discover_with_runner(&runner, Path::new("/nonexistent"));
     assert_eq!(report.ddc_monitors.len(), 2);
     assert!(
@@ -346,13 +346,11 @@ fn backend_failure_isolation_keeps_sysfs_probe_when_brightnessctl_errors() {
     // nonzero (malformed output, broken per-user access), the DDC/sysfs
     // probes must still run and produce usable viable counts — a failing
     // brightnessctl must not make every other discovery backend fail.
-    let runner = FakeRunner::new()
-        .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
-        .with_error(
-            "brightnessctl",
-            &["--list", "--machine-readable", "--class", "backlight"],
-            "brightnessctl: cannot determine backlight device\n",
-        );
+    let runner = FakeRunner::new().with_missing_ddcutil().with_error(
+        "brightnessctl",
+        &["--list", "--machine-readable", "--class", "backlight"],
+        "brightnessctl: cannot determine backlight device\n",
+    );
 
     let sysfs_root = TempSysfs::new(true);
     write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
@@ -380,7 +378,8 @@ fn ddc_detect_timeout_keeps_backlight_and_marks_ddc_unavailable() {
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
@@ -415,7 +414,8 @@ fn ddc_capabilities_timeout_keeps_other_ddc_monitor_viable() {
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -454,7 +454,8 @@ fn invalid_ddc_display_record_marks_observation_incomplete() {
         .with_missing(
             "brightnessctl",
             &["--list", "--machine-readable", "--class", "backlight"],
-        );
+        )
+        .with_modern_ddcutil_profile();
 
     let sysfs_root = TempSysfs::new(true);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -467,12 +468,10 @@ fn invalid_ddc_display_record_marks_observation_incomplete() {
 
 #[test]
 fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
-    let runner = FakeRunner::new()
-        .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
-        .with_missing(
-            "brightnessctl",
-            &["--list", "--machine-readable", "--class", "backlight"],
-        );
+    let runner = FakeRunner::new().with_missing_ddcutil().with_missing(
+        "brightnessctl",
+        &["--list", "--machine-readable", "--class", "backlight"],
+    );
 
     let sysfs_root = TempSysfs::new(true);
     write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
@@ -507,13 +506,11 @@ fn falls_back_to_sysfs_when_brightnessctl_is_missing() {
 
 #[test]
 fn parses_brightnessctl_machine_readable_output() {
-    let runner = FakeRunner::new()
-        .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
-        .with_success(
-            "brightnessctl",
-            &["--list", "--machine-readable", "--class", "backlight"],
-            "intel_backlight,backlight,4712,50%,9375\namdgpu_bl1,backlight,42,10%,255\n",
-        );
+    let runner = FakeRunner::new().with_missing_ddcutil().with_success(
+        "brightnessctl",
+        &["--list", "--machine-readable", "--class", "backlight"],
+        "intel_backlight,backlight,4712,50%,9375\namdgpu_bl1,backlight,42,10%,255\n",
+    );
 
     let sysfs_root = TempSysfs::new(true);
     write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
@@ -536,12 +533,10 @@ fn parses_brightnessctl_machine_readable_output() {
 
 #[test]
 fn reports_clear_guidance_when_no_backends_are_available() {
-    let runner = FakeRunner::new()
-        .with_missing("ddcutil", &["--noconfig", "--terse", "detect"])
-        .with_missing(
-            "brightnessctl",
-            &["--list", "--machine-readable", "--class", "backlight"],
-        );
+    let runner = FakeRunner::new().with_missing_ddcutil().with_missing(
+        "brightnessctl",
+        &["--list", "--machine-readable", "--class", "backlight"],
+    );
 
     let sysfs_root = TempSysfs::new(false);
     let report = discover_with_runner(&runner, sysfs_root.path());
@@ -574,6 +569,19 @@ struct FakeRunner {
 impl FakeRunner {
     fn new() -> Self {
         Self::default()
+    }
+
+    fn with_ddcutil_help(self, help: &str) -> Self {
+        self.with_success("ddcutil", &["--help"], help)
+    }
+
+    fn with_modern_ddcutil_profile(self) -> Self {
+        self.with_ddcutil_help("--noconfig --noverify --terse --brief")
+    }
+
+    fn with_missing_ddcutil(self) -> Self {
+        self.with_missing("ddcutil", &["--help"])
+            .with_missing("ddcutil", &["detect"])
     }
 
     fn with_success(mut self, program: &str, args: &[&str], stdout: &str) -> Self {

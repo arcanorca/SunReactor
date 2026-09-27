@@ -170,6 +170,7 @@ impl DaemonRuntime {
         apply::ApplySettings {
             min_write_delta_pct: 0,
             max_step_pct_per_tick: 100,
+            smooth_transition: self.config.daemon.smooth_transition,
             min_apply_interval: Duration::ZERO,
             dry_run: self.config.daemon.dry_run,
             apply_reassert_interval: Duration::from_secs(

@@ -116,7 +116,7 @@ SHIM
     rm -rf "$home" "$fakebin"
 }
 
-test_systemd_setup_failure_is_partial_success() {
+test_systemd_setup_failure_restores_previous_installation() {
     local home fakebin marker
     home=$(mktemp -d)
     fakebin=$(mktemp -d)
@@ -124,36 +124,37 @@ test_systemd_setup_failure_is_partial_success() {
     cat >"$fakebin/systemctl" <<'SHIM'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$SYSTEMCTL_MARKER"
-if [[ "$*" == "--user show-environment" ]]; then
-    exit 0
-fi
-if [[ "$*" == "--user daemon-reload" || "$*" == "--user enable sunreactord.service" || "$*" == "--user start sunreactord.service" ]]; then
-    printf '%s\n' failure >&2
-    exit 1
-fi
-if [[ "$*" == "--user show -p UnitPath --value" ]]; then
-    printf '%s\n' "$HOME/config/systemd/user"
-    exit 0
-fi
-if [[ "$*" == "--user show --property=FragmentPath --value sunreactord.service" ]]; then
-    printf '%s\n' "$HOME/config/systemd/user/sunreactord.service"
-    exit 0
-fi
-if [[ "$*" == "--user daemon-reload" || "$*" == "--user enable sunreactord.service" || "$*" == "--user start sunreactord.service" ]]; then
-    printf '%s\n' failure >&2
-    exit 1
-fi
-exit 0
+case "$*" in
+    "--user show-environment"|"--user daemon-reload"|"--user start sunreactord.service"|"--user stop sunreactord.service") exit 0 ;;
+    "--user is-active --quiet sunreactord.service") exit 1 ;;
+    "--user is-enabled --quiet sunreactord.service") exit 0 ;;
+    "--user enable sunreactord.service")
+        if [[ ! -e "$SYSTEMCTL_MARKER.enable-failed" ]]; then
+            touch "$SYSTEMCTL_MARKER.enable-failed"
+            exit 1
+        fi
+        exit 0
+        ;;
+    "--user show -p UnitPath --value") printf '%s\n' "$HOME/config/systemd/user" ;;
+    "--user show --property=FragmentPath --value sunreactord.service") printf '%s\n' "$HOME/config/systemd/user/sunreactord.service" ;;
+    *) exit 0 ;;
+esac
 SHIM
     chmod +x "$fakebin/systemctl"
+    mkdir -p "$home/.local/bin" "$home/config/systemd/user"
+    printf 'old daemon\n' >"$home/.local/bin/sunreactord"
+    printf 'old CLI\n' >"$home/.local/bin/sunreactorctl"
+    printf 'old service\n' >"$home/config/systemd/user/sunreactord.service"
+    chmod 755 "$home/.local/bin/sunreactord" "$home/.local/bin/sunreactorctl"
     set +e
     SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
         XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
-            fetch_latest_version() { printf '%s\n' test; }
-            download_release() { printf '%s/archive.tar.gz\n' "$TMP_DIR"; }
-            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
             main >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
@@ -163,16 +164,123 @@ SHIM
         printf 'service failure was reported as success\n' >&2
         exit 1
     fi
-    [[ -x "$home/.local/bin/sunreactord" && -x "$home/.local/bin/sunreactorctl" ]]
+    grep -Fx 'old daemon' "$home/.local/bin/sunreactord" >/dev/null
+    grep -Fx 'old CLI' "$home/.local/bin/sunreactorctl" >/dev/null
+    grep -Fx 'old service' "$home/config/systemd/user/sunreactord.service" >/dev/null
     [[ -e "$marker" ]]
     grep -Fx -- '--user show-environment' "$marker" >/dev/null
-    grep -Fx -- '--user daemon-reload' "$marker" >/dev/null
-    if ! grep -F 'files are installed; service activation did not complete' "$home/installer.log" >/dev/null; then
-        printf 'partial-success error message was not emitted\n' >&2
+    grep -Fx -- '--user enable sunreactord.service' "$marker" >/dev/null
+    if ! grep -F 'previous installation was restored' "$home/installer.log" >/dev/null; then
+        printf 'rollback error message was not emitted\n' >&2
         cat "$home/installer.log" >&2
         exit 1
     fi
     rm -rf "$home" "$fakebin"
+}
+
+test_daemon_readiness_failure_restores_previous_installation() {
+    local home fakebin marker
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    marker="$home/systemctl-calls"
+    cat >"$fakebin/systemctl" <<'SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$SYSTEMCTL_MARKER"
+case "$*" in
+    "--user show-environment"|"--user daemon-reload"|"--user cat sunreactord.service") exit 0 ;;
+    "--user is-active --quiet sunreactord.service") [[ -e "$SYSTEMCTL_MARKER.active" ]] ;;
+    "--user is-enabled --quiet sunreactord.service") [[ -e "$SYSTEMCTL_MARKER.enabled" ]] ;;
+    "--user show -p UnitPath --value") printf '%s\n' "$HOME/config/systemd/user" ;;
+    "--user show --property=FragmentPath --value sunreactord.service") printf '%s\n' "$HOME/config/systemd/user/sunreactord.service" ;;
+    "--user enable sunreactord.service") touch "$SYSTEMCTL_MARKER.enabled" ;;
+    "--user disable sunreactord.service") rm -f "$SYSTEMCTL_MARKER.enabled" ;;
+    "--user start sunreactord.service"|"--user restart sunreactord.service") touch "$SYSTEMCTL_MARKER.active" ;;
+    "--user stop sunreactord.service") rm -f "$SYSTEMCTL_MARKER.active" ;;
+    *) exit 0 ;;
+esac
+SHIM
+    chmod +x "$fakebin/systemctl"
+    mkdir -p "$home/.local/bin" "$home/config/systemd/user"
+    printf 'old daemon\n' >"$home/.local/bin/sunreactord"
+    printf 'old CLI\n' >"$home/.local/bin/sunreactorctl"
+    printf 'old service\n' >"$home/config/systemd/user/sunreactord.service"
+    chmod 755 "$home/.local/bin/sunreactord" "$home/.local/bin/sunreactorctl"
+
+    set +e
+    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
+        XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
+        SUNREACTOR_TEST_DAEMON_ALIVE=false SUNREACTOR_IPC_READY_ATTEMPTS=1 \
+        SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    local status=$?
+    set -e
+
+    [[ $status -ne 0 ]]
+    grep -Fx 'old daemon' "$home/.local/bin/sunreactord" >/dev/null
+    grep -Fx 'old CLI' "$home/.local/bin/sunreactorctl" >/dev/null
+    grep -Fx 'old service' "$home/config/systemd/user/sunreactord.service" >/dev/null
+    grep -Fx -- '--user start sunreactord.service' "$marker" >/dev/null
+    grep -Fx -- '--user stop sunreactord.service' "$marker" >/dev/null
+    grep -Fx -- '--user disable sunreactord.service' "$marker" >/dev/null
+    grep -F 'did not become ready on IPC' "$home/installer.log" >/dev/null
+    grep -F 'previous installation was restored' "$home/installer.log" >/dev/null
+    rm -rf "$home" "$fakebin"
+}
+
+test_incomplete_rollback_retains_recovery_files() {
+    local home fakebin marker status recovery_dir recovery_root
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    marker="$home/systemctl-calls"
+    cat >"$fakebin/systemctl" <<'SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$SYSTEMCTL_MARKER"
+case "$*" in
+    "--user show-environment"|"--user daemon-reload"|"--user cat sunreactord.service") exit 0 ;;
+    "--user is-active --quiet sunreactord.service") [[ -e "$SYSTEMCTL_MARKER.active" ]] ;;
+    "--user is-enabled --quiet sunreactord.service") [[ -e "$SYSTEMCTL_MARKER.enabled" ]] ;;
+    "--user show -p UnitPath --value") printf '%s\n' "$HOME/config/systemd/user" ;;
+    "--user show --property=FragmentPath --value sunreactord.service") printf '%s\n' "$HOME/config/systemd/user/sunreactord.service" ;;
+    "--user enable sunreactord.service") touch "$SYSTEMCTL_MARKER.enabled" ;;
+    "--user disable sunreactord.service") rm -f "$SYSTEMCTL_MARKER.enabled" ;;
+    "--user start sunreactord.service"|"--user restart sunreactord.service") touch "$SYSTEMCTL_MARKER.active" ;;
+    "--user stop sunreactord.service") exit 1 ;;
+    *) exit 0 ;;
+esac
+SHIM
+    chmod +x "$fakebin/systemctl"
+
+    set +e
+    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
+        XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
+        SUNREACTOR_TEST_DAEMON_ALIVE=false SUNREACTOR_IPC_READY_ATTEMPTS=1 \
+        SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    status=$?
+    set -e
+
+    [[ $status -ne 0 ]]
+    grep -F 'Installation rollback was incomplete' "$home/installer.log" >/dev/null
+    recovery_dir=$(grep -oE '/tmp/tmp\.[[:alnum:]]+/backup' \
+        "$home/installer.log" | tail -n 1)
+    [[ -f "$recovery_dir/sunreactord.absent" ]]
+    [[ -f "$recovery_dir/sunreactorctl.absent" ]]
+    recovery_root=${recovery_dir%/backup}
+    rm -rf "$recovery_root" "$home" "$fakebin"
 }
 
 test_no_service_install_does_not_call_systemctl() {
@@ -190,9 +298,10 @@ SHIM
         XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
-            fetch_latest_version() { printf '%s\n' test; }
-            download_release() { printf '%s/archive.tar.gz\n' "$TMP_DIR"; }
-            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
             main --no-service >/dev/null
         ' _ "$ROOT_DIR/install.sh"
@@ -212,6 +321,7 @@ test_manager_path_mismatch_skips_service_integration() {
 printf '%s\n' "$*" >>"$SYSTEMCTL_MARKER"
 case "$*" in
     "--user show-environment"|"--user daemon-reload") exit 0 ;;
+    "--user is-active --quiet sunreactord.service"|"--user is-enabled --quiet sunreactord.service") exit 1 ;;
     "--user show -p UnitPath --value") printf '%s\n' /home/test/.config/systemd/user; exit 0 ;;
     "--user show --property=FragmentPath --value sunreactord.service") printf '%s\n' "$HOME/.config/systemd/user.control/sunreactord.service"; exit 0 ;;
     "--user cat sunreactord.service") exit 0 ;;
@@ -220,14 +330,15 @@ esac
 SHIM
     chmod +x "$fakebin/systemctl"
     set +e
-    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/custom-config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }; main >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
+    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/custom-config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
     local status=$?
     set -e
     [[ $status -ne 0 ]]
-    [[ -f "$home/custom-config/systemd/user/sunreactord.service" ]]
+    [[ ! -e "$home/custom-config/systemd/user/sunreactord.service" ]]
+    [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     grep -Fx -- '--user show --property=FragmentPath --value sunreactord.service' "$marker" >/dev/null
     ! grep -E -- '--user (enable|start)' "$marker" >/dev/null
-    grep -F 'unexpected unit' "$home/installer.log" >/dev/null
+    grep -F 'previous installation was restored' "$home/installer.log" >/dev/null
     rm -rf "$home" "$fakebin"
 }
 
@@ -244,6 +355,9 @@ if [[ "$*" == "--user show -p UnitPath --value" ]]; then
 fi
 if [[ "$*" == "--user daemon-reload" ]]; then
     exit 0
+fi
+if [[ "$*" == "--user is-active --quiet sunreactord.service" || "$*" == "--user is-enabled --quiet sunreactord.service" ]]; then
+    exit 1
 fi
 if [[ "$*" == "--user show --property=FragmentPath --value sunreactord.service" ]]; then
     printf '%s\n' "$HOME/.config/systemd/user/sunreactord.service"
@@ -263,9 +377,10 @@ SHIM
         XDG_CONFIG_HOME= XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
-            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
             main >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
@@ -302,13 +417,15 @@ SHIM
         XDG_CONFIG_HOME="$custom_config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
-            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            extract_archive() { prepare_installer_test_artifacts; }
             main >/dev/null
         ' _ "$ROOT_DIR/install.sh"
     [[ -f "$custom_config/systemd/user/sunreactord.service" ]]
     grep -Fx -- '--user cat sunreactord.service' "$marker" >/dev/null
+    grep -Fx -- '--user restart sunreactord.service' "$marker" >/dev/null
     rm -rf "$home" "$fakebin"
 }
 
@@ -335,6 +452,7 @@ test_discoverable_postcondition_is_required() {
 printf '%s\n' "$*" >>"$SYSTEMCTL_MARKER"
 case "$*" in
     "--user show-environment"|"--user daemon-reload") exit 0 ;;
+    "--user is-active --quiet sunreactord.service"|"--user is-enabled --quiet sunreactord.service") exit 1 ;;
     "--user show -p UnitPath --value") printf '%s\n' "$TEST_SYSTEMD_DIR"; exit 0 ;;
     "--user show --property=FragmentPath --value sunreactord.service") printf '%s\n' "$TEST_SYSTEMD_DIR/sunreactord.service"; exit 0 ;;
     "--user cat sunreactord.service") exit 1 ;;
@@ -351,17 +469,19 @@ SHIM
         XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
-            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            extract_archive() { prepare_installer_test_artifacts; }
             main >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
     status=$?
     set -e
     [[ $status -ne 0 ]]
-    [[ -f "$home/config/systemd/user/sunreactord.service" ]]
+    [[ ! -e "$home/config/systemd/user/sunreactord.service" ]]
+    [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     grep -Fx -- '--user cat sunreactord.service' "$marker" >/dev/null
-    grep -F 'files are installed; service activation did not complete' "$home/installer.log" >/dev/null
+    grep -F 'previous installation was restored' "$home/installer.log" >/dev/null
     rm -rf "$home" "$fakebin"
 }
 
@@ -373,6 +493,7 @@ test_fragment_path_rejects_shadowed_unit() {
 printf '%s\n' "$*" >>"$SYSTEMCTL_MARKER"
 case "$*" in
     "--user show-environment"|"--user daemon-reload") exit 0 ;;
+    "--user is-active --quiet sunreactord.service"|"--user is-enabled --quiet sunreactord.service") exit 1 ;;
     "--user show -p UnitPath --value") printf '%s\n' "$TEST_SYSTEMD_DIR"; exit 0 ;;
     "--user show --property=FragmentPath --value sunreactord.service") printf '%s\n' "$HOME/shadow/systemd/user/sunreactord.service"; exit 0 ;;
     "--user cat sunreactord.service") exit 0 ;;
@@ -381,10 +502,12 @@ esac
 SHIM
     chmod +x "$fakebin/systemctl"
     set +e
-    SYSTEMCTL_MARKER="$marker" TEST_SYSTEMD_DIR="$home/config/systemd/user" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }; main >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
+    SYSTEMCTL_MARKER="$marker" TEST_SYSTEMD_DIR="$home/config/systemd/user" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
     local status=$?
     set -e
     [[ $status -ne 0 ]]
+    [[ ! -e "$home/config/systemd/user/sunreactord.service" ]]
+    [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     grep -Fx -- '--user show --property=FragmentPath --value sunreactord.service' "$marker" >/dev/null
     ! grep -E -- '--user (enable|start)' "$marker" >/dev/null
     grep -F 'unexpected unit' "$home/installer.log" >/dev/null
@@ -434,7 +557,9 @@ test_default_paths_and_unit
 test_custom_paths_and_uninstall_paths
 test_invalid_xdg_path_is_rejected
 test_no_service_and_unavailable_manager
-test_systemd_setup_failure_is_partial_success
+test_systemd_setup_failure_restores_previous_installation
+test_daemon_readiness_failure_restores_previous_installation
+test_incomplete_rollback_retains_recovery_files
 test_no_service_install_does_not_call_systemctl
 test_manager_path_mismatch_skips_service_integration
 test_default_manager_path_allows_service_integration
@@ -460,9 +585,10 @@ SHIM
         XDG_CONFIG_HOME="$home/.config" XDG_STATE_HOME="$home/.local/state" XDG_CACHE_HOME="$home/.cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
-            extract_archive() { touch "$TMP_DIR/sunreactord" "$TMP_DIR/sunreactorctl"; }
+            extract_archive() { prepare_installer_test_artifacts; }
             main >/dev/null
         ' _ "$ROOT_DIR/install.sh"
     [[ -x "$destdir/$home/.local/bin/sunreactord" && -x "$destdir/$home/.local/bin/sunreactorctl" ]]

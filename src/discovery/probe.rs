@@ -5,15 +5,16 @@ use std::time::Duration;
 
 use super::model::{
     build_backlight_stable_id, BackendStatus, BackendStatusKind, BacklightDeviceDiscovery,
-    DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary, RawDdcMonitor,
+    DdcMonitorDiscovery, DiscoveryBackends, DiscoverySnapshot, DiscoverySummary,
 };
 use super::runner::{command_failure_detail, CommandError, ProcessRunner};
-use crate::backends::ddc::{filter_unsupported_noconfig, is_unsupported_noconfig_error};
+use crate::ddcutil::DdcutilClient;
 
 // `ddcutil detect` probes every I2C bus and routinely takes five seconds or
 // more on multi-output GPUs, so the limit leaves generous headroom.
 const DDCUTIL_DETECT_TIMEOUT: Duration = Duration::from_secs(15);
 const DDCUTIL_CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(6);
+const DDCUTIL_GETVCP_TIMEOUT: Duration = Duration::from_secs(8);
 const BRIGHTNESSCTL_LIST_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) fn discover_with_runner<R: ProcessRunner>(
@@ -70,24 +71,22 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,
 ) -> (BackendStatus, Vec<DdcMonitorDiscovery>, bool) {
-    let args = vec![
-        String::from("--noconfig"),
-        String::from("--terse"),
-        String::from("detect"),
-    ];
-
-    let run_detect = runner.run("ddcutil", &args, DDCUTIL_DETECT_TIMEOUT);
-    let detect_result = match run_detect {
-        Ok(output) if !output.success() && is_unsupported_noconfig_error(&output) => {
-            let fallback = filter_unsupported_noconfig(&args);
-            runner.run("ddcutil", &fallback, DDCUTIL_DETECT_TIMEOUT)
-        }
-        other => other,
-    };
+    let client = DdcutilClient::probe(
+        runner,
+        crate::ddcutil::DdcutilTimeouts {
+            detect: DDCUTIL_DETECT_TIMEOUT,
+            capabilities: DDCUTIL_CAPABILITIES_TIMEOUT,
+            getvcp: DDCUTIL_GETVCP_TIMEOUT,
+        },
+    );
+    let detect_result = client.detect_output();
 
     match detect_result {
         Ok(output) if output.success() => {
-            let mut monitors = parse_ddc_detect(&output.stdout);
+            let mut monitors = crate::ddcutil::parser::parse_ddc_detect(&output.stdout)
+                .into_iter()
+                .map(super::model::RawDdcMonitor::into_discovery)
+                .collect::<Vec<_>>();
             let observation_complete = !has_invalid_display_record(&output.stdout);
             super::assign_ddc_occurrence_ids(&mut monitors);
             let mut capability_failures = 0usize;
@@ -99,25 +98,13 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                     || ("--display", monitor.display_number.to_string()),
                     |bus| ("--bus", bus.to_string()),
                 );
-                let capability_args = vec![
-                    String::from("--noconfig"),
-                    String::from(selector_flag),
-                    selector_value,
-                    String::from("capabilities"),
-                ];
-
-                let cap_run = runner.run("ddcutil", &capability_args, DDCUTIL_CAPABILITIES_TIMEOUT);
-                let cap_result = match cap_run {
-                    Ok(output) if !output.success() && is_unsupported_noconfig_error(&output) => {
-                        let fallback = filter_unsupported_noconfig(&capability_args);
-                        runner.run("ddcutil", &fallback, DDCUTIL_CAPABILITIES_TIMEOUT)
-                    }
-                    other => other,
-                };
+                let selection_args = vec![String::from(selector_flag), selector_value];
+                let cap_result = client.capabilities_output_for_selection(&selection_args);
 
                 match cap_result {
                     Ok(capabilities) if capabilities.success() => {
-                        let supported = parse_brightness_vcp_support(&capabilities.stdout);
+                        let supported =
+                            crate::ddcutil::parser::parse_brightness_vcp_support(&capabilities.stdout);
                         monitor.brightness_vcp_supported = Some(supported);
                         monitor.backend_viable = supported;
                     }
@@ -138,6 +125,26 @@ fn discover_ddc_monitors<R: ProcessRunner>(
                     Err(error) => {
                         capability_failures += 1;
                         monitor.note = Some(error.to_string());
+                    }
+                }
+
+                if monitor.brightness_vcp_supported != Some(true) {
+                    match client.get_brightness_for_selection(&selection_args) {
+                        Ok(_) => {
+                            monitor.brightness_vcp_supported = Some(true);
+                            monitor.backend_viable = true;
+                            monitor.note = Some(match monitor.note.take() {
+                                Some(detail) => format!("{detail} (recovered via getvcp)"),
+                                None => String::from("brightness confirmed via getvcp"),
+                            });
+                        }
+                        Err(error) => {
+                            capability_failures += 1;
+                            monitor.note = Some(match monitor.note.take() {
+                                Some(detail) => format!("{detail}; getvcp fallback failed: {error}"),
+                                None => format!("getvcp fallback failed: {error}"),
+                            });
+                        }
                     }
                 }
             }
@@ -456,65 +463,6 @@ fn annotate_ddcci_connector_evidence(
     }
 }
 
-fn parse_ddc_detect(output: &str) -> Vec<DdcMonitorDiscovery> {
-    let mut monitors = Vec::new();
-    let mut current: Option<RawDdcMonitor> = None;
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if let Some(display_number) = parse_display_header(trimmed) {
-            if let Some(monitor) = current.take() {
-                monitors.push(monitor.into_discovery());
-            }
-            current = Some(RawDdcMonitor::new(display_number));
-            continue;
-        }
-
-        let Some(monitor) = current.as_mut() else {
-            continue;
-        };
-
-        if let Some(value) = trimmed.strip_prefix("I2C bus:") {
-            monitor.bus_number = parse_bus_number(value.trim());
-        } else if let Some(value) = trimmed.strip_prefix("DRM connector:") {
-            monitor.connector = normalize_optional(value.trim());
-        } else if let Some(value) = trimmed.strip_prefix("Monitor:") {
-            let (manufacturer, model, serial) = parse_monitor_identity(value.trim());
-            monitor.manufacturer = manufacturer;
-            monitor.model = model;
-            monitor.serial = serial;
-        }
-    }
-
-    if let Some(monitor) = current {
-        monitors.push(monitor.into_discovery());
-    }
-
-    monitors.sort_by_key(|monitor| monitor.display_number);
-    monitors
-}
-
-fn parse_brightness_vcp_support(output: &str) -> bool {
-    for line in output.lines() {
-        let normalized = line.trim().to_ascii_lowercase();
-        let Some(rest) = normalized.strip_prefix("feature:") else {
-            continue;
-        };
-        let Some(code) = rest.split_whitespace().next() else {
-            continue;
-        };
-        if code == "10" {
-            return true;
-        }
-    }
-
-    false
-}
-
 fn parse_brightnessctl_backlights(
     output: &str,
     sysfs_root: &Path,
@@ -589,31 +537,6 @@ fn merge_backlight_devices(
     }
 
     merged.into_values().collect()
-}
-
-fn parse_display_header(line: &str) -> Option<u32> {
-    line.strip_prefix("Display ")?.trim().parse::<u32>().ok()
-}
-
-fn parse_bus_number(value: &str) -> Option<u32> {
-    value.rsplit('-').next()?.trim().parse::<u32>().ok()
-}
-
-fn parse_monitor_identity(value: &str) -> (Option<String>, Option<String>, Option<String>) {
-    let mut parts = value.splitn(3, ':');
-    let manufacturer = parts.next().and_then(normalize_optional);
-    let model = parts.next().and_then(normalize_optional);
-    let serial = parts.next().and_then(normalize_optional);
-    (manufacturer, model, serial)
-}
-
-fn normalize_optional(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_owned())
-    }
 }
 
 fn read_optional_u32(path: &Path) -> Option<u32> {
