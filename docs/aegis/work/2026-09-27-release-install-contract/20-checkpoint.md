@@ -32,10 +32,13 @@ Complete the CI-discovered compatibility repairs, get green default-branch CI, t
 - Repaired those owners: restored cross-platform `ddcutil` visibility and `Path` imports, made the TUI worker override carry `ControlSocket` with a unique Windows test pipe, gated the sysfs symlink test to Linux, switched child PID capture to POSIX `$!`, and gated the Linux-only `Instant` test import.
 - Fresh local post-repair checks pass: 517 library + 6 CLI + 1 daemon tests; strict Clippy; workspace `cargo check`; format and shell syntax; installer and release regression suites.
 - Local Windows MSVC cross-check was attempted but this Linux host lacks `lib.exe`, required by `ring`; the pushed Windows CI job remains the authoritative platform gate.
+- Follow-up CI run `36292139369` passed Linux format/Clippy/tests, installer/packaging, cross-distro compatibility, and Windows `cargo check`; Windows Clippy then exposed target-specific dead-code/import and style lints.
+- Scoped Linux-only readback/runtime/test helpers to Linux or Unix test builds, kept the common probe `Result` contract, and fixed the Windows-only Clippy findings without adding broad lint suppressions.
+- Fresh local rerun after the Clippy-boundary repair passes: workspace tests, strict Clippy, workspace `cargo check`, format/shell syntax, installer tests, and release tests.
 
 ## Active slice
 
-Stage and commit the CI correction, push it to both branches, rerun CI, then qualify all four release targets and publish `v0.12.1`.
+Stage and commit the CI lint correction, push it to both branches, rerun CI, then qualify all four release targets and publish `v0.12.1`.
 
 ## Patch-shape and diagnosis
 
@@ -64,9 +67,9 @@ Stage and commit the CI correction, push it to both branches, rerun CI, then qua
 
 ## Evidence still required
 
-- Commit/push of the cross-platform correction, green default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
+- Commit/push of the cross-platform Clippy correction, green default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
 - Publish `v0.12.1`, then verify its tag, four archives, combined checksum manifest, ABI metadata, archive members, executable versions, and static musl ELF properties.
 
 ## Next step
 
-Review and stage the eight code paths plus this checkpoint, commit, then push the correction to the task branch and `main`.
+Review and stage the target-specific code/lint paths plus this checkpoint, commit, then push the correction to the task branch and `main`.

@@ -1,5 +1,5 @@
 #[cfg(test)]
 pub(crate) use crate::process::CommandOutput;
-pub(crate) use crate::process::{
-    command_failure_detail, CommandError, ProcessRunner, RealProcessRunner,
-};
+#[cfg(target_os = "linux")]
+pub(crate) use crate::process::RealProcessRunner;
+pub(crate) use crate::process::{command_failure_detail, CommandError, ProcessRunner};

@@ -742,11 +742,13 @@ mod tests {
     // SlowRunner — simulates hardware with configurable per-call latency.
     // Sync-safe via AtomicUsize; suitable for thread::scope dispatch.
     // -------------------------------------------------------------------------
+    #[cfg(target_os = "linux")]
     struct SlowRunner {
         delay: Duration,
         call_count: Arc<AtomicUsize>,
     }
 
+    #[cfg(target_os = "linux")]
     impl SlowRunner {
         fn new(delay: Duration) -> Self {
             Self {
@@ -760,6 +762,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     impl ProcessRunner for SlowRunner {
         fn run(
             &self,

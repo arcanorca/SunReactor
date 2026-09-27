@@ -1195,11 +1195,11 @@ pub mod tests {
 
     #[test]
     fn test_capabilities_missing_mc_caps_brightness_fails_closed() {
+        const MC_CAPS_BRIGHTNESS: u32 = 0x02;
         let api = MockMonitorConfigApi::new(0, 50, 100);
         api.caps.store(0x00, Ordering::Relaxed); // Missing MC_CAPS_BRIGHTNESS (0x02)
 
         let caps = api.get_capabilities(1).unwrap();
-        const MC_CAPS_BRIGHTNESS: u32 = 0x02;
         let supported = (caps & MC_CAPS_BRIGHTNESS) != 0;
 
         assert!(!supported);

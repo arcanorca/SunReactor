@@ -80,6 +80,9 @@ pub(crate) fn read_monitor_percent<R: ProcessRunner>(
 /// A quick brightness read for wake probes: DDC monitors only over their
 /// verified bus, backlights through sysfs. `Ok(None)` means the monitor cannot
 /// be probed cheaply and is left to regular ticks.
+// Windows intentionally returns `Ok(None)`; Linux uses the same result type
+// because its hardware probe can fail.
+#[cfg_attr(target_os = "windows", allow(clippy::unnecessary_wraps))]
 pub(crate) fn probe_monitor_percent<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,

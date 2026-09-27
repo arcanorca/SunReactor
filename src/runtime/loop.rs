@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::backends::{ProcessRunner, RealProcessRunner};
 use crate::ipc::BoundControlSocket;
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 use crate::ipc::{self, ControlSocket};
 use crate::platform::DisplayEventSources;
 

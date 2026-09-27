@@ -5,9 +5,11 @@ use std::time::Duration;
 use crate::config::{MonitorConfig, MonitorSelector};
 use crate::ddcutil::DdcutilClient;
 
+#[cfg(any(target_os = "linux", test))]
+use super::CommandOutput;
 use super::{
     clamp_percent, command_failure, map_command_error, BackendError, BackendKind, BackendWrite,
-    CommandOutput, ProcessRunner, RealProcessRunner,
+    ProcessRunner, RealProcessRunner,
 };
 
 const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
@@ -104,6 +106,7 @@ fn apply_with_runner_in<R: ProcessRunner>(
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn read_with_runner<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -112,6 +115,7 @@ pub(crate) fn read_with_runner<R: ProcessRunner>(
     read_with_runner_in(runner, monitor, timeout, drm_root())
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn read_with_runner_in<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -143,6 +147,7 @@ fn read_with_runner_in<R: ProcessRunner>(
 /// Returns `Ok(None)` when the monitor has no verifiable connector, so callers
 /// can leave it to regular ticks. A monitor that is still waking fails fast
 /// with an error instead of stalling for seconds.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn read_verified_bus_with_runner<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -151,6 +156,7 @@ pub(crate) fn read_verified_bus_with_runner<R: ProcessRunner>(
     read_verified_bus_in(runner, monitor, timeout, drm_root())
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn read_verified_bus_in<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -182,6 +188,7 @@ fn read_verified_bus_in<R: ProcessRunner>(
     parse_brightness_output(&output).map(Some)
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parse_brightness_output(
     output: &CommandOutput,
 ) -> Result<super::BackendObservation, BackendError> {
@@ -267,6 +274,7 @@ fn drm_root() -> &'static Path {
 /// Whether the kernel reports this monitor's connector as powered off
 /// (DPMS off or disconnected). Unknown states count as powered on, so a
 /// system without the `dpms` attribute keeps probing over DDC.
+#[cfg(any(target_os = "linux", test))]
 fn connector_is_powered_off(selector: &MonitorSelector, root: &Path) -> bool {
     let Some(connector) = normalized(&selector.connector) else {
         return false;
@@ -634,9 +642,11 @@ mod tests {
     use crate::config::{MonitorConfig, MonitorSelector};
 
     use super::{
-        apply_with_runner, apply_with_runner_in, build_selector, read_with_runner_in,
-        selector_relation, verified_bus_selection, DdcSelectorRelation, EdidIdentity,
+        apply_with_runner, apply_with_runner_in, read_with_runner_in, selector_relation,
+        DdcSelectorRelation, EdidIdentity,
     };
+    #[cfg(target_os = "linux")]
+    use super::{build_selector, verified_bus_selection};
 
     /// A minimal EDID base block with a monitor name and serial descriptor.
     fn edid(model: &str, serial: &str) -> Vec<u8> {

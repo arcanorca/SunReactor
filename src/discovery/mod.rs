@@ -522,7 +522,7 @@ pub(crate) fn discover_with_runner<R: runner::ProcessRunner>(
     render::build_report(snapshot)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn discover_with_roots<R: runner::ProcessRunner>(
     runner: &R,
     sysfs_root: &Path,
