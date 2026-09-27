@@ -6,7 +6,6 @@ use std::io;
 #[cfg(target_os = "linux")]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
-#[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

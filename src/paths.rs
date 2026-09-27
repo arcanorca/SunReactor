@@ -96,8 +96,8 @@ pub fn runtime_socket_path() -> Result<PathBuf, PathError> {
 
 /// Represents an IPC communication endpoint.
 ///
-/// On Linux/Unix, this is backed by a Unix-domain socket path in the user runtime directory.
-/// On Windows (future port), this will be backed by a native Named Pipe identifier.
+/// On Linux, this is backed by a Unix-domain socket path in the user runtime directory.
+/// On Windows, this is backed by a native Named Pipe identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpcEndpoint {
     UnixSocket(PathBuf),

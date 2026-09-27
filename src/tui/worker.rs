@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -37,16 +36,16 @@ pub(crate) enum IpcEvent {
 /// Where the worker reaches the daemon and whether it may probe hardware.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WorkerTarget {
-    /// `None` resolves the user's runtime control socket.
-    pub socket_path: Option<PathBuf>,
+    /// `None` resolves the user's runtime control endpoint.
+    pub socket_override: Option<ControlSocket>,
     /// Disabled in unit tests so no `ddcutil` process is ever started.
     pub hardware_discovery: bool,
 }
 
 impl WorkerTarget {
     fn socket(&self) -> Result<ControlSocket, crate::paths::PathError> {
-        match &self.socket_path {
-            Some(path) => Ok(ControlSocket { path: path.clone() }),
+        match &self.socket_override {
+            Some(socket) => Ok(socket.clone()),
             None => ControlSocket::from_runtime(),
         }
     }

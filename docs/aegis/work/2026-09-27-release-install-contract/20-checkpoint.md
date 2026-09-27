@@ -2,7 +2,7 @@
 
 ## Current todo
 
-Finish regression and release-target verification for the merged `main` + 0.12.1 source, then publish and inspect the corrected release.
+Complete the CI-discovered compatibility repairs, get green default-branch CI, then qualify and publish `v0.12.1`.
 
 ## Completed
 
@@ -27,15 +27,20 @@ Finish regression and release-target verification for the merged `main` + 0.12.1
 - Refetched `origin`; `origin/main` still equals `MERGE_HEAD` (`ee78c046a9d226c39edbabec5753fe1903574084`). Remote `v0.12.1` tag does not exist. GitHub CLI is authenticated with `repo` and `workflow` scopes.
 - Reviewed the complete staged path list: 48 intended paths, no `releases/` entry, no unstaged tracked diff, no unresolved index entries, and all cached whitespace checks pass.
 - Confirmed `workflow_dispatch` builds and uploads qualification artifacts only; the publish job is limited to a `v*` tag push and requires exactly four archives.
+- Default-branch CI run `36291621537` on `727092a` exposed two integration failures. Installer/packaging and cross-distro compatibility passed; Windows `cargo check` and Linux tests failed.
+- Root causes: the process tests invoked `sh` but used Bash-only `$BASHPID`; the local host's `/bin/sh` resolves to Bash, while Ubuntu CI uses a POSIX shell. The merge also Linux-gated `ddcutil`, Linux-gated shared path imports, kept a path-shaped TUI test override against Windows' named-pipe `ControlSocket`, and compiled a Linux sysfs symlink test on Windows.
+- Repaired those owners: restored cross-platform `ddcutil` visibility and `Path` imports, made the TUI worker override carry `ControlSocket` with a unique Windows test pipe, gated the sysfs symlink test to Linux, switched child PID capture to POSIX `$!`, and gated the Linux-only `Instant` test import.
+- Fresh local post-repair checks pass: 517 library + 6 CLI + 1 daemon tests; strict Clippy; workspace `cargo check`; format and shell syntax; installer and release regression suites.
+- Local Windows MSVC cross-check was attempted but this Linux host lacks `lib.exe`, required by `ring`; the pushed Windows CI job remains the authoritative platform gate.
 
 ## Active slice
 
-Create the reviewed merge commit, push it to the task branch and default branch, qualify all four release targets, then publish and inspect `v0.12.1`.
+Stage and commit the CI correction, push it to both branches, rerun CI, then qualify all four release targets and publish `v0.12.1`.
 
 ## Patch-shape and diagnosis
 
-- PatchShape: release producer/consumer contract mismatch plus an installer update path that could leave replaced files behind after service failure.
-- Canonical owner: `scripts/release.sh` produces the shared archive contract; `install.sh` validates, installs, and rolls back; the release workflow gates qualification and publication.
+- PatchShape: release producer/consumer contract mismatch, installer rollback gap, and cross-platform compile/test boundary mismatches.
+- Canonical owner: `scripts/release.sh` produces the shared archive contract; `install.sh` validates, installs, and rolls back; platform adapters own OS-specific IPC; process tests use the shell contract they invoke; the release workflow gates qualification and publication.
 - Upward drill: tag/source versions, archive members, ABI metadata, installer expectations, the failed musl job, and prior/current test seams.
 - Causal status: stale binary version and missing service/asset-contract mismatches are confirmed; the exact public upload actor remains unknown.
 - TDD posture: resumed task baseline says TDD mode is off; focused regressions are used without requiring a strict RED/GREEN route.
@@ -59,9 +64,9 @@ Create the reviewed merge commit, push it to the task branch and default branch,
 
 ## Evidence still required
 
-- Commit/push, default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
+- Commit/push of the cross-platform correction, green default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
 - Publish `v0.12.1`, then verify its tag, four archives, combined checksum manifest, ABI metadata, archive members, executable versions, and static musl ELF properties.
 
 ## Next step
 
-Create the authorized merge commit, then push the result to both the task branch and `main`.
+Review and stage the eight code paths plus this checkpoint, commit, then push the correction to the task branch and `main`.

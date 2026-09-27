@@ -785,6 +785,7 @@ mod tests {
         assert!(EdidIdentity::parse(&edid("A", "B")[..100]).is_none());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn bus_is_used_only_when_the_connector_edid_proves_identity() {
         let root = tempfile::tempdir().unwrap();
