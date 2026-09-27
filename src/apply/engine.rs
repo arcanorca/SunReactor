@@ -731,8 +731,11 @@ mod tests {
     use crate::backends::{testutil::FakeRunner, BackendKind};
     use crate::config::MonitorSelector;
     use crate::policy::PerMonitorTarget;
+    #[cfg(target_os = "linux")]
     use crate::process::{CommandError, CommandOutput, ProcessRunner};
+    #[cfg(target_os = "linux")]
     use std::sync::atomic::{AtomicUsize, Ordering};
+    #[cfg(target_os = "linux")]
     use std::sync::Arc;
     use std::time::Duration;
     #[cfg(target_os = "linux")]

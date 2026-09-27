@@ -147,7 +147,7 @@ fn read_with_runner_in<R: ProcessRunner>(
 /// Returns `Ok(None)` when the monitor has no verifiable connector, so callers
 /// can leave it to regular ticks. A monitor that is still waking fails fast
 /// with an error instead of stalling for seconds.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 pub(crate) fn read_verified_bus_with_runner<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,

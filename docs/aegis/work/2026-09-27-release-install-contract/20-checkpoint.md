@@ -2,7 +2,7 @@
 
 ## Current todo
 
-Complete the CI-discovered compatibility repairs, get green default-branch CI, then qualify and publish `v0.12.1`.
+Get green default-branch CI after the final Windows Clippy boundary correction, then qualify and publish `v0.12.1`.
 
 ## Completed
 
@@ -35,10 +35,14 @@ Complete the CI-discovered compatibility repairs, get green default-branch CI, t
 - Follow-up CI run `36292139369` passed Linux format/Clippy/tests, installer/packaging, cross-distro compatibility, and Windows `cargo check`; Windows Clippy then exposed target-specific dead-code/import and style lints.
 - Scoped Linux-only readback/runtime/test helpers to Linux or Unix test builds, kept the common probe `Result` contract, and fixed the Windows-only Clippy findings without adding broad lint suppressions.
 - Fresh local rerun after the Clippy-boundary repair passes: workspace tests, strict Clippy, workspace `cargo check`, format/shell syntax, installer tests, and release tests.
+- CI run `36292580103` reproduced exactly four Windows Clippy findings: three Linux-only test imports in `src/apply/engine.rs` and one Linux-only helper in `src/backends/ddc.rs`; all other CI jobs passed, including Linux tests/Clippy, installer/packaging, Windows `cargo check`, and the cross-distro artifact matrix.
+- Applied the narrow platform boundary correction: gate the `ProcessRunner`/atomic/`Arc` test imports and the verified DDC bus helper to Linux. This leaves Linux runtime behavior unchanged and removes Windows-only unused/dead-code findings.
+- Fresh verification on the corrected worktree passes: `cargo fmt --all --check`; 517 library, 6 CLI, and 1 daemon tests; strict all-target/all-feature Clippy; all-target/all-feature `cargo check`; both binary `--help` smoke checks; shell syntax; `bash tests/installer.sh`; `bash tests/release_test.sh`; and `git diff --check`.
+- Preserved the pre-existing untracked `releases/` directory unchanged; it is excluded from the commit and release upload.
 
 ## Active slice
 
-Stage and commit the CI lint correction, push it to both branches, rerun CI, then qualify all four release targets and publish `v0.12.1`.
+Commit the locally verified CI lint correction and this checkpoint, push to the task branch and `main`, then require fresh green CI before qualifying all four release targets and publishing `v0.12.1`.
 
 ## Patch-shape and diagnosis
 
@@ -67,9 +71,9 @@ Stage and commit the CI lint correction, push it to both branches, rerun CI, the
 
 ## Evidence still required
 
-- Commit/push of the cross-platform Clippy correction, green default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
+- Commit/push of the cross-platform Clippy correction, fresh green default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
 - Publish `v0.12.1`, then verify its tag, four archives, combined checksum manifest, ABI metadata, archive members, executable versions, and static musl ELF properties.
 
 ## Next step
 
-Review and stage the target-specific code/lint paths plus this checkpoint, commit, then push the correction to the task branch and `main`.
+Fetch and confirm remote heads, review/stage only the two target-specific source files and this checkpoint, commit, then push the correction to the task branch and `main`.
