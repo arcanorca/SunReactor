@@ -1038,6 +1038,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn due_reassert_reads_matching_hardware_without_writing() {
         let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
         let policy = test_policy(vec![("panel", 50)]);
@@ -1067,6 +1068,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn due_reassert_corrects_different_hardware_value() {
         let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
         let policy = test_policy(vec![("panel", 50)]);
@@ -1142,6 +1144,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn disabled_smooth_transition_sends_one_direct_ddc_write() {
         let monitors = vec![test_monitor("external", BackendKind::Ddc)];
         let policy = test_policy(vec![("external", 80)]);

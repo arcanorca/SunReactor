@@ -78,14 +78,6 @@ impl ModelEnvironment {
     }
 }
 
-pub(crate) fn load_timezone(timezone_name: &str) -> Option<tz::TimeZone> {
-    let path = std::path::Path::new("/usr/share/zoneinfo").join(timezone_name);
-    std::fs::read(path)
-        .ok()
-        .and_then(|data| tz::TimeZone::from_tz_data(&data).ok())
-        .or_else(|| tz::TimeZone::from_posix_tz(timezone_name).ok())
-}
-
 impl Model {
     #[must_use]
     pub fn new() -> Self {
@@ -114,7 +106,7 @@ impl Model {
         };
         let form = FormState::new(&config);
         let (ipc_tx, ipc_rx) = spawn_ipc_worker(Duration::from_secs(2), environment.worker);
-        let timezone_cache = load_timezone(&config.location.timezone);
+        let timezone_cache = crate::timezone::resolve_timezone(&config.location.timezone);
 
         let mut monitor_list_state = ratatui::widgets::ListState::default();
         monitor_list_state.select(Some(0));

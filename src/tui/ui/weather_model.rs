@@ -530,11 +530,7 @@ pub(crate) fn atmospheric_telemetry(app: &Model) -> LegacyAtmosphericTelemetry {
 #[cfg(test)]
 pub(crate) fn forecast_time_label(epoch_s: u64, use_12h_time: bool, timezone: &str) -> String {
     let datetime = chrono::DateTime::from_timestamp(epoch_s as i64, 0).unwrap_or_default();
-    let timezone_path = std::path::Path::new("/usr/share/zoneinfo").join(timezone);
-    let offset = std::fs::read(&timezone_path)
-        .ok()
-        .and_then(|data| tz::TimeZone::from_tz_data(&data).ok())
-        .or_else(|| tz::TimeZone::from_posix_tz(timezone).ok())
+    let offset = crate::timezone::resolve_timezone(timezone)
         .and_then(|timezone| {
             timezone
                 .find_local_time_type(epoch_s as i64)

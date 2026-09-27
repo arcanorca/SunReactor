@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use crate::config::{self as app_config, Config};
 use crate::ipc::Request;
-use crate::tui::app::environment::load_timezone;
 use crate::tui::globe::{rotation_duration, GlobeCenter};
 use crate::tui::model::{ActionKind, ActionState, ErrorCategory, Model};
 use crate::tui::worker::IpcCommand;
@@ -139,7 +138,8 @@ impl Model {
                         rotation_duration(previous_center, next_center),
                     );
                 }
-                self.timezone_cache = load_timezone(&self.config.location.timezone);
+                self.timezone_cache =
+                    crate::timezone::resolve_timezone(&self.config.location.timezone);
                 self.config_error = None;
                 self.config_dirty = false;
                 self.last_config_mutation = None;

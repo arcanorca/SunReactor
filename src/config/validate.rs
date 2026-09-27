@@ -265,16 +265,7 @@ fn validate_pct(errors: &mut Vec<ValidationError>, field: impl Into<String>, val
 
 pub fn validate_timezone(timezone: &str) -> Result<(), String> {
     let timezone = timezone.trim();
-    let path = std::path::Path::new("/usr/share/zoneinfo").join(timezone);
-    if path.is_file() {
-        return Ok(());
-    }
-
-    if tzdb::tz_by_name(timezone).is_some() {
-        return Ok(());
-    }
-
-    if tz::TimeZone::from_posix_tz(timezone).is_ok() {
+    if crate::timezone::resolve_timezone(timezone).is_some() {
         return Ok(());
     }
 
