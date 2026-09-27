@@ -2,7 +2,7 @@
 
 ## Current todo
 
-Correct the latent Windows test and timezone failures exposed after Clippy passed, get fresh green default-branch CI, then qualify and publish `v0.12.1`.
+Close out evidence for the published and independently verified `v0.12.1` release.
 
 ## Completed
 
@@ -45,10 +45,15 @@ Correct the latent Windows test and timezone failures exposed after Clippy passe
 - Scoped the three process-runner DDC assertions to Linux and made the bootstrap test assert Linux socket-directory creation or the Windows Named Pipe endpoint as appropriate.
 - Focused local regressions pass: embedded IANA lookup, configured forecast-time formatting, platform IPC bootstrap, Linux DDC reassertion, and direct DDC write behavior.
 - Full local verification passes: 518 library, 6 CLI, and 1 daemon tests; strict Clippy; all-target/all-feature `cargo check`; format; shell syntax; installer/release test suites; both binary `--help` checks; and `git diff --check`.
+- Commit `b010a2631ded68cfeb85cca02972c7a7f55f4e43` was pushed to `main` and `refactor/kiss-solid-yagni-baseline`; CI run `36293320983` passed Linux, installer, all eight distro checks, Windows tests/Clippy/check, Windows release build, and IPC smoke.
+- Workflow-dispatch qualification run `36293573564` passed all four Linux targets. Its `publish` job was correctly skipped; each artifact checksum passed, the six archive members were exact, all target architectures matched, x86_64 binaries reported `0.12.1` and ran, and both musl targets had no ELF interpreter or `NEEDED` libraries.
+- Tag `v0.12.1` resolves to commit `b010a2631ded68cfeb85cca02972c7a7f55f4e43`. Tag-triggered CI `36293807566` and release run `36293807564` both passed; the publish job created the public release and uploaded four archives, `SHA256SUMS`, and `ABI-METADATA`.
+- Independently downloaded public assets. `sha256sum --check SHA256SUMS` passed all four archives and ABI metadata; each public archive hash exactly matched its qualification artifact. Public archive members, ELF architecture, x86_64 version/help, and static musl properties all passed.
+- Existing `v0.12.0` tag/release was preserved. The local untracked `releases/` directory remains untouched and excluded from all commits.
 
 ## Active slice
 
-Stage only the source changes and checkpoint, commit/push to both branches, and require fresh green Windows plus Linux CI before release qualification.
+Code, CI, four-target qualification, publication, and public-asset verification are complete; commit this process-only closeout.
 
 ## Architecture escalation and causal map
 
@@ -58,7 +63,7 @@ Stage only the source changes and checkpoint, commit/push to both branches, and 
 - Architecture question and resolution: whether to keep Windows as a CI-supported platform is answered by the current README, Windows port contract, workflow, and the user's request to fix all issues. Keep that contract; no new product or architecture decision is needed.
 - Safe read-only next step: compare each failing test with its target-specific implementation and existing timezone fallback, then make the smallest owner-level corrections. This read-only comparison is complete.
 - Pre-Claim topology: `independent-compound` for the observed run: three independently failing owner paths produced five assertions in the same Windows test job. The test scopes, IPC endpoint contract, and timezone lookup do not call one another; removing any one manifestation leaves the other paths. Anti-disguise check found no shared producer in the repository beyond the Windows target that reveals these mismatches.
-- Causal status: platform mismatch is confirmed for the two test paths; missing embedded IANA lookup is confirmed in the TUI resolver. Recurrence remains open until corrected Windows tests and IANA-zone behavior pass on the Windows runner.
+- Causal status: the Windows test mismatches and missing embedded IANA lookup are closed by the green Windows test jobs in runs `36293320983` and `36293807566`.
 - Scope fence: retain Linux release behavior and host zoneinfo precedence; use the already-installed embedded `tzdb` only when the system zoneinfo lookup is unavailable; do not add Windows release artifacts or alter hardware behavior.
 
 ## Patch-shape and diagnosis
@@ -100,9 +105,9 @@ Stage only the source changes and checkpoint, commit/push to both branches, and 
 
 ## Evidence still required
 
-- Commit/push of the Windows test and timezone repairs, fresh green default-branch CI, workflow-dispatch qualification for all four release targets, tag-triggered publish, and public asset verification.
-- Publish `v0.12.1`, then verify its tag, four archives, combined checksum manifest, ABI metadata, archive members, executable versions, and static musl ELF properties.
+- No required implementation, CI, qualification, publication, or public-asset verification remains.
+- Residual scope: the release was not installed on the user's specific machine; installer behavior and all published assets were verified in tests and CI, but host-specific configuration/hardware was not exercised.
 
 ## Next step
 
-Review the complete staged path list (excluding `releases/`), commit/push the verified follow-up, then wait for fresh green CI.
+No further work remains after this process-only closeout commit; retain `releases/` as pre-existing local data.
