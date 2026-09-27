@@ -1122,11 +1122,11 @@ mod tests {
     #[test]
     fn test_edid_manufacturer_decoding() {
         // Dell: 'D' (4), 'E' (5), 'L' (12) -> (4<<10) | (5<<5) | 12 = 4268 (0x10AC)
-        let dell_word = (4u16 << 10) | (5u16 << 5) | 12u16;
+        let dell_word = (4u16 << 10) | (5u16 << 5) | 0x000c_u16;
         assert_eq!(decode_edid_manufacturer(dell_word).as_deref(), Some("DEL"));
 
         // Asus: 'A' (1), 'S' (19), 'U' (21) -> (1<<10) | (19<<5) | 21 = 1653
-        let asus_word = (1u16 << 10) | (19u16 << 5) | 21u16;
+        let asus_word = (1u16 << 10) | (19u16 << 5) | 0x0015_u16;
         assert_eq!(decode_edid_manufacturer(asus_word).as_deref(), Some("ASU"));
 
         // Invalid: 0

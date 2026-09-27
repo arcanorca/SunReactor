@@ -549,16 +549,18 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
 
-    use crate::backends::{testutil::FakeRunner, BackendKind, FailureKind};
+    #[cfg(target_os = "linux")]
+    use crate::backends::FailureKind;
+    use crate::backends::{testutil::FakeRunner, BackendKind};
     use crate::config::{
         Config, ConfigError, ConfigReport, ConfigSource, DaemonConfig, LocationConfig, LogLevel,
         MonitorConfig, MonitorSelector, SolarPolicyConfig, WeatherConfig,
     };
     use crate::ipc::{Request, Response};
     use crate::process::{CommandError, CommandOutput, ProcessRunner};
-    use crate::state::{
-        FailureBackoffState, ManualOverrideState, RuntimeState, WeatherSnapshotMetadata,
-    };
+    #[cfg(target_os = "linux")]
+    use crate::state::FailureBackoffState;
+    use crate::state::{ManualOverrideState, RuntimeState, WeatherSnapshotMetadata};
 
     struct RecordingRunner {
         calls: std::sync::Mutex<Vec<String>>,
@@ -611,6 +613,7 @@ mod tests {
             }
         }
 
+        #[cfg(target_os = "linux")]
         fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
         }
@@ -1960,6 +1963,7 @@ mod tests {
         report
     }
 
+    #[cfg(target_os = "linux")]
     fn test_capability_snapshot() -> CapabilitySnapshot {
         CapabilitySnapshot {
             ddc_present: Vec::new(),

@@ -340,7 +340,7 @@ pub(crate) fn apply_with_runner<R: ProcessRunner>(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 pub(crate) fn apply_with_runner_roots_for_test<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -352,6 +352,7 @@ pub(crate) fn apply_with_runner_roots_for_test<R: ProcessRunner>(
     apply_with_runner_roots(runner, monitor, percent, timeout, drm_root, backlight_root)
 }
 
+#[cfg(target_os = "linux")]
 pub(crate) fn read_with_runner<R: ProcessRunner>(
     _runner: &R,
     monitor: &MonitorConfig,
