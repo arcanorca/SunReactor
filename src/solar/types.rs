@@ -30,34 +30,11 @@ impl Location {
         timezone_name: &str,
     ) -> Result<Self, SolarError> {
         let timezone_name = timezone_name.trim();
-        let path = std::path::Path::new("/usr/share/zoneinfo").join(timezone_name);
-
-        // 1. Try reading dynamically from OS zoneinfo (Linux dynamic tzdata)
-        let tz = if path.is_file() {
-            std::fs::read(&path)
-                .ok()
-                .and_then(|data| TimeZone::from_tz_data(&data).ok())
-        } else {
-            None
-        };
-
-        // 2. Fall back to embedded IANA tzdb (Windows or minimal Linux without tzdata pkg)
-        let tz = match tz {
-            Some(t) => t,
-            None => {
-                if let Some(raw_data) = tzdb::raw_tz_by_name(timezone_name) {
-                    TimeZone::from_tz_data(raw_data).map_err(|_| SolarError::InvalidTimezone {
-                        timezone: timezone_name.to_owned(),
-                    })?
-                } else {
-                    TimeZone::from_posix_tz(timezone_name).map_err(|_| {
-                        SolarError::InvalidTimezone {
-                            timezone: timezone_name.to_owned(),
-                        }
-                    })?
-                }
+        let tz = crate::timezone::resolve_timezone(timezone_name).ok_or_else(|| {
+            SolarError::InvalidTimezone {
+                timezone: timezone_name.to_owned(),
             }
-        };
+        })?;
 
         Ok(Self {
             latitude,

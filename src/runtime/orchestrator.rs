@@ -641,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_creates_runtime_dirs_and_loads_state() {
+    fn bootstrap_creates_state_dir_and_configures_platform_ipc() {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
         let socket_path = temp.path().join("run/control.sock");
@@ -654,7 +654,13 @@ mod tests {
         .expect("runtime should bootstrap");
 
         assert!(state_path.parent().expect("state dir").exists());
+        #[cfg(target_os = "linux")]
         assert!(socket_path.parent().expect("socket dir").exists());
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            runtime.socket.endpoint(),
+            crate::paths::IpcEndpoint::NamedPipe(socket_path.display().to_string())
+        );
         assert_eq!(runtime.state, RuntimeState::default());
     }
 
