@@ -20,7 +20,6 @@
 pub mod apply;
 pub mod backends;
 pub mod config;
-#[cfg(target_os = "linux")]
 pub mod ddcutil;
 pub mod discovery;
 #[cfg(target_os = "linux")]

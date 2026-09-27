@@ -31,29 +31,47 @@ impl ModelEnvironment {
             config_source: Some(path),
             config_save_path: None,
             worker: WorkerTarget {
-                socket_path: None,
+                socket_override: None,
                 hardware_discovery: true,
             },
         })
     }
 
     /// A hermetic environment: default config, saves into a private temporary
-    /// directory, and a control socket path that no daemon listens on.
+    /// directory, and a control endpoint that no daemon listens on.
     #[cfg(test)]
     pub(crate) fn isolated() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
+        let test_id = NEXT.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
             "sunreactor-tui-test-{}-{}",
             std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
+            test_id
         ));
         let _ = std::fs::create_dir_all(&dir);
+        let socket_override = {
+            #[cfg(target_os = "linux")]
+            {
+                crate::ipc::ControlSocket {
+                    path: dir.join("no-daemon.sock"),
+                }
+            }
+            #[cfg(target_os = "windows")]
+            {
+                crate::ipc::ControlSocket {
+                    endpoint: crate::paths::IpcEndpoint::NamedPipe(format!(
+                        r"\\.\pipe\SunReactor\test-{}-{test_id}",
+                        std::process::id()
+                    )),
+                }
+            }
+        };
         Self {
             config_source: None,
             config_save_path: Some(dir.join("config.toml")),
             worker: WorkerTarget {
-                socket_path: Some(dir.join("no-daemon.sock")),
+                socket_override: Some(socket_override),
                 hardware_discovery: false,
             },
         }
@@ -78,7 +96,7 @@ impl Model {
             config_source: None,
             config_save_path: None,
             worker: WorkerTarget {
-                socket_path: None,
+                socket_override: None,
                 hardware_discovery: true,
             },
         });

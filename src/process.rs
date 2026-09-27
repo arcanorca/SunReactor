@@ -434,7 +434,7 @@ mod tests {
         let pid_file = tempfile::NamedTempFile::new().expect("pid file should be created");
         let started = Instant::now();
         let output = run_script_with_args(
-            "(printf '%s' \"$BASHPID\" > \"$1\"; printf descendant-marker; exec sleep 30) & printf direct-marker; exit 0",
+            "(printf descendant-marker; exec sleep 30) & printf '%s' \"$!\" > \"$1\"; printf direct-marker; exit 0",
             &[pid_file.path().to_str().expect("pid path should be UTF-8")],
             Duration::from_secs(2),
         )
@@ -451,7 +451,7 @@ mod tests {
         let pid_file = tempfile::NamedTempFile::new().expect("pid file should be created");
         let started = Instant::now();
         let error = run_script_with_args(
-            "(printf '%s' \"$BASHPID\" > \"$1\"; printf descendant-marker; exec sleep 30) & printf direct-marker; sleep 30",
+            "(printf descendant-marker; exec sleep 30) & printf '%s' \"$!\" > \"$1\"; printf direct-marker; sleep 30",
             &[pid_file.path().to_str().expect("pid path should be UTF-8")],
             Duration::from_millis(100),
         )
