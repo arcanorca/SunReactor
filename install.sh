@@ -31,21 +31,38 @@ readonly STATE_DIR="$STATE_HOME/sunreactor"
 readonly CACHE_DIR="$CACHE_HOME/sunreactor"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly TMP_DIR="$(mktemp -d)"
+readonly BACKUP_DIR="$TMP_DIR/backup"
 
 # State variables
 QUIET=0
 UNINSTALL=0
 PURGE=0
 NO_SERVICE=0
+INSTALL_MUTATED=0
+INSTALL_COMMITTED=0
+INSTALL_ROLLBACK_INCOMPLETE=0
+SYSTEMD_UNIT_MUTATED=0
+SYSTEMD_MANAGER_AVAILABLE=0
+SERVICE_WAS_ACTIVE=0
+SERVICE_WAS_ENABLED=0
+SERVICE_ENABLE_ATTEMPTED=0
+SERVICE_START_ATTEMPTED=0
 
 # ==========================================
 # 2. SYSTEM MODULE
 # ==========================================
 cleanup() {
-    rm -rf "$TMP_DIR"
+    local exit_status=$?
+    if [[ $INSTALL_MUTATED -eq 1 && $INSTALL_COMMITTED -eq 0 ]]; then
+        rollback_installation
+    fi
+    if [[ $INSTALL_ROLLBACK_INCOMPLETE -eq 0 ]]; then
+        rm -rf "$TMP_DIR"
+    fi
+    return "$exit_status"
 }
-trap 'cleanup; exit 1' INT TERM
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 parse_args() {
     for arg in "$@"; do
@@ -60,7 +77,7 @@ parse_args() {
 }
 
 check_dependencies() {
-    local deps=("curl" "tar" "install" "mkdir" "mktemp" "grep" "sed" "awk" "sort")
+    local deps=("curl" "tar" "install" "mkdir" "mktemp" "cp" "mv" "rm" "sleep" "grep" "sed" "awk" "sort")
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             log_error "Missing required dependency: $dep"
@@ -77,6 +94,31 @@ sha256_file() {
     else
         return 1
     fi
+}
+
+normalize_release_version() {
+    local tag="$1" version="${1#v}"
+    if [[ ! "$version" =~ ^[[:alnum:]][[:alnum:].+-]*$ ]]; then
+        log_error "Invalid release tag: $tag"
+        return 1
+    fi
+    printf '%s\n' "$version"
+}
+
+release_archive_name() {
+    local version arch abi
+    version=$(normalize_release_version "$1") || return 1
+    arch="$2"
+    abi="$3"
+    case "$arch" in
+        x86_64|aarch64) ;;
+        *) log_error "Unsupported release architecture: $arch"; return 1 ;;
+    esac
+    case "$abi" in
+        gnu|musl) ;;
+        *) log_error "Unsupported release ABI: $abi"; return 1 ;;
+    esac
+    printf 'sunreactor-%s-linux-%s-%s.tar.gz\n' "$version" "$arch" "$abi"
 }
 
 detect_libc() {
@@ -165,6 +207,8 @@ fetch_latest_version() {
 
 download_release() {
     local version="$1"
+    local normalized_version
+    normalized_version=$(normalize_release_version "$version") || exit 1
     local arch
     local target
     
@@ -187,13 +231,14 @@ download_release() {
         log_error "Could not determine whether this Linux system uses glibc or musl."
         exit 1
     fi
-    local tarball="sunreactor-${version}-linux-${target}-${libc}.tar.gz"
+    local tarball
+    tarball=$(release_archive_name "$version" "$target" "$libc") || exit 1
     local url="https://github.com/$REPO/releases/download/${version}/${tarball}"
     local dest="$TMP_DIR/$tarball"
     local sums="$TMP_DIR/SHA256SUMS"
     local abi_metadata="$TMP_DIR/ABI-METADATA"
 
-    log_info "Downloading SunReactor ${version} for ${target}-${libc}..."
+    log_info "Downloading SunReactor ${normalized_version} for ${target}-${libc}..."
     if ! curl -# -fL "$url" -o "$dest"; then
         log_error "Download failed. Check your connection or the release asset existence."
         exit 1
@@ -239,17 +284,177 @@ extract_archive() {
     fi
     while IFS= read -r member; do
         case "$member" in
-            sunreactord|sunreactorctl|LICENSE|README.md) ;;
+            sunreactord|sunreactorctl|sunreactord.service|LICENSE|README.md) ;;
             *) log_error "Unexpected or unsafe archive member: $member"; return 1 ;;
         esac
     done <<< "$members"
     rm -rf "$TMP_DIR/extracted"
     mkdir -p "$TMP_DIR/extracted"
     tar xzf "$archive_path" -C "$TMP_DIR/extracted"
-    for member in sunreactord sunreactorctl; do
+    for member in sunreactord sunreactorctl sunreactord.service; do
         [[ -f "$TMP_DIR/extracted/$member" ]] || { log_error "Archive is missing $member."; return 1; }
     done
     ARTIFACT_DIR="$TMP_DIR/extracted"
+}
+
+verify_binary_versions() {
+    local artifact_dir="$1" version="$2" binary reported_version
+    for binary in sunreactord sunreactorctl; do
+        if [[ ! -x "$artifact_dir/$binary" ]]; then
+            log_error "Release archive is missing executable $binary."
+            return 1
+        fi
+        if ! reported_version=$("$artifact_dir/$binary" --version 2>&1); then
+            log_error "Could not read the version reported by $binary."
+            return 1
+        fi
+        if [[ "$reported_version" != "$binary $version" ]]; then
+            log_error "Release $binary reports '$reported_version'; expected '$binary $version'."
+            return 1
+        fi
+        if ! "$artifact_dir/$binary" --help >/dev/null 2>&1; then
+            log_error "Release $binary failed its --help smoke test."
+            return 1
+        fi
+    done
+}
+
+backup_file() {
+    local source="$1" backup="$2"
+    if [[ -f "$source" ]]; then
+        cp -p -- "$source" "$backup"
+    else
+        : >"$backup.absent"
+    fi
+}
+
+begin_install_transaction() {
+    local target_bin="${DESTDIR:-}$BIN_DIR"
+    local target_systemd="${DESTDIR:-}$SYSTEMD_DIR"
+
+    mkdir -p "$BACKUP_DIR"
+    backup_file "$target_bin/sunreactord" "$BACKUP_DIR/sunreactord"
+    backup_file "$target_bin/sunreactorctl" "$BACKUP_DIR/sunreactorctl"
+    if [[ $NO_SERVICE -eq 0 || -n "${DESTDIR:-}" ]]; then
+        backup_file "$target_systemd/sunreactord.service" "$BACKUP_DIR/sunreactord.service"
+    fi
+
+    if [[ -z "${DESTDIR:-}" && $NO_SERVICE -eq 0 ]] && systemd_user_manager_available; then
+        SYSTEMD_MANAGER_AVAILABLE=1
+        if systemctl --user is-active --quiet sunreactord.service; then
+            SERVICE_WAS_ACTIVE=1
+        fi
+        if systemctl --user is-enabled --quiet sunreactord.service; then
+            SERVICE_WAS_ENABLED=1
+        fi
+    fi
+}
+
+atomic_install() {
+    local source="$1" destination="$2" mode="$3"
+    local temporary
+
+    if ! temporary=$(mktemp "${destination}.sunreactor-new.XXXXXXXX"); then
+        return 1
+    fi
+    INSTALL_MUTATED=1
+    if ! install -m "$mode" "$source" "$temporary"; then
+        rm -f -- "$temporary"
+        return 1
+    fi
+    if ! mv -f -- "$temporary" "$destination"; then
+        rm -f -- "$temporary"
+        return 1
+    fi
+}
+
+restore_file() {
+    local backup="$1" destination="$2" mode="$3"
+    if [[ -f "$backup.absent" ]]; then
+        if ! rm -f -- "$destination"; then
+            log_error "Could not remove the failed installation file: $destination"
+            return 1
+        fi
+        return 0
+    fi
+    if [[ ! -f "$backup" ]]; then
+        log_error "The saved installation file is missing: $backup"
+        return 1
+    fi
+
+    if ! atomic_install "$backup" "$destination" "$mode"; then
+        log_error "Could not restore the previous installation file: $destination"
+        return 1
+    fi
+}
+
+rollback_installation() {
+    local target_bin="${DESTDIR:-}$BIN_DIR"
+    local target_systemd="${DESTDIR:-}$SYSTEMD_DIR"
+    local rollback_failed=0
+
+    if [[ $SYSTEMD_MANAGER_AVAILABLE -eq 1 && $SERVICE_START_ATTEMPTED -eq 1 ]] \
+        && systemctl --user is-active --quiet sunreactord.service; then
+        if ! systemctl --user stop sunreactord.service >/dev/null 2>&1; then
+            log_error "Could not stop the replacement daemon during rollback."
+            rollback_failed=1
+        fi
+    fi
+
+    restore_file "$BACKUP_DIR/sunreactord" "$target_bin/sunreactord" 755 || rollback_failed=1
+    restore_file "$BACKUP_DIR/sunreactorctl" "$target_bin/sunreactorctl" 755 || rollback_failed=1
+    if [[ $SYSTEMD_UNIT_MUTATED -eq 1 ]]; then
+        restore_file "$BACKUP_DIR/sunreactord.service" \
+            "$target_systemd/sunreactord.service" 644 || rollback_failed=1
+    fi
+
+    if [[ $SYSTEMD_MANAGER_AVAILABLE -eq 1 ]]; then
+        if [[ $SYSTEMD_UNIT_MUTATED -eq 1 ]] \
+            && ! systemctl --user daemon-reload >/dev/null 2>&1; then
+            log_error "Could not reload the restored systemd unit during rollback."
+            rollback_failed=1
+        fi
+        if [[ $SERVICE_ENABLE_ATTEMPTED -eq 1 && $SERVICE_WAS_ENABLED -eq 1 ]]; then
+            if ! systemctl --user enable sunreactord.service >/dev/null 2>&1; then
+                log_error "Could not restore the previous service enablement state."
+                rollback_failed=1
+            fi
+        elif [[ $SERVICE_ENABLE_ATTEMPTED -eq 1 ]] \
+            && systemctl --user is-enabled --quiet sunreactord.service \
+            && ! systemctl --user disable sunreactord.service >/dev/null 2>&1; then
+            log_error "Could not restore the previous service enablement state."
+            rollback_failed=1
+        fi
+        if [[ $SERVICE_START_ATTEMPTED -eq 1 && $SERVICE_WAS_ACTIVE -eq 1 ]] \
+            && ! systemctl --user start sunreactord.service >/dev/null 2>&1; then
+            log_error "Could not restart the previous daemon during rollback."
+            rollback_failed=1
+        fi
+    fi
+
+    if [[ $rollback_failed -eq 1 ]]; then
+        INSTALL_ROLLBACK_INCOMPLETE=1
+        log_error "Installation rollback was incomplete; recovery files were retained at $BACKUP_DIR."
+    else
+        log_error "The previous installation was restored."
+    fi
+    INSTALL_MUTATED=0
+}
+
+wait_for_daemon() {
+    local attempts="${SUNREACTOR_IPC_READY_ATTEMPTS:-100}"
+    [[ $attempts =~ ^[1-9][0-9]*$ ]] || attempts=100
+
+    while (( attempts > 0 )); do
+        if "$BIN_DIR/sunreactorctl" status 2>/dev/null | grep -Fxq 'daemon_alive: true'; then
+            return 0
+        fi
+        attempts=$((attempts - 1))
+        if (( attempts > 0 )); then
+            sleep 0.1
+        fi
+    done
+    return 1
 }
 
 install_binaries() {
@@ -257,7 +462,8 @@ install_binaries() {
     log_info "Installing binaries to $target_bin..."
     mkdir -p "$target_bin"
     local artifact_dir="${ARTIFACT_DIR:-$TMP_DIR}"
-    install -m 755 "$artifact_dir/sunreactord" "$artifact_dir/sunreactorctl" "$target_bin/"
+    atomic_install "$artifact_dir/sunreactord" "$target_bin/sunreactord" 755
+    atomic_install "$artifact_dir/sunreactorctl" "$target_bin/sunreactorctl" 755
 }
 
 # ==========================================
@@ -273,7 +479,8 @@ install_systemd_unit() {
         log_error "Failed to create the systemd user unit directory: $target_systemd"
         return 1
     fi
-    if ! install -m 644 "$TMP_DIR/sunreactord.service" "$target_systemd/sunreactord.service"; then
+    SYSTEMD_UNIT_MUTATED=1
+    if ! atomic_install "$TMP_DIR/sunreactord.service" "$target_systemd/sunreactord.service" 644; then
         log_error "Failed to install the systemd user unit: $target_systemd/sunreactord.service"
         return 1
     fi
@@ -281,6 +488,7 @@ install_systemd_unit() {
 }
 
 setup_systemd() {
+    local start_action=start
     log_info "Setting up systemd service..."
 
     if ! systemctl --user daemon-reload; then
@@ -303,16 +511,26 @@ setup_systemd() {
         return 1
     fi
     log_success "Service unit is discoverable by the systemd user manager at the installed path."
+    SERVICE_ENABLE_ATTEMPTED=1
     if ! systemctl --user enable sunreactord.service; then
         log_error "Systemd user manager could not enable sunreactord.service."
         return 1
     fi
     log_success "Service enabled."
-    if ! systemctl --user start sunreactord.service; then
-        log_error "Systemd user manager could not start sunreactord.service."
+    if [[ $SERVICE_WAS_ACTIVE -eq 1 ]]; then
+        start_action=restart
+    fi
+    SERVICE_START_ATTEMPTED=1
+    if ! systemctl --user "$start_action" sunreactord.service; then
+        log_error "Systemd user manager could not $start_action sunreactord.service."
         return 1
     fi
-    log_success "Service started."
+    if ! wait_for_daemon; then
+        log_error "The daemon did not become ready on IPC after installation."
+        systemctl --user status sunreactord.service --no-pager >&2 || true
+        return 1
+    fi
+    log_success "Service is ready and responding on IPC."
 }
 
 systemd_user_manager_available() {
@@ -347,12 +565,21 @@ systemd_escape_value() {
 
 render_service_unit() {
     local destination="$1"
-    local config state cache bin template
+    local config state cache bin template template_path
     config=$(systemd_escape_value "$CONFIG_HOME")
     state=$(systemd_escape_value "$STATE_HOME")
     cache=$(systemd_escape_value "$CACHE_HOME")
     bin=$(systemd_escape_value "$BIN_DIR")
-    template=$(<"$SCRIPT_DIR/contrib/systemd/sunreactord.service")
+    if [[ -n "${ARTIFACT_DIR:-}" ]]; then
+        template_path="$ARTIFACT_DIR/sunreactord.service"
+    else
+        template_path="$SCRIPT_DIR/contrib/systemd/sunreactord.service"
+    fi
+    if [[ ! -r "$template_path" ]]; then
+        log_error "Systemd service template is missing: $template_path"
+        return 1
+    fi
+    template=$(<"$template_path")
     template=${template//@CONFIG_HOME@/$config}
     template=${template//@STATE_HOME@/$state}
     template=${template//@CACHE_HOME@/$cache}
@@ -455,7 +682,7 @@ launch_dashboard() {
     if [ -t 1 ] && [[ $QUIET -eq 0 ]]; then
         echo -e "Launching dashboard in 3 seconds..."
         sleep 3
-        exec "$BIN_DIR/sunreactorctl" tui
+        "$BIN_DIR/sunreactorctl" tui
     else
         echo -e "You can now open the dashboard by running: \033[1;36msunreactorctl\033[0m"
         echo -e "\033[1;33mNote:\033[0m Make sure \033[1m$BIN_DIR\033[0m is in your \$PATH.\n"
@@ -543,35 +770,43 @@ main() {
     local version
     version=$(fetch_latest_version)
 
+    local normalized_version
+    normalized_version=$(normalize_release_version "$version") || exit 1
+
     local archive
     archive=$(download_release "$version")
 
     extract_archive "$archive"
+    verify_binary_versions "$ARTIFACT_DIR" "$normalized_version" || exit 1
+    begin_install_transaction
     install_binaries
+    verify_binary_versions "${DESTDIR:-}$BIN_DIR" "$normalized_version" || exit 1
     if [[ -n "${DESTDIR:-}" ]]; then
         install_systemd_unit || exit 1
         log_success "Staged installation into DESTDIR=$DESTDIR complete."
+        INSTALL_COMMITTED=1
         exit 0
     fi
     if [[ $NO_SERVICE -eq 1 ]]; then
         log_info "Files installed. Service setup disabled (--no-service); run $BIN_DIR/sunreactord manually."
     elif ! install_systemd_unit; then
-        log_error "Installation completed partially: files are installed; service unit installation did not complete."
+        log_error "Systemd user unit installation failed; rollback will restore the previous installation."
         exit 1
     elif systemd_user_manager_available; then
         if ! manager_unit_paths=$(systemd_user_unit_paths); then
             log_info "Running systemd user manager UnitPath could not be inspected; FragmentPath will remain authoritative."
         fi
         if setup_systemd; then
-            log_success "Systemd user service installed and started."
+            log_success "Systemd user service installed and verified."
         else
-            log_error "Installation completed partially: files are installed; service activation did not complete."
+            log_error "Systemd user service setup failed; rollback will restore the previous installation."
             exit 1
         fi
     else
         log_info "No usable systemd user manager found; files installed without a service."
         log_info "Run $BIN_DIR/sunreactord manually, or enable a compatible service manager."
     fi
+    INSTALL_COMMITTED=1
     launch_dashboard
 }
 

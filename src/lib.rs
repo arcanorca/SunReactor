@@ -20,7 +20,11 @@
 pub mod apply;
 pub mod backends;
 pub mod config;
+#[cfg(target_os = "linux")]
+pub mod ddcutil;
 pub mod discovery;
+#[cfg(target_os = "linux")]
+pub mod doctor;
 pub mod ipc;
 pub mod paths;
 pub mod platform;
@@ -101,6 +105,8 @@ Commands:
   ping                      Check whether the daemon socket is alive
   run-once [--force]        Trigger one immediate daemon tick
   discover                  Probe brightness-capable devices locally
+  discover --apply          Add viable devices transactionally and reload
+  doctor [--json]           Diagnose Linux brightness access and runtime health
   test-brightness --monitor-id <id>
                             Execute a controlled, reversible hardware brightness test
   config init               Write the default config template

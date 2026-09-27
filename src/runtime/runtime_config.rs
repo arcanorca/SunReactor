@@ -21,6 +21,7 @@ pub(super) struct RuntimeConfig {
 pub(super) struct RuntimeDaemonConfig {
     pub tick_seconds: u64,
     pub dry_run: bool,
+    pub smooth_transition: bool,
     pub desktop_idle_sync: bool,
     pub desktop_idle_timeout_minutes: u64,
     pub apply_reassert_minutes: u64,
@@ -43,6 +44,7 @@ impl RuntimeConfig {
             daemon: RuntimeDaemonConfig {
                 tick_seconds: report.config.daemon.tick_seconds,
                 dry_run: report.config.daemon.dry_run,
+                smooth_transition: report.config.daemon.smooth_transition,
                 desktop_idle_sync: report.config.daemon.desktop_idle_sync,
                 desktop_idle_timeout_minutes: report.config.daemon.desktop_idle_timeout_minutes,
                 apply_reassert_minutes: report.config.daemon.apply_reassert_minutes,

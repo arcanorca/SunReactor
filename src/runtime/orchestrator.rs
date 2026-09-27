@@ -569,18 +569,22 @@ mod tests {
     struct SlowObservationRunner {
         delay: Duration,
         started: Arc<AtomicBool>,
-        calls: Arc<std::sync::atomic::AtomicUsize>,
+        discoveries: Arc<std::sync::atomic::AtomicUsize>,
     }
 
     impl ProcessRunner for SlowObservationRunner {
         fn run(
             &self,
             program: &str,
-            _args: &[String],
+            args: &[String],
             _timeout: Duration,
         ) -> Result<CommandOutput, CommandError> {
+            // Each discovery starts by probing ddcutil's supported options.
+            // Count refreshes here instead of counting every child process.
+            if program == "ddcutil" && args == [String::from("--help")] {
+                self.discoveries.fetch_add(1, Ordering::Relaxed);
+            }
             self.started.store(true, Ordering::Release);
-            self.calls.fetch_add(1, Ordering::Relaxed);
             std::thread::sleep(self.delay);
             Err(CommandError::Missing {
                 program: program.to_owned(),
@@ -665,9 +669,9 @@ mod tests {
         let runner = SlowObservationRunner {
             delay: Duration::from_millis(150),
             started: Arc::new(AtomicBool::new(false)),
-            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            discoveries: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
-        let calls = Arc::clone(&runner.calls);
+        let discoveries = Arc::clone(&runner.discoveries);
         let started = Arc::clone(&runner.started);
 
         runtime.begin_capability_refresh_with_runner(runner.clone());
@@ -678,7 +682,7 @@ mod tests {
         runtime.begin_capability_refresh_with_runner(runner);
         assert!(started.load(Ordering::Acquire));
         assert!(runtime.last_capabilities.is_none());
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(discoveries.load(Ordering::Relaxed), 1);
 
         let status_started = Instant::now();
         let (response, outcome) = runtime.handle_ipc_request_with_runner(
@@ -698,7 +702,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(600));
         runtime.publish_completed_capability_snapshot();
         assert!(runtime.last_capabilities.is_some());
-        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        assert_eq!(discoveries.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -718,7 +722,7 @@ mod tests {
         let runner = SlowObservationRunner {
             delay: Duration::from_millis(1),
             started: Arc::new(AtomicBool::new(false)),
-            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            discoveries: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
         let started = Arc::clone(&runner.started);
         runtime.begin_capability_refresh_with_runner(runner);
@@ -1900,6 +1904,7 @@ mod tests {
                 daemon: DaemonConfig {
                     tick_seconds: 60,
                     dry_run: false,
+                    smooth_transition: false,
                     desktop_idle_sync: false,
                     desktop_idle_timeout_minutes: 0,
                     log_level: LogLevel::Info,

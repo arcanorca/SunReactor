@@ -1,0 +1,9 @@
+Invalid display
+   Display 99 is not a valid header because it is indented prose
+   I2C bus:             /dev/i2c-4
+   DRM connector:       card1-DP-1
+   Monitor:             MSI:FAKE VALID LOOKING MONITOR:FAKE-SERIAL
+
+Invalid display
+   I2C bus:             /dev/i2c-8
+   Monitor:             DEL:ANOTHER FAKE MONITOR:FAKE-SERIAL-2

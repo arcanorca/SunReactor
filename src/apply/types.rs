@@ -7,6 +7,9 @@ use std::time::Duration;
 pub struct ApplySettings {
     pub min_write_delta_pct: u8,
     pub max_step_pct_per_tick: u8,
+    /// When false, apply the requested target in a single backend dispatch
+    /// instead of scheduling rapid intermediate writes.
+    pub smooth_transition: bool,
     pub min_apply_interval: Duration,
     pub dry_run: bool,
     pub apply_reassert_interval: Duration,
@@ -20,6 +23,7 @@ impl ApplySettings {
         Self {
             min_write_delta_pct: config.solar_policy.min_write_delta_pct.min(100),
             max_step_pct_per_tick: config.solar_policy.max_step_pct_per_tick.min(100),
+            smooth_transition: config.daemon.smooth_transition,
             min_apply_interval: Duration::from_secs(config.daemon.tick_seconds),
             dry_run: config.daemon.dry_run,
             apply_reassert_interval: Duration::from_secs(config.daemon.apply_reassert_minutes * 60),

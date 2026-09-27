@@ -3,6 +3,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::config::{MonitorConfig, MonitorSelector};
+use crate::ddcutil::DdcutilClient;
 
 use super::{
     clamp_percent, command_failure, map_command_error, BackendError, BackendKind, BackendWrite,
@@ -70,14 +71,7 @@ fn apply_with_runner_in<R: ProcessRunner>(
             lock_file // keep open until block ends
         };
 
-        let run_result = runner.run("ddcutil", &args, timeout);
-        let run_result = match run_result {
-            Ok(output) if !output.success() && is_unsupported_noconfig_error(&output) => {
-                let fallback = filter_unsupported_noconfig(&args);
-                runner.run("ddcutil", &fallback, timeout)
-            }
-            other => other,
-        };
+        let run_result = DdcutilClient::run_with_compatible_arguments(runner, &args, timeout);
 
         match run_result {
             Ok(output) if output.success() => {
@@ -130,13 +124,7 @@ fn read_with_runner_in<R: ProcessRunner>(
         args.extend(selection.args.iter().cloned());
         args.push(String::from("getvcp"));
         args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
-        match runner.run("ddcutil", &args, timeout) {
-            Ok(output) if !output.success() && is_unsupported_noconfig_error(&output) => {
-                let fallback = filter_unsupported_noconfig(&args);
-                runner.run("ddcutil", &fallback, timeout)
-            }
-            other => other,
-        }
+        DdcutilClient::run_with_compatible_arguments(runner, &args, timeout)
     };
     let bus_output = verified_bus_selection(&identity_selection, &monitor.selector, drm)
         .map(|selection| read(&selection))
@@ -189,8 +177,7 @@ fn read_verified_bus_in<R: ProcessRunner>(
     args.extend(selection.args.iter().cloned());
     args.push(String::from("getvcp"));
     args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
-    let output = runner
-        .run("ddcutil", &args, timeout)
+    let output = DdcutilClient::run_with_compatible_arguments(runner, &args, timeout)
         .map_err(|error| map_command_error(BackendKind::Ddc, error))?;
     parse_brightness_output(&output).map(Some)
 }
@@ -201,17 +188,16 @@ fn parse_brightness_output(
     if !output.success() {
         return Err(command_failure(BackendKind::Ddc, "ddcutil", output));
     }
-    let percent = output
-        .stdout
-        .split_whitespace()
-        .nth(3)
-        .and_then(|value| value.parse::<u8>().ok())
-        .ok_or_else(|| BackendError::Io {
-            backend: BackendKind::Ddc,
-            program: String::from("ddcutil"),
-            message: format!("unable to parse VCP {DDC_BRIGHTNESS_VCP_CODE} output"),
-            attempts: 1,
+    let value =
+        crate::ddcutil::parser::parse_getvcp_brightness(&output.stdout).map_err(|error| {
+            BackendError::Io {
+                backend: BackendKind::Ddc,
+                program: String::from("ddcutil"),
+                message: error.to_string(),
+                attempts: 1,
+            }
         })?;
+    let percent = u8::try_from(value.current.min(100)).expect("clamped brightness fits in u8");
     Ok(super::BackendObservation {
         percent: percent.min(100),
     })
@@ -249,18 +235,6 @@ enum DdcSelectorKind {
 
 fn normalize_compare(value: &str) -> String {
     value.trim().to_ascii_lowercase()
-}
-
-pub(crate) fn is_unsupported_noconfig_error(output: &CommandOutput) -> bool {
-    output.stderr.contains("Unknown option --noconfig")
-        || output.stderr.contains("unrecognized option '--noconfig'")
-}
-
-pub(crate) fn filter_unsupported_noconfig(args: &[String]) -> Vec<String> {
-    args.iter()
-        .filter(|arg| arg.as_str() != "--noconfig")
-        .cloned()
-        .collect()
 }
 
 fn build_setvcp_args(selection: &DdcSelectorPlan, percent: u8) -> Vec<String> {
@@ -1257,6 +1231,7 @@ mod tests {
 
         // Test write fallback
         let write_runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--brief")
             .with_output(
                 "ddcutil",
                 &[
@@ -1272,11 +1247,7 @@ mod tests {
                 "",
                 "ddcutil option parsing failed: Unknown option --noconfig\n",
             )
-            .with_success(
-                "ddcutil",
-                &["--noverify", "--bus", "9", "setvcp", "10", "60"],
-                "",
-            );
+            .with_success("ddcutil", &["--bus", "9", "setvcp", "10", "60"], "");
 
         let write_result = apply_with_runner(&write_runner, &monitor, 60, Duration::from_secs(4))
             .expect("write with fallback should succeed");
@@ -1284,6 +1255,7 @@ mod tests {
 
         // Test read fallback
         let read_runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--brief")
             .with_output(
                 "ddcutil",
                 &["--noconfig", "--terse", "--bus", "9", "getvcp", "10"],
@@ -1293,8 +1265,8 @@ mod tests {
             )
             .with_success(
                 "ddcutil",
-                &["--terse", "--bus", "9", "getvcp", "10"],
-                "VCP 10 C 60 100\n",
+                &["--brief", "--bus", "9", "getvcp", "10"],
+                "VCP code 0x10 (Brightness): current value = 60, max value = 100\n",
             );
 
         let read_result = super::read_with_runner(&read_runner, &monitor, Duration::from_secs(4))

@@ -64,9 +64,16 @@ jobs:
           echo "CC_${target}=$musl_gcc" >> "$GITHUB_ENV"
           echo "CC_${cargo_target}=$musl_gcc" >> "$GITHUB_ENV"
           echo "TARGET_CC=$musl_gcc" >> "$GITHUB_ENV"
+          echo 'RUSTFLAGS=-C link-arg=-Wl,--no-dynamic-linker' >> "$GITHUB_ENV"
       - name: Build locked release binaries
         run: cargo +"${RUST_VERSION}" build --release --locked --target "${{ matrix.target }}"
-      - name: Inspect and smoke test binaries
+      - name: Package deterministic archive
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then version="${{ inputs.version }}"; fi
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" scripts/release.sh "$version" "${{ matrix.target }}" "$RUNNER_TEMP/release" "$GITHUB_WORKSPACE"
+      - name: Inspect binary ABI
         shell: bash
         run: |
           set -euo pipefail
@@ -76,25 +83,22 @@ jobs:
             readelf -l "$path" | grep -E 'interpreter|Type:' || true
             readelf -d "$path" | grep NEEDED || true
             readelf --version-info "$path" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1 || true
-            "$path" --help >/dev/null
           done
-      - name: Package deterministic archive
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then version="${{ inputs.version }}"; fi
-          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" scripts/release.sh "$version" "${{ matrix.target }}" "$RUNNER_TEMP/release" "$GITHUB_WORKSPACE"
       - name: Smoke-test packaged archive
         shell: bash
         run: |
           set -euo pipefail
           archive=$(find "$RUNNER_TEMP/release" -name '*.tar.gz' -print -quit)
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then version="${{ inputs.version }}"; fi
           smoke="$RUNNER_TEMP/smoke"
           mkdir -p "$smoke"
           tar xzf "$archive" -C "$smoke"
-          "$smoke/sunreactord" --help >/dev/null
-          "$smoke/sunreactorctl" --help >/dev/null
-          test "$(tar tzf "$archive" | sort)" = "$(printf '%s\n' LICENSE README.md sunreactorctl sunreactord)"
+          for binary in sunreactord sunreactorctl; do
+            test "$("$smoke/$binary" --version)" = "$binary $version"
+            "$smoke/$binary" --help >/dev/null
+          done
+          test "$(tar tzf "$archive" | sort)" = "$(printf '%s\n' LICENSE README.md sunreactorctl sunreactord sunreactord.service | sort)"
       - name: Record archive checksum and ABI metadata
         working-directory: ${{ runner.temp }}/release
         run: |
@@ -133,13 +137,6 @@ jobs:
           cat *.abi > ABI-METADATA
           sha256sum ABI-METADATA >> SHA256SUMS
           rm -f *.abi
-      - name: Create or update GitHub release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        working-directory: release
-        run: |
-          mapfile -t archives < <(find . -type f -name '*.tar.gz' -print | sort)
-          gh release upload "${GITHUB_REF_NAME}" "${archives[@]}" SHA256SUMS ABI-METADATA --clobber
       - name: Attest complete release decision set
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
@@ -147,3 +144,19 @@ jobs:
             release/*.tar.gz
             release/ABI-METADATA
             release/SHA256SUMS
+      - name: Create GitHub release when the tag has no release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag --generate-notes
+          fi
+      - name: Upload verified release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: release
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(find . -type f -name '*.tar.gz' -print | sort)
+          [[ ${#archives[@]} -eq 4 ]] || { printf 'expected four qualified archives, found %s\n' "${#archives[@]}" >&2; exit 1; }
+          gh release upload "${GITHUB_REF_NAME}" "${archives[@]}" SHA256SUMS ABI-METADATA --repo "${GITHUB_REPOSITORY}" --clobber

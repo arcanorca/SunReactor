@@ -264,6 +264,15 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
 ) -> ApplySummary {
     let bypass_backoff = settings_override.is_some();
     let settings = settings_override.unwrap_or(default_settings);
+
+    // A disabled smooth transition must take effect immediately, including
+    // after a configuration reload while a fade is already in progress.
+    if !settings.smooth_transition {
+        if let Some(engine) = fade_engine.as_deref_mut() {
+            engine.cancel_all();
+        }
+    }
+
     let monitor_index = monitors
         .iter()
         .map(|monitor| (monitor.logical_id.as_str(), monitor))
@@ -434,11 +443,18 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             continue;
         }
 
-        let applied_percent = state::limit_step_size(
-            monitor_state.last_applied_percent,
-            requested_percent,
-            settings.max_step_pct_per_tick,
-        );
+        // With smooth transitions disabled, deliberately skip the gradual
+        // per-tick step limiter too: this dispatch is the one direct write to
+        // the requested brightness target.
+        let applied_percent = if settings.smooth_transition {
+            state::limit_step_size(
+                monitor_state.last_applied_percent,
+                requested_percent,
+                settings.max_step_pct_per_tick,
+            )
+        } else {
+            requested_percent
+        };
 
         if !bypass_backoff {
             if let Some(backoff) = monitor_state.backoff.as_ref().filter(|backoff| {
@@ -518,8 +534,10 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
         let start_percent = monitor_state
             .last_applied_percent
             .unwrap_or(requested_percent);
-        let fade_queued = if let Some(engine) = fade_engine.as_mut() {
-            engine.maybe_enqueue(&monitor.logical_id, start_percent, applied_percent)
+        let fade_queued = if settings.smooth_transition {
+            fade_engine.as_deref_mut().is_some_and(|engine| {
+                engine.maybe_enqueue(&monitor.logical_id, start_percent, applied_percent)
+            })
         } else {
             false
         };
@@ -1104,6 +1122,7 @@ mod tests {
             // will be skipped by hysteresis (delta=0 < threshold=1).
             min_write_delta_pct: 1,
             max_step_pct_per_tick: 100,
+            smooth_transition: false,
             min_apply_interval: Duration::ZERO,
             dry_run: false,
             // Large reassert interval (1 billion seconds ≈ 31 years) so it
@@ -1112,6 +1131,90 @@ mod tests {
             ddc_timeout: Duration::from_secs(10),
             backlight_timeout: Duration::from_secs(2),
         }
+    }
+
+    #[test]
+    fn disabled_smooth_transition_sends_one_direct_ddc_write() {
+        let monitors = vec![test_monitor("external", BackendKind::Ddc)];
+        let policy = test_policy(vec![("external", 80)]);
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--sn",
+                    "SN_external",
+                    "setvcp",
+                    "10",
+                    "80",
+                ],
+                "",
+            );
+        let mut state = RuntimeState::default();
+        state.record_apply_success("external", 20, 1);
+        let mut fade_engine = crate::runtime::fade::FadeEngine::new();
+        assert!(fade_engine.maybe_enqueue("external", 20, 80));
+
+        let settings = ApplySettings {
+            max_step_pct_per_tick: 6,
+            ..fast_settings()
+        };
+        let summary = apply_policy_with_runner_monitors(
+            &monitors,
+            settings,
+            &policy,
+            &mut state,
+            Some(&mut fade_engine),
+            &runner,
+            100,
+            None,
+        );
+
+        assert_eq!(summary.succeeded, 1);
+        assert_eq!(summary.records[0].applied_percent, 80);
+        assert!(!fade_engine.is_fading());
+        let writes = runner
+            .calls()
+            .into_iter()
+            .filter(|call| call.contains("|setvcp|10|"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            writes,
+            vec![String::from(
+                "ddcutil|--noconfig|--noverify|--sn|SN_external|setvcp|10|80"
+            )]
+        );
+    }
+
+    #[test]
+    fn enabled_smooth_transition_queues_the_existing_fade() {
+        let monitors = vec![test_monitor("external", BackendKind::Ddc)];
+        let policy = test_policy(vec![("external", 80)]);
+        let runner = FakeRunner::new();
+        let mut state = RuntimeState::default();
+        state.record_apply_success("external", 20, 1);
+        let mut fade_engine = crate::runtime::fade::FadeEngine::new();
+        let settings = ApplySettings {
+            smooth_transition: true,
+            ..fast_settings()
+        };
+
+        let summary = apply_policy_with_runner_monitors(
+            &monitors,
+            settings,
+            &policy,
+            &mut state,
+            Some(&mut fade_engine),
+            &runner,
+            100,
+            None,
+        );
+
+        assert_eq!(summary.succeeded, 1);
+        assert!(fade_engine.is_fading());
+        assert!(runner.calls().is_empty());
     }
 
     // =========================================================================
@@ -1180,6 +1283,7 @@ mod tests {
         let policy = test_policy(vec![("healthy", 75), ("broken_ddc", 80), ("ghost", 90)]);
 
         let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
             .with_success(
                 "brightnessctl",
                 &[
@@ -1286,19 +1390,21 @@ mod tests {
 
         // Register exactly one runner response (for the first tick write only).
         // All subsequent ticks will be skipped by hysteresis (same percent, no delta).
-        let runner = FakeRunner::new().with_success(
-            "brightnessctl",
-            &[
-                "--quiet",
-                "--class",
-                "backlight",
-                "--device",
-                "panel",
-                "set",
-                "50%",
-            ],
-            "",
-        );
+        let runner = FakeRunner::new()
+            .with_success("ddcutil", &["--help"], "--noconfig --noverify")
+            .with_success(
+                "brightnessctl",
+                &[
+                    "--quiet",
+                    "--class",
+                    "backlight",
+                    "--device",
+                    "panel",
+                    "set",
+                    "50%",
+                ],
+                "",
+            );
         let mut state = RuntimeState::default();
 
         let start = Instant::now();
