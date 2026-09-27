@@ -19,12 +19,13 @@
 - Tag CI run `36293807566` passed. Tag-triggered release run `36293807564` passed every target build and the publish job, including the build provenance attestation.
 - Public release `v0.12.1` is published, not draft, and not prerelease. It contains exactly four target archives, `SHA256SUMS`, and `ABI-METADATA`.
 - Downloaded public assets independently. The combined manifest verified all four archives and ABI metadata; every public archive SHA256 exactly matched its qualification artifact. All archive member sets and ELF architectures matched. x86_64 GNU/musl binaries reported `0.12.1` and passed help smoke tests; both musl variants were static. ARM64 binaries passed target-runner smoke tests in qualification and tag release.
+- Ran the checked-in `install.sh` against the public `latest` release with `DESTDIR` and isolated XDG paths under a fresh `/tmp` directory. It selected `0.12.1`, verified the public archive and ABI checksums, staged both x86_64 GNU binaries and `sunreactord.service`, then the staged binaries reported `0.12.1` and passed `--help`.
 - Existing `v0.12.0` tag/release was not modified.
 
 ## Coverage boundary
 
-- The release producer, published artifacts, installer/packaging behavior, Linux distro execution, and Windows CI path were verified.
-- Installation was not performed on the user's specific host or display hardware. Their host-specific configuration and hardware behavior remain outside this release evidence.
+- The release producer, published artifacts, an end-to-end staged installer run, installer/packaging tests, Linux distro execution, and Windows CI path were verified.
+- The staged install did not start the service on the user's specific host or exercise display hardware. Host-specific service-manager/configuration/hardware behavior remains outside this release evidence.
 - The local untracked `releases/` directory was preserved and excluded from Git staging.
 
 ## Workspace tooling

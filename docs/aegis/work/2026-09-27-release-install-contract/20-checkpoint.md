@@ -2,7 +2,7 @@
 
 ## Current todo
 
-Close out evidence for the published and independently verified `v0.12.1` release.
+Complete: publish and verify `v0.12.1`, including a staged run of the public installer.
 
 ## Completed
 
@@ -49,11 +49,12 @@ Close out evidence for the published and independently verified `v0.12.1` releas
 - Workflow-dispatch qualification run `36293573564` passed all four Linux targets. Its `publish` job was correctly skipped; each artifact checksum passed, the six archive members were exact, all target architectures matched, x86_64 binaries reported `0.12.1` and ran, and both musl targets had no ELF interpreter or `NEEDED` libraries.
 - Tag `v0.12.1` resolves to commit `b010a2631ded68cfeb85cca02972c7a7f55f4e43`. Tag-triggered CI `36293807566` and release run `36293807564` both passed; the publish job created the public release and uploaded four archives, `SHA256SUMS`, and `ABI-METADATA`.
 - Independently downloaded public assets. `sha256sum --check SHA256SUMS` passed all four archives and ABI metadata; each public archive hash exactly matched its qualification artifact. Public archive members, ELF architecture, x86_64 version/help, and static musl properties all passed.
+- Ran the checked-in installer against the public `latest` release with a temporary `DESTDIR` and isolated XDG directories. It selected `0.12.1`, verified the archive and ABI checksums, installed both binaries and the unit under the staging root, and the installed x86_64 GNU binaries passed version/help checks.
 - Existing `v0.12.0` tag/release was preserved. The local untracked `releases/` directory remains untouched and excluded from all commits.
 
 ## Active slice
 
-Code, CI, four-target qualification, publication, and public-asset verification are complete; commit this process-only closeout.
+Complete: source, CI, release qualification, publication, public-asset verification, and staged installer smoke all passed.
 
 ## Architecture escalation and causal map
 
@@ -106,8 +107,8 @@ Code, CI, four-target qualification, publication, and public-asset verification 
 ## Evidence still required
 
 - No required implementation, CI, qualification, publication, or public-asset verification remains.
-- Residual scope: the release was not installed on the user's specific machine; installer behavior and all published assets were verified in tests and CI, but host-specific configuration/hardware was not exercised.
+- Residual scope: the staged install did not start a service on the user's real host or exercise display hardware; host-specific service-manager/configuration/hardware behavior remains untested.
 
 ## Next step
 
-No further work remains after this process-only closeout commit; retain `releases/` as pre-existing local data.
+No further work remains in the authorized release scope; retain `releases/` as pre-existing local data.
