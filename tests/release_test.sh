@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SUNREACTOR_INSTALLER_LIBRARY=1 source "$ROOT_DIR/install.sh"
 
+CARGO_VERSION=$(awk '
+    /^\[package\]$/ { in_package = 1; next }
+    /^\[/ { if (in_package) exit }
+    in_package && $1 == "version" && $2 == "=" {
+        gsub(/"/, "", $3)
+        print $3
+        exit
+    }
+' "$ROOT_DIR/Cargo.toml")
+
 assert_equals() {
     local expected="$1" actual="$2"
     [[ "$actual" == "$expected" ]] || {
@@ -29,7 +39,7 @@ test_tag_version_uses_the_packaged_asset_name() {
 }
 
 test_packager_rejects_a_tag_that_does_not_match_cargo() {
-    if "$ROOT_DIR/scripts/release.sh" 0.12.0 x86_64-unknown-linux-gnu \
+    if "$ROOT_DIR/scripts/release.sh" 0.0.0-mismatch x86_64-unknown-linux-gnu \
         "$fixture/wrong-version" "$ROOT_DIR" >/dev/null 2>&1; then
         printf 'release helper accepted a version that differs from Cargo.toml\n' >&2
         exit 1
@@ -63,7 +73,7 @@ SH
         cat >"$target_dir/$binary" <<SH
 #!/usr/bin/env bash
 if [[ \${1:-} == --version ]]; then
-    printf '%s %s\\n' '$binary' '0.12.1'
+    printf '%s %s\\n' '$binary' "$CARGO_VERSION"
 elif [[ \${1:-} == --help ]]; then
     printf '%s\\n' '$binary help'
 else
@@ -74,7 +84,7 @@ SH
     done
 
     archive=$(PATH="$tools:$PATH" CARGO_TARGET_DIR="$fixture/target" \
-        "$ROOT_DIR/scripts/release.sh" 0.12.1 x86_64-unknown-linux-gnu \
+        "$ROOT_DIR/scripts/release.sh" "$CARGO_VERSION" x86_64-unknown-linux-gnu \
         "$output" "$ROOT_DIR")
     members=$(tar tzf "$archive" | sort)
     assert_equals \
@@ -86,7 +96,7 @@ SH
         printf 'packaged service template was not extracted\n' >&2
         exit 1
     }
-    verify_binary_versions "$ARTIFACT_DIR" 0.12.1
+    verify_binary_versions "$ARTIFACT_DIR" "$CARGO_VERSION"
 
     mv "$ARTIFACT_DIR/sunreactord.service" "$fixture/sunreactord.service.saved"
     if HOME="$fixture/home" XDG_CONFIG_HOME="$fixture/config" \
@@ -115,7 +125,7 @@ SH
 [[ ${1:-} == --version ]] && printf 'sunreactord 0.1.0\n'
 SH
     chmod +x "$ARTIFACT_DIR/sunreactord"
-    if verify_binary_versions "$ARTIFACT_DIR" 0.12.1; then
+    if verify_binary_versions "$ARTIFACT_DIR" "$CARGO_VERSION"; then
         printf 'installer accepted a stale binary from the downloaded archive\n' >&2
         exit 1
     fi
@@ -126,17 +136,17 @@ SH
 SH
     chmod +x "$target_dir/sunreactord"
     if PATH="$tools:$PATH" CARGO_TARGET_DIR="$fixture/target" \
-        "$ROOT_DIR/scripts/release.sh" 0.12.1 x86_64-unknown-linux-gnu \
+        "$ROOT_DIR/scripts/release.sh" "$CARGO_VERSION" x86_64-unknown-linux-gnu \
         "$fixture/stale-release" "$ROOT_DIR"; then
         printf 'release helper accepted a stale binary version\n' >&2
         exit 1
     fi
 
-cat >"$target_dir/sunreactord" <<'SH'
+cat >"$target_dir/sunreactord" <<SH
 #!/usr/bin/env bash
-if [[ ${1:-} == --version ]]; then
-    printf 'sunreactord 0.12.1\n'
-elif [[ ${1:-} == --help ]]; then
+if [[ \${1:-} == --version ]]; then
+    printf 'sunreactord %s\n' "$CARGO_VERSION"
+elif [[ \${1:-} == --help ]]; then
     printf 'sunreactord help\n'
 else
     exit 2
@@ -155,14 +165,14 @@ test_musl_packager_rejects_dynamic_executables() {
     cp "$fixture/target/x86_64-unknown-linux-gnu/release/sunreactorctl" "$target_dir/"
 
     if PATH="$tools:$PATH" CARGO_TARGET_DIR="$fixture/target" \
-        "$ROOT_DIR/scripts/release.sh" 0.12.1 x86_64-unknown-linux-musl \
+        "$ROOT_DIR/scripts/release.sh" "$CARGO_VERSION" x86_64-unknown-linux-musl \
         "$output" "$ROOT_DIR"; then
         printf 'release helper accepted dynamic musl executables\n' >&2
         exit 1
     fi
 
     archive=$(FAKE_STATIC=1 PATH="$tools:$PATH" CARGO_TARGET_DIR="$fixture/target" \
-        "$ROOT_DIR/scripts/release.sh" 0.12.1 x86_64-unknown-linux-musl \
+        "$ROOT_DIR/scripts/release.sh" "$CARGO_VERSION" x86_64-unknown-linux-musl \
         "$output" "$ROOT_DIR")
     [[ -f "$archive" ]] || {
         printf 'release helper did not package static musl executables\n' >&2

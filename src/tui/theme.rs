@@ -418,16 +418,16 @@ impl Theme {
                 border_active: Color::Rgb(0xF2, 0xF2, 0xEC),
                 border_inactive: Color::Rgb(0x3E, 0x3E, 0x3E),
                 text_muted: Color::Rgb(0x88, 0x88, 0x82),
-                success: Color::Rgb(0x61, 0xBB, 0x46),          // Apple green
-                warning: Color::Rgb(0xFD, 0xB8, 0x27),          // Apple yellow/gold
-                error: Color::Rgb(0xE0, 0x3A, 0x3E),            // Apple red
+                success: Color::Rgb(0x61, 0xBB, 0x46), // Apple green
+                warning: Color::Rgb(0xFD, 0xB8, 0x27), // Apple yellow/gold
+                error: Color::Rgb(0xE0, 0x3A, 0x3E),   // Apple red
             },
             // Casio Digital: Negative LCD module (e.g. DW-5600BB / F-91W negative).
             // Smoked dark substrate with crisp mint-green LCD segments and classic Casio blue accent.
             Self::CasioDigital => Palette {
-                bg: Color::Rgb(0x12, 0x18, 0x14),               // Negative LCD substrate
-                fg: Color::Rgb(0xE0, 0xF8, 0xDC),               // Mint-green LCD segment
-                accent: Color::Rgb(0x00, 0x88, 0xFF),           // Classic Casio blue
+                bg: Color::Rgb(0x12, 0x18, 0x14),     // Negative LCD substrate
+                fg: Color::Rgb(0xE0, 0xF8, 0xDC),     // Mint-green LCD segment
+                accent: Color::Rgb(0x00, 0x88, 0xFF), // Classic Casio blue
                 secondary_accent: Color::Rgb(0x88, 0xA6, 0x84), // Unlit ghost segments
                 border_active: Color::Rgb(0x9D, 0xF0, 0x9A),
                 border_inactive: Color::Rgb(0x2A, 0x38, 0x2E),
@@ -467,16 +467,16 @@ impl Theme {
             // Dark graphite chassis, crisp Boing Ball white, unmistakable Guru Meditation red,
             // and Workbench Topaz amber/blue accents.
             Self::Amiga => Palette {
-                bg: Color::Rgb(0x14, 0x18, 0x20),               // Dark graphite/slate chassis
-                fg: Color::Rgb(0xF0, 0xF4, 0xFA),               // Crisp Boing Ball white ink
-                accent: Color::Rgb(0xEE, 0x22, 0x33),           // Amiga Boing Ball / Guru red
+                bg: Color::Rgb(0x14, 0x18, 0x20),     // Dark graphite/slate chassis
+                fg: Color::Rgb(0xF0, 0xF4, 0xFA),     // Crisp Boing Ball white ink
+                accent: Color::Rgb(0xEE, 0x22, 0x33), // Amiga Boing Ball / Guru red
                 secondary_accent: Color::Rgb(0x55, 0x88, 0xBB), // Workbench 2.0 blue
-                border_active: Color::Rgb(0xFF, 0x88, 0x00),    // Topaz amber gadget active
-                border_inactive: Color::Rgb(0x28, 0x32, 0x44),  // Workbench bevel shadow
-                text_muted: Color::Rgb(0x72, 0x86, 0x9E),       // Muted slate ink
-                success: Color::Rgb(0x3F, 0xBF, 0x5F),          // Amiga green
-                warning: Color::Rgb(0xFF, 0x88, 0x00),          // Topaz amber warning
-                error: Color::Rgb(0xDD, 0x33, 0x22),            // Guru Meditation red alert
+                border_active: Color::Rgb(0xFF, 0x88, 0x00), // Topaz amber gadget active
+                border_inactive: Color::Rgb(0x28, 0x32, 0x44), // Workbench bevel shadow
+                text_muted: Color::Rgb(0x72, 0x86, 0x9E), // Muted slate ink
+                success: Color::Rgb(0x3F, 0xBF, 0x5F), // Amiga green
+                warning: Color::Rgb(0xFF, 0x88, 0x00), // Topaz amber warning
+                error: Color::Rgb(0xDD, 0x33, 0x22),  // Guru Meditation red alert
             },
             // Braun: Dieter Rams / Dietrich Lubs functionalism (ET 66).
             // Matte black chassis, silkscreen legends, iconic Braun orange
@@ -525,9 +525,9 @@ impl Theme {
             // Deep dark olive LCD matrix substrate to eliminate glare and eye strain,
             // authentic 4-shade phosphor LCD pixel ink, and iconic burgundy A/B button accents.
             Self::Handheld => Palette {
-                bg: Color::Rgb(0x14, 0x1C, 0x12),          // Deep olive matrix void (#141c12)
-                fg: Color::Rgb(0x9B, 0xBC, 0x0F),          // Authentic DMG-01 bright LCD (#9bbc0f)
-                accent: Color::Rgb(0x8B, 0x1D, 0x42),      // DMG-01 burgundy button accent (#8b1d42)
+                bg: Color::Rgb(0x14, 0x1C, 0x12), // Deep olive matrix void (#141c12)
+                fg: Color::Rgb(0x9B, 0xBC, 0x0F), // Authentic DMG-01 bright LCD (#9bbc0f)
+                accent: Color::Rgb(0x8B, 0x1D, 0x42), // DMG-01 burgundy button accent (#8b1d42)
                 secondary_accent: Color::Rgb(0x8B, 0xAC, 0x0F), // Mid-tone olive LCD (#8bac0f)
                 border_active: Color::Rgb(0x9B, 0xBC, 0x0F),
                 border_inactive: Color::Rgb(0x28, 0x38, 0x24),
