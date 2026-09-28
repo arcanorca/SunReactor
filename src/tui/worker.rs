@@ -2,7 +2,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::model::{ActionKind, ErrorCategory};
+use super::model::{ActionKind, DaemonConnection, ErrorCategory};
 use crate::ipc::{ControlSocket, IpcError, Request, RequestEnvelope, Response, StatusResponse};
 
 pub(crate) enum IpcCommand {
@@ -59,7 +59,7 @@ pub(crate) fn spawn_ipc_worker(
     let (evt_tx, evt_rx) = mpsc::sync_channel::<IpcEvent>(64);
 
     thread::spawn(move || {
-        let mut was_connected = false;
+        let mut connection_state = DaemonConnection::Unknown;
 
         loop {
             loop {
@@ -76,7 +76,7 @@ pub(crate) fn spawn_ipc_worker(
                             action,
                             request,
                             &evt_tx,
-                            &mut was_connected,
+                            &mut connection_state,
                         );
                     }
                     Ok(IpcCommand::DiscoverMonitors) => {
@@ -89,7 +89,7 @@ pub(crate) fn spawn_ipc_worker(
                 }
             }
 
-            poll_daemon_status(&target, &evt_tx, &mut was_connected);
+            poll_daemon_status(&target, &evt_tx, &mut connection_state);
 
             match cmd_rx.recv_timeout(poll_interval) {
                 Ok(IpcCommand::Shutdown) => return,
@@ -104,7 +104,7 @@ pub(crate) fn spawn_ipc_worker(
                         action,
                         request,
                         &evt_tx,
-                        &mut was_connected,
+                        &mut connection_state,
                     );
                 }
                 Ok(IpcCommand::DiscoverMonitors) => {
@@ -153,7 +153,7 @@ fn send_ipc_request(
     action: ActionKind,
     request: Request,
     evt_tx: &mpsc::SyncSender<IpcEvent>,
-    was_connected: &mut bool,
+    connection_state: &mut DaemonConnection,
 ) {
     let start = Instant::now();
     tracing::info!(
@@ -166,7 +166,7 @@ fn send_ipc_request(
     let socket = match target.socket() {
         Ok(socket) => socket,
         Err(error) => {
-            mark_disconnected(evt_tx, was_connected);
+            mark_disconnected(evt_tx, connection_state);
             tracing::warn!(
                 command_id,
                 action = ?action,
@@ -185,10 +185,7 @@ fn send_ipc_request(
 
     match socket.send_request(&RequestEnvelope::new(request)) {
         Ok(response) => {
-            if !*was_connected {
-                let _ = evt_tx.try_send(IpcEvent::Connected);
-                *was_connected = true;
-            }
+            mark_connected(evt_tx, connection_state);
             let duration_ms = start.elapsed().as_millis() as u64;
 
             let kind_name = response.kind_name();
@@ -206,7 +203,7 @@ fn send_ipc_request(
                         action,
                         message,
                     });
-                    poll_daemon_status(target, evt_tx, was_connected);
+                    poll_daemon_status(target, evt_tx, connection_state);
                 }
                 Response::Error { code: _, message } => {
                     tracing::warn!(
@@ -240,7 +237,7 @@ fn send_ipc_request(
             }
         }
         Err(IpcError::Unavailable { message, .. }) => {
-            mark_disconnected(evt_tx, was_connected);
+            mark_disconnected(evt_tx, connection_state);
             tracing::warn!(
                 command_id,
                 action = ?action,
@@ -267,7 +264,7 @@ fn send_ipc_request(
             });
         }
         Err(error) => {
-            mark_disconnected(evt_tx, was_connected);
+            mark_disconnected(evt_tx, connection_state);
             tracing::warn!(
                 command_id,
                 action = ?action,
@@ -287,28 +284,81 @@ fn send_ipc_request(
 fn poll_daemon_status(
     target: &WorkerTarget,
     evt_tx: &mpsc::SyncSender<IpcEvent>,
-    was_connected: &mut bool,
+    connection_state: &mut DaemonConnection,
 ) {
     match target.socket() {
         Ok(socket) => match socket.send_request(&RequestEnvelope::new(Request::Status)) {
             Ok(response) => {
                 if let Response::Status { status } = response.response {
-                    if !*was_connected {
-                        let _ = evt_tx.try_send(IpcEvent::Connected);
-                        *was_connected = true;
-                    }
+                    mark_connected(evt_tx, connection_state);
                     let _ = evt_tx.try_send(IpcEvent::Status(Box::new(status)));
                 }
             }
-            Err(_) => mark_disconnected(evt_tx, was_connected),
+            Err(_) => mark_disconnected(evt_tx, connection_state),
         },
-        Err(_) => mark_disconnected(evt_tx, was_connected),
+        Err(_) => mark_disconnected(evt_tx, connection_state),
     }
 }
 
-fn mark_disconnected(evt_tx: &mpsc::SyncSender<IpcEvent>, was_connected: &mut bool) {
-    if *was_connected {
+/// Notifies the UI thread if the daemon connection transitions to connected.
+///
+/// - Complexity: O(1) time, O(1) space.
+/// - Safety: Safe; non-blocking channel send.
+/// - Allocations: 0 heap allocations.
+fn mark_connected(evt_tx: &mpsc::SyncSender<IpcEvent>, state: &mut DaemonConnection) {
+    if *state != DaemonConnection::Connected {
+        let _ = evt_tx.try_send(IpcEvent::Connected);
+        *state = DaemonConnection::Connected;
+    }
+}
+
+/// Notifies the UI thread if the daemon connection transitions to disconnected.
+///
+/// - Complexity: O(1) time, O(1) space.
+/// - Safety: Safe; non-blocking channel send.
+/// - Allocations: 0 heap allocations.
+fn mark_disconnected(evt_tx: &mpsc::SyncSender<IpcEvent>, state: &mut DaemonConnection) {
+    if *state != DaemonConnection::Disconnected {
         let _ = evt_tx.try_send(IpcEvent::Disconnected);
-        *was_connected = false;
+        *state = DaemonConnection::Disconnected;
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::time::Duration;
+
+    use super::{spawn_ipc_worker, IpcCommand, IpcEvent, WorkerTarget};
+    use crate::ipc::ControlSocket;
+    use crate::tui::model::MonitorWorkspaceState;
+    use crate::tui::update::{self, Message};
+    use crate::tui::Model;
+
+    #[test]
+    fn shows_daemon_unavailable_after_the_first_failed_status_poll() {
+        let temp = tempfile::tempdir().expect("temporary directory should be created");
+        let target = WorkerTarget {
+            socket_override: Some(ControlSocket {
+                path: temp.path().join("missing.sock"),
+            }),
+            hardware_discovery: false,
+        };
+        let (command_tx, event_rx) = spawn_ipc_worker(Duration::from_secs(30), target);
+
+        let event = event_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the initial failed poll should report a disconnected daemon");
+        assert!(matches!(event, IpcEvent::Disconnected));
+
+        let mut model = Model::new();
+        update::update(&mut model, Message::Ipc(event));
+        assert_eq!(
+            model.monitor_workspace_state(),
+            MonitorWorkspaceState::DaemonUnavailable
+        );
+
+        command_tx
+            .send(IpcCommand::Shutdown)
+            .expect("worker should accept shutdown");
     }
 }
