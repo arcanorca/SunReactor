@@ -17,17 +17,24 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "components"
+import "wardrobe"
 
 PlasmaExtras.Representation {
     id: root
 
     required property SunReactorClient client
 
+    ThemeTokens {
+        id: tokens
+        client: root.client
+    }
+
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property var monitors: client.isConnected ? client.monitors : []
     /*! A master slider only earns its place once there is more than one display. */
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property int overrideMinutes: Plasmoid.configuration.overrideDurationMinutes
+    readonly property color accentColor: tokens.accentColor
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
     Layout.preferredWidth: Kirigami.Units.gridUnit * 22
@@ -49,7 +56,7 @@ PlasmaExtras.Representation {
             id: contentColumn
 
             width: scrollView.availableWidth
-            spacing: Kirigami.Units.smallSpacing * 2
+            spacing: Kirigami.Units.gridUnit
 
             PlasmaExtras.PlaceholderMessage {
                 Layout.fillWidth: true
@@ -67,88 +74,147 @@ PlasmaExtras.Representation {
                 visible: root.client.isConnected
                     && root.client.mode !== SunReactorClient.Automatic
                 client: root.client
+                tokens: tokens
             }
 
-            WeatherItem {
-                visible: root.client.isConnected && root.client.weatherEnabled
-                client: root.client
-            }
+            // Displays section (Themed GNOME HIG grouped row container)
+            WardrobeCard {
+                Layout.fillWidth: true
+                visible: root.client.isConnected && root.monitors.length > 0
+                contentImplicitHeight: displaysColumn.implicitHeight + Kirigami.Units.smallSpacing * 2
+                tokens: tokens
 
-            ForecastStrip {
-                visible: root.client.isConnected && root.client.weatherEnabled
-                client: root.client
-            }
+                ColumnLayout {
+                    id: displaysColumn
 
-            DisplayItem {
-                visible: root.client.isConnected && root.showAllDisplays
-                text: i18nd(root.domain, "All displays")
-                iconName: "brightness-high"
-                percent: root.client.globalPercent
-                hint: root.client.isOverrideActive
-                    ? i18ndc(root.domain, "This brightness was set by hand", "Manual")
-                    : ""
-                onRequested: percent => root.client.setGlobalOverride(percent, root.overrideMinutes)
-            }
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: Kirigami.Units.smallSpacing
+                    spacing: Kirigami.Units.smallSpacing
 
-            Repeater {
-                model: root.monitors
-
-                delegate: DisplayItem {
-                    id: display
-
-                    required property var modelData
-
-                    readonly property bool unavailable: modelData.unreachable
-                        || modelData.topology === "temporarily_unavailable"
-
-                    text: modelData.logicalId
-                    iconName: "video-display-brightness"
-                    percent: modelData.percent
-                    controllable: modelData.enabled && !unavailable
-                    hint: {
-                        if (!modelData.enabled) {
-                            return i18ndc(root.domain, "This display is excluded from automation", "Off");
-                        }
-                        if (unavailable) {
-                            return i18ndc(root.domain, "This display is not answering", "Unavailable");
-                        }
-                        if (modelData.hasOverride) {
-                            return i18ndc(root.domain, "This brightness was set by hand", "Manual");
-                        }
-                        return "";
+                    DisplayItem {
+                        visible: root.showAllDisplays
+                        text: i18nd(root.domain, "All displays")
+                        iconName: "brightness-high"
+                        percent: root.client.globalPercent
+                        accentColor: root.accentColor
+                        tokens: tokens
+                        hint: root.client.isOverrideActive
+                            ? i18ndc(root.domain, "This brightness was set by hand", "Manual")
+                            : ""
+                        onRequested: percent => root.client.setGlobalOverride(percent, root.overrideMinutes)
                     }
 
-                    onRequested: percent => root.client.setMonitorOverride(modelData.logicalId,
-                                                                          percent,
-                                                                          root.overrideMinutes)
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Kirigami.Units.smallSpacing
+                        Layout.rightMargin: Kirigami.Units.smallSpacing
+                        implicitHeight: 1
+                        color: tokens.cardBorderColor
+                        visible: root.showAllDisplays
+                    }
+
+                    Repeater {
+                        model: root.monitors
+
+                        delegate: DisplayItem {
+                            id: display
+
+                            required property var modelData
+
+                            readonly property bool unavailable: modelData.unreachable
+                                || modelData.topology === "temporarily_unavailable"
+
+                            text: modelData.logicalId
+                            iconName: "video-display-brightness"
+                            percent: modelData.percent
+                            minPct: modelData.minPct !== undefined ? modelData.minPct : 15
+                            maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
+                            hasLimits: true
+                            hasOverride: modelData.hasOverride !== undefined && modelData.hasOverride
+                            controllable: modelData.enabled && !unavailable
+                            accentColor: root.accentColor
+                            tokens: tokens
+                            hint: {
+                                if (!modelData.enabled) {
+                                    return i18ndc(root.domain, "This display is excluded from automation", "Off");
+                                }
+                                if (unavailable) {
+                                    return i18ndc(root.domain, "This display is not answering", "Unavailable");
+                                }
+                                if (modelData.hasOverride) {
+                                    return i18ndc(root.domain, "This brightness was set by hand", "Manual");
+                                }
+                                return "";
+                            }
+
+                            onRequested: percent => root.client.setMonitorOverride(modelData.logicalId,
+                                                                                  percent,
+                                                                                  root.overrideMinutes)
+                            onLimitsRequested: (minVal, maxVal) => root.client.setMonitorLimits(modelData.logicalId,
+                                                                                               minVal,
+                                                                                               maxVal)
+                            onClearOverrideRequested: () => root.client.clearMonitorOverride(modelData.logicalId)
+                        }
+                    }
                 }
             }
 
-            SunTimesRow {
-                id: sunTimes
+            // Atmosphere & Solar cycle section (Themed GNOME HIG grouped row container)
+            WardrobeCard {
+                Layout.fillWidth: true
                 visible: root.client.isConnected
-                client: root.client
-                showSolarElevation: Plasmoid.configuration.showSolarElevation
+                    && (root.client.weatherEnabled || (root.client.sunriseEpochS > 0 && root.client.sunsetEpochS > 0))
+                contentImplicitHeight: solarColumn.implicitHeight + Kirigami.Units.smallSpacing * 2
+                tokens: tokens
+
+                ColumnLayout {
+                    id: solarColumn
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: Kirigami.Units.smallSpacing
+                    spacing: Kirigami.Units.smallSpacing
+
+                    WeatherItem {
+                        visible: root.client.weatherEnabled
+                        client: root.client
+                        tokens: tokens
+                    }
+
+                    ForecastStrip {
+                        visible: root.client.weatherEnabled
+                        client: root.client
+                        tokens: tokens
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Kirigami.Units.smallSpacing
+                        Layout.rightMargin: Kirigami.Units.smallSpacing
+                        implicitHeight: 1
+                        color: tokens.cardBorderColor
+                        visible: root.client.weatherEnabled
+                            && (root.client.sunriseEpochS > 0 && root.client.sunsetEpochS > 0)
+                    }
+
+                    SunTimesRow {
+                        id: sunTimes
+                        visible: root.client.sunriseEpochS > 0 && root.client.sunsetEpochS > 0
+                        client: root.client
+                        tokens: tokens
+                        showSolarElevation: Plasmoid.configuration.showSolarElevation
+                    }
+                }
             }
         }
     }
 
-    Timer {
-        interval: 2500
-        running: true
-        onTriggered: console.log("SR-SIZE implicit=" + root.implicitHeight
-            + " height=" + root.height
-            + " preferred=" + root.Layout.preferredHeight
-            + " max=" + root.Layout.maximumHeight
-            + " column=" + contentColumn.implicitHeight
-            + " scrollView=" + scrollView.height
-            + " sunTimesVisible=" + sunTimes.visible
-            + " sunTimesY=" + sunTimes.y + " sunTimesH=" + sunTimes.height
-            + " footerH=" + (root.footer ? root.footer.height : -1))
-    }
-
     footer: PopupFooter {
         client: root.client
+        tokens: tokens
         defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes
         visible: root.client.isConnected
     }

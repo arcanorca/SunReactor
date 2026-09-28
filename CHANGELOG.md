@@ -9,8 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.2] - 2026-09-28
 
+### Added
+- **KDE Plasma 6 Thematic Wardrobe Engine (`plasma/org.sunreactor.plasma/`)**:
+  - Introduced the Wardrobe architecture inspired by Statoscope: dynamic token resolution across 35 themes categorized into 10 distinct visual archetypes (`ThemeCatalog.js`, `ThemeTokens.qml`, `WardrobeCard.qml`).
+  - Bespoke archetype delegates: Nothing OS dot-matrix tracks & lucent frosted glass, Handheld 4-shade LCD pixel displays & DMG-01 frames, Amiga Workbench 3D bevels & Boing Ball pulse indicators, Braun ET66 concave calculator buttons & DIN status lights, VFD Hi-Fi smoked glass & cyan-green segment bar gauges, Nixie cold-cathode neon glow & anode wire mesh, Unix Workstation Motif bevels, and ThinkPad Raven styling.
+  - Bundled curated typography in `contents/fonts/`: Geist Sans/Mono, Press Start 2P, VT323, Sysfont, IBM Plex Mono, and Orbitron.
+  - Bundled vector assets and textures in `contents/images/`: Game Boy DMG/Pocket/Color SVG vectors, Amiga Boing Ball vector, Nixie wire mesh tiles, VFD fluorescent grid tiles, and reticle patterns.
+- **Interactive Day/Night Limit Controls (`min_pct` / `max_pct`)**:
+  - Extended IPC control protocol with `SetMonitorLimits { monitor_id, min_pct, max_pct }` and exposed `min_pct` / `max_pct` in `MonitorStatus`.
+  - Automatic persistence to `config.toml` upon limit adjustment with immediate forced daemon tick re-evaluating solar projection and applying hardware brightness.
+  - Interactive GNOME HIG drawer per monitor in `DisplayItem.qml` with dual sliders for Night Min % and Day Max %.
+  - One-click "Auto" button to instantly clear manual overrides and restore natural solar curve tracking.
+
+### Changed
+- **Glare-Free Dark Substrate Palettes**:
+  - Overhauled retro themes (`Handheld`, `ClassicMacintosh`, `Amiga`, `Commodore64`, `CasioDigital`) to eliminate blinding light backgrounds, replacing them with authentic dark LCD matrix substrates (`#141C12`), 1-bit CRT carbon (`#121212`), and Amiga slate chassis (`#141820`) with Boing Ball / Guru Meditation red accents (`#EE2233`).
+  - TUI automation output typography dynamically switches between retro pixel-art digits and modern rounded digits depending on the active theme archetype.
+
 ### Fixed
 - Report a failed first daemon status poll as offline, so the TUI no longer remains stuck on "Connecting" when the service is stopped.
+- Relaxed pipe buffer timeout deadline in `src/process.rs` to 400ms to eliminate multi-core thread scheduling race conditions.
 
 ## [0.12.1] - 2026-09-27
 

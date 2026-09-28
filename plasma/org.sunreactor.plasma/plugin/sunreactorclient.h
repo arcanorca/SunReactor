@@ -85,6 +85,14 @@ private:
     /*! Secondary readings; keys are absent when the provider did not send them. */
     Q_PROPERTY(QVariantMap weatherDetails READ weatherDetails NOTIFY statusChanged)
 
+    /*! Theme information and colors from the active daemon config. */
+    Q_PROPERTY(QString themeName READ themeName NOTIFY statusChanged)
+    Q_PROPERTY(QString themeAccent READ themeAccent NOTIFY statusChanged)
+    Q_PROPERTY(QString themeSecondaryAccent READ themeSecondaryAccent NOTIFY statusChanged)
+    Q_PROPERTY(QString themeBg READ themeBg NOTIFY statusChanged)
+    Q_PROPERTY(QString themeFg READ themeFg NOTIFY statusChanged)
+    Q_PROPERTY(QString themeTextMuted READ themeTextMuted NOTIFY statusChanged)
+
 public:
     explicit SunReactorClient(QObject *parent = nullptr);
     explicit SunReactorClient(const QString &customSocketPath, QObject *parent = nullptr);
@@ -126,6 +134,13 @@ public:
     [[nodiscard]] QVariantList forecast() const { return m_forecast; }
     [[nodiscard]] QVariantMap weatherDetails() const { return m_weatherDetails; }
 
+    [[nodiscard]] QString themeName() const { return m_themeName; }
+    [[nodiscard]] QString themeAccent() const { return m_themeAccent; }
+    [[nodiscard]] QString themeSecondaryAccent() const { return m_themeSecondaryAccent; }
+    [[nodiscard]] QString themeBg() const { return m_themeBg; }
+    [[nodiscard]] QString themeFg() const { return m_themeFg; }
+    [[nodiscard]] QString themeTextMuted() const { return m_themeTextMuted; }
+
     void setSocketPath(const QString &path);
     void setPopupOpen(bool open);
 
@@ -134,6 +149,7 @@ public Q_SLOTS:
     void setGlobalOverride(int percent, int durationMinutes);
     void clearGlobalOverride();
     void setMonitorOverride(const QString &monitorId, int percent, int durationMinutes);
+    void setMonitorLimits(const QString &monitorId, int minPct, int maxPct);
     void clearMonitorOverride(const QString &monitorId);
     void clearAllOverrides();
     void suspend(int minutes);
@@ -223,4 +239,11 @@ private:
     double m_weatherMultiplier = 1.0;
     QVariantList m_forecast;
     QVariantMap m_weatherDetails;
+
+    QString m_themeName;
+    QString m_themeAccent;
+    QString m_themeSecondaryAccent;
+    QString m_themeBg;
+    QString m_themeFg;
+    QString m_themeTextMuted;
 };

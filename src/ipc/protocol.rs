@@ -61,6 +61,11 @@ pub enum Request {
         percent: u8,
         minutes: Option<u64>,
     },
+    SetMonitorLimits {
+        monitor_id: String,
+        min_pct: u8,
+        max_pct: u8,
+    },
     ClearOverride {
         monitor_id: Option<String>,
         global: bool,
@@ -84,6 +89,7 @@ impl Request {
             Self::IdleDim => "idle_dim",
             Self::IdleWake => "idle_wake",
             Self::SetOverride { .. } => "set_override",
+            Self::SetMonitorLimits { .. } => "set_monitor_limits",
             Self::ClearOverride { .. } => "clear_override",
             Self::ReloadConfig => "reload_config",
             Self::RefreshWeather => "refresh_weather",
@@ -232,6 +238,19 @@ pub struct StatusResponse {
     /// `None` only when the daemon predates this field (backward compat).
     #[serde(default)]
     pub lunar_phase: Option<LunarPhase>,
+    /// Active TUI theme and palette hex codes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<ThemeStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeStatus {
+    pub name: String,
+    pub accent: String,
+    pub secondary_accent: String,
+    pub bg: String,
+    pub fg: String,
+    pub text_muted: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -246,6 +265,10 @@ pub struct MonitorStatus {
     /// Runtime topology classification, when a capability snapshot exists.
     #[serde(default)]
     pub topology: Option<String>,
+    #[serde(default)]
+    pub min_pct: Option<u8>,
+    #[serde(default)]
+    pub max_pct: Option<u8>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

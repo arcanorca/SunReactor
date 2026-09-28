@@ -15,11 +15,18 @@ import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "wardrobe"
+
 MouseArea {
     id: root
 
     required property PlasmoidItem plasmoidItem
     required property SunReactorClient client
+
+    ThemeTokens {
+        id: tokens
+        client: root.client
+    }
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -36,10 +43,10 @@ MouseArea {
     function togglePause() {
         if (client.isSuspended) {
             client.resume();
-            return;
+        } else {
+            const minutes = Plasmoid.configuration.defaultSuspendMinutes;
+            client.suspend(minutes > 0 ? minutes : 60);
         }
-        const minutes = Plasmoid.configuration.defaultSuspendMinutes;
-        client.suspend(minutes > 0 ? minutes : 60);
     }
 
     // The panel fixes one axis and lets the content decide the other.
@@ -108,9 +115,11 @@ MouseArea {
                              Math.round(root.client.temperatureC))
                 textFormat: Text.PlainText
                 font.features: ({ "tnum": 1 })
-                font.pixelSize: root.vertical || root.showElevation
+                font.family: tokens.digitFontFamily
+                font.pixelSize: Math.round((root.vertical || root.showElevation
                     ? Kirigami.Theme.smallFont.pixelSize
-                    : Kirigami.Theme.defaultFont.pixelSize
+                    : Kirigami.Theme.defaultFont.pixelSize) * tokens.digitFontScale)
+                color: (tokens.textColor && !tokens.isModern) ? tokens.textColor : Kirigami.Theme.textColor
             }
 
             PlasmaComponents3.Label {
@@ -120,8 +129,10 @@ MouseArea {
                              root.client.solarElevation.toFixed(1))
                 textFormat: Text.PlainText
                 font.features: ({ "tnum": 1 })
-                font.pixelSize: Kirigami.Theme.smallFont.pixelSize
-                opacity: 0.75
+                font.family: tokens.digitFontFamily
+                font.pixelSize: Math.round(Kirigami.Theme.smallFont.pixelSize * tokens.digitFontScale)
+                color: (tokens.textMutedColor && !tokens.isModern) ? tokens.textMutedColor : Kirigami.Theme.textColor
+                opacity: (!tokens.isModern) ? 1.0 : 0.75
             }
         }
     }

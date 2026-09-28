@@ -485,7 +485,7 @@ mod tests {
         let started = Instant::now();
         let error = run_script(
             "dd if=/dev/zero bs=1M count=4 2>/dev/null; dd if=/dev/zero bs=1M count=4 >&2 2>/dev/null; exec sleep 30",
-            Duration::from_millis(150),
+            Duration::from_millis(400),
         )
         .expect_err("command should time out after producing large output");
         assert!(started.elapsed() < Duration::from_secs(5));

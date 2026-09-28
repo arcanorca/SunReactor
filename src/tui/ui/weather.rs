@@ -1243,6 +1243,7 @@ mod tests {
             sunrise_epoch_s: None,
             sunset_epoch_s: None,
             lunar_phase: None,
+            theme: None,
         });
         model
     }

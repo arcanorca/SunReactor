@@ -41,6 +41,8 @@ impl DaemonRuntime {
                         .as_ref()
                         .and_then(|actions| actions.get(index))
                         .map(|action| action.name().to_owned()),
+                    min_pct: Some(monitor.min_pct),
+                    max_pct: Some(monitor.max_pct),
                 }
             })
             .collect();
@@ -75,6 +77,17 @@ impl DaemonRuntime {
                 .map(|event| event.sunrise.timestamp() as u64),
             sunset_epoch_s: events.as_ref().map(|event| event.sunset.timestamp() as u64),
             lunar_phase: Some(crate::solar::calculate_lunar_phase(now_utc)),
+            theme: {
+                let palette = self.config.tui_theme.palette();
+                Some(ipc::ThemeStatus {
+                    name: self.config.tui_theme.name().to_string(),
+                    accent: crate::tui::theme::Palette::to_hex(palette.accent),
+                    secondary_accent: crate::tui::theme::Palette::to_hex(palette.secondary_accent),
+                    bg: crate::tui::theme::Palette::to_hex(palette.bg),
+                    fg: crate::tui::theme::Palette::to_hex(palette.fg),
+                    text_muted: crate::tui::theme::Palette::to_hex(palette.text_muted),
+                })
+            },
         }
     }
 

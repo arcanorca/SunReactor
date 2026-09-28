@@ -15,6 +15,7 @@ PlasmaExtras.PlasmoidHeading {
     id: root
 
     required property SunReactorClient client
+    property var tokens: null
     /*! Duration of the plain "Pause" click, from the widget's settings. */
     property int defaultPauseMinutes: 60
 
@@ -42,6 +43,7 @@ PlasmaExtras.PlasmoidHeading {
                 : i18ndc(root.domain, "@action:button", "Pause")
             highlighted: root.client.isSuspended
             down: pauseMenu.visible
+            font.family: (root.tokens && root.tokens.fontFamily) || ""
 
             onClicked: {
                 if (root.client.isSuspended) {

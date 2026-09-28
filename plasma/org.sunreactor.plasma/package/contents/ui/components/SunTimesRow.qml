@@ -14,12 +14,13 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../Format.js" as Format
-import "../Icons.js" as Icons
+import "../wardrobe"
 
 PlasmaComponents3.ItemDelegate {
     id: root
 
     required property SunReactorClient client
+    property var tokens: null
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property var entries: [
@@ -47,6 +48,10 @@ PlasmaComponents3.ItemDelegate {
     }
     readonly property bool daylight: client.nowEpochS >= client.sunriseEpochS
         && client.nowEpochS < client.sunsetEpochS
+    /*! Active theme accent color or desktop highlight fallback. */
+    readonly property color accentColor: (tokens && tokens.accentColor)
+        ? tokens.accentColor
+        : ((client.themeAccent && client.themeAccent.length > 0) ? client.themeAccent : Kirigami.Theme.highlightColor)
     /*! Set by the popup from the widget's settings; off unless asked for. */
     property bool showSolarElevation: false
     readonly property bool showElevation: showSolarElevation && client.hasSolarElevation
@@ -81,6 +86,8 @@ PlasmaComponents3.ItemDelegate {
                         Layout.fillWidth: true
                         text: entry.modelData.label
                         textFormat: Text.PlainText
+                        font.family: (root.tokens && root.tokens.fontFamily) || ""
+                        color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
                     }
@@ -91,53 +98,22 @@ PlasmaComponents3.ItemDelegate {
                         textFormat: Text.PlainText
                         horizontalAlignment: Text.AlignHCenter
                         font.features: ({ "tnum": 1 })
+                        font.family: (root.tokens && root.tokens.digitFontFamily) || ""
+                        font.pixelSize: Math.round(Kirigami.Theme.defaultFont.pixelSize * (root.tokens ? root.tokens.digitFontScale : 1.0))
                         font.weight: entry.modelData.epoch === root.nextEpoch ? Font.Bold : Font.Normal
+                        color: entry.modelData.epoch === root.nextEpoch ? root.accentColor : ((root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor)
                     }
                 }
             }
         }
 
-        // The day as a track, with the sun itself riding along it. The sprite
-        // is the same one the panel shows, at its native 16px grid.
-        Item {
+        // Thematic solar track: dot-matrix, 4-shade pixel, Amiga Boing Ball, VFD phosphor, or neon
+        ThemedSolarTrack {
             Layout.fillWidth: true
-            implicitHeight: 16
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: Math.max(2, Kirigami.Units.smallSpacing / 2)
-                radius: height / 2
-                color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g,
-                               Kirigami.Theme.textColor.b, 0.15)
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: parent.width * root.dayProgress
-                    radius: parent.radius
-                    color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g,
-                                   Kirigami.Theme.highlightColor.b, root.daylight ? 0.6 : 0.25)
-                }
-            }
-
-            Kirigami.Icon {
-                width: 16
-                height: 16
-                x: (parent.width - width) * root.dayProgress
-                anchors.verticalCenter: parent.verticalCenter
-                roundToIconSize: false
-                source: Icons.skyArt(!root.daylight)
-
-                Behavior on x {
-                    NumberAnimation {
-                        duration: Kirigami.Units.longDuration
-                        easing.type: Easing.InOutQuad
-                    }
-                }
-            }
+            tokens: root.tokens
+            dayProgress: root.dayProgress
+            daylight: root.daylight
+            accentColor: root.accentColor
         }
 
         PlasmaExtras.DescriptiveLabel {
@@ -145,6 +121,7 @@ PlasmaComponents3.ItemDelegate {
             visible: root.showElevation
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
+            font.family: (root.tokens && root.tokens.fontFamily) || ""
             text: root.client.solarElevation >= 0
                 ? i18ndc(root.domain, "Placeholder is an angle in degrees",
                          "Sun %1° above the horizon", root.client.solarElevation.toFixed(1))

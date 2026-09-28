@@ -26,6 +26,8 @@ pub(crate) fn dummy_status(monitor_count: usize) -> StatusResponse {
             last_applied_at_epoch_s: None,
             backoff_until_epoch_s: None,
             topology: None,
+            min_pct: Some(15),
+            max_pct: Some(60),
         })
         .collect();
 
@@ -50,6 +52,7 @@ pub(crate) fn dummy_status(monitor_count: usize) -> StatusResponse {
         sunrise_epoch_s: None,
         sunset_epoch_s: None,
         lunar_phase: None,
+        theme: None,
     }
 }
 

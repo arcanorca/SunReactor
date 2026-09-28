@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="77.6mm" height="127.6mm" viewBox="0 0 77.6 127.6" role="img" aria-label="Game Boy Pocket, front">
+<defs>
+<linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D5D7DA"/><stop offset="0.45" stop-color="#BFC2C6"/><stop offset="1" stop-color="#9FA3A8"/></linearGradient>
+<linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A2B2F"/><stop offset="1" stop-color="#171819"/></linearGradient>
+<linearGradient id="btn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A4C52"/><stop offset="1" stop-color="#2E3035"/></linearGradient>
+</defs>
+<rect x="0.5" y="0.5" width="76.6" height="126.6" rx="5.5" fill="url(#body)" stroke="#8C9095" stroke-width="0.5"/>
+<rect x="2" y="2" width="73.6" height="123.6" rx="4.4" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.35"/>
+<rect x="7.8" y="9.0" width="62.0" height="52.0" rx="2.2" fill="url(#bezel)"/>
+<rect x="17.3" y="13.5" width="43.0" height="39.0" fill="#C3C8B6" stroke="#0E0F10" stroke-width="0.4"/>
+<circle cx="12.2" cy="31.5" r="1.15" fill="#D8433C" stroke="#7A1E1A" stroke-width="0.25"/>
+<text x="12.2" y="34.9" font-family="sans-serif" font-size="1.7" fill="#9A9DA2" text-anchor="middle">POWER</text>
+<g fill="#26272B"><rect x="13.7" y="75.0" width="7.6" height="22.0" rx="1"/><rect x="6.5" y="82.2" width="22.0" height="7.6" rx="1"/></g>
+<circle cx="17.5" cy="86.0" r="1.7" fill="#34363B"/>
+<circle cx="54.5" cy="90.0" r="4.7" fill="url(#btn)" stroke="#202227" stroke-width="0.3"/>
+<text x="54.5" y="98.2" font-family="sans-serif" font-size="3" font-weight="bold" fill="#6B6E74" text-anchor="middle">B</text>
+<circle cx="66.0" cy="84.0" r="4.7" fill="url(#btn)" stroke="#202227" stroke-width="0.3"/>
+<text x="66.0" y="92.2" font-family="sans-serif" font-size="3" font-weight="bold" fill="#6B6E74" text-anchor="middle">A</text>
+<g transform="rotate(-20 38.8 104)">
+<rect x="33.0" y="102.6" width="8.6" height="2.8" rx="1.4" fill="#3A3C41"/>
+<text x="37.3" y="108.2" font-family="sans-serif" font-size="2.1" fill="#7C7F85" text-anchor="middle">SELECT</text>
+<rect x="44.5" y="102.6" width="8.6" height="2.8" rx="1.4" fill="#3A3C41"/>
+<text x="48.8" y="108.2" font-family="sans-serif" font-size="2.1" fill="#7C7F85" text-anchor="middle">START</text>
+</g>
+<g fill="#9096A0" fill-opacity="0.85">
+<circle cx="57.50" cy="108.00" r="0.62"/>
+<circle cx="59.80" cy="108.00" r="0.62"/>
+<circle cx="62.10" cy="108.00" r="0.62"/>
+<circle cx="64.40" cy="108.00" r="0.62"/>
+<circle cx="66.70" cy="108.00" r="0.62"/>
+<circle cx="69.00" cy="108.00" r="0.62"/>
+<circle cx="71.30" cy="108.00" r="0.62"/>
+<circle cx="58.65" cy="110.30" r="0.62"/>
+<circle cx="60.95" cy="110.30" r="0.62"/>
+<circle cx="63.25" cy="110.30" r="0.62"/>
+<circle cx="65.55" cy="110.30" r="0.62"/>
+<circle cx="67.85" cy="110.30" r="0.62"/>
+<circle cx="70.15" cy="110.30" r="0.62"/>
+<circle cx="72.45" cy="110.30" r="0.62"/>
+<circle cx="57.50" cy="112.60" r="0.62"/>
+<circle cx="59.80" cy="112.60" r="0.62"/>
+<circle cx="62.10" cy="112.60" r="0.62"/>
+<circle cx="64.40" cy="112.60" r="0.62"/>
+<circle cx="66.70" cy="112.60" r="0.62"/>
+<circle cx="69.00" cy="112.60" r="0.62"/>
+<circle cx="71.30" cy="112.60" r="0.62"/>
+<circle cx="58.65" cy="114.90" r="0.62"/>
+<circle cx="60.95" cy="114.90" r="0.62"/>
+<circle cx="63.25" cy="114.90" r="0.62"/>
+<circle cx="65.55" cy="114.90" r="0.62"/>
+<circle cx="67.85" cy="114.90" r="0.62"/>
+<circle cx="70.15" cy="114.90" r="0.62"/>
+<circle cx="72.45" cy="114.90" r="0.62"/>
+<circle cx="57.50" cy="117.20" r="0.62"/>
+<circle cx="59.80" cy="117.20" r="0.62"/>
+<circle cx="62.10" cy="117.20" r="0.62"/>
+<circle cx="64.40" cy="117.20" r="0.62"/>
+<circle cx="66.70" cy="117.20" r="0.62"/>
+<circle cx="69.00" cy="117.20" r="0.62"/>
+<circle cx="71.30" cy="117.20" r="0.62"/>
+<circle cx="58.65" cy="119.50" r="0.62"/>
+<circle cx="60.95" cy="119.50" r="0.62"/>
+<circle cx="63.25" cy="119.50" r="0.62"/>
+<circle cx="65.55" cy="119.50" r="0.62"/>
+<circle cx="67.85" cy="119.50" r="0.62"/>
+<circle cx="70.15" cy="119.50" r="0.62"/>
+<circle cx="72.45" cy="119.50" r="0.62"/>
+</g>
+</svg>

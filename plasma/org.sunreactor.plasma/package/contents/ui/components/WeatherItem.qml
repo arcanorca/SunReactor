@@ -18,6 +18,7 @@ PlasmaComponents3.ItemDelegate {
     id: root
 
     required property SunReactorClient client
+    property var tokens: null
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
 
@@ -112,6 +113,8 @@ PlasmaComponents3.ItemDelegate {
                 Layout.fillWidth: true
                 text: root.summary
                 textFormat: Text.PlainText
+                font.family: (root.tokens && root.tokens.fontFamily) || ""
+                color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
                 elide: Text.ElideRight
             }
 
@@ -119,6 +122,8 @@ PlasmaComponents3.ItemDelegate {
                 Layout.fillWidth: true
                 text: root.effect
                 textFormat: Text.PlainText
+                font.family: (root.tokens && root.tokens.fontFamily) || ""
+                color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
                 elide: Text.ElideRight
             }
         }

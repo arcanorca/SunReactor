@@ -257,6 +257,23 @@ void SunReactorClient::setMonitorOverride(const QString &monitorId, int percent,
     enqueueRequest(req);
 }
 
+void SunReactorClient::setMonitorLimits(const QString &monitorId, int minPct, int maxPct)
+{
+    const QString id = monitorId.trimmed();
+    if (id.isEmpty()) {
+        return;
+    }
+
+    const int clampedMin = qBound(0, minPct, 100);
+    const int clampedMax = qBound(clampedMin, maxPct, 100);
+
+    QJsonObject req = request(QStringLiteral("set_monitor_limits"));
+    req[QStringLiteral("monitor_id")] = id;
+    req[QStringLiteral("min_pct")] = clampedMin;
+    req[QStringLiteral("max_pct")] = clampedMax;
+    enqueueRequest(req);
+}
+
 void SunReactorClient::clearMonitorOverride(const QString &monitorId)
 {
     const QString id = monitorId.trimmed();
@@ -541,6 +558,14 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     m_globalOverrideUntilEpochS = optionalEpoch(statusObj, "global_override_until_epoch_s");
     m_perMonitorOverrideUntilEpochS = optionalEpoch(statusObj, "per_monitor_override_until_epoch_s");
 
+    const QJsonObject themeObj = statusObj.value(QStringLiteral("theme")).toObject();
+    m_themeName = themeObj.value(QStringLiteral("name")).toString();
+    m_themeAccent = themeObj.value(QStringLiteral("accent")).toString();
+    m_themeSecondaryAccent = themeObj.value(QStringLiteral("secondary_accent")).toString();
+    m_themeBg = themeObj.value(QStringLiteral("bg")).toString();
+    m_themeFg = themeObj.value(QStringLiteral("fg")).toString();
+    m_themeTextMuted = themeObj.value(QStringLiteral("text_muted")).toString();
+
     parseWeather(statusObj);
     parseMonitors(statusObj);
 
@@ -607,6 +632,8 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
 
         const int applied = optionalPercent(monitor, "last_applied_percent");
         const int overridePercent = optionalPercent(monitor, "override_percent");
+        const int minPct = optionalPercent(monitor, "min_pct");
+        const int maxPct = optionalPercent(monitor, "max_pct");
         const bool enabled = monitor.value(QStringLiteral("enabled")).toBool(true);
         const qint64 backoffUntil = optionalEpoch(monitor, "backoff_until_epoch_s");
         const bool unreachable = backoffUntil > m_nowEpochS;
@@ -617,6 +644,8 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         map[QStringLiteral("topology")] = monitor.value(QStringLiteral("topology")).toString();
         map[QStringLiteral("enabled")] = enabled;
         map[QStringLiteral("appliedPercent")] = applied;
+        map[QStringLiteral("minPct")] = minPct != UNKNOWN_PERCENT ? minPct : 15;
+        map[QStringLiteral("maxPct")] = maxPct != UNKNOWN_PERCENT ? maxPct : 60;
         map[QStringLiteral("hasOverride")] = overridePercent != UNKNOWN_PERCENT;
         map[QStringLiteral("overridePercent")] = overridePercent;
         // What a slider should show: the override the user set, otherwise the
@@ -711,5 +740,11 @@ void SunReactorClient::clearStatus()
     m_hasWeatherReading = false;
     m_forecast.clear();
     m_weatherDetails.clear();
+    m_themeName.clear();
+    m_themeAccent.clear();
+    m_themeSecondaryAccent.clear();
+    m_themeBg.clear();
+    m_themeFg.clear();
+    m_themeTextMuted.clear();
     Q_EMIT statusChanged();
 }

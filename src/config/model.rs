@@ -210,11 +210,18 @@ pub enum TemperatureUnit {
 pub enum Theme {
     #[default]
     Amber,
+    #[serde(alias = "workbench")]
+    Amiga,
     AyuDark,
     AyuMirage,
+    #[serde(alias = "din")]
+    Braun,
+    #[serde(alias = "casio", alias = "digitalwatch", alias = "digital_watch")]
     CasioDigital,
     CatppuccinMocha,
+    #[serde(alias = "macintosh128k", alias = "mac128k")]
     ClassicMacintosh,
+    #[serde(alias = "c64")]
     Commodore64,
     Cyberpunk,
     Dracula,
@@ -222,13 +229,20 @@ pub enum Theme {
     Grayscale,
     Gruvbox,
     HackerGreen,
+    #[serde(alias = "gameboy", alias = "dmg", alias = "dmg01")]
+    Handheld,
     Kanagawa,
     MaterialOcean,
     Monokai,
     NightOwl,
+    #[serde(alias = "tubes", alias = "nixie_tubes")]
+    Nixie,
     Nord,
+    #[serde(alias = "glyph")]
     Nothing,
     OneDark,
+    #[serde(alias = "scope", alias = "crt")]
+    Oscilloscope,
     PhosphorBlue,
     RosePine,
     SolarizedDark,
@@ -236,6 +250,10 @@ pub enum Theme {
     Terminal,
     ThinkPad,
     TokyoNight,
+    #[serde(alias = "unix", alias = "workstation", alias = "motif", alias = "irix")]
+    UnixWorkstation,
+    #[serde(alias = "vfd_hifi", alias = "vfd", alias = "hifi")]
+    VfdHiFi,
     Zenburn,
 }
 

@@ -15,6 +15,7 @@ pub(super) struct RuntimeConfig {
     pub location: Location,
     pub monitors: Vec<MonitorConfig>,
     pub weather: WeatherConfig,
+    pub tui_theme: crate::config::Theme,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +57,7 @@ impl RuntimeConfig {
             apply,
             monitors: report.config.monitors,
             weather: report.config.weather,
+            tui_theme: report.config.tui.theme,
             location,
         })
     }
