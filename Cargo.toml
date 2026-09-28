@@ -1,6 +1,6 @@
 [package]
 name = "sunreactor"
-version = "0.12.1"
+version = "0.12.2"
 edition = "2021"
 description = "sunreactor daemon and CLI for adaptive brightness control"
 license = "GPL-3.0-or-later"

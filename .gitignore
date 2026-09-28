@@ -1,5 +1,6 @@
 # Build artifacts
 /target/
+/releases/
 
 # Cargo lock is committed for binary crates
 # Cargo.lock
