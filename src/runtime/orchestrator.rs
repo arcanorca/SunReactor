@@ -724,8 +724,16 @@ mod tests {
         .expect("runtime should bootstrap");
 
         runtime.begin_capability_refresh_with_runner(PanicObservationRunner);
-        std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(runtime.publish_completed_capability_snapshot(), Some(false));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut result = None;
+        while Instant::now() < deadline {
+            result = runtime.publish_completed_capability_snapshot();
+            if result.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(result, Some(false));
 
         let runner = SlowObservationRunner {
             delay: Duration::from_millis(1),
