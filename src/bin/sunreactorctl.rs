@@ -532,6 +532,11 @@ fn render_status(status: &StatusResponse) -> String {
         format!("stateful_monitors: {}", status.stateful_monitors),
     ];
 
+    if let Some(theme) = &status.theme {
+        lines.push(format!("theme: {}", theme.name));
+        lines.push(format!("theme_accent: {}", theme.accent));
+    }
+
     match &status.weather {
         Some(weather) => {
             lines.push(format!("weather_enabled: {}", weather.enabled));
@@ -877,9 +882,12 @@ mod tests {
                 last_applied_at_epoch_s: Some(1_700_000_000),
                 backoff_until_epoch_s: None,
                 topology: None,
+                min_pct: Some(15),
+                max_pct: Some(60),
             }],
             solar_elevation: Some(15.0),
             lunar_phase: None,
+            theme: None,
         };
 
         let rendered = render_status(&status);

@@ -17,11 +17,19 @@ pub(crate) fn mix(from: Color, to: Color, amount: f64) -> Color {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphStyle {
+    Rounded,
+    Pixel,
+}
+
 impl Theme {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 35] = [
         Self::Amber,
+        Self::Amiga,
         Self::AyuDark,
         Self::AyuMirage,
+        Self::Braun,
         Self::CasioDigital,
         Self::CatppuccinMocha,
         Self::ClassicMacintosh,
@@ -32,13 +40,16 @@ impl Theme {
         Self::Grayscale,
         Self::Gruvbox,
         Self::HackerGreen,
+        Self::Handheld,
         Self::Kanagawa,
         Self::MaterialOcean,
         Self::Monokai,
         Self::NightOwl,
+        Self::Nixie,
         Self::Nord,
         Self::Nothing,
         Self::OneDark,
+        Self::Oscilloscope,
         Self::PhosphorBlue,
         Self::RosePine,
         Self::SolarizedDark,
@@ -46,6 +57,8 @@ impl Theme {
         Self::Terminal,
         Self::ThinkPad,
         Self::TokyoNight,
+        Self::UnixWorkstation,
+        Self::VfdHiFi,
         Self::Zenburn,
     ];
 
@@ -53,7 +66,9 @@ impl Theme {
     pub fn name(self) -> &'static str {
         match self {
             Self::Amber => "Amber",
+            Self::Amiga => "Amiga",
             Self::Terminal => "Terminal",
+            Self::Braun => "Braun",
             Self::Dracula => "Dracula",
             Self::Gruvbox => "Gruvbox",
             Self::RosePine => "Rosé Pine",
@@ -73,13 +88,31 @@ impl Theme {
             Self::Cyberpunk => "Cyberpunk",
             Self::Synthwave84 => "Synthwave '84",
             Self::HackerGreen => "Hacker Green",
+            Self::Handheld => "Handheld",
             Self::PhosphorBlue => "Phosphor Blue",
             Self::Commodore64 => "Commodore 64",
             Self::Grayscale => "Grayscale",
             Self::ClassicMacintosh => "Classic Macintosh",
             Self::CasioDigital => "Casio Digital",
+            Self::Nixie => "Nixie",
             Self::Nothing => "Nothing",
+            Self::Oscilloscope => "Oscilloscope",
             Self::ThinkPad => "ThinkPad",
+            Self::UnixWorkstation => "UNIX Workstation",
+            Self::VfdHiFi => "VFD Hi-Fi",
+        }
+    }
+
+    #[must_use]
+    pub fn glyph_style(self) -> GlyphStyle {
+        match self {
+            Self::Amiga
+            | Self::Commodore64
+            | Self::Cyberpunk
+            | Self::HackerGreen
+            | Self::Handheld
+            | Self::Synthwave84 => GlyphStyle::Pixel,
+            _ => GlyphStyle::Rounded,
         }
     }
 
@@ -352,13 +385,13 @@ impl Theme {
                 error: Color::Rgb(255, 50, 50),
             },
             Self::Commodore64 => Palette {
-                bg: Color::Rgb(64, 64, 224),
-                fg: Color::Rgb(160, 160, 255),
+                bg: Color::Rgb(0x10, 0x12, 0x25),
+                fg: Color::Rgb(0xA7, 0xB7, 0xFF),
                 accent: Color::Rgb(255, 255, 255),
-                secondary_accent: Color::Rgb(160, 160, 255),
+                secondary_accent: Color::Rgb(0x7F, 0xE5, 0xE5),
                 border_active: Color::Rgb(255, 255, 255),
-                border_inactive: Color::Rgb(160, 160, 255),
-                text_muted: Color::Rgb(160, 160, 255),
+                border_inactive: Color::Rgb(0x3B, 0x3F, 0x78),
+                text_muted: Color::Rgb(0x66, 0x72, 0xA8),
                 success: Color::Rgb(255, 255, 255),
                 warning: Color::Rgb(255, 255, 255),
                 error: Color::Rgb(255, 0, 0),
@@ -375,36 +408,33 @@ impl Theme {
                 warning: Color::Rgb(200, 200, 200),
                 error: Color::Rgb(100, 100, 100),
             },
-            // Mac OS Platinum: black ink on light gray, with the 1977–1998
-            // rainbow Apple logo colours (#61BB46 #FDB827 #F5821F #E03A3E
-            // #963D97 #009DDC). Text roles use darker steps of the logo
-            // colours so they stay legible on the light background.
+            // Classic Macintosh: 1984 1-bit CRT monochrome in high-contrast dark mode.
+            // Dark CRT carbon void, crisp paper off-white ink, and Apple 1984 rainbow accents.
             Self::ClassicMacintosh => Palette {
-                bg: Color::Rgb(0xDD, 0xDD, 0xDD),               // Platinum gray
-                fg: Color::Rgb(0x00, 0x00, 0x00),               // Black ink
-                accent: Color::Rgb(0x96, 0x3D, 0x97),           // Logo purple
-                secondary_accent: Color::Rgb(0x00, 0x74, 0xA6), // Logo blue, darkened
-                border_active: Color::Rgb(0x00, 0x00, 0x00),
-                border_inactive: Color::Rgb(0x88, 0x88, 0x88),
-                text_muted: Color::Rgb(0x55, 0x55, 0x55),
-                success: Color::Rgb(0x3A, 0x7D, 0x28), // Logo green, darkened
-                warning: Color::Rgb(0xB8, 0x5A, 0x0E), // Logo orange, darkened
-                error: Color::Rgb(0xC0, 0x2A, 0x2E),   // Logo red, darkened
+                bg: Color::Rgb(0x12, 0x12, 0x12),               // Dark CRT carbon
+                fg: Color::Rgb(0xF2, 0xF2, 0xEC),               // Crisp paper ink
+                accent: Color::Rgb(0x00, 0x9D, 0xDC),           // Apple 1984 cyan/blue
+                secondary_accent: Color::Rgb(0x96, 0x3D, 0x97), // Apple purple
+                border_active: Color::Rgb(0xF2, 0xF2, 0xEC),
+                border_inactive: Color::Rgb(0x3E, 0x3E, 0x3E),
+                text_muted: Color::Rgb(0x88, 0x88, 0x82),
+                success: Color::Rgb(0x61, 0xBB, 0x46),          // Apple green
+                warning: Color::Rgb(0xFD, 0xB8, 0x27),          // Apple yellow/gold
+                error: Color::Rgb(0xE0, 0x3A, 0x3E),            // Apple red
             },
-            // A reflective LCD watch face: dark segments on a gray-green
-            // panel, with Casio logo blue (#003296) and the gold lettering of
-            // metal-band models.
+            // Casio Digital: Negative LCD module (e.g. DW-5600BB / F-91W negative).
+            // Smoked dark substrate with crisp mint-green LCD segments and classic Casio blue accent.
             Self::CasioDigital => Palette {
-                bg: Color::Rgb(0xB9, 0xC2, 0xA4),               // LCD panel
-                fg: Color::Rgb(0x1C, 0x22, 0x1A),               // LCD segment
-                accent: Color::Rgb(0x00, 0x32, 0x96),           // Casio blue
-                secondary_accent: Color::Rgb(0x6E, 0x55, 0x12), // Gold lettering, darkened
-                border_active: Color::Rgb(0x1C, 0x22, 0x1A),
-                border_inactive: Color::Rgb(0x83, 0x8C, 0x74), // Unlit segment ghost
-                text_muted: Color::Rgb(0x4A, 0x53, 0x44),
-                success: Color::Rgb(0x2D, 0x5E, 0x2A),
-                warning: Color::Rgb(0x7A, 0x4B, 0x00),
-                error: Color::Rgb(0xA0, 0x22, 0x28),
+                bg: Color::Rgb(0x12, 0x18, 0x14),               // Negative LCD substrate
+                fg: Color::Rgb(0xE0, 0xF8, 0xDC),               // Mint-green LCD segment
+                accent: Color::Rgb(0x00, 0x88, 0xFF),           // Classic Casio blue
+                secondary_accent: Color::Rgb(0x88, 0xA6, 0x84), // Unlit ghost segments
+                border_active: Color::Rgb(0x9D, 0xF0, 0x9A),
+                border_inactive: Color::Rgb(0x2A, 0x38, 0x2E),
+                text_muted: Color::Rgb(0x60, 0x7A, 0x5E),
+                success: Color::Rgb(0x9D, 0xF0, 0x9A),
+                warning: Color::Rgb(0xF2, 0xD0, 0x6B),
+                error: Color::Rgb(0xFF, 0x52, 0x52),
             },
             // Nothing: black, white, and the brand red (#D71921).
             Self::Nothing => Palette {
@@ -433,6 +463,109 @@ impl Theme {
                 warning: Color::Rgb(0xF1, 0xC2, 0x1B),
                 error: Color::Rgb(0xFA, 0x4D, 0x56),
             },
+            // Commodore Amiga: Iconic Boing Ball & Guru Meditation dark workstation.
+            // Dark graphite chassis, crisp Boing Ball white, unmistakable Guru Meditation red,
+            // and Workbench Topaz amber/blue accents.
+            Self::Amiga => Palette {
+                bg: Color::Rgb(0x14, 0x18, 0x20),               // Dark graphite/slate chassis
+                fg: Color::Rgb(0xF0, 0xF4, 0xFA),               // Crisp Boing Ball white ink
+                accent: Color::Rgb(0xEE, 0x22, 0x33),           // Amiga Boing Ball / Guru red
+                secondary_accent: Color::Rgb(0x55, 0x88, 0xBB), // Workbench 2.0 blue
+                border_active: Color::Rgb(0xFF, 0x88, 0x00),    // Topaz amber gadget active
+                border_inactive: Color::Rgb(0x28, 0x32, 0x44),  // Workbench bevel shadow
+                text_muted: Color::Rgb(0x72, 0x86, 0x9E),       // Muted slate ink
+                success: Color::Rgb(0x3F, 0xBF, 0x5F),          // Amiga green
+                warning: Color::Rgb(0xFF, 0x88, 0x00),          // Topaz amber warning
+                error: Color::Rgb(0xDD, 0x33, 0x22),            // Guru Meditation red alert
+            },
+            // Braun: Dieter Rams / Dietrich Lubs functionalism (ET 66).
+            // Matte black chassis, silkscreen legends, iconic Braun orange
+            // and yellow accents with DIN status indicators.
+            Self::Braun => Palette {
+                bg: Color::Rgb(0x16, 0x16, 0x16),
+                fg: Color::Rgb(0xF2, 0xF2, 0xF0),
+                accent: Color::Rgb(0xFF, 0x55, 0x00),
+                secondary_accent: Color::Rgb(0xF0, 0xB0, 0x1E),
+                border_active: Color::Rgb(0xFF, 0x55, 0x00),
+                border_inactive: Color::Rgb(0x40, 0x40, 0x40),
+                text_muted: Color::Rgb(0x8A, 0x87, 0x81),
+                success: Color::Rgb(0x24, 0x8A, 0x3D),
+                warning: Color::Rgb(0xD9, 0x77, 0x06),
+                error: Color::Rgb(0xDC, 0x26, 0x26),
+            },
+            // Oscilloscope: CRT dark tube glass, intense electron beam green,
+            // secondary phosphor trail, and graticule grid.
+            Self::Oscilloscope => Palette {
+                bg: Color::Rgb(0x05, 0x09, 0x06),
+                fg: Color::Rgb(0x78, 0xFF, 0x78),
+                accent: Color::Rgb(0x39, 0xFF, 0x14),
+                secondary_accent: Color::Rgb(0x00, 0xDD, 0x55),
+                border_active: Color::Rgb(0x39, 0xFF, 0x14),
+                border_inactive: Color::Rgb(0x14, 0x35, 0x1B),
+                text_muted: Color::Rgb(0x2E, 0x8B, 0x3E),
+                success: Color::Rgb(0x78, 0xFF, 0x78),
+                warning: Color::Rgb(0xF6, 0xA3, 0x54),
+                error: Color::Rgb(0xFF, 0x61, 0x5E),
+            },
+            // VFD Hi-Fi: 1980s Japanese audio instrumentation with dark smoked
+            // glass faceplate and glowing vacuum fluorescent cyan-green emission.
+            Self::VfdHiFi => Palette {
+                bg: Color::Rgb(0x0B, 0x0E, 0x11),
+                fg: Color::Rgb(0x00, 0xF0, 0xA8),
+                accent: Color::Rgb(0x66, 0xFF, 0xD4),
+                secondary_accent: Color::Rgb(0x1B, 0xB2, 0x89),
+                border_active: Color::Rgb(0x00, 0xF0, 0xA8),
+                border_inactive: Color::Rgb(0x18, 0x28, 0x24),
+                text_muted: Color::Rgb(0x52, 0x7A, 0x70),
+                success: Color::Rgb(0x00, 0xF0, 0xA8),
+                warning: Color::Rgb(0xFF, 0xB0, 0x00),
+                error: Color::Rgb(0xFF, 0x3B, 0x30),
+            },
+            // Handheld: Game Boy DMG-01 / Pocket reflective LCD on dark matrix.
+            // Deep dark olive LCD matrix substrate to eliminate glare and eye strain,
+            // authentic 4-shade phosphor LCD pixel ink, and iconic burgundy A/B button accents.
+            Self::Handheld => Palette {
+                bg: Color::Rgb(0x14, 0x1C, 0x12),          // Deep olive matrix void (#141c12)
+                fg: Color::Rgb(0x9B, 0xBC, 0x0F),          // Authentic DMG-01 bright LCD (#9bbc0f)
+                accent: Color::Rgb(0x8B, 0x1D, 0x42),      // DMG-01 burgundy button accent (#8b1d42)
+                secondary_accent: Color::Rgb(0x8B, 0xAC, 0x0F), // Mid-tone olive LCD (#8bac0f)
+                border_active: Color::Rgb(0x9B, 0xBC, 0x0F),
+                border_inactive: Color::Rgb(0x28, 0x38, 0x24),
+                text_muted: Color::Rgb(0x56, 0x76, 0x48),
+                success: Color::Rgb(0x8B, 0xAC, 0x0F),
+                warning: Color::Rgb(0xC8, 0xA6, 0x46),
+                error: Color::Rgb(0x9A, 0x22, 0x57),
+            },
+            // Nixie: Cold-cathode neon discharge indicator tubes (ИН-18).
+            // Smoked glass vacuum void, glowing neon orange emission core,
+            // wire mesh anode borders, and tuning-eye green indicators.
+            Self::Nixie => Palette {
+                bg: Color::Rgb(0x0B, 0x0A, 0x09),
+                fg: Color::Rgb(0xFF, 0xB7, 0x65),
+                accent: Color::Rgb(0xFF, 0x7A, 0x18),
+                secondary_accent: Color::Rgb(0xE2, 0x4E, 0x05),
+                border_active: Color::Rgb(0xFF, 0x7A, 0x18),
+                border_inactive: Color::Rgb(0x39, 0x33, 0x2C),
+                text_muted: Color::Rgb(0x8C, 0x85, 0x7A),
+                success: Color::Rgb(0x49, 0xD1, 0x7A),
+                warning: Color::Rgb(0xFF, 0xB0, 0x20),
+                error: Color::Rgb(0xFF, 0x44, 0x33),
+            },
+            // UNIX Workstation: 1990-1995 SGI IRIX / Sun Solaris OSF/Motif console.
+            // Dark graphite chassis, crisp white ink, vibrant Motif cyan accents,
+            // and jewel status indicator lamps.
+            Self::UnixWorkstation => Palette {
+                bg: Color::Rgb(0x18, 0x1D, 0x26),
+                fg: Color::Rgb(0xF1, 0xF5, 0xF9),
+                accent: Color::Rgb(0x00, 0xF0, 0xFF),
+                secondary_accent: Color::Rgb(0x38, 0xE8, 0xFF),
+                border_active: Color::Rgb(0x00, 0xF0, 0xFF),
+                border_inactive: Color::Rgb(0x4A, 0x56, 0x6E),
+                text_muted: Color::Rgb(0x64, 0x74, 0x8B),
+                success: Color::Rgb(0x00, 0xE6, 0x76),
+                warning: Color::Rgb(0xFF, 0xB0, 0x20),
+                error: Color::Rgb(0xFF, 0x33, 0x44),
+            },
         }
     }
 
@@ -457,6 +590,18 @@ pub struct Palette {
 }
 
 impl Palette {
+    #[must_use]
+    pub fn to_hex(color: Color) -> String {
+        match color {
+            Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+            Color::Black => String::from("#000000"),
+            Color::White => String::from("#ffffff"),
+            Color::DarkGray => String::from("#555555"),
+            Color::Gray => String::from("#aaaaaa"),
+            _ => String::from("#ffb000"),
+        }
+    }
+
     #[must_use]
     pub fn styles(&self) -> SemanticStyles {
         SemanticStyles::from_palette(self)
@@ -962,8 +1107,10 @@ mod tests {
     fn test_all_themes_resolve_palette_and_deserialize() {
         let expected_themes = [
             ("amber", Theme::Amber),
+            ("amiga", Theme::Amiga),
             ("ayudark", Theme::AyuDark),
             ("ayumirage", Theme::AyuMirage),
+            ("braun", Theme::Braun),
             ("casiodigital", Theme::CasioDigital),
             ("catppuccinmocha", Theme::CatppuccinMocha),
             ("classicmacintosh", Theme::ClassicMacintosh),
@@ -974,13 +1121,16 @@ mod tests {
             ("grayscale", Theme::Grayscale),
             ("gruvbox", Theme::Gruvbox),
             ("hackergreen", Theme::HackerGreen),
+            ("handheld", Theme::Handheld),
             ("kanagawa", Theme::Kanagawa),
             ("materialocean", Theme::MaterialOcean),
             ("monokai", Theme::Monokai),
             ("nightowl", Theme::NightOwl),
+            ("nixie", Theme::Nixie),
             ("nord", Theme::Nord),
             ("nothing", Theme::Nothing),
             ("onedark", Theme::OneDark),
+            ("oscilloscope", Theme::Oscilloscope),
             ("phosphorblue", Theme::PhosphorBlue),
             ("rosepine", Theme::RosePine),
             ("solarizeddark", Theme::SolarizedDark),
@@ -988,11 +1138,13 @@ mod tests {
             ("terminal", Theme::Terminal),
             ("thinkpad", Theme::ThinkPad),
             ("tokyonight", Theme::TokyoNight),
+            ("unixworkstation", Theme::UnixWorkstation),
+            ("vfdhifi", Theme::VfdHiFi),
             ("zenburn", Theme::Zenburn),
         ];
 
-        assert_eq!(Theme::ALL.len(), 28);
-        assert_eq!(expected_themes.len(), 28);
+        assert_eq!(Theme::ALL.len(), 35);
+        assert_eq!(expected_themes.len(), 35);
 
         for (key, expected_theme) in expected_themes {
             let toml_str = format!("theme = \"{key}\"\n");
@@ -1007,6 +1159,50 @@ mod tests {
             let palette = expected_theme.palette();
             assert_ne!(palette.bg, palette.fg);
             assert!(!expected_theme.name().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_theme_statoscope_aliases_deserialize() {
+        let aliases = [
+            ("din", Theme::Braun),
+            ("workbench", Theme::Amiga),
+            ("vfd", Theme::VfdHiFi),
+            ("vfd_hifi", Theme::VfdHiFi),
+            ("hifi", Theme::VfdHiFi),
+            ("gameboy", Theme::Handheld),
+            ("dmg", Theme::Handheld),
+            ("dmg01", Theme::Handheld),
+            ("unix", Theme::UnixWorkstation),
+            ("workstation", Theme::UnixWorkstation),
+            ("motif", Theme::UnixWorkstation),
+            ("irix", Theme::UnixWorkstation),
+            ("tubes", Theme::Nixie),
+            ("nixie_tubes", Theme::Nixie),
+            ("scope", Theme::Oscilloscope),
+            ("crt", Theme::Oscilloscope),
+            ("glyph", Theme::Nothing),
+            ("casio", Theme::CasioDigital),
+            ("digitalwatch", Theme::CasioDigital),
+            ("digital_watch", Theme::CasioDigital),
+            ("macintosh128k", Theme::ClassicMacintosh),
+            ("mac128k", Theme::ClassicMacintosh),
+            ("c64", Theme::Commodore64),
+        ];
+
+        for (alias, expected) in aliases {
+            let toml_str = format!("theme = \"{alias}\"\n");
+            let parsed: Result<crate::config::TuiConfig, _> = toml::from_str(&toml_str);
+            assert!(
+                parsed.is_ok(),
+                "Failed to deserialize alias '{alias}': {:?}",
+                parsed.err()
+            );
+            assert_eq!(
+                parsed.unwrap().theme,
+                expected,
+                "Alias '{alias}' did not resolve to expected theme"
+            );
         }
     }
 

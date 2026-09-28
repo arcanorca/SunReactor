@@ -42,8 +42,10 @@ private Q_SLOTS:
     void testMalformedJsonRecovery();
     void testCommandSequencing();
     void testOverrideRequestsAreWellFormed();
+    void testMonitorLimitsRequestsAreWellFormed();
     void testAcknowledgedStatusDoesNotLoop();
     void testRequestTimeout();
+    void testThemeHotSwapping();
 
 private:
     /// Answers every request with one status payload.
@@ -184,6 +186,35 @@ void TestSunReactorClient::testOverrideRequestsAreWellFormed()
     QCOMPARE(cleared.value(QStringLiteral("global")).toBool(), false);
 }
 
+void TestSunReactorClient::testMonitorLimitsRequestsAreWellFormed()
+{
+    serveAck();
+
+    SunReactorClient client(m_socketPath);
+    client.setMonitorLimits(QStringLiteral("  desk  "), -5, 120);
+
+    const auto commandsSoFar = [this]() {
+        QList<QJsonObject> commands;
+        for (const QJsonObject &request : std::as_const(m_received)) {
+            if (request.value(QStringLiteral("request")).toString() != QStringLiteral("status")) {
+                commands.append(request);
+            }
+        }
+        return commands;
+    };
+
+    QTRY_VERIFY_WITH_TIMEOUT(!commandsSoFar().isEmpty(), 5000);
+
+    const QList<QJsonObject> commands = commandsSoFar();
+    QCOMPARE(commands.size(), 1);
+
+    const QJsonObject limits = commands.at(0);
+    QCOMPARE(limits.value(QStringLiteral("request")).toString(), QStringLiteral("set_monitor_limits"));
+    QCOMPARE(limits.value(QStringLiteral("monitor_id")).toString(), QStringLiteral("desk"));
+    QCOMPARE(limits.value(QStringLiteral("min_pct")).toInt(), 0);
+    QCOMPARE(limits.value(QStringLiteral("max_pct")).toInt(), 100);
+}
+
 void TestSunReactorClient::testAcknowledgedStatusDoesNotLoop()
 {
     // A peer that answers every request - including a status read - with an
@@ -256,6 +287,15 @@ void TestSunReactorClient::testConnectAndParseStatus()
     status[QStringLiteral("weather")] = weather;
     status[QStringLiteral("monitors")] = QJsonArray{external, internal};
 
+    QJsonObject theme;
+    theme[QStringLiteral("name")] = QStringLiteral("Amber");
+    theme[QStringLiteral("accent")] = QStringLiteral("#ffb000");
+    theme[QStringLiteral("secondary_accent")] = QStringLiteral("#dc8c00");
+    theme[QStringLiteral("bg")] = QStringLiteral("#0f0a05");
+    theme[QStringLiteral("fg")] = QStringLiteral("#ffd296");
+    theme[QStringLiteral("text_muted")] = QStringLiteral("#b47832");
+    status[QStringLiteral("theme")] = theme;
+
     serveStatus(status);
 
     SunReactorClient client(m_socketPath);
@@ -263,6 +303,12 @@ void TestSunReactorClient::testConnectAndParseStatus()
 
     QVERIFY(statusSpy.wait(2000));
     QVERIFY(client.isConnected());
+    QCOMPARE(client.themeName(), QStringLiteral("Amber"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#ffb000"));
+    QCOMPARE(client.themeSecondaryAccent(), QStringLiteral("#dc8c00"));
+    QCOMPARE(client.themeBg(), QStringLiteral("#0f0a05"));
+    QCOMPARE(client.themeFg(), QStringLiteral("#ffd296"));
+    QCOMPARE(client.themeTextMuted(), QStringLiteral("#b47832"));
     QCOMPARE(client.mode(), SunReactorClient::Manual);
     QVERIFY(client.isOverrideActive());
     QCOMPARE(client.overrideUntilEpochS(), 1774002000);
@@ -601,6 +647,121 @@ void TestSunReactorClient::testRequestTimeout()
     QVERIFY(!client.isConnected());
     QCOMPARE(client.mode(), SunReactorClient::Offline);
     QVERIFY(client.lastError().contains(QStringLiteral("timed out")));
+}
+
+void TestSunReactorClient::testThemeHotSwapping()
+{
+    QJsonObject currentTheme;
+    currentTheme[QStringLiteral("name")] = QStringLiteral("nothing");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#FFFFFF");
+    currentTheme[QStringLiteral("secondary_accent")] = QStringLiteral("#E50914");
+    currentTheme[QStringLiteral("bg")] = QStringLiteral("#121216");
+    currentTheme[QStringLiteral("fg")] = QStringLiteral("#FFFFFF");
+    currentTheme[QStringLiteral("text_muted")] = QStringLiteral("#888888");
+
+    connect(m_server, &QLocalServer::newConnection, this, [this, &currentTheme]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        if (!socket) return;
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &currentTheme]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            QJsonObject status;
+            status[QStringLiteral("theme")] = currentTheme;
+            socket->write(QJsonDocument(statusResponse(status)).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+            socket->disconnectFromServer();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
+
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("nothing"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#FFFFFF"));
+    QCOMPARE(client.themeSecondaryAccent(), QStringLiteral("#E50914"));
+
+    // Hot-swap to Handheld
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("handheld");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#8B1D42");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("handheld"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#8B1D42"));
+
+    // Hot-swap to Amiga
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("amiga");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#FF8800");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("amiga"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#FF8800"));
+
+    // Hot-swap to Braun
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("braun");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#FF5500");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("braun"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#FF5500"));
+
+    // Hot-swap to VFD
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("vfd_hifi");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#00F0A8");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("vfd_hifi"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#00F0A8"));
+
+    // Hot-swap to Nixie
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("nixie");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#FF7A18");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("nixie"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#FF7A18"));
+
+    // Hot-swap to ThinkPad
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("thinkpad");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#DA291C");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("thinkpad"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#DA291C"));
+
+    // Hot-swap to Unix Workstation
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("unix_workstation");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#4580A0");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("unix_workstation"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#4580A0"));
+
+    // Hot-swap to Commodore 64
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("commodore64");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("#8870E6");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("commodore64"));
+    QCOMPARE(client.themeAccent(), QStringLiteral("#8870E6"));
+
+    // Hot-swap to Modern
+    statusSpy.clear();
+    currentTheme[QStringLiteral("name")] = QStringLiteral("modern");
+    currentTheme[QStringLiteral("accent")] = QStringLiteral("");
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeName(), QStringLiteral("modern"));
+    QCOMPARE(client.themeAccent(), QStringLiteral(""));
 }
 
 QTEST_MAIN(TestSunReactorClient)

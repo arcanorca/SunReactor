@@ -737,7 +737,14 @@ fn render_target_instrument(
             } else {
                 styles.text_muted
             };
-            let rows = super::fonts::rounded_number_rows(&shown.to_string());
+            let rows = match app.config.tui.theme.glyph_style() {
+                crate::tui::theme::GlyphStyle::Pixel => {
+                    super::fonts::weather_pixel_font_rows(&shown.to_string())
+                }
+                crate::tui::theme::GlyphStyle::Rounded => {
+                    super::fonts::rounded_number_rows(&shown.to_string())
+                }
+            };
             for (index, row) in rows.into_iter().enumerate() {
                 let mut spans = vec![Span::raw(kit::BLANK_CURSOR), Span::styled(row, digit_style)];
                 if index == 2 {
@@ -1666,6 +1673,31 @@ mod tests {
         let unknown = buffer_text(terminal.backend().buffer());
         assert!(unknown.contains("Target · not written yet"), "{unknown}");
         assert!(!unknown.contains("╰─┤ ╰─┤"), "{unknown}");
+    }
+
+    #[test]
+    fn test_render_target_instrument_pixel_glyph_for_pixel_themes() {
+        let mut model = Model::with_environment(ModelEnvironment::isolated());
+        configure_monitor_fixture(
+            &mut model,
+            vec![named_monitor_config("mon-0", "Mi Monitor", 5, 60)],
+        );
+        model.config.tui.theme = crate::config::Theme::Amiga;
+        let mut status = dummy_status(1);
+        status.monitors[0].last_applied_percent = Some(44);
+        model.status = Some(status);
+        model.daemon_connection = DaemonConnection::Connected;
+        model.active_tab = Tab::Limits;
+        model.motion.level = crate::config::MotionLevel::Off;
+        model.refresh_monitor_milestones();
+
+        let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
+        terminal.draw(|frame| ui::ui(frame, &mut model)).unwrap();
+        let known = buffer_text(terminal.backend().buffer());
+        // 44 in the weather pixel font: `█  █ █  █` over `▀▀▀█ ▀▀▀█`.
+        assert!(known.contains("Output"), "{known}");
+        assert!(known.contains("▀▀▀█ ▀▀▀█"), "{known}");
+        assert!(!known.contains("not written yet"), "{known}");
     }
 
     #[test]

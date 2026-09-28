@@ -23,7 +23,6 @@ pub fn validate(config: &Config) -> Result<(), ConfigError> {
     config.validate()
 }
 
-#[cfg(any(test, feature = "tui"))]
 pub(crate) use io::load_from_path;
 #[cfg(test)]
 pub(crate) use io::{parse_str, write_default_to};

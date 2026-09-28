@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="12" viewBox="0 0 16 12">
+  <defs>
+    <pattern id="vfdPattern" width="16" height="12" patternUnits="userSpaceOnUse">
+      <!-- Cathode horizontal filaments -->
+      <line x1="0" y1="6" x2="16" y2="6" stroke="#00F0A8" stroke-width="0.5" stroke-opacity="0.2"/>
+      <!-- Subtle vertical grid wire -->
+      <line x1="8" y1="0" x2="8" y2="12" stroke="#003525" stroke-width="0.4" stroke-opacity="0.3"/>
+    </pattern>
+  </defs>
+  <rect width="16" height="12" fill="url(#vfdPattern)"/>
+</svg>

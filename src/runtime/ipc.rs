@@ -88,6 +88,28 @@ impl DaemonRuntime {
                     Err(error) => (ipc_error_response(&error), outcome),
                 }
             }
+            ipc::Request::SetMonitorLimits {
+                monitor_id,
+                min_pct,
+                max_pct,
+            } => {
+                let outcome = IpcOutcome {
+                    tick_attempted: true,
+                    config_reloaded: false,
+                };
+                match self.set_monitor_limits(&monitor_id, min_pct, max_pct) {
+                    Ok(message) => (
+                        self.respond_after_forced_apply(
+                            "set_monitor_limits",
+                            &message,
+                            now_utc,
+                            runner,
+                        ),
+                        outcome,
+                    ),
+                    Err(error) => (ipc_error_response(&error), outcome),
+                }
+            }
             ipc::Request::ClearOverride { monitor_id, global } => {
                 let outcome = IpcOutcome {
                     tick_attempted: true,
@@ -366,6 +388,49 @@ impl DaemonRuntime {
         }
 
         Ok(message)
+    }
+
+    fn set_monitor_limits(
+        &mut self,
+        monitor_id: &str,
+        min_pct: u8,
+        max_pct: u8,
+    ) -> Result<String, RuntimeError> {
+        if min_pct > 100 || max_pct > 100 {
+            return Err(RuntimeError::Ipc(ipc::IpcError::Protocol {
+                message: String::from("limits must be in the range 0..=100"),
+            }));
+        }
+        if min_pct > max_pct {
+            return Err(RuntimeError::Ipc(ipc::IpcError::Protocol {
+                message: format!("min_pct ({min_pct}) cannot exceed max_pct ({max_pct})"),
+            }));
+        }
+        self.ensure_configured_monitor(monitor_id)?;
+
+        for monitor in &mut self.config.monitors {
+            if monitor.logical_id == monitor_id {
+                monitor.min_pct = min_pct;
+                monitor.max_pct = max_pct;
+            }
+        }
+
+        if let Ok(mut report) = config::load_from_path(&self.config.path) {
+            if let Some(m) = report
+                .config
+                .monitors
+                .iter_mut()
+                .find(|m| m.logical_id == monitor_id)
+            {
+                m.min_pct = min_pct;
+                m.max_pct = max_pct;
+                let _ = config::save_to_path(&report.config, &self.config.path);
+            }
+        }
+
+        Ok(format!(
+            "updated limits for {monitor_id} to min={min_pct}%, max={max_pct}%"
+        ))
     }
 
     fn clear_override(

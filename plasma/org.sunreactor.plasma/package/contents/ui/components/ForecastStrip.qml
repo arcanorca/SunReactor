@@ -19,6 +19,8 @@ PlasmaComponents3.ItemDelegate {
     id: root
 
     required property SunReactorClient client
+    property var tokens: null
+
     /*! How many intervals to show; five fits the popup at its narrowest. */
     property int slots: 5
 
@@ -63,6 +65,8 @@ PlasmaComponents3.ItemDelegate {
                     text: Format.timeText(slot.modelData.epochS)
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
+                    font.family: (root.tokens && root.tokens.fontFamily) || ""
+                    color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
                 }
 
                 Kirigami.Icon {
@@ -82,6 +86,9 @@ PlasmaComponents3.ItemDelegate {
                                  Math.round(slot.modelData.temperatureC))
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
+                    font.family: (root.tokens && root.tokens.digitFontFamily) || ""
+                    font.pixelSize: Math.round(Kirigami.Theme.defaultFont.pixelSize * (root.tokens ? root.tokens.digitFontScale : 1.0))
+                    color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
                 }
             }
         }

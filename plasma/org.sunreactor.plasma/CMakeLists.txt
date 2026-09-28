@@ -22,6 +22,14 @@ qt_policy(SET QTP0001 NEW)
 # Plasma 6 package
 plasma_install_package(package org.sunreactor.plasma)
 
+# Fonts and vector asset packages
+install(
+    DIRECTORY
+        package/contents/fonts
+        package/contents/images
+    DESTINATION ${KDE_INSTALL_DATADIR}/plasma/plasmoids/org.sunreactor.plasma/contents
+)
+
 # QML C++ Backend Plugin
 add_library(sunreactorplugin SHARED)
 
@@ -101,3 +109,9 @@ target_link_libraries(test_sunreactorclient PRIVATE
 )
 
 add_test(NAME test_sunreactorclient COMMAND test_sunreactorclient)
+
+find_program(QML_EXECUTABLE NAMES qml6 qml)
+if (QML_EXECUTABLE)
+    add_test(NAME test_wardrobe COMMAND ${QML_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wardrobe.qml)
+    set_tests_properties(test_wardrobe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
