@@ -3,7 +3,9 @@
  * Its first row is "Follow SunReactor", with the terminal app's theme named
  * under it and a check while following. Below it, one row per daemon theme,
  * grouped by family under small captions: a four-chip palette strip, the name,
- * and a check on the applied one.
+ * and a check on the applied one. While the list is empty a status row says
+ * whether it is still loading or the daemon is too old to offer other themes.
+ * The rows follow the list as it arrives, open or closed.
  *
  * It is a toggle that stays open. The button's click opens and closes it; a
  * press outside the popover closes it (CloseOnPressOutsideParent leaves the
@@ -40,13 +42,26 @@ QQC2.Popup {
     required property string followedName
     required property bool pinned
     required property string pinnedId
-    /*! The daemon's list_themes entries. */
+    /*! The daemon's list_themes entries, live: the rows follow every change. */
     required property var themes
+    /*! Whether the daemon answers, and the theme registry it reported. */
+    required property bool connected
+    required property int themeRegistry
 
     signal followRequested()
     signal pinRequested(string id)
 
-    readonly property bool listSupported: client.themeRegistry !== SunReactorClient.CapabilityUnsupported
+    /*! The status row under Follow while there are no theme rows: loading while the
+        daemon answers, or unavailable on a daemon too old to list themes. */
+    readonly property string themesNotice: {
+        if (choices.count > 0) {
+            return "";
+        }
+        if (root.themeRegistry === SunReactorClient.CapabilityUnsupported) {
+            return i18nd(root.domain, "Themes unavailable");
+        }
+        return root.connected ? i18nd(root.domain, "Loading themes…") : "";
+    }
     /*! Small text: the theme's body face (its bitmap face is for the tab bar). */
     readonly property string textFamily: theme.available && theme.bodyFont.length > 0
         ? theme.bodyFont : Kirigami.Theme.defaultFont.family
@@ -112,7 +127,9 @@ QQC2.Popup {
     }
 
     /*! The rows, in family order. A list that has not changed keeps its rows, so
-        a row under the pointer is never replaced by a refresh. */
+        a row under the pointer is never replaced by a refresh. The cursor stays on
+        the same theme when the list changes under it; a popover that was empty
+        scrolls to the applied row once the rows arrive. */
     function rebuild() {
         const order = ["pixel", "instrument", "terminal"];
         const sorted = root.themes.slice().sort((a, b) =>
@@ -122,10 +139,27 @@ QQC2.Popup {
             return;
         }
         root.choicesKey = key;
+        const cursorId = list.currentIndex >= 0 && list.currentIndex < choices.count
+            ? choices.get(list.currentIndex).themeId : "";
+        const hadRows = choices.count > 0;
         choices.clear();
         for (const t of sorted) {
             choices.append({ themeId: t.id, name: t.name, family: t.family,
                              bg: t.bg, fg: t.fg, accent: t.accent, secondary: t.secondaryAccent });
+        }
+        let cursor = -1;
+        for (let i = 0; i < choices.count && cursorId.length > 0 && cursor < 0; ++i) {
+            if (choices.get(i).themeId === cursorId) {
+                cursor = i;
+            }
+        }
+        if (cursor >= 0) {
+            list.currentIndex = cursor;
+        } else {
+            resetCursor();
+        }
+        if (root.opened && !hadRows && choices.count > 0) {
+            scrollToCurrent();
         }
     }
 
@@ -174,7 +208,6 @@ QQC2.Popup {
     }
 
     onAboutToShow: {
-        client.refreshThemeList();
         place();
         rebuild();
         resetCursor();
@@ -188,13 +221,9 @@ QQC2.Popup {
             followRow.forceActiveFocus();
         }
     }
-    // A theme list that changes while the popover is open updates in place.
-    onThemesChanged: {
-        if (root.opened) {
-            root.rebuild();
-            list.currentIndex = Math.min(list.currentIndex, choices.count - 1);
-        }
-    }
+    // The list follows the client's theme list whether the popover is open or not:
+    // a list that arrives after the click fills the rows in, with no second click.
+    onThemesChanged: root.rebuild()
 
     // The anchor, its parents and the window: any move or resize re-hangs the popover.
     Connections {
@@ -338,6 +367,24 @@ QQC2.Popup {
             color: root.theme.line
         }
 
+        // While the list is empty: loading, or unavailable on an old daemon.
+        PlasmaComponents3.Label {
+            objectName: "themesStatus"
+
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.smallSpacing
+            Layout.rightMargin: Kirigami.Units.smallSpacing
+            Layout.topMargin: Kirigami.Units.smallSpacing / 2
+            Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
+            visible: root.themesNotice.length > 0
+            text: root.themesNotice
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            color: root.theme.textMuted
+            font.family: root.textFamily
+            font.pixelSize: root.textPx
+        }
+
         ListView {
             id: list
 
@@ -478,17 +525,6 @@ QQC2.Popup {
                     }
                 }
             }
-        }
-
-        PlasmaComponents3.Label {
-            Layout.fillWidth: true
-            Layout.margins: Kirigami.Units.smallSpacing
-            visible: !root.listSupported
-            text: i18nd(root.domain, "The background service is too old to offer other themes.")
-            wrapMode: Text.Wrap
-            color: root.theme.textMuted
-            font.family: root.textFamily
-            font.pixelSize: root.textPx
         }
     }
 }

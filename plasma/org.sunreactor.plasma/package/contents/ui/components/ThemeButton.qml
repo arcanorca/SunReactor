@@ -27,8 +27,11 @@ QQC2.AbstractButton {
     /*! Plasmoid config: "follow" or "pinned", and the pinned theme id. */
     property string themeMode: "follow"
     property string pinnedId: ""
-    /*! The daemon's list_themes entries; a host may supply its own list (the tests do). */
+    /*! The daemon's list_themes entries, live from the client; a host may supply its own list (the tests do). */
     property var themeList: client.themeList
+    /*! Whether the daemon answers, and the theme registry it reported; the picker's status row reads them. */
+    property bool connected: client.isConnected
+    property int themeRegistry: client.themeRegistry
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     /*! The Nothing flagship draws a 24 px round hairline with a dot matrix (skins/nothing/ThemeGlyph.qml). */
@@ -248,6 +251,8 @@ QQC2.AbstractButton {
         pinned: root.pinned
         pinnedId: root.pinnedId
         themes: root.themeList
+        connected: root.connected
+        themeRegistry: root.themeRegistry
 
         onFollowRequested: root.followRequested()
         onPinRequested: id => root.pinRequested(id)

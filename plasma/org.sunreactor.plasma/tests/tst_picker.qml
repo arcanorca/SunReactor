@@ -41,6 +41,12 @@ Item {
     // What the widget keeps in its settings; the stub's handlers write here.
     property string themeMode: "follow"
     property string pinnedTheme: ""
+    // The list the button hands the picker (the client's themeList in the widget),
+    // and the daemon state the placeholder row reads. Tests change them while the
+    // popover is open, the way the client does when list_themes answers.
+    property var liveThemes: stage.stubThemes
+    property bool connected: true
+    property int registry: SunReactorClient.CapabilityUnknown
 
     readonly property var stubClientSpec: ({
         id: "braun", name: "Braun", family: "instrument", glyphStyle: "rounded", legacy: false,
@@ -76,7 +82,9 @@ Item {
         y: 8
         theme: stubTheme
         client: offline
-        themeList: stage.stubThemes
+        themeList: stage.liveThemes
+        connected: stage.connected
+        themeRegistry: stage.registry
         themeMode: stage.themeMode
         pinnedId: stage.pinnedTheme
 
@@ -105,6 +113,16 @@ Item {
             return findChild(button, "followRow");
         }
 
+        /*! The status row under Follow: loading, or unavailable on an old daemon. */
+        function placeholder() {
+            return findChild(button, "themesStatus");
+        }
+
+        /*! The popover has been laid out: the list has its height, so its rows take clicks. */
+        function waitForLayout() {
+            tryVerify(() => list() !== null && list().height > 0, 2000, "the list is laid out");
+        }
+
         /*! The delegate of one theme, scrolled into view. */
         function rowFor(id) {
             const view = list();
@@ -123,6 +141,9 @@ Item {
             }
             stage.themeMode = "follow";
             stage.pinnedTheme = "";
+            stage.liveThemes = stage.stubThemes;
+            stage.connected = true;
+            stage.registry = SunReactorClient.CapabilityUnknown;
         }
 
         function test_oneClickOpensTheList() {
@@ -138,6 +159,7 @@ Item {
             mouseClick(button);
             verify(button.pickerOpen);
             tryVerify(() => rowFor("braun") !== null, 2000);
+            waitForLayout();
             mouseClick(rowFor("braun"));
             compare(stage.pinnedTheme, "braun", "the stub records the pin");
             compare(stage.themeMode, "pinned");
@@ -150,6 +172,7 @@ Item {
         function test_flippingThemesKeepsTheListOpen() {
             mouseClick(button);
             tryVerify(() => rowFor("nord") !== null, 2000);
+            waitForLayout();
             mouseClick(rowFor("nord"));
             compare(stage.pinnedTheme, "nord");
             mouseClick(rowFor("synthwave84"));
@@ -165,6 +188,7 @@ Item {
             mouseClick(button);
             verify(button.pickerOpen);
             tryVerify(() => followRow().visible, 2000);
+            waitForLayout();
             mouseClick(followRow());
             compare(stage.themeMode, "follow", "the stub records follow");
             compare(stage.pinnedTheme, "nord", "the pin itself is kept for later");
@@ -240,6 +264,58 @@ Item {
                 const row = list().itemAtIndex(list().currentIndex);
                 return row !== null && row.y + row.height <= list().contentY + list().height + 1;
             }, 2000, "the pinned row is in view");
+        }
+
+        function test_loadingRowShowsUntilTheListArrivesWhileOpen() {
+            stage.liveThemes = [];
+            mouseClick(button);
+            verify(button.pickerOpen);
+            verify(placeholder() !== null, "the status row exists");
+            verify(placeholder().visible, "shown while the list is empty and the daemon answers");
+            compare(placeholder().text, "Loading themes…");
+            verify(followRow().visible, "Follow SunReactor is the first row");
+            compare(list().count, 0);
+            wait(300);
+            // The list arrives while the popover is open: the rows fill in, nothing is reopened.
+            stage.liveThemes = stage.stubThemes;
+            tryVerify(() => list().count === stage.stubThemes.length, 2000, "the rows appear");
+            waitForLayout();
+            verify(!placeholder().visible, "the loading row goes");
+            verify(button.pickerOpen, "the same popover is still open");
+            verify(followRow().visible);
+        }
+
+        function test_listArrivingWhileClosedIsThereOnTheNextOpen() {
+            stage.liveThemes = [];
+            mouseClick(button);
+            verify(button.pickerOpen);
+            mouseClick(button);
+            verify(!button.pickerOpen);
+            stage.liveThemes = stage.stubThemes;
+            mouseClick(button);
+            verify(button.pickerOpen);
+            tryVerify(() => list().count === stage.stubThemes.length, 2000, "the first open after the answer is full");
+            verify(!placeholder().visible);
+        }
+
+        function test_themesUnavailableOnAnOldDaemon() {
+            stage.liveThemes = [];
+            stage.registry = SunReactorClient.CapabilityUnsupported;
+            mouseClick(button);
+            verify(button.pickerOpen);
+            verify(placeholder() !== null);
+            verify(placeholder().visible, "the status row says why there are no other themes");
+            compare(placeholder().text, "Themes unavailable");
+            verify(followRow().visible, "Follow still works");
+        }
+
+        function test_noLoadingRowWhileTheDaemonIsOffline() {
+            stage.liveThemes = [];
+            stage.connected = false;
+            mouseClick(button);
+            verify(button.pickerOpen);
+            verify(placeholder() !== null);
+            verify(!placeholder().visible, "nothing is loading while the daemon is not answering");
         }
 
         function test_popoverIsNarrowAndRightAligned() {

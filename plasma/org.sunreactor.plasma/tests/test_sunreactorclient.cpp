@@ -63,11 +63,17 @@ private Q_SLOTS:
     void testThemeWarningIsOptional();
     void testThemesFolderFollowsXdgConfigHome();
     void testHarnessConfigNeedsHarness();
+    void testThemeListIsPrefetchedAndWaitsForSlowAnswer();
+    void testThemeListIsAskedAgainAfterFailureOrEmptyAnswer();
+    void testThemeListFollowsThemeWarningAndReconnect();
+    void testPopupOpenAsksForAnEmptyThemeList();
 
 private:
     using Handler = std::function<QJsonObject(const QJsonObject &request)>;
     /// Answers every request through `handler` and records what was asked for.
     void serveWith(Handler handler);
+    /// Like serveWith, but the answer to `delayedRequest` comes `delayMs` later.
+    void serveWithDelay(Handler handler, const QString &delayedRequest, int delayMs);
     [[nodiscard]] int countRequests(const QString &name) const;
     static QJsonObject envelope(const QString &kind, const QJsonObject &fields = {});
     static QJsonObject errorResponse(const QString &code, const QString &message);
@@ -179,7 +185,8 @@ void TestSunReactorClient::testOverrideRequestsAreWellFormed()
     const auto commandsSoFar = [this]() {
         QList<QJsonObject> commands;
         for (const QJsonObject &request : std::as_const(m_received)) {
-            if (request.value(QStringLiteral("request")).toString() != QStringLiteral("status")) {
+            const QString name = request.value(QStringLiteral("request")).toString();
+            if (name != QStringLiteral("status") && name != QStringLiteral("list_themes")) {
                 commands.append(request);
             }
         }
@@ -219,12 +226,13 @@ void TestSunReactorClient::testMonitorLimitsRequestsAreWellFormed()
     SunReactorClient client(m_socketPath);
     client.setMonitorLimits(QStringLiteral("  desk  "), -5, 120);
 
-    // Reads (status, and the day curve a limit change invalidates) are not commands.
+    // Reads (status, the day curve a limit change invalidates, the theme list) are not commands.
     const auto commandsSoFar = [this]() {
         QList<QJsonObject> commands;
         for (const QJsonObject &request : std::as_const(m_received)) {
             const QString name = request.value(QStringLiteral("request")).toString();
-            if (name != QStringLiteral("status") && name != QStringLiteral("day_curve")) {
+            if (name != QStringLiteral("status") && name != QStringLiteral("day_curve")
+                && name != QStringLiteral("list_themes")) {
                 commands.append(request);
             }
         }
@@ -817,6 +825,32 @@ void TestSunReactorClient::serveWith(Handler handler)
     });
 }
 
+void TestSunReactorClient::serveWithDelay(Handler handler, const QString &delayedRequest, int delayMs)
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this, handler, delayedRequest, delayMs]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        if (!socket) {
+            return;
+        }
+        auto buffer = std::make_shared<QByteArray>();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, handler, delayedRequest, delayMs, buffer]() {
+            buffer->append(socket->readAll());
+            if (!buffer->contains('\n')) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(buffer->indexOf('\n'))).object();
+            m_received.append(request);
+            const QByteArray reply = QJsonDocument(handler(request)).toJson(QJsonDocument::Compact) + '\n';
+            const bool slow = request.value(QStringLiteral("request")).toString() == delayedRequest;
+            QTimer::singleShot(slow ? delayMs : 0, socket, [socket, reply]() {
+                socket->write(reply);
+                socket->flush();
+                socket->disconnectFromServer();
+            });
+        });
+    });
+}
+
 int TestSunReactorClient::countRequests(const QString &name) const
 {
     int n = 0;
@@ -1389,6 +1423,161 @@ void TestSunReactorClient::testHarnessConfigNeedsHarness()
     QCOMPARE(config.size(), 4);
     qunsetenv("SUNREACTOR_HARNESS");
     qunsetenv("SUNREACTOR_HARNESS_CONFIG");
+}
+
+void TestSunReactorClient::testThemeListIsPrefetchedAndWaitsForSlowAnswer()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    const QJsonArray themes{
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")}, {QStringLiteral("name"), QStringLiteral("Nord")},
+                    {QStringLiteral("family"), QStringLiteral("terminal")}, {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                    {QStringLiteral("fg"), QStringLiteral("#d8dee9")}, {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                    {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}},
+    };
+    serveWithDelay([status, themes](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), themes}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    }, QStringLiteral("list_themes"), 500);
+
+    // Nobody asks for the list: the first status that reports the registry does,
+    // and the slow answer is awaited, not asked again.
+    SunReactorClient client(m_socketPath);
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    QVERIFY(listSpy.wait(3000));
+    QCOMPARE(client.themeList().size(), 1);
+    QTest::qWait(900);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 1);
+    QCOMPARE(listSpy.count(), 1);
+}
+
+void TestSunReactorClient::testThemeListIsAskedAgainAfterFailureOrEmptyAnswer()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    auto answers = std::make_shared<int>(0);
+    serveWith([status, answers](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            // Busy once, empty once, then the registry.
+            ++*answers;
+            if (*answers == 1) {
+                return errorResponse(QStringLiteral("internal"), QStringLiteral("registry busy"));
+            }
+            QJsonArray themes;
+            if (*answers >= 3) {
+                themes.append(QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")},
+                                          {QStringLiteral("name"), QStringLiteral("Nord")},
+                                          {QStringLiteral("family"), QStringLiteral("terminal")},
+                                          {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                                          {QStringLiteral("fg"), QStringLiteral("#d8dee9")},
+                                          {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                                          {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}});
+            }
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), themes}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    // Two retries, two seconds apart while connected, then the list arrives.
+    QVERIFY(listSpy.wait(8000));
+    QCOMPARE(client.themeList().size(), 1);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 3);
+    // Answered: no more requests while the daemon keeps answering well.
+    QTest::qWait(2500);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 3);
+}
+
+void TestSunReactorClient::testThemeListFollowsThemeWarningAndReconnect()
+{
+    auto status = std::make_shared<QJsonObject>();
+    (*status)[QStringLiteral("now_epoch_s")] = 1773998400;
+    (*status)[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), QJsonArray{
+                QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")}, {QStringLiteral("name"), QStringLiteral("Nord")},
+                            {QStringLiteral("family"), QStringLiteral("terminal")}, {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                            {QStringLiteral("fg"), QStringLiteral("#d8dee9")}, {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                            {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}}}}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        if (name == QStringLiteral("status")) {
+            return statusResponse(*status);
+        }
+        return envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    QVERIFY(listSpy.wait(3000));
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 1);
+
+    // The followed theme changes (a user theme was picked): read the list again.
+    (*status)[QStringLiteral("theme")] = fullTheme(QStringLiteral("dracula"));
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 2, 3000);
+
+    // A theme warning appears (a broken user file): read it again.
+    (*status)[QStringLiteral("theme_warning")] = QStringLiteral("theme file is invalid; using the default");
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 3, 3000);
+
+    // Unchanged status: no flood.
+    client.queryStatus();
+    QTest::qWait(500);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 3);
+
+    // The daemon goes away and comes back (a restart, maybe a different build).
+    m_server->close();
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected(), 3000);
+    QVERIFY(m_server->listen(m_socketPath));
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 4, 3000);
+}
+
+void TestSunReactorClient::testPopupOpenAsksForAnEmptyThemeList()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), QJsonArray{}}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 1, 3000);
+    QTest::qWait(300);
+    QVERIFY(client.themeList().isEmpty());
+
+    // Opening the popup asks again well before the two-second retry would.
+    client.setPopupOpen(true);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 2, 1500);
 }
 
 QTEST_MAIN(TestSunReactorClient)

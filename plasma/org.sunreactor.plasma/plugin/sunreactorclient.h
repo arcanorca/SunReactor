@@ -219,7 +219,12 @@ public Q_SLOTS:
         parse, else strings). Always empty unless SUNREACTOR_HARNESS is set. */
     QVariantMap harnessConfig() const;
 
-    /*! Asks for `list_themes`; result in themeList. No-op on an older daemon. */
+    /*! Asks for `list_themes`; result in themeList. No-op on an older daemon, and
+        never a second request while one is queued or in flight. The client asks by
+        itself: once the registry is known, after every (re)connect, when the followed
+        theme or its warning changes, after a config reload, when the popup opens with
+        no list, and again two seconds later while connected but the list failed or is
+        empty. Callers need not ask. */
     void refreshThemeList();
     /*! One-shot `get_theme` (e.g. for a preview); answers with themeFetched or
         themeFetchFailed(id, "unsupported" | "not_found" | "offline"). */
@@ -254,6 +259,7 @@ private Q_SLOTS:
     void onRequestTimeout();
     void onPollTimerTriggered();
     void onSlowTimerTriggered();
+    void onThemeListRetryTriggered();
 
 private:
     [[nodiscard]] QJsonObject request(const QString &name) const;
@@ -261,6 +267,11 @@ private:
     void processNextRequest();
     void sendInFlightRequest();
     void handleResponse(const QJsonObject &responseObj);
+    void dispatchResponse(const QJsonObject &responseObj);
+    /*! After an answer to list_themes: the list is no longer stale, and a failed or
+        empty answer schedules the retry while connected. */
+    void themeListAnswered(bool gotList);
+    [[nodiscard]] bool themeListWanted() const;
     void parseStatus(const QJsonObject &statusObj);
     void parseWeather(const QJsonObject &statusObj);
     void parseMonitors(const QJsonObject &statusObj);
@@ -287,6 +298,7 @@ private:
     QTimer *m_pollTimer = nullptr;
     QTimer *m_watchdogTimer = nullptr;
     QTimer *m_slowTimer = nullptr;
+    QTimer *m_themeListRetryTimer = nullptr;
 
     QQueue<QJsonObject> m_requestQueue;
     QJsonObject m_inFlightRequest;
@@ -338,6 +350,8 @@ private:
 
     QVariantMap m_theme;
     QVariantList m_themeList;
+    /*! The list must be read again: connected anew, followed theme or warning changed. */
+    bool m_themeListStale = false;
     QString m_pinnedThemeId;
     QVariantMap m_pinnedTheme;
     QString m_pinnedThemeError;

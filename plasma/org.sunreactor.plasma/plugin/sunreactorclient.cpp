@@ -50,6 +50,9 @@ const QString kDayCurve = QStringLiteral("day_curve");
 const QString kListThemes = QStringLiteral("list_themes");
 const QString kGetTheme = QStringLiteral("get_theme");
 
+/// How long to wait before asking for the theme list again after a failed or empty answer.
+constexpr int kThemeListRetryInterval = 2000;
+
 } // namespace
 
 SunReactorClient::SunReactorClient(QObject *parent)
@@ -63,6 +66,7 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_pollTimer(new QTimer(this))
     , m_watchdogTimer(new QTimer(this))
     , m_slowTimer(new QTimer(this))
+    , m_themeListRetryTimer(new QTimer(this))
     , m_customSocketPath(customSocketPath)
 {
     connect(m_socket, &QLocalSocket::connected, this, &SunReactorClient::onSocketConnected);
@@ -82,6 +86,10 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     connect(m_slowTimer, &QTimer::timeout, this, &SunReactorClient::onSlowTimerTriggered);
     m_slowTimer->start();
 
+    m_themeListRetryTimer->setSingleShot(true);
+    m_themeListRetryTimer->setInterval(kThemeListRetryInterval);
+    connect(m_themeListRetryTimer, &QTimer::timeout, this, &SunReactorClient::onThemeListRetryTriggered);
+
     // Defer the first query so QML can still assign socketPath this tick.
     QTimer::singleShot(0, this, &SunReactorClient::queryStatus);
 }
@@ -91,6 +99,7 @@ SunReactorClient::~SunReactorClient()
     m_pollTimer->stop();
     m_watchdogTimer->stop();
     m_slowTimer->stop();
+    m_themeListRetryTimer->stop();
     if (m_socket->isOpen()) {
         m_socket->abort();
     }
@@ -186,6 +195,9 @@ void SunReactorClient::setPopupOpen(bool open)
         if (m_isConnected) {
             refreshDayCurve();
             requestPinnedTheme();
+            if (m_themeList.isEmpty()) {
+                refreshThemeList();
+            }
         }
     }
 }
@@ -249,10 +261,30 @@ bool SunReactorClient::isQueued(const QString &name, const QString &id) const
 
 void SunReactorClient::refreshThemeList()
 {
-    if (m_themeRegistry == CapabilityUnsupported || isQueued(kListThemes)) {
-        return;
+    if (themeListWanted()) {
+        enqueueRequest(request(kListThemes));
     }
-    enqueueRequest(request(kListThemes));
+}
+
+bool SunReactorClient::themeListWanted() const
+{
+    // An older daemon cannot answer, and one request at a time is enough.
+    return m_themeRegistry != CapabilityUnsupported && !isQueued(kListThemes);
+}
+
+void SunReactorClient::themeListAnswered(bool gotList)
+{
+    m_themeListStale = false;
+    if (!gotList && m_isConnected && m_themeRegistry != CapabilityUnsupported && !m_themeListRetryTimer->isActive()) {
+        m_themeListRetryTimer->start();
+    }
+}
+
+void SunReactorClient::onThemeListRetryTriggered()
+{
+    if (m_isConnected && (m_themeList.isEmpty() || m_themeListStale)) {
+        refreshThemeList();
+    }
 }
 
 void SunReactorClient::fetchTheme(const QString &id)
@@ -338,7 +370,11 @@ void SunReactorClient::setConnected(bool connected)
     }
     m_isConnected = connected;
     Q_EMIT connectionChanged(connected);
-    if (!connected) {
+    if (connected) {
+        // Whatever answers next may be a different (newer or older) daemon: its theme list is read again.
+        m_themeListStale = true;
+    } else {
+        m_themeListRetryTimer->stop();
         // Whatever answers next may be a different (newer or older) daemon.
         setThemeRegistry(CapabilityUnknown);
         setDayCurveSupport(CapabilityUnknown);
@@ -704,6 +740,17 @@ void SunReactorClient::onPollTimerTriggered()
 
 void SunReactorClient::handleResponse(const QJsonObject &responseObj)
 {
+    const bool listAnswer = m_inFlightRequest.value(QStringLiteral("request")).toString() == kListThemes;
+    dispatchResponse(responseObj);
+    if (listAnswer) {
+        const bool gotList = responseObj.value(QStringLiteral("response")).toString() == QLatin1String("themes")
+            && !m_themeList.isEmpty();
+        themeListAnswered(gotList);
+    }
+}
+
+void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
+{
     const quint32 version = static_cast<quint32>(responseObj.value(QStringLiteral("version")).toInt());
     if (version != SunReactor::PROTOCOL_VERSION) {
         fail(QStringLiteral("Unsupported IPC protocol version %1 (expected %2)")
@@ -742,6 +789,10 @@ void SunReactorClient::handleResponse(const QJsonObject &responseObj)
                     QJsonObject pinned = request(kGetTheme);
                     pinned[QStringLiteral("id")] = m_pinnedThemeId;
                     m_requestQueue.prepend(pinned);
+                }
+                // A user theme file may have been added: the list is read again.
+                if (themeListWanted()) {
+                    m_requestQueue.enqueue(request(kListThemes));
                 }
             }
             m_requestQueue.prepend(request(kStatus));
@@ -831,6 +882,9 @@ void SunReactorClient::handleError(const QJsonObject &responseObj)
 
 void SunReactorClient::parseStatus(const QJsonObject &statusObj)
 {
+    const QString previousThemeId = m_theme.value(QStringLiteral("id")).toString();
+    const QString previousWarning = m_themeWarning;
+
     m_isSuspended = statusObj.value(QStringLiteral("suspended")).toBool(false);
     m_isOverrideActive = statusObj.value(QStringLiteral("manual_override_active")).toBool(false);
     m_isDesktopIdleDimmed = statusObj.value(QStringLiteral("desktop_idle_dimmed")).toBool(false);
@@ -863,6 +917,16 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     Q_EMIT statusChanged();
 
     parseTheme(statusObj);
+
+    // A different followed theme or warning (a user theme was added, fixed or broken):
+    // the daemon's registry may have changed, so the list is read again.
+    if (m_theme.value(QStringLiteral("id")).toString() != previousThemeId || m_themeWarning != previousWarning) {
+        m_themeListStale = true;
+    }
+    // Queued rather than sent: this runs inside a response, and the disconnect that follows starts it.
+    if (m_themeListStale && themeListWanted()) {
+        m_requestQueue.enqueue(request(kListThemes));
+    }
 
     // Slow data: once per local day (and on the triggers documented at
     // refreshDayCurve), not once per poll.
