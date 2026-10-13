@@ -142,6 +142,6 @@ ColumnLayout {
 
     // Air below the card's last line, before the footer's hairline.
     Item {
-        Layout.preferredHeight: root.style.gap * 1.5
+        Layout.preferredHeight: root.style.gap * 0.5
     }
 }

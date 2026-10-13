@@ -30,7 +30,7 @@ Item {
     readonly property real pitch: width / cells
     readonly property real cellWidth: pitch * 0.7
     readonly property real headroom: style.snap(style.sizeCap * 0.7)
-    readonly property real cellHeight: style.snap(style.unit * 0.9)
+    readonly property real cellHeight: style.snap(style.unit * 0.8)
 
     readonly property bool known: value >= 0
     readonly property bool live: interactive && known && enabled

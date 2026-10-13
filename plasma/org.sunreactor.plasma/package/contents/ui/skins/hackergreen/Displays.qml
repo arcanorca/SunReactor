@@ -427,20 +427,24 @@ FocusScope {
                                 } else {
                                     out.push(Hg.flag(t, "ok", i18ndc(root.domain, "Brightness follows the automatic curve", "AUTO")));
                                 }
-                                if (block.target >= 0 && m.enabled && !block.unavailable) {
-                                    out.push({ t: " target " + block.target + "%", c: t.textMuted });
-                                }
-                                out.push({ t: " · ", c: t.borderInactive });
-                                out.push({ t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
-                                                     block.limits[0], block.limits[1]),
-                                           c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
+                                const tail = [{ t: " · ", c: t.borderInactive },
+                                              { t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
+                                                          block.limits[0], block.limits[1]),
+                                                c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" }];
                                 if (block.manual) {
-                                    out.push({ t: "  " });
-                                    out.push({ t: "a", c: autoHit.containsMouse ? t.accent : t.fg, b: true, k: "auto" });
-                                    out.push({ t: " " + i18ndc(root.domain, "Key hint: back to automatic brightness", "auto"),
-                                               c: autoHit.containsMouse ? t.accent : t.textMuted, k: "auto2" });
+                                    tail.push({ t: "  " });
+                                    tail.push({ t: "a", c: autoHit.containsMouse ? t.accent : t.fg, b: true, k: "auto" });
+                                    tail.push({ t: " " + i18ndc(root.domain, "Key hint: back to automatic brightness", "auto"),
+                                                c: autoHit.containsMouse ? t.accent : t.textMuted, k: "auto2" });
                                 }
-                                return out;
+                                // The target goes first when the line is too long: the way back (the key hint) stays.
+                                const target = { t: " target " + block.target + "%", c: t.textMuted };
+                                const used = out.concat(tail).reduce((n, r) => n + term.len(r.t), 0);
+                                if (block.target >= 0 && m.enabled && !block.unavailable
+                                        && used + term.len(target.t) <= Math.max(0, root.innerCols - 2)) {
+                                    out.push(target);
+                                }
+                                return out.concat(tail);
                             }
                         }
 

@@ -111,10 +111,12 @@ Item {
     }
 
     readonly property int artCells: 7
-    readonly property int textX: 1 + artCells + 2
+    readonly property int textX: 1 + artCells + 1
     readonly property int textCells: Math.max(0, term.cols(root.width) - textX - 1)
+    /*! A reading's label, its gap and its value (seven cells at most). */
     readonly property int labelCells: 9
-    readonly property bool twoColumns: textCells >= 2 * (labelCells + 9) + 2
+    /*! Two readings side by side when each fits: the left one, then the right one. */
+    readonly property bool twoColumns: textCells >= 2 * (labelCells + 7)
     readonly property int half: Math.floor(textCells / 2)
     readonly property int readingRows: twoColumns ? Math.ceil(readings.length / 2) : readings.length
     readonly property int textRows: 2 + readingRows
@@ -181,19 +183,13 @@ Item {
             }
         }
 
+        // The effect on the targets: the sentence says what it is, so it has no label.
         TermText {
             tm: term
             x: term.cx(root.textX)
             y: term.cy(1)
-            value: Term.padEnd(i18ndc(root.domain, "What the weather does to the brightness targets", "Effect"), root.labelCells)
-            color: root.theme.textMuted
-        }
-        TermText {
-            tm: term
-            x: term.cx(root.textX + root.labelCells)
-            y: term.cy(1)
             value: root.effect
-            cells: Math.max(0, root.textCells - root.labelCells)
+            cells: Math.max(0, root.textCells)
             color: root.client.hasWeatherReading ? root.theme.fg : root.theme.textMuted
         }
 
@@ -207,7 +203,7 @@ Item {
                 tm: term
                 x: term.cx(root.textX + (root.twoColumns && index % 2 === 1 ? root.half : 0))
                 y: term.cy(2 + (root.twoColumns ? Math.floor(index / 2) : index))
-                cells: root.twoColumns ? root.half - 1 : root.textCells
+                cells: root.twoColumns ? (index % 2 === 1 ? root.textCells - root.half : root.half - 1) : root.textCells
                 runs: [{ t: Term.padEnd(modelData[0], root.labelCells), c: root.theme.textMuted },
                        { t: modelData[1], c: root.theme.fg }]
             }

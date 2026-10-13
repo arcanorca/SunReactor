@@ -8,7 +8,6 @@
  *     (   )     (   )     ...
  *     (___)     (___)
  *      15°       14°       13°
- *     Cloudy    Rain      Rain
  */
 
 pragma ComponentBehavior: Bound
@@ -18,10 +17,8 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../../components"
 import "../../Format.js" as Format
 import "../terminal"
-import "../terminal/Term.js" as Term
 import "Hg.js" as Hg
 
 Item {
@@ -42,9 +39,6 @@ Item {
         theme: root.theme
     }
 
-    WeatherText {
-        id: weatherText
-    }
 
     /*! Slots that fit: each wants nine cells, at most five. */
     readonly property int slots: Math.max(1, Math.min(5, Math.floor(term.cols(root.width) / 9)))
@@ -81,7 +75,7 @@ Item {
                            Math.max(1, Math.round((root.points[root.points.length - 1].epochS - root.client.nowEpochS) / 3600))),
                  c: root.theme.textMuted }]
             : []
-        bodyHeight: term.cy(6)
+        bodyHeight: term.cy(5)
         glowing: true
 
         Repeater {
@@ -95,15 +89,9 @@ Item {
 
                 readonly property int w: Math.floor(term.cols(root.width) / root.slots)
                 readonly property var rows: Hg.art(modelData.condition, root.isNight(modelData.epochS))
-                /*! The condition's name, or its first word when the slot is too narrow. */
-                readonly property string name: {
-                    const full = weatherText.conditionLabel(modelData.condition) || "—";
-                    return Term.len(full) <= w - 1 ? full : full.split(" ")[0];
-                }
-
                 x: term.cx(index * w)
                 width: term.cx(w)
-                height: term.cy(6)
+                height: term.cy(5)
 
                 function centred(cells) {
                     return term.cx(Math.max(0, Math.floor((w - cells) / 2)));
@@ -142,14 +130,6 @@ Item {
                     color: root.theme.accent
                 }
 
-                TermText {
-                    tm: term
-                    y: term.cy(5)
-                    x: slot.centred(usedCells)
-                    value: slot.name
-                    cells: slot.w - 1
-                    color: root.theme.textMuted
-                }
             }
         }
     }

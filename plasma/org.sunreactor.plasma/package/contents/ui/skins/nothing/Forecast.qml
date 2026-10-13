@@ -100,7 +100,7 @@ Item {
 
                     DotIcon {
                         Layout.alignment: Qt.AlignHCenter
-                        pitch: root.style.pitch
+                        pitch: root.style.pitchFine
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight
                         litColor: root.style.ink

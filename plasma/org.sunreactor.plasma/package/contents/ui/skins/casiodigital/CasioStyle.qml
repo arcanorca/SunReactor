@@ -123,10 +123,10 @@ QtObject {
 
     // --- metrics ---------------------------------------------------------------
 
-    readonly property real pad: snap(unit * 0.5)
-    readonly property real glassPad: snap(unit * 0.55)
-    readonly property real gap: snap(unit * 0.3)
-    readonly property real gapWide: snap(unit * 0.6)
+    readonly property real pad: snap(unit * 0.4)
+    readonly property real glassPad: snap(unit * 0.42)
+    readonly property real gap: snap(unit * 0.25)
+    readonly property real gapWide: snap(unit * 0.5)
     readonly property real caseRadius: Math.max(2, theme.radius)
     readonly property real glassRadius: Math.max(2, theme.radius - 3)
     readonly property real keyRadius: Math.max(2, theme.radius - 1)

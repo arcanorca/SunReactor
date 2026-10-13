@@ -87,7 +87,7 @@ Item {
 
                     WeatherGlyph {
                         Layout.alignment: Qt.AlignHCenter
-                        size: root.style.snap(root.style.unit * 1.7)
+                        size: root.style.snap(root.style.unit * 1.5)
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight === true
                         glyphStyle: "solid"

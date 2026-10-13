@@ -213,7 +213,6 @@ Rectangle {
         // --- the secondary readings, as tiny columns ---------------------------------------
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: root.style.gap * 0.5
             visible: root.reading
             spacing: root.style.gap
 

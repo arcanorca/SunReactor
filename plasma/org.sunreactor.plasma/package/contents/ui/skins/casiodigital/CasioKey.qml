@@ -31,7 +31,7 @@ Item {
     signal clicked()
     signal arrowClicked()
 
-    implicitHeight: style.snap(style.unit * 2.1)
+    implicitHeight: style.snap(style.unit * 1.9)
     implicitWidth: style.snap(style.unit * 4)
     activeFocusOnTab: interactive
 

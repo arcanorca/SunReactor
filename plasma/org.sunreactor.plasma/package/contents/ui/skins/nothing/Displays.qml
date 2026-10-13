@@ -37,7 +37,7 @@ ColumnLayout {
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
 
-    spacing: style.gap * 1.5
+    spacing: style.gap
 
     Accessible.role: Accessible.Grouping
     Accessible.name: i18nd(root.domain, "Displays")
@@ -94,8 +94,10 @@ ColumnLayout {
             onRequested: percent => channel.requested(percent)
         }
 
+        // Only when there is something to say: the master row has no detail line.
         RowLayout {
             Layout.fillWidth: true
+            visible: channel.detail.length > 0 || channel.hasOverride
             spacing: root.style.gap
 
             Text {

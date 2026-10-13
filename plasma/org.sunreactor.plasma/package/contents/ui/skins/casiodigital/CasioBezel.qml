@@ -3,8 +3,9 @@
  * on its inside top edge, the title silk-screened on the case, and the glass (the
  * liquid crystal) holding the content.
  *
- * Children go on the glass, stacked top to bottom. `footer` takes items on the
- * case itself, under the glass, laid out in a row (the physical keys).
+ * Children go on the glass, stacked top to bottom. `titleItems` takes items on
+ * the title row, after the title (a module's own flags). `footer` takes items on
+ * the case itself, under the glass, laid out in a row (the physical keys).
  *
  *   CasioBezel {
  *       style: root.style
@@ -31,6 +32,8 @@ Item {
     default property alias content: glassBody.data
     /*! Items on the case under the glass, in a row. */
     property alias footer: footerRow.data
+    /*! Items on the title row, after the title (flags that belong to the module). */
+    property alias titleItems: titleSlot.data
     property bool footerShown: false
 
     implicitWidth: caseBody.implicitWidth + 2 * root.style.pad
@@ -78,6 +81,14 @@ Item {
                 font: root.style.cap(root.style.sizeCap)
                 color: root.style.legend
                 elide: Text.ElideRight
+            }
+            Row {
+                id: titleSlot
+
+                // Empty: no slot, no spacing around it.
+                visible: width > 0
+                Layout.alignment: Qt.AlignVCenter
+                spacing: root.style.gap
             }
             Text {
                 visible: root.trailing.length > 0

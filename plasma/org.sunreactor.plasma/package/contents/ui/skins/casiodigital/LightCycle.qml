@@ -84,36 +84,30 @@ Item {
         title: i18nd(root.settings.domain, "Light cycle")
         trailing: i18nd(root.settings.domain, "Today")
 
-        // One flag per display, when there is more than one.
-        Flow {
-            Layout.fillWidth: true
-            visible: root.curves.length > 1
-            spacing: root.style.gap
+        titleItems: Repeater {
+            // One flag per display, on the title row, when there is more than one.
+            model: root.curves.length > 1 ? root.curves : []
 
-            Repeater {
-                model: root.curves.length > 1 ? root.curves : []
+            delegate: Item {
+                id: chip
 
-                delegate: Item {
-                    id: chip
+                required property var modelData
+                required property int index
 
-                    required property var modelData
-                    required property int index
+                width: flag.width
+                height: flag.height
 
-                    width: flag.width
-                    height: flag.height
+                CasioFlag {
+                    id: flag
 
-                    CasioFlag {
-                        id: flag
-
-                        style: root.style
-                        text: Curve.shortName(chip.modelData.monitorId)
-                        lit: root.selected === chip.index
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.selected = chip.index
-                    }
+                    style: root.style
+                    text: Curve.shortName(chip.modelData.monitorId)
+                    lit: root.selected === chip.index
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.selected = chip.index
                 }
             }
         }
@@ -189,16 +183,16 @@ Item {
             }
         }
 
-        // The bar graph: thirty columns, twelve segments high.
+        // The bar graph: thirty columns, ten segments high.
         Item {
             id: plot
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * 3.4)
+            implicitHeight: root.style.snap(root.style.unit * 2.8)
             Accessible.role: Accessible.Chart
             Accessible.name: i18nd(root.settings.domain, "Today's brightness curve")
 
-            readonly property var paths: Casio.bars(root.levels, 12, width, height, root.style.dpr, root.nowSlot)
+            readonly property var paths: Casio.bars(root.levels, 10, width, height, root.style.dpr, root.nowSlot)
 
             Rectangle {
                 visible: root.nowSlot >= 0

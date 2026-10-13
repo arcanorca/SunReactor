@@ -133,13 +133,12 @@ Item {
                 }
             }
 
-            // The effect on the targets: a flag and its size in percent points.
-            ColumnLayout {
+            // The effect on the targets: a flag and its size in percent points, on one line.
+            RowLayout {
                 Layout.alignment: Qt.AlignTop
                 spacing: root.style.gap
-
                 CasioFlag {
-                    Layout.alignment: Qt.AlignRight
+                    Layout.alignment: Qt.AlignVCenter
                     style: root.style
                     text: root.change >= 2 ? i18ndc(root.domain, "Legend: weather is dimming the displays", "DIM")
                         : (root.change <= -2 ? i18ndc(root.domain, "Legend: weather is brightening the displays", "BOOST")
@@ -147,10 +146,9 @@ Item {
                     lit: Math.abs(root.change) >= 2
                 }
                 RowLayout {
-                    Layout.alignment: Qt.AlignRight
-                    spacing: root.style.gap
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: root.style.snap(root.style.gap * 0.5)
                     visible: Math.abs(root.change) >= 2
-
                     CasioDigits {
                         style: root.style
                         size: root.style.digitSmall

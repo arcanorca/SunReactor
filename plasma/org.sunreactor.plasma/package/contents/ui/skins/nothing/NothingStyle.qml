@@ -53,7 +53,7 @@ QtObject {
     readonly property real radius: 24
     readonly property real gap: Math.max(4, Math.round(unit * 0.5))
     /*! Inner padding of a card. */
-    readonly property real pad: Math.round(unit * 0.8)
+    readonly property real pad: Math.round(unit * 0.66)
     /*! Dot pitch of text and bars, logical px (DotField snaps it to device px). */
     readonly property real pitch: Math.max(3, Math.round(unit * 0.2))
     /*! Finer pitch for the tiny face and the row percentages: one step under the text pitch. */

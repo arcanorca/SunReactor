@@ -4,9 +4,8 @@
  *
  *   ┌──────────────────────────────────────────── 24 px radius, hairline ─┐
  *   │ TARGET · NOW                                         [MI] [LEN] [ALL]
- *   │ 39%                                               (dot-matrix, white)
- *   │ APPLIED        WEATHER      RANGE
- *   │ 39             −5           1–50
+ *   │ 39%   APPLIED      WEATHER      RANGE       (the readings beside the numeral)
+ *   │       39           −5           1–50
  *   │ ⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮ lit columns, red now column, dim cost
  *   │ 06       12       18       00
  *   └────────────────────────────────────────────────────────────────────┘
@@ -57,7 +56,7 @@ Rectangle {
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: available && now >= t0 && now <= t1
 
-    readonly property int plotRows: 24
+    readonly property int plotRows: 18
     readonly property real pitch: style.pitch
 
     function appliedFor(monitorId) {
@@ -189,45 +188,50 @@ Rectangle {
             }
         }
 
-        // --- the target numeral ----------------------------------------------------
-        DotText {
-            Layout.topMargin: root.style.gap * 0.5
-            text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
-            face: "small"
-            size: 1
-            letterSpacing: 1
-            pitch: root.style.pitchBig
-            litColor: root.style.ink
-            accentColor: root.style.accent
-            dimColor: root.style.textGhost
-        }
-
-        // --- readings ---------------------------------------------------------------
+        // --- the target numeral, with the readings beside it ---------------------------
         RowLayout {
             Layout.fillWidth: true
-            visible: !root.showAll
-            spacing: root.style.gap * 2
+            spacing: root.style.gap * 1.5
 
-            Stat {
-                Layout.fillWidth: true
-                caption: root.scrubbing
-                    ? i18ndc(root.domain, "Readout: target with a clear sky, under the pointer", "CLEAR SKY")
-                    : i18ndc(root.domain, "Readout: brightness the daemon last applied", "APPLIED")
-                value: root.scrubbing
-                    ? (root.readClear >= 0 ? String(Math.round(root.readClear)) : "—")
-                    : (root.appliedNow >= 0 ? String(root.appliedNow) : "—")
+            DotText {
+                Layout.alignment: Qt.AlignTop
+                text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
+                face: "small"
+                size: 1
+                letterSpacing: 1
+                pitch: root.style.pitchBig
+                litColor: root.style.ink
+                accentColor: root.style.accent
+                dimColor: root.style.textGhost
             }
 
-            Stat {
+            RowLayout {
                 Layout.fillWidth: true
-                caption: i18ndc(root.domain, "Readout: brightness the weather takes away", "WEATHER")
-                value: Math.round(root.readCost) >= 1 ? "−" + Math.round(root.readCost) : "0"
-            }
+                Layout.alignment: Qt.AlignTop
+                visible: !root.showAll
+                spacing: root.style.gap
 
-            Stat {
-                Layout.fillWidth: true
-                caption: i18ndc(root.domain, "Readout: the display's automatic minimum and maximum", "RANGE")
-                value: root.current ? root.current.minPct + "–" + root.current.maxPct : "—"
+                Stat {
+                    Layout.fillWidth: true
+                    caption: root.scrubbing
+                        ? i18ndc(root.domain, "Readout: target with a clear sky, under the pointer", "CLEAR SKY")
+                        : i18ndc(root.domain, "Readout: brightness the daemon last applied", "APPLIED")
+                    value: root.scrubbing
+                        ? (root.readClear >= 0 ? String(Math.round(root.readClear)) : "—")
+                        : (root.appliedNow >= 0 ? String(root.appliedNow) : "—")
+                }
+
+                Stat {
+                    Layout.fillWidth: true
+                    caption: i18ndc(root.domain, "Readout: brightness the weather takes away", "WEATHER")
+                    value: Math.round(root.readCost) >= 1 ? "−" + Math.round(root.readCost) : "0"
+                }
+
+                Stat {
+                    Layout.fillWidth: true
+                    caption: i18ndc(root.domain, "Readout: the display's automatic minimum and maximum", "RANGE")
+                    value: root.current ? root.current.minPct + "–" + root.current.maxPct : "—"
+                }
             }
         }
 
