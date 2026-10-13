@@ -92,13 +92,24 @@ Item {
             title: i18ndc(root.domain, "Title of the weather panel", "Weather")
             contentHeight: Math.max(sprite.height, temp.height, conditionText.height + 2 + effectText.height)
 
+            // The 16 px sky sprite, or the vector glyph (solid, by default) on the
+            // same 16 px footprint when the weather icon style is not "pixel".
             PixelSprite {
                 id: sprite
+                visible: root.theme.glyphStyle === "pixel"
                 source: Sprites.weatherAtlas()
                 frame: root.client.hasWeatherReading
                     ? Sprites.conditionFrame(root.client.weatherCondition, root.client.weatherIsNight)
                     : Sprites.weatherFrame("unknown")
                 colors: pstyle.spriteColors
+            }
+            WeatherGlyph {
+                visible: root.theme.glyphStyle !== "pixel"
+                size: 16
+                condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                night: root.client.hasWeatherReading && root.client.weatherIsNight
+                glyphStyle: root.theme.glyphStyle
+                palette: root.theme.glyphColours(pstyle.paper, pstyle.ink)
             }
             PixelDigits {
                 id: temp

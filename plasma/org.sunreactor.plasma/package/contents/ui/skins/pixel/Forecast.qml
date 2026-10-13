@@ -93,9 +93,20 @@ Item {
                     PixelSprite {
                         x: Math.floor((slot.width - 16) / 2)
                         y: 7
+                        visible: root.theme.glyphStyle === "pixel"
                         source: Sprites.weatherAtlas()
                         frame: Sprites.conditionFrame(slot.modelData.condition, slot.modelData.isNight)
                         colors: pstyle.spriteColors
+                    }
+                    WeatherGlyph {
+                        x: Math.floor((slot.width - 16) / 2)
+                        y: 7
+                        visible: root.theme.glyphStyle !== "pixel"
+                        size: 16
+                        condition: slot.modelData.condition
+                        night: slot.modelData.isNight
+                        glyphStyle: root.theme.glyphStyle
+                        palette: root.theme.glyphColours(pstyle.paper, pstyle.ink)
                     }
                     PixelLabel {
                         theme: root.theme
