@@ -1,8 +1,9 @@
 /*
- * Weather, synthwave84: the reading and what it does to the targets, in a neon
- * card. A cyan line glyph (pink sun) beside the temperature in the readout face,
- * the condition, what the weather does to the displays, and the secondary
- * readings as caps labels with values. Shown only when weather is enabled.
+ * Weather, synthwave84: the weather page as one neon card under its heading. The
+ * reading in one row (the cyan line glyph, the temperature in the readout face, the
+ * condition), what the weather does to the displays, the secondary readings as a
+ * 2 x 2 grid, then the forecast strip and the sun times, each under a hairline,
+ * when the theme lists them. Shown only when weather is enabled.
  */
 
 pragma ComponentBehavior: Bound
@@ -27,6 +28,9 @@ ColumnLayout {
         theme: root.theme
     }
     readonly property bool available: client.isConnected && client.weatherEnabled
+    /*! The forecast and the sun times join this card when the theme lists them. */
+    readonly property bool forecastShown: root.theme.modules.indexOf("forecast") >= 0 && forecast.available
+    readonly property bool sunShown: root.theme.modules.indexOf("suntimes") >= 0 && line.available
 
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: {
@@ -77,100 +81,103 @@ ColumnLayout {
     }
 
     Heading {
+        visible: root.available
         style: root.style
         text: i18ndc(root.domain, "Synthwave heading of the weather page", "Weather")
     }
 
     NeonCard {
         Layout.fillWidth: true
+        visible: root.available
         style: root.style
         neon: root.style.cyan
 
+        // The reading: the glyph, the temperature and the condition in one row.
         RowLayout {
             Layout.fillWidth: true
-            spacing: root.style.gap2 * 1.5
+            spacing: root.style.gap2
 
             WeatherGlyph {
                 Layout.alignment: Qt.AlignVCenter
-                size: root.style.snap(root.style.unit * 2.2)
+                size: root.style.snap(root.style.unit * 2.0)
                 condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
                 night: root.client.hasWeatherReading && root.client.weatherIsNight
                 glyphStyle: "line"
                 palette: root.style.glyphPalette
             }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-
-                RowLayout {
-                    spacing: root.style.gap
-
-                    Text {
-                        Layout.alignment: Qt.AlignBaseline
-                        text: root.client.hasTemperature ? String(Math.round(root.client.temperatureC)) : "—"
-                        textFormat: Text.PlainText
-                        font: root.style.readoutFont
-                        color: root.style.ink
-                    }
-                    Text {
-                        Layout.alignment: Qt.AlignBaseline
-                        visible: root.client.hasTemperature
-                        text: "°C"
-                        textFormat: Text.PlainText
-                        font: root.style.labelFont
-                        color: root.style.cyan
-                    }
-                }
+            RowLayout {
+                Layout.alignment: Qt.AlignVCenter
+                spacing: root.style.gap
 
                 Text {
-                    Layout.fillWidth: true
-                    text: root.client.hasWeatherReading
-                        ? (weatherText.conditionLabel(root.client.weatherCondition) || i18nd(root.domain, "No weather reading"))
-                        : root.stateNote
+                    Layout.alignment: Qt.AlignBaseline
+                    text: root.client.hasTemperature ? String(Math.round(root.client.temperatureC)) : "—"
                     textFormat: Text.PlainText
-                    font: root.style.bodyStrongFont
-                    color: root.client.hasWeatherReading ? root.style.ink : root.style.muted
-                    elide: Text.ElideRight
+                    font: root.style.readoutFont
+                    color: root.style.ink
                 }
-
-                // What the weather does to the displays, in words and a number.
                 Text {
-                    Layout.fillWidth: true
-                    visible: root.client.hasWeatherReading
-                    text: {
-                        if (root.client.weatherStale) {
-                            return i18nd(root.domain, "Last reading is out of date");
-                        }
-                        if (root.change >= 2) {
-                            return i18ndc(root.domain, "Placeholder is a percentage", "Dimming displays by %1%", root.change);
-                        }
-                        if (root.change <= -2) {
-                            return i18ndc(root.domain, "Placeholder is a percentage", "Brightening displays by %1%", -root.change);
-                        }
-                        return i18nd(root.domain, "Not changing brightness right now");
-                    }
+                    Layout.alignment: Qt.AlignBaseline
+                    visible: root.client.hasTemperature
+                    text: "°C"
                     textFormat: Text.PlainText
-                    font: root.style.dataSmallFont
-                    color: root.client.weatherStale ? root.style.yellow
-                        : (root.change >= 2 ? root.style.yellow : root.style.cyan)
-                    elide: Text.ElideRight
+                    font: root.style.labelFont
+                    color: root.style.cyan
                 }
             }
-
+            Text {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.alignment: Qt.AlignVCenter
+                text: root.client.hasWeatherReading
+                    ? (weatherText.conditionLabel(root.client.weatherCondition) || i18nd(root.domain, "No weather reading"))
+                    : root.stateNote
+                textFormat: Text.PlainText
+                font: root.client.hasWeatherReading ? root.style.bodyStrongFont : root.style.bodyFont
+                color: root.client.hasWeatherReading ? root.style.ink : root.style.muted
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
             Pill {
-                Layout.alignment: Qt.AlignTop
                 visible: root.client.hasWeatherReading && root.client.weatherStale
+                Layout.alignment: Qt.AlignVCenter
                 style: root.style
                 text: i18ndc(root.domain, "Tag: the weather reading is out of date", "Stale")
                 tone: root.style.yellow
             }
         }
 
-        Flow {
+        // What the weather does to the displays, in words and a number.
+        Text {
+            Layout.fillWidth: true
+            visible: root.client.hasWeatherReading
+            text: {
+                if (root.client.weatherStale) {
+                    return i18nd(root.domain, "Last reading is out of date");
+                }
+                if (root.change >= 2) {
+                    return i18ndc(root.domain, "Placeholder is a percentage", "Dimming displays by %1%", root.change);
+                }
+                if (root.change <= -2) {
+                    return i18ndc(root.domain, "Placeholder is a percentage", "Brightening displays by %1%", -root.change);
+                }
+                return i18nd(root.domain, "Not changing brightness right now");
+            }
+            textFormat: Text.PlainText
+            font: root.style.dataSmallFont
+            color: root.client.weatherStale ? root.style.yellow
+                : (root.change >= 2 ? root.style.yellow : root.style.cyan)
+            elide: Text.ElideRight
+        }
+
+        // The secondary readings: two columns of caps label and value.
+        GridLayout {
             Layout.fillWidth: true
             visible: root.extras.length > 0 && root.client.hasWeatherReading
-            spacing: root.style.gap2 * 1.5
+            columns: 2
+            columnSpacing: root.style.gap2 * 1.5
+            rowSpacing: root.style.gap * 0.5
 
             Repeater {
                 model: root.extras
@@ -180,6 +187,7 @@ ColumnLayout {
 
                     required property var modelData
 
+                    Layout.fillWidth: true
                     spacing: root.style.gap
 
                     Text {
@@ -189,13 +197,49 @@ ColumnLayout {
                         color: root.style.cyan
                     }
                     Text {
+                        Layout.fillWidth: true
                         text: extra.modelData.v
                         textFormat: Text.PlainText
                         font: root.style.dataSmallFont
                         color: root.style.ink
+                        elide: Text.ElideRight
                     }
                 }
             }
+        }
+
+        Rectangle {
+            visible: root.forecastShown
+            Layout.fillWidth: true
+            implicitHeight: root.style.hairline
+            color: root.style.alpha(root.style.cyan, 0.45)
+        }
+
+        ForecastStrip {
+            id: forecast
+
+            visible: root.forecastShown
+            Layout.fillWidth: true
+            theme: root.theme
+            client: root.client
+            settings: root.settings
+        }
+
+        Rectangle {
+            visible: root.sunShown
+            Layout.fillWidth: true
+            implicitHeight: root.style.hairline
+            color: root.style.alpha(root.style.cyan, 0.45)
+        }
+
+        SunLine {
+            id: line
+
+            visible: root.sunShown
+            Layout.fillWidth: true
+            theme: root.theme
+            client: root.client
+            settings: root.settings
         }
     }
 }

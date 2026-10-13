@@ -2,11 +2,9 @@
  * Light cycle, cyberpunk (the hero): today's policy curve from the daemon's
  * day_curve, drawn as a HUD plot.
  *
- *   ┌ LIGHT CYCLE ──────────────────────────────── 24 H WINDOW ┐
- *   [MI] [LEN] [ALL]
- *   TARGET · NOW                         APPLIED [39]
- *   39%                                  WEATHER [-5]
- *                                        RANGE [1–50]
+ *   24 H WINDOW ──────────────────────────────── LIGHT CYCLE
+ *   TARGET · NOW                                  [MI] [LEN] [ALL]
+ *   39%     TARGET [39]  APPLIED [39]  WEATHER [−5]  RANGE [1–50]
  *   ┌ dark grid, night shade, cyan weather band ──────┐ 100
  *   │ yellow curve, red NOW cursor and tag            │  50
  *   └─────────────────────────────────────────────────┘   0
@@ -106,10 +104,23 @@ ColumnLayout {
         title: i18ndc(root.domain, "Panel title: today's brightness curve", "Light cycle")
         tag: root.available ? i18ndc(root.domain, "Plot window in hours", "%1 H WINDOW", root.hours) : ""
 
-        // Channel chips: one per display, then ALL.
-        Row {
-            visible: root.curves.length > 1
+        // The caption (what the readouts describe) and the channel chips: one line; the chips
+        // wrap onto a second line when a display count leaves no room for them.
+        Flow {
+            Layout.fillWidth: true
             spacing: root.style.gap
+
+            Text {
+                text: root.showAll
+                    ? i18ndc(root.domain, "Readout caption: every display is plotted", "TODAY · ALL DISPLAYS")
+                    : (root.scrubbing
+                        ? i18ndc(root.domain, "Readout caption, then the time under the pointer", "CURSOR · %1",
+                                 Format.timeText(root.readTime))
+                        : i18ndc(root.domain, "Readout caption: what the curve targets right now", "TARGET · NOW"))
+                textFormat: Text.PlainText
+                font: root.style.labelFont
+                color: root.scrubbing ? root.style.ink : root.style.muted
+            }
 
             Repeater {
                 model: root.curves.length > 1 ? root.curves.length + 1 : 0
@@ -122,6 +133,7 @@ ColumnLayout {
                     readonly property int value: isAll ? -1 : index
 
                     style: root.style
+                    height: root.style.tabHeight
                     font: root.style.techFont
                     text: isAll ? i18ndc(root.domain, "Channel chip: every display", "ALL")
                         : root.shortName(root.curves[index].monitorId)
@@ -133,106 +145,109 @@ ColumnLayout {
             }
         }
 
-        // Readouts: the target (hero) on the left, the applied, weather and range on the right.
-        Item {
+        // The hero figure, and beside it one row of four bracket readouts.
+        RowLayout {
             Layout.fillWidth: true
-            implicitHeight: Math.max(readoutLeft.implicitHeight, readoutRight.implicitHeight)
+            spacing: root.style.gap2
 
-            Column {
-                id: readoutLeft
+            Row {
+                spacing: root.style.gap * 0.5
 
-                spacing: root.style.gap
+                GlitchValue {
+                    id: hero
 
-                Text {
-                    text: root.showAll
-                        ? i18ndc(root.domain, "Readout caption: every display is plotted", "TODAY · ALL DISPLAYS")
-                        : (root.scrubbing
-                            ? i18ndc(root.domain, "Readout caption, then the time under the pointer", "CURSOR · %1",
-                                     Format.timeText(root.readTime))
-                            : i18ndc(root.domain, "Readout caption: what the curve targets right now", "TARGET · NOW"))
-                    textFormat: Text.PlainText
-                    font: root.style.labelFont
-                    color: root.scrubbing ? root.style.ink : root.style.muted
+                    style: root.style
+                    text: root.showAll || root.readTarget < 0 ? "--" : String(Math.round(root.readTarget))
                 }
-
-                Row {
-                    spacing: root.style.gap
-
-                    GlitchValue {
-                        id: hero
-
-                        style: root.style
-                        text: root.showAll || root.readTarget < 0 ? "--" : String(Math.round(root.readTarget))
-                    }
-                    Text {
-                        // Sits on the figure's baseline: its bottom is the figure's bottom
-                        // less the difference of the two descents (a Row cannot anchor to
-                        // the figure's inner text, which is not a sibling).
-                        anchors.bottom: hero.bottom
-                        anchors.bottomMargin: root.style.snap(root.style.sizeHero * 0.12)
-                        text: "%"
-                        textFormat: Text.PlainText
-                        font: root.style.bodyFont
-                        color: root.style.muted
-                    }
+                Text {
+                    // Sits on the figure's baseline: its bottom is the figure's bottom
+                    // less the difference of the two descents (a Row cannot anchor to
+                    // the figure's inner text, which is not a sibling).
+                    anchors.bottom: hero.bottom
+                    anchors.bottomMargin: root.style.snap(root.style.sizeHero * 0.12)
+                    text: "%"
+                    textFormat: Text.PlainText
+                    font: root.style.bodyFont
+                    color: root.style.muted
                 }
             }
 
-            GridLayout {
-                id: readoutRight
+            Item {
+                Layout.fillWidth: true
+            }
 
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
+            Row {
+                id: readouts
+
                 visible: !root.showAll && root.current !== null
-                columns: 2
-                columnSpacing: root.style.gap2
-                rowSpacing: root.style.gap
+                Layout.alignment: Qt.AlignVCenter
+                spacing: root.style.gap
 
-                Text {
-                    Layout.alignment: Qt.AlignRight
-                    text: root.scrubbing
-                        ? i18ndc(root.domain, "Readout: target with a clear sky", "CLEAR SKY")
-                        : i18ndc(root.domain, "Readout: brightness the daemon last applied", "APPLIED")
-                    textFormat: Text.PlainText
-                    font: root.style.labelFont
-                    color: root.style.muted
-                }
-                Bracket {
-                    Layout.alignment: Qt.AlignRight
-                    style: root.style
-                    value: root.scrubbing ? root.pctText(root.readClearSky) : root.pctText(root.appliedNow)
-                    font: root.style.techFont
-                    color: root.style.ink
-                }
+                Column {
+                    spacing: root.style.snap(root.style.unit * 0.2)
 
-                Text {
-                    Layout.alignment: Qt.AlignRight
-                    text: i18ndc(root.domain, "Readout: brightness the weather takes away", "WEATHER")
-                    textFormat: Text.PlainText
-                    font: root.style.labelFont
-                    color: root.style.muted
+                    Text {
+                        text: i18ndc(root.domain, "Label before the automatic target value", "TARGET")
+                        textFormat: Text.PlainText
+                        font: root.style.tinyFont
+                        color: root.style.muted
+                    }
+                    Bracket {
+                        style: root.style
+                        value: root.pctText(root.readTarget)
+                        font: root.style.techFont
+                        color: root.style.ink
+                    }
                 }
-                Bracket {
-                    Layout.alignment: Qt.AlignRight
-                    style: root.style
-                    value: Math.round(root.readCost) >= 1 ? "−" + Math.round(root.readCost) : "0"
-                    font: root.style.techFont
-                    color: root.style.cyan
-                }
+                Column {
+                    spacing: root.style.snap(root.style.unit * 0.2)
 
-                Text {
-                    Layout.alignment: Qt.AlignRight
-                    text: i18ndc(root.domain, "Readout: the display's automatic minimum and maximum", "RANGE")
-                    textFormat: Text.PlainText
-                    font: root.style.labelFont
-                    color: root.style.muted
+                    Text {
+                        text: root.scrubbing
+                            ? i18ndc(root.domain, "Readout: target with a clear sky", "CLEAR SKY")
+                            : i18ndc(root.domain, "Readout: brightness the daemon last applied", "APPLIED")
+                        textFormat: Text.PlainText
+                        font: root.style.tinyFont
+                        color: root.style.muted
+                    }
+                    Bracket {
+                        style: root.style
+                        value: root.scrubbing ? root.pctText(root.readClearSky) : root.pctText(root.appliedNow)
+                        font: root.style.techFont
+                        color: root.style.ink
+                    }
                 }
-                Bracket {
-                    Layout.alignment: Qt.AlignRight
-                    style: root.style
-                    value: root.current ? root.current.minPct + "–" + root.current.maxPct : "--"
-                    font: root.style.techFont
-                    color: root.style.ink
+                Column {
+                    spacing: root.style.snap(root.style.unit * 0.2)
+
+                    Text {
+                        text: i18ndc(root.domain, "Readout: brightness the weather takes away", "WEATHER")
+                        textFormat: Text.PlainText
+                        font: root.style.tinyFont
+                        color: root.style.muted
+                    }
+                    Bracket {
+                        style: root.style
+                        value: Math.round(root.readCost) >= 1 ? "−" + Math.round(root.readCost) : "0"
+                        font: root.style.techFont
+                        color: root.style.cyan
+                    }
+                }
+                Column {
+                    spacing: root.style.snap(root.style.unit * 0.2)
+
+                    Text {
+                        text: i18ndc(root.domain, "Readout: the display's automatic minimum and maximum", "RANGE")
+                        textFormat: Text.PlainText
+                        font: root.style.tinyFont
+                        color: root.style.muted
+                    }
+                    Bracket {
+                        style: root.style
+                        value: root.current ? root.current.minPct + "–" + root.current.maxPct : "--"
+                        font: root.style.techFont
+                        color: root.style.ink
+                    }
                 }
             }
         }
@@ -242,7 +257,7 @@ ColumnLayout {
             id: plotBox
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * 4.2)
+            implicitHeight: root.style.snap(root.style.unit * 3.2)
 
             readonly property real axisH: root.style.snap(root.style.sizeTiny * 2.2)
             readonly property real gutter: root.style.snap(gutterMetrics.width + root.style.gap * 2)

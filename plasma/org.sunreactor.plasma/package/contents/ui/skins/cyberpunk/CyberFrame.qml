@@ -31,7 +31,7 @@ Item {
     property real contentSpacing: style.rowGap
     /*! A titled panel is cut as deep as its tab is high, so the tab edge is the cut. */
     readonly property real cut: title.length > 0 ? style.tabHeight : style.cut
-    readonly property real topInset: title.length > 0 ? style.tabHeight + style.gap : inset
+    readonly property real topInset: title.length > 0 ? style.tabHeight + style.gap * 0.5 : inset
     /*! An untitled panel is cut at its top-right and bottom-left: its rows keep clear of the cut. */
     readonly property real sideInset: inset + (title.length > 0 ? 0 : cut * 0.5)
 

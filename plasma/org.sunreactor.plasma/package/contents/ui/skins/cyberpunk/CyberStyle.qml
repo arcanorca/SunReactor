@@ -4,7 +4,7 @@
  * secondary_accent the cyan of data lines and secondary values, error the red
  * kept for warnings and overrides only. Type: Orbitron for numerals, IBM Plex
  * Sans Condensed Medium for labels, IBM Plex Mono for technical readouts. The
- * hero value is 2.4 times the body size (never more than 2.6).
+ * hero value is 2.2 times the body size (never more than 2.2).
  */
 
 pragma ComponentBehavior: Bound
@@ -56,7 +56,7 @@ QtObject {
     readonly property int sizeData: Math.max(10, Math.round(unit * 0.66))
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.8))
     readonly property int sizeMid: Math.round(sizeBody * 1.5)
-    readonly property int sizeHero: Math.round(sizeBody * 2.4)
+    readonly property int sizeHero: Math.round(sizeBody * 2.2)
 
     // --- faces --------------------------------------------------------------------
 
@@ -95,6 +95,8 @@ QtObject {
     readonly property font tinyFont: mkFont(techFace, sizeTiny, Font.Normal, false, 0)
     readonly property font numFont: mkFont(displayFace, sizeData, Font.Medium, false, 0)
     readonly property font midFont: mkFont(displayFace, sizeMid, Font.DemiBold, false, 0)
+    /*! A row's figure: the display face at a little above body size. */
+    readonly property font figFont: mkFont(displayFace, Math.round(sizeBody * 1.15), Font.Medium, false, 0)
     readonly property font heroFont: mkFont(displayFace, sizeHero, Font.Bold, false, 0)
 
     // --- colour ---------------------------------------------------------------------

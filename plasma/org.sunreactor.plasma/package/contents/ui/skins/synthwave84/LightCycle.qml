@@ -209,28 +209,6 @@ ColumnLayout {
             color: root.style.alpha(root.style.cyan, 0.45)
         }
 
-        Flow {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.curves.length > 1
-            spacing: root.style.gap
-
-            Repeater {
-                model: root.curves
-
-                delegate: Pill {
-                    id: chip
-
-                    required property var modelData
-                    required property int index
-
-                    style: root.style
-                    text: Curve.shortName(chip.modelData.monitorId)
-                    tone: root.style.cyan
-                    filled: chip.index === root.selected
-                    onClicked: root.selected = chip.index
-                }
-            }
-        }
     }
 
     /*! The big figure: pink to cyan, through the glyphs' alpha, with a neon bloom.
@@ -290,69 +268,13 @@ ColumnLayout {
         }
     }
 
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: root.style.gap2
-        visible: root.available
-
-        ColumnLayout {
-            spacing: 0
-
-            Text {
-                text: scrub.active
-                    ? i18ndc(root.domain, "Time of day, then the brightness the curve targets then",
-                             "%1 · %2%", Format.timeText(scrub.time), Math.round(scrub.pct))
-                    : i18ndc(root.domain, "Label above the hero percentage: the brightness right now", "Now")
-                textFormat: Text.PlainText
-                font: root.style.labelFont
-                color: root.style.cyan
-            }
-
-            HeroNumber {
-                text: root.targetNow >= 0
-                    ? (scrub.active ? Math.round(scrub.pct) : Math.round(root.targetNow)) + "%"
-                    : "—"
-            }
-        }
-
-        Item {
-            Layout.fillWidth: true
-        }
-
-        ColumnLayout {
-            Layout.alignment: Qt.AlignRight | Qt.AlignBottom
-            spacing: root.style.gap
-
-            Text {
-                Layout.alignment: Qt.AlignRight
-                visible: root.costNow >= 1
-                text: i18ndc(root.domain, "Brightness the weather is taking away right now", "Weather −%1%",
-                             Math.round(root.costNow))
-                textFormat: Text.PlainText
-                font: root.style.dataFont
-                color: root.style.yellow
-            }
-
-            Text {
-                Layout.alignment: Qt.AlignRight
-                visible: text.length > 0
-                text: root.nextText
-                textFormat: Text.PlainText
-                font: root.style.dataSmallFont
-                color: root.style.muted
-                horizontalAlignment: Text.AlignRight
-            }
-
-        }
-    }
-
     // --- the chart --------------------------------------------------------------------
 
     Item {
         id: plot
 
         Layout.fillWidth: true
-        implicitHeight: root.style.snap(root.style.unit * 7.4)
+        implicitHeight: root.style.snap(root.style.unit * 5.9)
         visible: root.available
 
         /*! Where the horizon is, and the floor below it. */
@@ -543,6 +465,114 @@ ColumnLayout {
             hoverEnabled: true
             // Looking only: a click here must never change brightness.
             acceptedButtons: Qt.NoButton
+        }
+
+        // The overlay on the sky's top edge: the hero figure with its label on the left, the
+        // display chips, the weather's cost and the next milestone on the right, clear of the
+        // sun. It is the last child of the stage, so the chips take their clicks; the scrub
+        // stops at its edge.
+        RowLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: root.style.gap
+            spacing: root.style.gap2
+            visible: root.available
+
+            ColumnLayout {
+                Layout.alignment: Qt.AlignTop
+                spacing: 0
+
+                RowLayout {
+                    spacing: root.style.gap
+
+                    Text {
+                        text: scrub.active
+                            ? i18ndc(root.domain, "Time of day, then the brightness the curve targets then",
+                                     "%1 · %2%", Format.timeText(scrub.time), Math.round(scrub.pct))
+                            : i18ndc(root.domain, "Label above the hero percentage: the brightness right now", "Now")
+                        textFormat: Text.PlainText
+                        font: root.style.labelFont
+                        color: root.style.cyan
+                    }
+                }
+                HeroNumber {
+                    text: root.targetNow >= 0
+                        ? (scrub.active ? Math.round(scrub.pct) : Math.round(root.targetNow)) + "%"
+                        : "—"
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            // The chips and the next milestone, to the right of the sun's column; they wrap inside it.
+            // A dark plate keeps the text legible over the curve; it stays right of the sun.
+            Rectangle {
+                Layout.alignment: Qt.AlignTop
+                implicitWidth: rightColumn.implicitWidth + root.style.gap * 2
+                implicitHeight: rightColumn.implicitHeight + root.style.gap * 2
+                radius: root.style.radius * 0.5
+                color: root.style.alpha(root.style.night, 0.72)
+
+                ColumnLayout {
+                    id: rightColumn
+
+                    readonly property real maxWidth: root.style.unit * 6.5 - root.style.gap * 2
+
+                    anchors.centerIn: parent
+                    spacing: root.style.gap * 0.5
+
+                    Flow {
+                        Layout.alignment: Qt.AlignRight
+                        Layout.maximumWidth: rightColumn.maxWidth
+                        visible: root.curves.length > 1
+                        spacing: root.style.gap * 0.5
+
+                        Repeater {
+                            model: root.curves
+
+                            delegate: Pill {
+                                id: chip
+
+                                required property var modelData
+                                required property int index
+
+                                style: root.style
+                                text: Curve.shortName(chip.modelData.monitorId)
+                                tone: root.style.cyan
+                                filled: chip.index === root.selected
+                                onClicked: root.selected = chip.index
+                            }
+                        }
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignRight
+                        Layout.maximumWidth: rightColumn.maxWidth
+                        visible: root.costNow >= 1
+                        text: i18ndc(root.domain, "Brightness the weather is taking away right now", "Weather −%1%",
+                                     Math.round(root.costNow))
+                        textFormat: Text.PlainText
+                        font: root.style.dataSmallFont
+                        color: root.style.yellow
+                        horizontalAlignment: Text.AlignRight
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignRight
+                        Layout.maximumWidth: rightColumn.maxWidth
+                        visible: text.length > 0
+                        text: root.nextText
+                        textFormat: Text.PlainText
+                        font: root.style.dataSmallFont
+                        color: root.style.muted
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                        horizontalAlignment: Text.AlignRight
+                    }
+                }
+            }
         }
     }
 

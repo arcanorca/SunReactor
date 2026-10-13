@@ -1,10 +1,12 @@
 /*
- * Displays, synthwave84: one neon card per display. Its header is the channel
- * (cyan caps), the name, the tag of its state and the value in the readout face;
- * under it a neon tube slider with the curve's target as a tick and the automatic
- * range as a cyan band. The footer has the curve's target, a range button that
- * opens two more tubes for the limits, and AUTO to drop a setting made by hand.
- * An "All" card drives every display at once once there is more than one.
+ * Displays, synthwave84: one neon card per display, tighter than a page of cards.
+ * Its first line is the channel (cyan caps), the name, the tag of its state, the
+ * range chip and the value in the readout face; under it a neon tube slider with
+ * the curve's target as a tick and the automatic range as a cyan band, and an
+ * "Auto" chip when a setting was made by hand. The range chip opens two more tubes
+ * for the limits. An "All" card drives every display at once once there is more
+ * than one. When the theme lists the automation module, its card closes the column
+ * (ModeRows), so the page needs no heading of its own for it.
  */
 
 pragma ComponentBehavior: Bound
@@ -30,14 +32,16 @@ ColumnLayout {
     }
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    /*! The automation card closes this column when the theme lists the automation module. */
+    readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
+    readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
 
     spacing: style.rowGap
 
     Accessible.role: Accessible.Grouping
     Accessible.name: i18ndc(domain, "Accessible name of the display faders", "Displays")
 
-    /*! The header of a channel, one line: its label and name, a state tag, the value. */
+    /*! The first line of a channel: its label and name, a state tag, the range chip, the value. */
     component ChannelHead: RowLayout {
         id: head
 
@@ -46,6 +50,10 @@ ColumnLayout {
         required property int percent
         property string stateText: ""
         property color stateTone: root.style.pink
+        property string rangeText: ""
+        property bool rangeOpen: false
+
+        signal rangeClicked()
 
         Layout.fillWidth: true
         spacing: root.style.gap2
@@ -67,7 +75,6 @@ ColumnLayout {
             color: root.style.ink
             elide: Text.ElideRight
         }
-
         Pill {
             visible: head.stateText.length > 0
             Layout.alignment: Qt.AlignVCenter
@@ -75,7 +82,17 @@ ColumnLayout {
             text: head.stateText
             tone: head.stateTone
         }
-
+        Pill {
+            visible: head.rangeText.length > 0
+            Layout.alignment: Qt.AlignVCenter
+            style: root.style
+            text: head.rangeText
+            tone: root.style.cyan
+            arrow: true
+            filled: head.rangeOpen
+            ringed: head.rangeOpen
+            onClicked: head.rangeClicked()
+        }
         Text {
             Layout.alignment: Qt.AlignVCenter
             text: head.percent >= 0 ? head.percent + "%" : "—"
@@ -86,7 +103,6 @@ ColumnLayout {
     }
 
     // --- all displays ---------------------------------------------------------------
-
     NeonCard {
         visible: root.showAllDisplays
         Layout.fillWidth: true
@@ -98,7 +114,6 @@ ColumnLayout {
             name: i18nd(root.domain, "All displays")
             percent: root.client.globalPercent
         }
-
         NeonSlider {
             Layout.fillWidth: true
             style: root.style
@@ -107,7 +122,6 @@ ColumnLayout {
             enabled: known
             value: root.client.globalPercent >= 0 ? root.client.globalPercent : 0
             Accessible.name: i18nd(root.domain, "All displays")
-
             onPressedChanged: {
                 if (pressed) {
                     return;
@@ -119,10 +133,8 @@ ColumnLayout {
     }
 
     // --- one card per display -------------------------------------------------------
-
     Repeater {
         model: root.monitors
-
         delegate: NeonCard {
             id: card
 
@@ -162,70 +174,49 @@ ColumnLayout {
                 percent: card.hasValue ? card.modelData.percent : -1
                 stateText: card.stateText
                 stateTone: card.stateTone
-            }
-
-            NeonSlider {
-                id: slider
-
-                Layout.fillWidth: true
-                style: root.style
-                neon: card.neon
-                target: card.target
-                limitMin: card.minPct
-                limitMax: card.maxPct
-                known: card.hasValue
-                enabled: card.controllable && card.hasValue
-                value: card.hasValue ? card.modelData.percent : 0
-                Accessible.name: card.modelData.logicalId
-                Accessible.description: card.hasValue
-                    ? i18ndc(root.domain, "Brightness percentage", "%1%", card.modelData.percent)
-                    : i18ndc(root.domain, "No value is known yet", "—")
-
-                // While dragging, status updates are ignored: the daemon reports
-                // what it has written, which lags the thumb.
-                onPressedChanged: {
-                    if (pressed) {
-                        return;
-                    }
-                    root.client.setMonitorOverride(card.modelData.logicalId, Math.round(value),
-                                                   root.settings.overrideMinutes);
-                    value = Qt.binding(() => card.hasValue ? card.modelData.percent : 0);
-                }
+                rangeText: i18ndc(root.domain, "Range limits", "%1–%2%", card.minPct, card.maxPct)
+                rangeOpen: card.limitsOpen
+                onRangeClicked: card.limitsOpen = !card.limitsOpen
             }
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: root.style.gap2
 
-                Text {
-                    visible: card.target >= 0
-                    text: i18ndc(root.domain, "Strip legend: where the automatic curve is now", "Curve %1%",
-                                 Math.round(card.target))
-                    textFormat: Text.PlainText
-                    font: root.style.dataSmallFont
-                    color: root.style.muted
-                }
+                NeonSlider {
+                    id: slider
 
-                Item {
                     Layout.fillWidth: true
+                    style: root.style
+                    neon: card.neon
+                    target: card.target
+                    limitMin: card.minPct
+                    limitMax: card.maxPct
+                    known: card.hasValue
+                    enabled: card.controllable && card.hasValue
+                    value: card.hasValue ? card.modelData.percent : 0
+                    Accessible.name: card.modelData.logicalId
+                    Accessible.description: card.hasValue
+                        ? i18ndc(root.domain, "Brightness percentage", "%1%", card.modelData.percent)
+                        : i18ndc(root.domain, "No value is known yet", "—")
+                    // While dragging, status updates are ignored: the daemon reports
+                    // what it has written, which lags the thumb.
+                    onPressedChanged: {
+                        if (pressed) {
+                            return;
+                        }
+                        root.client.setMonitorOverride(card.modelData.logicalId, Math.round(value),
+                                                       root.settings.overrideMinutes);
+                        value = Qt.binding(() => card.hasValue ? card.modelData.percent : 0);
+                    }
                 }
-
                 Pill {
                     visible: card.modelData.hasOverride === true
+                    Layout.alignment: Qt.AlignVCenter
                     style: root.style
                     text: i18ndc(root.domain, "Button: drop the brightness set by hand", "Auto")
                     tone: root.style.pink
                     onClicked: root.client.clearMonitorOverride(card.modelData.logicalId)
-                }
-
-                Pill {
-                    style: root.style
-                    text: i18ndc(root.domain, "Range limits", "%1–%2%", card.minPct, card.maxPct)
-                    tone: root.style.cyan
-                    arrow: true
-                    filled: card.limitsOpen
-                    ringed: card.limitsOpen
-                    onClicked: card.limitsOpen = !card.limitsOpen
                 }
             }
 
@@ -272,7 +263,6 @@ ColumnLayout {
                         color: root.style.ink
                     }
                 }
-
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: root.style.gap2
@@ -311,6 +301,21 @@ ColumnLayout {
                     }
                 }
             }
+        }
+    }
+
+    // --- the automation controls, in a card of their own -----------------------------
+    NeonCard {
+        visible: root.hostsModes
+        Layout.fillWidth: true
+        style: root.style
+        neon: root.style.pink
+
+        ModeRows {
+            Layout.fillWidth: true
+            theme: root.theme
+            client: root.client
+            settings: root.settings
         }
     }
 }

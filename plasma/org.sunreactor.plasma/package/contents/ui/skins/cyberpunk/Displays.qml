@@ -1,8 +1,10 @@
 /*
- * Displays, cyberpunk: one chamfered strip per display (channel, name, state tag,
- * the value in brackets, the slanted-cell slider) inside a titled panel, and an
- * "all displays" master strip once there is more than one. The slider writes
- * overrides only; keyboard, click and drag work as in skins/instrument/Displays.qml.
+ * Displays, cyberpunk: one titled panel for the displays. Its rows share the panel
+ * and are ruled apart: an "all displays" master row once there is more than one,
+ * then one row per display. When the theme lists the automation module, its
+ * controls close the same panel (ModeRows), so the brightness page has one frame
+ * for the displays and the mode. The slider writes overrides only; keyboard, click
+ * and drag work as in skins/instrument/Displays.qml.
  */
 
 pragma ComponentBehavior: Bound
@@ -28,7 +30,9 @@ ColumnLayout {
     }
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAll: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    /*! The automation controls close this panel when the theme lists them; Automation.qml then stays away. */
+    readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
+    readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
 
     spacing: style.rowGap
 
@@ -36,7 +40,8 @@ ColumnLayout {
         Layout.fillWidth: true
         style: root.style
         title: i18ndc(root.domain, "Panel title: the display channels", "Displays")
-        tag: root.available ? i18ndc(root.domain, "Number of display channels", "%1 CH", root.monitors.length) : ""
+        tag: root.monitors.length > 0 ? i18ndc(root.domain, "Number of display channels", "%1 CH", root.monitors.length) : ""
+        contentSpacing: 0
 
         CyberChannel {
             visible: root.showAll
@@ -65,6 +70,7 @@ ColumnLayout {
                 style: root.style
                 domain: root.domain
                 channel: String(index + 1).padStart(2, "0")
+                ruled: root.showAll || index > 0
                 name: modelData.logicalId
                 percent: modelData.percent
                 applied: modelData.appliedPercent
@@ -90,6 +96,14 @@ ColumnLayout {
 
                 onRequested: v => root.client.setMonitorOverride(modelData.logicalId, v, root.settings.overrideMinutes)
             }
+        }
+
+        ModeRows {
+            visible: root.hostsModes
+            Layout.fillWidth: true
+            theme: root.theme
+            client: root.client
+            settings: root.settings
         }
     }
 }
