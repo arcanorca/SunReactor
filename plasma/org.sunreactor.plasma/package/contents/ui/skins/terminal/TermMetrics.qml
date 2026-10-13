@@ -84,7 +84,7 @@ Item {
     readonly property real lwHeavy: (lwDev * 2) / dpr
 
     /*! Rounded corners follow the TUI's glyph style (╭ vs ┌). */
-    readonly property bool rounded: theme.glyphStyle !== "pixel"
+    readonly property bool rounded: theme.tuiGlyphStyle !== "pixel"
     /*! Detail connector: the TUI's ⎿, as the box glyph that matches the corners. */
     readonly property string detailGlyph: rounded ? "╰" : "└"
 

@@ -27,7 +27,8 @@ Item {
     /*! Normalised theme map (client.theme, client.pinnedTheme or a preview). */
     property var spec: ({})
     /*! { accent: "#rrggbb", density: "compact"|"comfortable", renderer: ...,
-          pixelScale: 0..6, modules: [ids] } - empty values mean "keep". */
+          pixelScale: 0..6, modules: [ids], weatherIconStyle: ... } - empty values
+          mean "keep". */
     property var overrides: ({})
     /*! "follow", "pinned" or "plasma" (no theme at all); set by the engine. */
     property string source: "plasma"
@@ -45,7 +46,8 @@ Item {
     readonly property string themeId: available ? (spec.id || "") : ""
     readonly property string name: available ? (spec.name || themeId) : ""
     readonly property string family: available ? spec.family : "instrument"
-    readonly property string glyphStyle: available ? (spec.glyphStyle || "rounded") : "rounded"
+    /*! The TUI's own glyph style, "rounded" or "pixel" (box corners). */
+    readonly property string tuiGlyphStyle: available ? (spec.glyphStyle || "rounded") : "rounded"
     readonly property bool legacy: available && spec.legacy === true
 
     readonly property string renderer: {
@@ -142,6 +144,21 @@ Item {
         }
         return available ? (widget.pixelScale || 0) : 0;
     }
+
+    // --- weather icons ---------------------------------------------------------------
+
+    /*! Weather icon style for WeatherGlyph: "line" (outline), "solid" (filled) or
+        "pixel" (the legacy sprites). The `weatherIconStyle` override wins; "auto"
+        follows the renderer: pixel themes are filled, the rest outlined. */
+    readonly property string glyphStyle: {
+        const wanted = overrides && overrides.weatherIconStyle ? overrides.weatherIconStyle : "";
+        if (["line", "solid", "pixel"].indexOf(wanted) >= 0) {
+            return wanted;
+        }
+        return isPixel ? "solid" : "line";
+    }
+    /*! WeatherGlyph colour roles on this theme's own background. */
+    readonly property var glyphPalette: glyphColours(bg, fg)
     /*! Popup modules in order: the `modules` override (a full order chosen
         in settings) or the theme's list, minus `hidden` ones; unknown and
         repeated ids are dropped. May be empty when everything is hidden. */
@@ -243,6 +260,26 @@ Item {
 
     function alpha(c, a) {
         return Qt.rgba(c.r, c.g, c.b, a);
+    }
+
+    function hexOf(c) {
+        const k = Qt.color(c);
+        const part = v => ("0" + Math.round(v * 255).toString(16)).slice(-2);
+        return "#" + part(k.r) + part(k.g) + part(k.b);
+    }
+
+    /*! WeatherGlyph roles as "#rrggbb" strings for a surface of `background` with
+        `ink` text. WeatherGlyph lifts any role below 3:1 against `background`
+        itself, so the theme's tokens serve panels and pixel surfaces alike. */
+    function glyphColours(background, ink) {
+        return {
+            bg: hexOf(background),
+            fg: hexOf(ink),
+            text_muted: hexOf(textMuted),
+            accent: hexOf(accent),
+            secondary_accent: hexOf(secondaryAccent),
+            warning: hexOf(warning)
+        };
     }
 
     /*! The palette colour (fg or bg) that reads best on `background`. */

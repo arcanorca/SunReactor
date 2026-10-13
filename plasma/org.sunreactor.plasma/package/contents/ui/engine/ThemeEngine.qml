@@ -6,7 +6,8 @@
  *   pinned  - client.pinnedTheme, fetched with get_theme for `pinnedId`;
  *             while it is pending, missing or unsupported (older daemon)
  *             the engine keeps following and says why in `notice`;
- *   overrides (accent, density, renderer, pixelScale, modules) on top.
+ *   overrides (accent, density, renderer, pixelScale, modules, weather icon
+ *   style) on top.
  *
  * The widget never writes the daemon's config: pinning is local to this
  * instance. Several engines may share one client (popup and panel each have
@@ -31,6 +32,8 @@ Item {
     property string densityOverride: ""
     property string rendererOverride: ""
     property int pixelScaleOverride: 0
+    /*! "auto", "line", "solid" or "pixel" (plasmoid config weatherIconStyle). */
+    property string weatherIconStyleOverride: ""
     property var modulesOverride: []
     /*! Module ids to leave out (plasmoid config hiddenModules). */
     property var hiddenModules: []
@@ -64,6 +67,7 @@ Item {
             density: root.densityOverride,
             renderer: root.rendererOverride,
             pixelScale: root.pixelScaleOverride,
+            weatherIconStyle: root.weatherIconStyleOverride,
             modules: root.modulesOverride,
             hidden: root.hiddenModules,
         })

@@ -20,7 +20,7 @@ var HALF_PI = Math.PI / 2;
 var DEG = Math.PI / 180;
 
 var LINE_WEIGHT = 1.75;      // nominal stroke, grid units
-var MIN_BG_CONTRAST = 2.0;   // every role colour must reach this against palette.bg
+var MIN_BG_CONTRAST = 3.0;   // every role colour must reach this against palette.bg (WCAG non-text 3:1)
 var MIN_ROLE_CONTRAST = 1.5; // a secondary role falls back when this close to the cloud
 var SHADE_DROP = 1.1;        // solid clouds: depth band height below the body
 
@@ -103,30 +103,31 @@ function contrast(a, b) {
     return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/// Blends c toward target until it reaches MIN_BG_CONTRAST on bg. Returns null
-/// when even the full target is not enough.
-function blendUntilLegible(c, bg, target) {
-    if (contrast(c, bg) >= MIN_BG_CONTRAST) {
+/// Blends c toward `toward` in twentieths until it reaches `target` contrast on
+/// bg. Returns c itself when it is already there, null when even the full
+/// blend is not enough.
+function blendUntil(c, bg, toward, target) {
+    if (contrast(c, bg) >= target) {
         return c;
     }
     for (var i = 1; i <= 20; ++i) {
-        var m = mix(c, target, i / 20);
-        if (contrast(m, bg) >= MIN_BG_CONTRAST) {
+        var m = mix(c, toward, i / 20);
+        if (contrast(m, bg) >= target) {
             return m;
         }
     }
     return null;
 }
 
-/// Contrast guard: a role colour that sits too close to the background is
-/// pulled toward fg, and toward the bg's inverse when fg cannot do it either.
+/// Contrast guard: a role colour below MIN_BG_CONTRAST is blended toward fg
+/// until it reaches it, and toward the bg's inverse when fg cannot do it either.
 function guardRole(c, bg, fg) {
-    var m = blendUntilLegible(c, bg, fg);
+    var m = blendUntil(c, bg, fg, MIN_BG_CONTRAST);
     if (m) {
         return m;
     }
     var inverse = luminance(bg) > 0.18 ? [0, 0, 0] : [255, 255, 255];
-    return blendUntilLegible(c, bg, inverse) || inverse;
+    return blendUntil(c, bg, inverse, MIN_BG_CONTRAST) || inverse;
 }
 
 var FALLBACK = {
@@ -154,6 +155,10 @@ function resolvePalette(palette) {
     var rain = contrast(rawRain, fg) >= MIN_ROLE_CONTRAST ? rawRain : rawAccent;
     var bolt = contrast(rawBolt, fg) >= MIN_ROLE_CONTRAST ? rawBolt : rawAccent;
     var sun = guardRole(rawAccent, bg, fg);
+    // Faint hint (sun behind mist): the sun colour dimmed toward the background,
+    // raised toward fg only as far as it must go to be no less visible than the
+    // mist lines (which are drawn in `muted`).
+    var faint = blendUntil(mix(sun, bg, 0.5), bg, fg, contrast(muted, bg)) || fg;
     return {
         bg: bg,
         fg: fg,
@@ -163,8 +168,7 @@ function resolvePalette(palette) {
         bolt: guardRole(bolt, bg, fg),
         // Solid clouds: depth band and the back cloud of a pair.
         shade: mix(fg, muted, 0.5),
-        // Faint hint (sun behind mist): the sun colour pulled toward the background.
-        faint: mix(sun, bg, 0.5)
+        faint: faint
     };
 }
 

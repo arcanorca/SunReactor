@@ -134,6 +134,34 @@ Item {
             compare(overridden.modules, ["displays"]);
         }
 
+        function test_weatherGlyphStyle() {
+            compare(pixelTheme.glyphStyle, "solid", "pixel themes are filled");
+            compare(vectorTheme.glyphStyle, "line", "vector themes are outlined");
+            compare(plasmaTheme.glyphStyle, "line");
+            compare(pixelTheme.tuiGlyphStyle, "pixel", "the TUI's corner style keeps its own name");
+            compare(vectorTheme.tuiGlyphStyle, "rounded");
+            overridden.overrides = { weatherIconStyle: "pixel" };
+            compare(overridden.glyphStyle, "pixel", "legacy sprites when asked for");
+            overridden.overrides = { weatherIconStyle: "solid" };
+            compare(overridden.glyphStyle, "solid");
+            overridden.overrides = { weatherIconStyle: "auto" };
+            compare(overridden.glyphStyle, "line", "auto follows the renderer");
+            overridden.overrides = { weatherIconStyle: "neon" };
+            compare(overridden.glyphStyle, "line", "an unknown style keeps auto");
+            overridden.overrides = {};
+        }
+
+        function test_glyphPalette() {
+            const p = vectorTheme.glyphPalette;
+            compare(p.bg, "#161616");
+            compare(p.fg, "#f2f2f0");
+            compare(p.accent, "#ff5500");
+            compare(p.secondary_accent, "#f0b01e");
+            compare(p.warning, "#d97706");
+            compare(p.text_muted, "#8a8781");
+            compare(vectorTheme.glyphColours("#ffffff", "#000000").bg, "#ffffff", "for another surface");
+        }
+
         function test_gridArithmetic() {
             const g = pixelTheme.grid;
             verify(g.devicePixelRatio > 0);

@@ -16,6 +16,7 @@ ThemeEngine {
     densityOverride: Plasmoid.configuration.densityOverride
     rendererOverride: Plasmoid.configuration.rendererOverride
     pixelScaleOverride: Plasmoid.configuration.pixelScale
+    weatherIconStyleOverride: Plasmoid.configuration.weatherIconStyle
     modulesOverride: Plasmoid.configuration.moduleOrder
     hiddenModules: Plasmoid.configuration.hiddenModules
 }
