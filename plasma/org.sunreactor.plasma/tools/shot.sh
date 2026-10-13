@@ -8,13 +8,18 @@
 #                 [--config "panelMode=ring showTemperature=false"]
 #                 [--package DIR] [--qml DIR]
 #
-# Output: DIR/<tag>_<theme>_<view>_<scale>.png, cropped to the viewer window in
-# device pixels, plus a .log with the viewer's QML warnings next to each PNG.
+# Output: DIR/<tag>_<theme>_<view>_<scale>.png plus a .log with the viewer's QML
+# warnings next to each PNG. The popup view crops to the popup at its own size:
+# the harness containment logs it (SUNREACTOR_HARNESS_POPUP) and shot.sh prints
+# it. The panel views are cropped to the viewer window, in device pixels.
 # --config sets plasmoid config keys (main.xml names; values are JSON when they
 # parse, else strings) through SUNREACTOR_HARNESS_CONFIG, which the widget
 # only reads under SUNREACTOR_HARNESS (plasmoidviewer recreates its layout
 # file on every start, so it cannot be seeded). Env: SHOT_PANEL_THICK / SHOT_PANEL_LEN / SHOT_POPUP_W /
-# SHOT_POPUP_H (logical px), SHOT_SETTLE (s), SHOT_SERVERNUM (Xvfb display
+# SHOT_POPUP_H (logical px; the window the popup is shown in, at least as tall
+# as the popup can grow), SHOT_SCREEN (Xvfb screen, WxH device px; default
+# 2400x2400: the popup's maximum height is 75% of the screen, so a smaller one
+# makes a page scroll), SHOT_SETTLE (s), SHOT_SERVERNUM (Xvfb display
 # number; default: pick a free one), SHOT_KEEP=1 keeps the work dir.
 #
 # Isolation (nothing reaches the user's session):
@@ -66,7 +71,7 @@ done
 
 [[ -n "$OUT" ]] || { echo "--out DIR (or SHOT_OUT) is required; keep screenshots out of the repo" >&2; exit 2; }
 [[ -f "$QMLDIR/org/sunreactor/plasma/qmldir" ]] || { echo "no plugin under $QMLDIR (build first)" >&2; exit 2; }
-for tool in xvfb-run plasmoidviewer import dbus-run-session python3; do
+for tool in xvfb-run plasmoidviewer import magick dbus-run-session python3; do
     command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 2; }
 done
 mkdir -p "$OUT"
@@ -109,7 +114,7 @@ mkdir -p "$WORK/data/plasma/plasmoids"
 cp -r "$HERE/harness/containment" "$WORK/data/plasma/plasmoids/org.sunreactor.harness"
 
 POPUP_W="${SHOT_POPUP_W:-460}"
-POPUP_H="${SHOT_POPUP_H:-800}"
+POPUP_H="${SHOT_POPUP_H:-1000}"
 PANEL_LEN="${SHOT_PANEL_LEN:-300}"
 PANEL_THICK="${SHOT_PANEL_THICK:-44}"
 view_args() {
@@ -156,7 +161,7 @@ for i in \$(seq 150); do
     sleep 0.1
 done
 sleep $SETTLE
-import -window root -crop ${w}x${h}+0+0 +repage "$OUT/$name.png"
+import -window root -crop ${w}x${h}+0+0 +repage "$WORK/$name.png"
 kill \$VP 2>/dev/null
 wait \$VP 2>/dev/null
 EOF
@@ -165,7 +170,7 @@ EOF
         XDG_RUNTIME_DIR="$WORK/run" XDG_CONFIG_HOME="$WORK/config" XDG_DATA_HOME="$WORK/data" \
         XDG_CACHE_HOME="$WORK/cache" QML_IMPORT_PATH="$QMLDIR" QT_SCALE_FACTOR="$scale" \
         SUNREACTOR_HARNESS=1 SUNREACTOR_HARNESS_CONFIG="$CONFIG" QT_FORCE_STDERR_LOGGING=1 \
-        dbus-run-session -- xvfb-run $XVFB_NUM -s "-screen 0 2400x2000x24" sh "$WORK/inner.sh" \
+        dbus-run-session -- xvfb-run $XVFB_NUM -s "-screen 0 ${SHOT_SCREEN:-2400x2400}x24" sh "$WORK/inner.sh" \
         > "$WORK/xvfb.out" 2>&1 || true
     kill "$FAKE_PID" 2>/dev/null || true
     wait "$FAKE_PID" 2>/dev/null || true
@@ -182,8 +187,35 @@ for line in open(sys.argv[1], errors="replace"):
         regions[r["name"]] = r
 json.dump(list(regions.values()), open(sys.argv[2], "w"), indent=1)
 PY
+    # The popup's extent (window px) comes from the containment's log line; a
+    # view without one (the panels) keeps the whole window.
+    local cw ch lw lh
+    read -r cw ch lw lh < <(python3 - "$OUT/$name.log" "$scale" "$w" "$h" <<'PY'
+import json, sys
+log, scale, win_w, win_h = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+popup = None
+for line in open(log, errors="replace"):
+    if "SUNREACTOR_HARNESS_POPUP " in line:
+        popup = json.loads(line.split("SUNREACTOR_HARNESS_POPUP ", 1)[1])
+if popup is None:
+    print(win_w, win_h, "-", "-")
+else:
+    print(round((popup["x"] + popup["width"]) * scale), round((popup["y"] + popup["height"]) * scale),
+          f"{popup['width']:g}", f"{popup['height']:g}")
+PY
+    )
+    if [[ -f "$WORK/$name.png" ]]; then
+        if [[ "$lw" == "-" ]]; then
+            mv "$WORK/$name.png" "$OUT/$name.png"
+        else
+            (( cw <= w && ch <= h )) || echo "warning: $name popup ${lw}x${lh} is taller than the window (SHOT_POPUP_H)" >&2
+            magick "$WORK/$name.png" -crop "${cw}x${ch}+0+0" +repage "$OUT/$name.png"
+        fi
+    fi
     if [[ -f "$OUT/$name.png" ]]; then
-        echo "$OUT/$name.png ($(grep -c . "$log") requests)"
+        local popup_note=""
+        [[ "$lw" == "-" ]] || popup_note="popup ${lw}x${lh}, "
+        echo "$OUT/$name.png (${popup_note}$(grep -c . "$log") requests)"
     else
         echo "FAILED $name" >&2
     fi

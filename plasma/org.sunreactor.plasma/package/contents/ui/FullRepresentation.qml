@@ -9,7 +9,8 @@
  *
  * Telemetry is the status line and stays on top. When the theme lists modules
  * for both tab pages (Modules.PAGES), a tab bar under it switches between the
- * pages; each page scrolls on its own and the footer stays put.
+ * pages; each page scrolls on its own and the footer stays put. The popup is as
+ * tall as the page on screen needs (see popupHeight).
  */
 
 pragma ComponentBehavior: Bound
@@ -52,10 +53,34 @@ PlasmaExtras.Representation {
     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
     Layout.preferredWidth: Kirigami.Units.gridUnit * 22
     Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-    Layout.minimumHeight: Math.min(implicitHeight, Kirigami.Units.gridUnit * 30)
-    // Grows with the content instead of reserving a fixed slab.
-    Layout.preferredHeight: Math.min(implicitHeight, Kirigami.Units.gridUnit * 38)
-    Layout.maximumHeight: Kirigami.Units.gridUnit * 38
+    // The height is the page on screen plus the chrome around it: see popupHeight.
+    Layout.minimumHeight: root.popupMinHeight
+    Layout.preferredHeight: root.popupHeight
+    Layout.maximumHeight: root.popupMaxHeight
+
+    // --- height ----------------------------------------------------------------
+    // The popup is as tall as what is on screen: the status line and tab row,
+    // the shown page, the footer and the popup margins. Pages are measured from
+    // their columns (PagePanel.columnHeight), never from a ScrollView, so the
+    // popup height cannot feed back into the measure. A page taller than
+    // popupMaxHeight scrolls.
+
+    /*! The smallest popup: 14 grid units. */
+    readonly property real popupMinHeight: Kirigami.Units.gridUnit * 14
+    /*! The largest popup: 75% of the screen's available height, at most 46 grid
+        units (46 alone until the screen is known). */
+    readonly property real popupMaxHeight: Math.max(root.popupMinHeight, Math.min(
+        Kirigami.Units.gridUnit * 46,
+        Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.75 : Kirigami.Units.gridUnit * 46))
+    /*! Status line, tab row and the gap above the pages. */
+    readonly property real headerHeight: headerColumn.implicitHeight + pages.Layout.topMargin
+    /*! The shown page's column. */
+    readonly property real pageHeight: pages.implicitHeight
+    /*! The footer and the popup's own top and bottom margins. */
+    readonly property real chromeHeight: (popupFooter.visible ? popupFooter.implicitHeight : 0)
+                                         + root.topPadding + root.bottomPadding
+    readonly property real popupHeight: Math.min(root.popupMaxHeight,
+        Math.max(root.popupMinHeight, root.headerHeight + root.pageHeight + root.chromeHeight))
 
     collapseMarginsHint: true
 
@@ -180,91 +205,100 @@ PlasmaExtras.Representation {
             }
         }
 
-        PlasmaExtras.PlaceholderMessage {
-            Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.gridUnit
-            Layout.bottomMargin: Kirigami.Units.gridUnit
-            visible: !root.client.isConnected
-            iconName: "network-disconnect"
-            text: i18nd(root.domain, "Not connected")
-            explanation: i18nd(root.domain,
-                "The background service is not answering. Start it with:\nsystemctl --user start sunreactord")
-        }
-
-        Repeater {
-            model: root.topModules
-
-            delegate: ModuleSlot {}
-        }
-
-        // The tab row: the tab bar (when the theme has both pages) and, at its
-        // right end, the theme button. The row stays when the bar hides itself.
-        RowLayout {
-            id: tabRow
+        // The header: the offline notice, the status line and the tab row. Its own
+        // column, so its height does not wait on the pages' layout (popupHeight).
+        ColumnLayout {
+            id: headerColumn
 
             Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.smallSpacing
-            Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
-            Layout.rightMargin: Layout.leftMargin
-            visible: root.tabsShown || root.client.isConnected
             spacing: 0
 
-            Loader {
-                id: tabSlot
+            PlasmaExtras.PlaceholderMessage {
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.gridUnit
+                Layout.bottomMargin: Kirigami.Units.gridUnit
+                visible: !root.client.isConnected
+                iconName: "network-disconnect"
+                text: i18nd(root.domain, "Not connected")
+                explanation: i18nd(root.domain,
+                    "The background service is not answering. Start it with:\nsystemctl --user start sunreactord")
+            }
 
-                // Skin by theme and renderer; no daemon theme means the plain bar.
-                readonly property string tabSource: Modules.tabBarSource(
-                    root.theme.available ? root.theme.themeId : "",
-                    root.theme.available ? root.theme.renderer : "")
+            Repeater {
+                model: root.topModules
 
-                function load() {
-                    setSource(Qt.resolvedUrl(tabSource), { theme: root.theme });
-                }
+                delegate: ModuleSlot {}
+            }
+
+            // The tab row: the tab bar (when the theme has both pages) and, at its
+            // right end, the theme button. The row stays when the bar hides itself.
+            RowLayout {
+                id: tabRow
 
                 Layout.fillWidth: true
-                visible: root.tabsShown && status === Loader.Ready
+                Layout.topMargin: Kirigami.Units.smallSpacing
+                Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
+                Layout.rightMargin: Layout.leftMargin
+                visible: root.tabsShown || root.client.isConnected
+                spacing: 0
 
-                onTabSourceChanged: load()
-                Component.onCompleted: load()
-                onLoaded: {
-                    item.tabs = Qt.binding(() => root.tabEntries);
-                    item.current = Qt.binding(() => root.shownPage);
+                Loader {
+                    id: tabSlot
+
+                    // Skin by theme and renderer; no daemon theme means the plain bar.
+                    readonly property string tabSource: Modules.tabBarSource(
+                        root.theme.available ? root.theme.themeId : "",
+                        root.theme.available ? root.theme.renderer : "")
+
+                    function load() {
+                        setSource(Qt.resolvedUrl(tabSource), { theme: root.theme });
+                    }
+
+                    Layout.fillWidth: true
+                    visible: root.tabsShown && status === Loader.Ready
+
+                    onTabSourceChanged: load()
+                    Component.onCompleted: load()
+                    onLoaded: {
+                        item.tabs = Qt.binding(() => root.tabEntries);
+                        item.current = Qt.binding(() => root.shownPage);
+                    }
+
+                    Connections {
+                        target: tabSlot.item
+                        ignoreUnknownSignals: true
+
+                        function onPicked(id: string): void {
+                            root.showPage(id);
+                        }
+                    }
                 }
 
-                Connections {
-                    target: tabSlot.item
-                    ignoreUnknownSignals: true
+                // Pushes the theme button to the right edge when the bar is hidden.
+                Item {
+                    Layout.fillWidth: true
+                    visible: !tabSlot.visible
+                }
 
-                    function onPicked(id: string): void {
-                        root.showPage(id);
+                ThemeButton {
+                    id: themeButton
+
+                    theme: root.theme
+                    client: root.client
+                    visible: root.client.isConnected
+                    themeMode: Plasmoid.configuration.themeMode
+                    pinnedId: Plasmoid.configuration.pinnedTheme
+                    onFollowRequested: Plasmoid.configuration.themeMode = "follow"
+                    onPinRequested: id => {
+                        Plasmoid.configuration.pinnedTheme = id;
+                        Plasmoid.configuration.themeMode = "pinned";
                     }
                 }
             }
-
-            // Pushes the theme button to the right edge when the bar is hidden.
-            Item {
-                Layout.fillWidth: true
-                visible: !tabSlot.visible
-            }
-
-            ThemeButton {
-                id: themeButton
-
-                theme: root.theme
-                client: root.client
-                visible: root.client.isConnected
-                themeMode: Plasmoid.configuration.themeMode
-                pinnedId: Plasmoid.configuration.pinnedTheme
-                onFollowRequested: Plasmoid.configuration.themeMode = "follow"
-                onPinRequested: id => {
-                    Plasmoid.configuration.pinnedTheme = id;
-                    Plasmoid.configuration.themeMode = "pinned";
-                }
-            }
         }
 
-        // The pages. All of them load, so the popup keeps one height whichever
-        // page is shown: the tallest one decides.
+        // The pages. All of them load, so a tab switch has the new page's size at
+        // once; the shown page's column decides the popup height (popupHeight).
         Item {
             id: pages
 
@@ -272,11 +306,14 @@ PlasmaExtras.Representation {
             Layout.fillHeight: true
             Layout.topMargin: root.theme.sectionSpacing
             implicitHeight: {
-                let tallest = 0;
                 for (let i = 0; i < pageRepeater.count; ++i) {
-                    tallest = Math.max(tallest, pageRepeater.itemAt(i).implicitHeight);
+                    // The delegates are PagePanels; the Repeater types them as items.
+                    const panel = pageRepeater.itemAt(i);
+                    if (panel.modelData === root.shownPage) { // qmllint disable missing-property
+                        return panel.columnHeight; // qmllint disable missing-property
+                    }
                 }
-                return tallest;
+                return 0;
             }
 
             Repeater {
@@ -298,9 +335,18 @@ PlasmaExtras.Representation {
 
         /*! The page id (Modules.PAGES). */
         required property string modelData
+        /*! The page's height, from its column: what the popup measures. */
+        readonly property real columnHeight: pageColumn.implicitHeight
 
-        implicitHeight: pageColumn.implicitHeight
+        implicitHeight: columnHeight
         PlasmaComponents3.ScrollBar.horizontal.visible: false
+
+        // A page opens at its top, not where it was left.
+        onVisibleChanged: {
+            if (visible) {
+                PlasmaComponents3.ScrollBar.vertical.position = 0;
+            }
+        }
 
         ColumnLayout {
             id: pageColumn
@@ -350,6 +396,8 @@ PlasmaExtras.Representation {
     }
 
     footer: PopupFooter {
+        id: popupFooter
+
         client: root.client
         theme: root.theme
         defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes
