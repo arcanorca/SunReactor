@@ -148,7 +148,7 @@ EOF
         TZ="Europe/Istanbul" \
         XDG_RUNTIME_DIR="$WORK/run" XDG_CONFIG_HOME="$WORK/config" XDG_DATA_HOME="$WORK/data" \
         XDG_CACHE_HOME="$WORK/cache" QML_IMPORT_PATH="$QMLDIR" QT_SCALE_FACTOR="$scale" \
-        SUNREACTOR_HARNESS=1 \
+        SUNREACTOR_HARNESS=1 QT_FORCE_STDERR_LOGGING=1 \
         dbus-run-session -- xvfb-run -a -s "-screen 0 2400x2000x24" sh "$WORK/inner.sh" \
         > "$WORK/xvfb.out" 2>&1 || true
     kill "$FAKE_PID" 2>/dev/null || true
