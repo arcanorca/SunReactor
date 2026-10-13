@@ -9,7 +9,7 @@ refuses to bind the real daemon socket.
   --old          behave like a daemon that predates the theme registry:
                  legacy flat status.theme only, and list_themes / get_theme /
                  day_curve answer `invalid_request` exactly like serde would
-  --scenario S   default | manual | paused | single | unknown | noweather
+  --scenario S   default | manual | paused | single | triple | unknown | noweather
   --live         report the real clock instead of the fixed demo moment
   --log FILE     append every request as one JSON line (the harness waits on it)
 
@@ -104,6 +104,12 @@ class FakeDaemon:
         scenario = args.scenario
         if scenario == "single":
             self.monitors = self.monitors[:1]
+        if scenario == "triple":
+            # A third, internal panel with a long id: elision and 3-channel layouts.
+            self.monitors.append(
+                {"logical_id": "thinkpad-x1-internal-panel-boe-ne140qdm-edp-1", "backend": "backlight",
+                 "enabled": True, "override_percent": None, "override_until": None, "min_pct": 10,
+                 "max_pct": 90, "topology": "present"})
         if scenario == "manual":
             self.monitors[1]["override_percent"] = 70
             self.monitors[1]["override_until"] = self.now() + 3600
@@ -388,7 +394,7 @@ def main() -> None:
     ap.add_argument("--theme", default="handheld")
     ap.add_argument("--old", action="store_true")
     ap.add_argument("--scenario", default="default",
-                    choices=["default", "manual", "paused", "single", "unknown", "noweather"])
+                    choices=["default", "manual", "paused", "single", "triple", "unknown", "noweather"])
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--log")
     ap.add_argument("--dump", choices=["status", "day_curve", "themes"],
