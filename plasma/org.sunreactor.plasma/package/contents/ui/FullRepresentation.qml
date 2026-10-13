@@ -99,6 +99,20 @@ PlasmaExtras.Representation {
                     id: slot
 
                     required property string modelData
+                    // The file depends on the theme (skins per renderer / id),
+                    // so a theme change can swap it after creation.
+                    readonly property string moduleSource: Modules.file(modelData).length > 0
+                        ? Modules.source(modelData, root.theme.themeId, root.theme.renderer) : ""
+
+                    function load() {
+                        if (moduleSource.length > 0) {
+                            setSource(Qt.resolvedUrl(moduleSource), {
+                                theme: root.theme,
+                                client: root.client,
+                                settings: moduleSettings,
+                            });
+                        }
+                    }
 
                     Layout.fillWidth: true
                     Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
@@ -106,18 +120,10 @@ PlasmaExtras.Representation {
                     // Every module exposes `available` (modules/Modules.js); the
                     // loaded type is only known at run time.
                     visible: status === Loader.Ready && item.available === true // qmllint disable missing-property
-                    active: Modules.file(modelData).length > 0
+                    active: moduleSource.length > 0
 
-                    Component.onCompleted: {
-                        const file = Modules.file(modelData);
-                        if (file.length > 0) {
-                            setSource(Qt.resolvedUrl(Modules.source(modelData, root.theme.themeId, root.theme.renderer)), {
-                                theme: root.theme,
-                                client: root.client,
-                                settings: moduleSettings,
-                            });
-                        }
-                    }
+                    onModuleSourceChanged: load()
+                    Component.onCompleted: load()
                 }
             }
         }
