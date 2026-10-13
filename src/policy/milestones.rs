@@ -218,7 +218,6 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg_attr(not(feature = "tui"), allow(dead_code))]
 pub(crate) fn compute_monitor_milestones(
     input: &PolicyContext,
 ) -> Result<Vec<MonitorMilestoneSchedule>, PolicyError> {
