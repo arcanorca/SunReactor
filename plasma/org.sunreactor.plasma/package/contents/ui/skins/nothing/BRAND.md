@@ -17,9 +17,11 @@ Phone widgets: dot matrix, black, white, grey, one red signal.
   letter spacing 1 dot column); never the 3x5 face for numbers. Times are text,
   never dot text (AM and PM would collide). Nothing's Ndot/Lettera fonts are
   proprietary; they are not bundled.
-- Dot numerals: hero (target in the ring) 7 dots tall at pitch 4 device px or more;
-  row numerals 7 dots tall at 3 device px (the minimum); forecast and telemetry
-  numerals 7 dots tall at 3 device px.
+- Dot numerals: 5x7 face, one dot column between glyphs, lit white (ink). Every
+  lit dot is 0.75 of its pitch
+  (`digitScale`), so the numerals read as bold dots, not a speckle. Hero (target
+  in the ring) at pitch 4 device px or more; per-display, forecast and telemetry
+  numerals at exactly 4 device px (`pitchDigit`), 7 dots = 28 device px tall.
 - Cards: radius 24, 1 device px hairline (#3a3a3a), filled #0a0a0a, padding 10 on
   every side, 8 between rows. Every section of the brightness page is a card;
   the weather reading is a card, forecast and sun times sit on the black as bare
@@ -27,6 +29,8 @@ Phone widgets: dot matrix, black, white, grey, one red signal.
 - Pills: one height (28 px at scale 1). Active = white fill with black text;
   inactive = hairline outline with grey text; hover lifts the outline to white.
 - Section labels: grey, the label style. Only live state and "now" are red.
+- Status lamp (components/StatusLamp.qml, this theme only): white while automatic,
+  red when set by hand, grey while paused, a hollow red ring when the daemon is offline.
 - Layout: left-aligned numerals, circular controls, a strict grid, 19 grid units
   wide. Brightness page about 500 logical px for one display (ALL row and more
   displays add rows); Weather about 340.
@@ -51,7 +55,8 @@ Phone widgets: dot matrix, black, white, grey, one red signal.
   border_inactive); no hex in QML. The theme id is "nothing"; its skin is
   registered under "id:nothing" in modules/Modules.js.
 - Dots are crisp at DPR 1.0, 1.35 and 2.0: the pitch is an integer number of
-  device pixels, dot diameter = pitch x 0.62 rounded to whole device pixels.
+  device pixels, dot diameter = pitch x dotScale rounded to whole device pixels
+  (0.62 for grids, 0.75 for numerals).
 - Dot fields are one QQuickItem each (DotField, one geometry node). Numerals,
   rings, bars and plots write cells with setCell/fill when their inputs change,
   never per frame.

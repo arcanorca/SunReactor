@@ -115,7 +115,8 @@ Item {
                         face: "small"
                         size: 1
                         letterSpacing: 1
-                        pitch: root.style.pitchFine
+                        pitch: root.style.pitchDigit
+                        dotScale: root.style.digitScale
                         litColor: root.style.ink
                         accentColor: root.style.accent
                         dimColor: root.style.textGhost

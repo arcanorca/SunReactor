@@ -5,6 +5,10 @@
  * state in the theme's palette: success while automatic (or dimmed while idle),
  * warning when set by hand, text-muted while paused, error when the daemon does
  * not answer. The tooltip and the accessible name say the state in words.
+ *
+ * The Nothing theme keeps to its single red signal: white while automatic, red
+ * when set by hand, grey while paused, and a hollow red ring when the daemon
+ * does not answer. Its lamp is always round, the dot-matrix dot.
  */
 
 pragma ComponentBehavior: Bound
@@ -24,16 +28,21 @@ Item {
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
 
+    /*! The Nothing theme: one red signal, white ink, grey for secondary states. */
+    readonly property bool dotted: theme.themeId === "nothing"
+    /*! Nothing shows an offline daemon as a hollow ring in the signal colour. */
+    readonly property bool hollow: dotted && client.mode === SunReactorClient.Offline
+
     readonly property color lampColor: {
         switch (client.mode) {
         case SunReactorClient.Offline:
-            return theme.error;
+            return dotted ? theme.accent : theme.error;
         case SunReactorClient.Paused:
             return theme.textMuted;
         case SunReactorClient.Manual:
-            return theme.warning;
+            return dotted ? theme.accent : theme.warning;
         default:
-            return theme.success;
+            return dotted ? theme.fg : theme.success;
         }
     }
 
@@ -60,9 +69,12 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: root.theme.isVector ? width / 2 : 0
+        radius: root.dotted || root.theme.isVector ? width / 2 : 0
         antialiasing: radius > 0
-        color: root.lampColor
+        color: root.hollow ? "transparent" : root.lampColor
+        // Two device pixels of outline for the hollow lamp; unused (zero) otherwise.
+        border.width: root.hollow ? 2 / root.theme.grid.devicePixelRatio : 0
+        border.color: root.lampColor
     }
 
     HoverHandler {

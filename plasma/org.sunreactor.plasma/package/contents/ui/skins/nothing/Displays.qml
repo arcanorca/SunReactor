@@ -96,10 +96,13 @@ Rectangle {
 
             DotText {
                 Layout.alignment: Qt.AlignVCenter
+                Layout.minimumWidth: implicitWidth
                 text: channel.percent >= 0 ? channel.percent + "%" : "--%"
                 face: "small"
                 size: 1
-                pitch: root.style.pitchFine
+                letterSpacing: 1
+                pitch: root.style.pitchDigit
+                dotScale: root.style.digitScale
                 litColor: channel.percent >= 0 ? root.style.ink : root.style.muted
                 accentColor: root.style.accent
                 dimColor: root.style.textGhost

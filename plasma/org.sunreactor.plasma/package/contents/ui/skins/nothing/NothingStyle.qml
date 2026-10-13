@@ -58,8 +58,13 @@ QtObject {
     readonly property real pad: Math.round(unit * 0.56)
     /*! Hero numerals, the ring, the day plot and the sliders: at least 4 device px. */
     readonly property real pitch: Math.max(4, Math.round(unit * 0.22))
-    /*! Row numerals, the forecast and the status line: 5x7 at 3 device px minimum. */
+    /*! Row numerals (per display, forecast, telemetry): 4 device px at every scale. DotField
+     *  snaps the logical pitch to whole device pixels, so 4 / dpr lands on exactly 4. */
+    readonly property real pitchDigit: 4 / dpr
+    /*! Row icons (forecast): 12 x 12 pictograms at 3 device px minimum. */
     readonly property real pitchFine: Math.max(3, Math.round(unit * 0.17))
+    /*! Every dot numeral: a lit dot is this share of its pitch (bold, not a faint speckle). */
+    readonly property real digitScale: 0.75
     /*! The 12 x 12 weather pictogram, larger than the row icons. */
     readonly property real pitchIcon: Math.max(4, Math.round(unit * 0.28))
     /*! Every pill: tabs, modes, displays, badges. */
