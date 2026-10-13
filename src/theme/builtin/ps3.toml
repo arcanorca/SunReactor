@@ -1,0 +1,27 @@
+id = "ps3"
+name = "PlayStation 3"
+aliases = ["xmb", "playstation3"]
+family = "instrument"
+
+[palette]
+bg = "#050b1e"
+fg = "#ffffff"
+accent = "#3d9bff"
+secondary_accent = "#9fd4ff"
+border_active = "#ffffff"
+border_inactive = "#26407a"
+text_muted = "#8ca3cf"
+success = "#5be0a0"
+warning = "#ffb347"
+error = "#ff5a5a"
+
+[tui]
+glyph_style = "rounded"
+
+[widget]
+renderer = "vector"
+font = "sans"
+radius = 4
+glow = 0.5
+border = "line"
+density = "comfortable"

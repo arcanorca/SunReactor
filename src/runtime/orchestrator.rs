@@ -1490,7 +1490,7 @@ mod tests {
         let Response::Themes { themes } = response.response else {
             panic!("themes response expected");
         };
-        assert_eq!(themes.len(), 35);
+        assert_eq!(themes.len(), 40);
         assert!(themes
             .iter()
             .any(|t| t.id == "vfd_hifi" && t.family == "instrument"));

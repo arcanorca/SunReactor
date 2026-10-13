@@ -1,0 +1,27 @@
+id = "wii"
+name = "Nintendo Wii"
+aliases = ["nintendowii", "wiimenu"]
+family = "instrument"
+
+[palette]
+bg = "#f3f6f9"
+fg = "#3b4752"
+accent = "#00a9e0"
+secondary_accent = "#8bd1ec"
+border_active = "#00a9e0"
+border_inactive = "#cfd8df"
+text_muted = "#8794a0"
+success = "#5bc236"
+warning = "#f7b500"
+error = "#e5484d"
+
+[tui]
+glyph_style = "rounded"
+
+[widget]
+renderer = "vector"
+font = "sans"
+radius = 18
+glow = 0.0
+border = "line"
+density = "comfortable"

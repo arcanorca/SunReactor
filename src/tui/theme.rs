@@ -640,10 +640,14 @@ mod tests {
             "zenburn",
         ];
 
-        assert_eq!(ThemeId::all().len(), 35);
+        assert_eq!(ThemeId::all().len(), 40);
         assert_eq!(legacy_names.len(), 35);
 
-        for (key, expected) in legacy_names.into_iter().zip(ThemeId::all()) {
+        let added = ["ps3", "winxp", "macos", "wii", "nds"];
+        let legacy_ids = ThemeId::all()
+            .into_iter()
+            .filter(|id| !added.contains(&id.as_str()));
+        for (key, expected) in legacy_names.into_iter().zip(legacy_ids) {
             let toml_str = format!("theme = \"{key}\"\n");
             let parsed: Result<crate::config::TuiConfig, _> = toml::from_str(&toml_str);
             assert!(
