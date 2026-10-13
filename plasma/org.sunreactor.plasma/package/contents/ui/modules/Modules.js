@@ -118,6 +118,15 @@ var SKINS = {
         forecast: "skins/winxp/Forecast.qml",
         suntimes: "skins/winxp/SunTimes.qml"
     },
+    "id:macos": {
+        telemetry: "skins/macos/Telemetry.qml",
+        curve: "skins/macos/LightCycle.qml",
+        displays: "skins/macos/Displays.qml",
+        automation: "skins/macos/Automation.qml",
+        weather: "skins/macos/Weather.qml",
+        forecast: "skins/macos/Forecast.qml",
+        suntimes: "skins/macos/SunTimes.qml"
+    },
     "id:nothing": {
         telemetry: "skins/nothing/Telemetry.qml",
         curve: "skins/nothing/LightCycle.qml",
@@ -209,7 +218,8 @@ var TABBAR = {
     "id:cyberpunk": "skins/cyberpunk/CyberTabs.qml",
     "id:nothing": "skins/nothing/Tabs.qml",
     "id:winxp": "skins/winxp/Tabs.qml",
-    "id:ps3": "skins/ps3/Tabs.qml"
+    "id:ps3": "skins/ps3/Tabs.qml",
+    "id:macos": "skins/macos/Tabs.qml"
 };
 
 /*
