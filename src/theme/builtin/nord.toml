@@ -1,0 +1,19 @@
+id = "nord"
+name = "Nord"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#2e3440"
+fg = "#d8dee9"
+accent = "#88c0d0"
+secondary_accent = "#81a1c1"
+border_active = "#88c0d0"
+border_inactive = "#647387"
+text_muted = "#8fbcbb"
+success = "#a3be8c"
+warning = "#ebcb8b"
+error = "#bf616a"
+
+[tui]
+glyph_style = "rounded"

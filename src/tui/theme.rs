@@ -1240,3 +1240,58 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod registry_parity {
+    use super::*;
+
+    /// Cross-checks the embedded TOML built-ins against the legacy match
+    /// arms while both still exist.
+    #[test]
+    fn registry_matches_legacy_enum_palettes() {
+        let registry = crate::theme::Registry::builtin();
+        assert_eq!(registry.themes().len(), Theme::ALL.len());
+        for (theme, resolved) in Theme::ALL.iter().zip(registry.themes()) {
+            assert_eq!(theme.name(), resolved.name);
+            let legacy = theme.palette();
+            let to_rgb = |c: Color| match c {
+                Color::Rgb(r, g, b) => crate::theme::Rgb::new(r, g, b),
+                _ => panic!("legacy palettes are RGB"),
+            };
+            let p = resolved.palette;
+            assert_eq!(
+                [
+                    to_rgb(legacy.bg),
+                    to_rgb(legacy.fg),
+                    to_rgb(legacy.accent),
+                    to_rgb(legacy.secondary_accent),
+                    to_rgb(legacy.border_active),
+                    to_rgb(legacy.border_inactive),
+                    to_rgb(legacy.text_muted),
+                    to_rgb(legacy.success),
+                    to_rgb(legacy.warning),
+                    to_rgb(legacy.error),
+                ],
+                [
+                    p.bg,
+                    p.fg,
+                    p.accent,
+                    p.secondary_accent,
+                    p.border_active,
+                    p.border_inactive,
+                    p.text_muted,
+                    p.success,
+                    p.warning,
+                    p.error,
+                ],
+                "{}",
+                resolved.id
+            );
+            let pixel = theme.glyph_style() == GlyphStyle::Pixel;
+            assert_eq!(
+                pixel,
+                resolved.tui.glyph_style == crate::theme::GlyphStyle::Pixel
+            );
+        }
+    }
+}

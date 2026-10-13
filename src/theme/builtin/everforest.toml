@@ -1,0 +1,19 @@
+id = "everforest"
+name = "Everforest"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#2d353b"
+fg = "#d3c6aa"
+accent = "#a7c080"
+secondary_accent = "#7fbba1"
+border_active = "#a7c080"
+border_inactive = "#647378"
+text_muted = "#a0afa5"
+success = "#a7c080"
+warning = "#dbbc7f"
+error = "#e67e80"
+
+[tui]
+glyph_style = "rounded"

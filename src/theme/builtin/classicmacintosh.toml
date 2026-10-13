@@ -1,0 +1,19 @@
+id = "classicmacintosh"
+name = "Classic Macintosh"
+aliases = ["macintosh128k", "mac128k"]
+family = "pixel"
+
+[palette]
+bg = "#121212"
+fg = "#f2f2ec"
+accent = "#009ddc"
+secondary_accent = "#963d97"
+border_active = "#f2f2ec"
+border_inactive = "#3e3e3e"
+text_muted = "#888882"
+success = "#61bb46"
+warning = "#fdb827"
+error = "#e03a3e"
+
+[tui]
+glyph_style = "rounded"

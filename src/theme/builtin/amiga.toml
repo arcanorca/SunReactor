@@ -1,0 +1,19 @@
+id = "amiga"
+name = "Amiga"
+aliases = ["workbench"]
+family = "pixel"
+
+[palette]
+bg = "#141820"
+fg = "#f0f4fa"
+accent = "#ee2233"
+secondary_accent = "#5588bb"
+border_active = "#ff8800"
+border_inactive = "#283244"
+text_muted = "#72869e"
+success = "#3fbf5f"
+warning = "#ff8800"
+error = "#dd3322"
+
+[tui]
+glyph_style = "pixel"

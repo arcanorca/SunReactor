@@ -1,0 +1,19 @@
+id = "onedark"
+name = "One Dark"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#282c34"
+fg = "#abb2bf"
+accent = "#61afef"
+secondary_accent = "#c678dd"
+border_active = "#61afef"
+border_inactive = "#697387"
+text_muted = "#707887"
+success = "#98c379"
+warning = "#e5c07b"
+error = "#e06c75"
+
+[tui]
+glyph_style = "rounded"

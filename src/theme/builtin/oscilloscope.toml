@@ -1,0 +1,19 @@
+id = "oscilloscope"
+name = "Oscilloscope"
+aliases = ["scope", "crt"]
+family = "instrument"
+
+[palette]
+bg = "#050906"
+fg = "#78ff78"
+accent = "#39ff14"
+secondary_accent = "#00dd55"
+border_active = "#39ff14"
+border_inactive = "#14351b"
+text_muted = "#2e8b3e"
+success = "#78ff78"
+warning = "#f6a354"
+error = "#ff615e"
+
+[tui]
+glyph_style = "rounded"

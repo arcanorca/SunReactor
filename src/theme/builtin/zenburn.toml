@@ -1,0 +1,19 @@
+id = "zenburn"
+name = "Zenburn"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#3f3f3f"
+fg = "#dcdccc"
+accent = "#8cd0d3"
+secondary_accent = "#c0bed0"
+border_active = "#8cd0d3"
+border_inactive = "#5f7f5f"
+text_muted = "#7f9f7f"
+success = "#7f9f7f"
+warning = "#f0dfaf"
+error = "#cc9393"
+
+[tui]
+glyph_style = "rounded"

@@ -1,0 +1,19 @@
+id = "ayumirage"
+name = "Ayu Mirage"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#212733"
+fg = "#d9d7ce"
+accent = "#ffcc66"
+secondary_accent = "#5ccfe6"
+border_active = "#ffcc66"
+border_inactive = "#5c6773"
+text_muted = "#70748f"
+success = "#bae67e"
+warning = "#ffcc66"
+error = "#f28779"
+
+[tui]
+glyph_style = "rounded"

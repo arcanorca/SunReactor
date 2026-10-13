@@ -1,0 +1,19 @@
+id = "terminal"
+name = "Terminal"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#1a1a1a"
+fg = "#50c878"
+accent = "#8cffaa"
+secondary_accent = "#3cb464"
+border_active = "#50c878"
+border_inactive = "#28643c"
+text_muted = "#3c965a"
+success = "#50c878"
+warning = "#c8c800"
+error = "#ff5050"
+
+[tui]
+glyph_style = "rounded"

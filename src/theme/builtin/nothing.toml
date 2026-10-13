@@ -1,0 +1,19 @@
+id = "nothing"
+name = "Nothing"
+aliases = ["glyph"]
+family = "pixel"
+
+[palette]
+bg = "#000000"
+fg = "#ffffff"
+accent = "#d71921"
+secondary_accent = "#b3b3b3"
+border_active = "#ffffff"
+border_inactive = "#3a3a3a"
+text_muted = "#8a8a8a"
+success = "#e6e6e6"
+warning = "#f5c400"
+error = "#d71921"
+
+[tui]
+glyph_style = "rounded"

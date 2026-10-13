@@ -1,0 +1,19 @@
+id = "cyberpunk"
+name = "Cyberpunk"
+aliases = []
+family = "pixel"
+
+[palette]
+bg = "#090622"
+fg = "#f9f1a5"
+accent = "#fcee0a"
+secondary_accent = "#00ffff"
+border_active = "#fcee0a"
+border_inactive = "#ff003c"
+text_muted = "#b4a0dc"
+success = "#00ff99"
+warning = "#ffcc00"
+error = "#ff003c"
+
+[tui]
+glyph_style = "pixel"

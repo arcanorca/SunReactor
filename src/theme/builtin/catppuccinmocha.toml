@@ -1,0 +1,19 @@
+id = "catppuccinmocha"
+name = "Catppuccin Mocha"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#1e1e2e"
+fg = "#cdd6f4"
+accent = "#89b4fa"
+secondary_accent = "#cba6f7"
+border_active = "#89b4fa"
+border_inactive = "#64697d"
+text_muted = "#a6adc8"
+success = "#a6e3a1"
+warning = "#f9e2af"
+error = "#f38ba8"
+
+[tui]
+glyph_style = "rounded"

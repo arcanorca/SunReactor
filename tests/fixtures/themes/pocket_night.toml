@@ -1,0 +1,17 @@
+# Example user theme: a darker Game Boy Pocket variant.
+# Copy to ~/.config/sunreactor/themes/pocket_night.toml and set
+#   [tui]
+#   theme = "pocket_night"
+id = "pocket_night"
+name = "Pocket Night"
+aliases = ["gbp_night"]
+extends = "handheld"
+
+[palette]
+bg = "#0b120a"
+accent = "#c23b5f"
+
+[widget]
+shades = ["#0b120a", "#283824", "#567648", "#9bbc0f"]
+modules = ["telemetry", "curve", "displays", "automation"]
+glow = 0.25

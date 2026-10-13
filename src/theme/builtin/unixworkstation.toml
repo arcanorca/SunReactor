@@ -1,0 +1,19 @@
+id = "unixworkstation"
+name = "UNIX Workstation"
+aliases = ["unix", "workstation", "motif", "irix"]
+family = "instrument"
+
+[palette]
+bg = "#181d26"
+fg = "#f1f5f9"
+accent = "#00f0ff"
+secondary_accent = "#38e8ff"
+border_active = "#00f0ff"
+border_inactive = "#4a566e"
+text_muted = "#64748b"
+success = "#00e676"
+warning = "#ffb020"
+error = "#ff3344"
+
+[tui]
+glyph_style = "rounded"

@@ -32,6 +32,7 @@ mod process;
 pub mod runtime;
 pub mod solar;
 pub mod state;
+pub mod theme;
 pub(crate) mod timezone;
 #[cfg(feature = "tui")]
 pub mod tui;
