@@ -887,7 +887,8 @@ QJsonObject TestSunReactorClient::dayCurveBody()
         {QStringLiteral("min_pct"), 1},
         {QStringLiteral("max_pct"), 50},
         {QStringLiteral("samples"), samples},
-        {QStringLiteral("milestones"), QJsonArray{QJsonObject{{QStringLiteral("label"), QStringLiteral("Rise 50%")},
+        {QStringLiteral("milestones"), QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("rise_50")},
+                                                               {QStringLiteral("label"), QStringLiteral("Rise 50%")},
                                                                {QStringLiteral("t"), 1773963000},
                                                                {QStringLiteral("pct"), 34}}}},
     };
@@ -1130,6 +1131,8 @@ void TestSunReactorClient::testDayCurveParsedAndNotPolled()
     QCOMPARE(samples.at(1).toMap().value(QStringLiteral("pctNoWeather")).toInt(), 100);
     QCOMPARE(samples.at(2).toMap().value(QStringLiteral("pctNoWeather")).toInt(), 34);
     QCOMPARE(first.value(QStringLiteral("milestones")).toList().size(), 1);
+    QCOMPARE(first.value(QStringLiteral("milestones")).toList().at(0).toMap().value(QStringLiteral("id")).toString(),
+             QStringLiteral("rise_50"));
 
     // Status polls do not re-request the curve...
     for (int i = 0; i < 4; ++i) {

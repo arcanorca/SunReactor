@@ -912,6 +912,8 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
                 continue;
             }
             milestones.append(QVariantMap{
+                // Stable machine id (rise_50, ...) for translation; label is the TUI's English text.
+                {QStringLiteral("id"), milestone.value(QStringLiteral("id")).toString()},
                 {QStringLiteral("label"), milestone.value(QStringLiteral("label")).toString()},
                 {QStringLiteral("t"), t},
                 {QStringLiteral("pct"), optionalPercent(milestone, "pct")},

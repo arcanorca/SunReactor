@@ -116,7 +116,7 @@ private:
     Q_PROPERTY(QString pinnedThemeError READ pinnedThemeError NOTIFY pinnedThemeChanged)
     /*! `day_curve`: { date, stepMinutes, generatedAtEpochS, weatherMultiplier,
         sun{dawn,sunrise,solarNoon,sunset,dusk}, monitors[{ monitorId, minPct,
-        maxPct, samples[{t,pct,pctNoWeather}], milestones[{label,t,pct}] }] }.
+        maxPct, samples[{t,pct,pctNoWeather}], milestones[{id,label,t,pct}] }] }.
         Sun epochs the daemon reports as null are 0. Empty when unknown. */
     Q_PROPERTY(QVariantMap dayCurve READ dayCurve NOTIFY dayCurveChanged)
     Q_PROPERTY(Capability themeRegistry READ themeRegistry NOTIFY capabilitiesChanged)

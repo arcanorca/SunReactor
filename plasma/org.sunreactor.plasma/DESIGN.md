@@ -142,66 +142,146 @@ theme reaches status.
 
 ## 4. Widget architecture
 
+As built on `feat/theme-engine` (foundation; skins and the final redesign
+build on it):
+
 ```
 package/contents/ui/
-  engine/
-    ThemeEngine.qml      resolves follow/pinned + overrides -> Theme object
-    Theme.qml            typed tokens: palette, family, renderer, fonts, metrics
-    PixelGrid.qml        singleton: dpr, cell size, snap helpers
-    PixelSurface.qml     renders children at art resolution, integer nearest scale
-    BitmapText.qml       bitmap font text at exact 1:1 sizes
-    Dither.qml / shaders ordered-dither ramp, palette quantiser
-    Frame.qml            border styles: line / bevel / inset / double / box-drawing
-  modules/               one file per layout module, themable via Theme only
+  engine/                  the only place tokens and pixel rules live
+    ThemeEngine.qml        follow | pinned + local overrides -> `theme`
+    Theme.qml              typed tokens: palette, shades, renderer, font roles,
+                           metrics, `grid` (PixelGrid), helpers (mix, alpha,
+                           onColor, stateColor)
+    PixelSurface.qml       art-resolution layer, integer nearest upscale
+    BitmapText.qml         bitmap font 1:1 (CPU raster), vector-mono fallback
+    Dither.qml             ordered dither over the shade ramp (palette quantiser)
+    Frame.qml              none / line / bevel / inset / double, pixel or vector
+  modules/                 one file per layout module (contract below)
+    Modules.js             id -> file registry; ModuleSettings.qml
     Telemetry.qml  LightCycle.qml  Displays.qml  Automation.qml
     Weather.qml  Forecast.qml  SunTimes.qml
-  skins/                 only where a family default is not enough (flagships)
-    pixel/  instrument/  terminal/
-  FullRepresentation.qml  composes modules in theme.modules order
-  CompactRepresentation.qml  panel modes (see §6)
-  config/                 settings pages
-plugin/ (C++)             SunReactorClient exposes: theme (QVariantMap),
-                          themeList, dayCurve, themeMode handled in QML
+  components/              rows shared by modules: DisplayItem, ThemeSlider,
+                           PopupFooter (theme chip), WeatherText
+  skins/                   not created yet: pixel/ instrument/ terminal/
+  FullRepresentation.qml   Repeater + Loader over theme.modules
+  CompactRepresentation.qml  sprite + temperature (panel modes still to come)
+  config/ConfigGeneral.qml   "Look" section: follow/pin + swatch list, accent,
+                           density, pixel size
+plugin/ (C++, module org.sunreactor.plasma)
+  SunReactorClient         theme, themeList, pinnedThemeId/pinnedTheme/
+                           pinnedThemeError, fetchTheme(id) -> themeFetched /
+                           themeFetchFailed(id, unsupported|not_found|offline),
+                           dayCurve, refreshThemeList(), refreshDayCurve(),
+                           themeRegistry / dayCurveSupport (Capability enum)
+  themenormalize.*         JSON -> normalised theme map (camelCase), family
+                           defaults, legacy exact-name table (old daemons only)
+  PixelGrid                window-effective DPR, deviceScale k, unit, snap(),
+                           cells(), deviceRect(), harness flag
+  PixelText / PixelDither  CPU-rasterised art-resolution content, nearest node
 ```
+
+Normalised theme map (what `client.theme`, `client.pinnedTheme` and
+`themeFetched` carry; Theme.qml consumes it): `{ id, name, family, glyphStyle,
+legacy, palette{bg, fg, accent, secondaryAccent, borderActive, borderInactive,
+textMuted, success, warning, error}, widget{renderer, font, pixelScale, shades,
+density, border, radius, dither, glow, modules} }`. Colours are lower-case
+`#rrggbb`; every omitted or invalid widget key holds the family default;
+`shades` is empty unless the daemon sent 2..8 valid colours (Theme.qml then
+derives them: {bg, borderInactive, textMuted, fg} sorted by luminance, so every
+shade is a palette colour). No usable bg/fg -> empty map -> Plasma colours.
+
+Day curve refresh policy (client side): on popup open, local date change,
+reload_config / set_monitor_limits / refresh_weather / run_once acks, a change
+of the followed theme id, and every 10 min - never per status poll. A rejected
+(`invalid_request`) `day_curve` / `list_themes` / `get_theme` marks the
+capability unsupported until the connection drops or the status shape shows a
+newer daemon; nothing else in the client state changes.
+
+### Module contract
+
+Every file in `modules/` declares `required property Theme theme`,
+`required property SunReactorClient client`, `required property ModuleSettings
+settings` and `readonly property bool available` (false hides it), takes its
+width from the popup and reports implicit height. Modules read colours, fonts
+and metrics from `theme` only - never `Plasmoid.configuration` or Kirigami
+colours directly - so a skin can replace one file. Module ids are those of
+`widget.modules`: telemetry, curve (LightCycle.qml), displays, automation,
+weather, forecast, suntimes.
 
 ### Pixel renderer rules (the part that failed before)
 
-1. `dpr = Screen.devicePixelRatio`. One art pixel = `k` **device** pixels,
-   `k = max(2, round(pixel_scale_or_auto * dpr))`, i.e. an integer. Its logical
-   size is `k / dpr`; every pixel-theme geometry is a multiple of it.
-2. Pixel content is drawn inside a `PixelSurface`: a `layer.enabled` item of
-   `W_art x H_art` art pixels, `layer.textureSize` fixed, `layer.smooth:false`,
-   `layer.mipmap:false`, displayed at `W_art*k/dpr` logical px. Text inside is
-   rendered 1:1 at the font's native grid (bitmap8 → 8/16/24 art px), so
-   fractional DPR never reaches the glyph rasteriser. `Text.NativeRendering`,
-   no font smoothing, hinting full.
+Measured on Qt 6.12, RHI/OpenGL (Mesa llvmpipe under Xvfb), QT_SCALE_FACTOR
+1.0 / 1.25 / 1.35 / 1.5 / 2.0 with `tools/pixel_proof.sh`.
+
+1. `dpr` is the **window's effective** device pixel ratio (`PixelGrid`,
+   updated on `ItemDevicePixelRatioHasChanged`), not `Screen.devicePixelRatio`:
+   on Wayland with fractional scaling QScreen reports the integer output
+   scale. One art pixel = `k` device pixels,
+   `k = max(2, round(pixel_scale * dpr))`, `pixel_scale` 0 = auto = 2
+   (1.0 -> k 2, 1.25/1.35/1.5 -> k 3, 2.0 -> k 4). Logical size `unit = k/dpr`.
+2. Pixel content is drawn inside a `PixelSurface`: the inner item is
+   `W_art x H_art` logical units, `layer.textureSize` = exactly that,
+   `layer.smooth: false`, `layer.mipmap: false`, and the layered item carries
+   `scale: unit` (transform origin top-left). Rectangles at whole art
+   coordinates, `Image { smooth: false }` at natural size, and the C++
+   PixelText/PixelDither are exact inside it at every ratio tested; the
+   surface's position may be fractional (the nearest upscale by an integer k
+   keeps every art pixel a k x k block regardless of offset).
+   **Deviation from the original plan: QML `Text` is not 1:1 inside the
+   layer.** Text nodes are rasterised at the *window* DPR and then resampled
+   into the art texture (measured: 9-16 % off-palette pixels at fractional
+   ratios, `Text.NativeRendering` or not). `BitmapText` therefore rasterises
+   on the CPU (`PixelText`: QPainter on a QImage at the font's native size,
+   `QFont::NoAntialias`, full hinting, no kerning) and draws the image with
+   nearest filtering - `artScale` 1 inside a surface, `unit` standalone.
+   Native grids: Press Start 2P 8/16/24 px, unscii 16/32 px; VT323 and Sysfont
+   are not grid fonts and are never used as bitmap fonts. Vector text in pixel
+   themes uses mono (never a bitmap font at a non-native size).
+   Not allowed inside a surface: QML Text, Canvas, antialiased Shapes,
+   gradients, opacity < 1, radius, MultiEffect.
 3. Sliders/tracks are N discrete cells, never `width * progress`.
 4. No SVG for pixel art; baked PNG atlases generated from indexed masks
    (extend `generate_weather_icons.py` — add palette-index output and recolour
    by the theme's `shades`). `Image.Nearest` semantics via
-   `layer`/`smooth:false`.
-5. **Conformance test:** headless screenshots of pixel themes at DPR 1.0,
-   1.35, 2.0 must contain only colours from the theme's palette/shades (dither
-   included). Any intermediate colour fails the test.
+   `layer`/`smooth:false`. *(Not done yet; the weather sprites are still the
+   16-grid SVGs.)*
+5. **Conformance test:** `tools/conformance.py` checks that pixel regions
+   contain only palette + shade colours (exact, tolerance 0). PixelSurfaces
+   report their device-pixel rect when `SUNREACTOR_HARNESS` is set, so both
+   the proof surface and real popup screenshots (`tools/shot.sh` writes
+   `*.regions.json`) are checked region by region. Result: handheld,
+   commodore64 and nothing pass at all five ratios (surface, standalone text,
+   standalone dither; and the Telemetry module inside the real popup at
+   1.0/1.35/2.0); the negative control (QML Text in a surface) fails at every
+   fractional ratio (it happens to pass at integer 2.0).
 
 ### Follow / pin / override model (per plasmoid instance)
 
 ```
 theme file (built-in < user dir)  ->  [daemon resolves]  ->  status.theme
     + plasmoid: themeMode = follow | pinned, pinnedTheme = id   (get_theme)
-    + plasmoid overrides: accent, density, renderer, pixelScale, modules
+    + plasmoid overrides: accentOverride, densityOverride, pixelScale
+      (ThemeEngine also takes renderer and modules overrides; no config keys yet)
     = ThemeEngine.theme
 ```
-Pinned theme is fetched with `get_theme`. If the daemon is older (no
-`get_theme`), the widget derives a theme from the flat legacy fields + the
-legacy-name archetype table (kept as fallback only).
+Pinned theme is fetched with `get_theme` and re-fetched on popup open, config
+reload and every 10 min. While it is pending, missing (`not_found`) or the
+daemon is older (`unsupported`), the engine keeps following and exposes the
+reason in `ThemeEngine.notice`; an older daemon only describes its current
+theme, so another palette cannot be derived locally. The legacy name table
+(exact match, 35 built-ins, in `themenormalize.cpp`) only supplies the family
+of the *followed* theme for an older daemon.
 
 ## 5. Degradation
 
-Older daemon (no `palette`/`widget`/`day_curve`): theme from legacy fields with
-family guessed from the name; LightCycle module hidden. Offline: PlaceholderMessage
-as today. Missing font: fall back to `mono`/`sans`, never to a wrong-sized
-bitmap font (prefer vector fallback over blur).
+Older daemon (no `palette`/`widget`/`day_curve`): theme from the legacy flat
+fields, family from the exact-name table (unknown -> instrument), missing
+palette entries derived; LightCycle hidden; Automation shows no next
+milestone (and stays hidden in automatic mode, as before); pinning falls back
+to following with a note in settings. Offline: PlaceholderMessage as today;
+the last theme stays (cosmetic), the day curve is cleared (data). Missing
+bitmap font: BitmapText falls back to vector mono at the equivalent size,
+never to a wrong-sized bitmap font. No theme at all: Plasma colours and fonts.
 
 ## 6. Experience (popup and panel)
 
@@ -237,9 +317,25 @@ folder", validation message for bad user themes.
 - Rust: unit tests for registry, alias compat, user theme load/extends,
   invalid files, palette parity with the legacy table, IPC round-trips and
   old-client compatibility; `cargo fmt/clippy/test` per `Makefile`.
-- Plugin: `ctest` with a stand-in server speaking the new responses and the
-  old ones.
-- Visual: `tools/shot.sh` — fake daemon + `plasmoidviewer` under Xvfb/offscreen,
-  matrix = {35 themes} x {DPR 1.0, 1.35, 2.0} x {popup, panel h/v}. Pixel
-  conformance check (§4.5). Contact sheet PNG for review.
-- No windows on the user's desktop; always headless.
+- Plugin: `ctest` - `test_sunreactorclient` (stand-in QLocalServer: framing,
+  unknown-stays-unknown, normaliser, legacy table, old-daemon degradation,
+  day-curve parsing and refresh policy, theme list / get_theme / pinning) and
+  `test_engine` (`tests/tst_engine.qml` via qmltestrunner: tokens, derived
+  shades, overrides, font roles, Plasma fallback, grid arithmetic, pin notice).
+- Lint: `/usr/lib/qt6/bin/qmllint -I build/qml <file>` (note `/usr/bin/qmllint`
+  is the Qt 5 one); clean apart from the `i18nd*` unqualified notes.
+- Visual (all headless; `TMPDIR` must give a short path for the socket):
+  - `tools/shot.sh --out DIR [--tag T] [--themes ...] [--scales ...]
+    [--views popup panel-h panel-v] [--old] [--scenario ...]` - fake daemon +
+    plasmoidviewer under Xvfb with a private D-Bus and XDG dirs, a shadowed
+    viewer shell (no SDK toolbar), `tools/harness/containment` for the popup
+    and `org.kde.panel` for panels; writes PNG, QML log, request log and pixel
+    regions per shot. `--package/--qml` point it at another tree (baselines).
+  - `tools/pixel_proof.sh --out DIR` - engine-only proof surface, all pixel
+    themes x DPR 1.0/1.25/1.35/1.5/2.0, conformance per region.
+  - `tools/conformance.py`, `tools/contact_sheet.py`, `tools/fake_daemon.py`
+    (`--old` answers the new requests with `invalid_request`).
+  - Remaining: the full 35-theme matrix needs the daemon branch's theme files
+    as fixtures (the fake daemon has 7).
+- No windows on the user's desktop; always headless. Qt logs to the journal
+  when stderr is not a TTY: the scripts set `QT_FORCE_STDERR_LOGGING=1`.
