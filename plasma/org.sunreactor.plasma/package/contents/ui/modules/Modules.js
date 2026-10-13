@@ -72,7 +72,13 @@ var SKINS = {
     "id:vfd_hifi": INSTRUMENT,
     "id:nixie": INSTRUMENT,
     "id:oscilloscope": INSTRUMENT,
-    "id:thinkpad": INSTRUMENT
+    "id:thinkpad": INSTRUMENT,
+    "id:nothing": {
+        telemetry: "skins/nothing/Telemetry.qml",
+        curve: "skins/nothing/LightCycle.qml",
+        displays: "skins/nothing/Displays.qml",
+        automation: "skins/nothing/Automation.qml"
+    }
 };
 
 function file(id) {
