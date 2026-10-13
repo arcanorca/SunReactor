@@ -83,6 +83,12 @@ PlasmaExtras.Representation {
         Math.max(root.popupMinHeight, root.headerHeight + root.pageHeight + root.chromeHeight))
 
     collapseMarginsHint: true
+    // collapseMarginsHint extends the content 6 px past each side of the popup
+    // (into the Plasma frame's margins). This widget paints its own background
+    // over the popup's full width, so the sides stay inside it: the content is
+    // exactly the popup's width.
+    leftPadding: 0
+    rightPadding: 0
 
     background: Frame {
         theme: root.theme
@@ -386,6 +392,10 @@ PlasmaExtras.Representation {
         Layout.fillWidth: true
         Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
         Layout.rightMargin: Layout.leftMargin
+        // No module widens the page: a slot is at most its column's width, and
+        // whatever a module paints past its slot is clipped.
+        Layout.maximumWidth: parent ? parent.width - Layout.leftMargin - Layout.rightMargin : 0
+        clip: true
         // Every module exposes `available` (modules/Modules.js); the
         // loaded type is only known at run time.
         visible: status === Loader.Ready && item.available === true // qmllint disable missing-property
