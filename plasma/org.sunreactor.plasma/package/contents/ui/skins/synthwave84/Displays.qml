@@ -37,7 +37,7 @@ ColumnLayout {
     Accessible.role: Accessible.Grouping
     Accessible.name: i18ndc(domain, "Accessible name of the display faders", "Displays")
 
-    /*! The header of a channel: its label and name, a state tag, the value. */
+    /*! The header of a channel, one line: its label and name, a state tag, the value. */
     component ChannelHead: RowLayout {
         id: head
 
@@ -50,24 +50,22 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: root.style.gap2
 
-        ColumnLayout {
+        Text {
+            Layout.alignment: Qt.AlignVCenter
+            text: head.channel
+            textFormat: Text.PlainText
+            font: root.style.labelFont
+            color: root.style.cyan
+        }
+        Text {
             Layout.fillWidth: true
-            spacing: 0
-
-            Text {
-                text: head.channel
-                textFormat: Text.PlainText
-                font: root.style.labelFont
-                color: root.style.cyan
-            }
-            Text {
-                Layout.fillWidth: true
-                text: head.name
-                textFormat: Text.PlainText
-                font: root.style.bodyStrongFont
-                color: root.style.ink
-                elide: Text.ElideRight
-            }
+            Layout.minimumWidth: 0
+            Layout.alignment: Qt.AlignVCenter
+            text: head.name
+            textFormat: Text.PlainText
+            font: root.style.bodyStrongFont
+            color: root.style.ink
+            elide: Text.ElideRight
         }
 
         Pill {

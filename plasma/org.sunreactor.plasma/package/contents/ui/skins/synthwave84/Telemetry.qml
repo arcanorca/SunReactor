@@ -83,7 +83,9 @@ ColumnLayout {
         Layout.preferredHeight: root.style.gap2
     }
 
-    RowLayout {
+    // A flow, not a row: with many displays the readouts wrap onto a second line
+    // rather than push the clock off the strip.
+    Flow {
         Layout.fillWidth: true
         spacing: root.style.gap2
 
@@ -147,10 +149,6 @@ ColumnLayout {
                     color: root.style.ink
                 }
             }
-        }
-
-        Item {
-            Layout.fillWidth: true
         }
 
         Text {

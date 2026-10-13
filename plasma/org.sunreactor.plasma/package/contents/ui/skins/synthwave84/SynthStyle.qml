@@ -68,7 +68,7 @@ QtObject {
     readonly property real gap2: snap(Kirigami.Units.smallSpacing * 2)
     readonly property real rowGap: snap(Kirigami.Units.smallSpacing * 1.5)
     /*! Inside a card. */
-    readonly property real pad: snap(Kirigami.Units.smallSpacing * 2.5)
+    readonly property real pad: snap(Kirigami.Units.smallSpacing * 2)
     /*! Glow strength, 0..1 (widget.glow). */
     readonly property real glow: Math.max(0, Math.min(1, theme.glow))
     /*! Italic lean of the headings: tan(10 degrees). */
@@ -79,10 +79,10 @@ QtObject {
     readonly property int sizeBody: Math.max(12, Math.round(unit * 0.78))
     readonly property int sizeLabel: Math.max(9, Math.round(sizeBody * 0.76))
     readonly property int sizeHeading: Math.max(11, Math.round(sizeBody * 0.92))
-    /*! The readout: 1.8x body. */
-    readonly property int sizeReadout: Math.round(sizeBody * 1.8)
-    /*! The hero percentage: 2.5x body, never more (the brief's 2.6x ceiling). */
-    readonly property int sizeHero: Math.round(sizeBody * 2.5)
+    /*! The readout: 1.6x body (a row's value, beside its name). */
+    readonly property int sizeReadout: Math.round(sizeBody * 1.6)
+    /*! The hero percentage: 2.2x body, the poster's figure without the full-card bulk. */
+    readonly property int sizeHero: Math.round(sizeBody * 2.2)
 
     readonly property string bodyFamily: theme.bodyFont
     readonly property string dataFamily: theme.monoFont

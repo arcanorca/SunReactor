@@ -97,10 +97,10 @@ ColumnLayout {
             id: dayBar
 
             Layout.fillWidth: true
-            implicitHeight: barTop + barH + root.style.snap(root.style.unit * 0.8)
+            implicitHeight: barTop + barH + root.style.snap(root.style.unit * 0.5)
 
-            readonly property real barTop: root.style.snap(root.style.tabHeight * 0.9)
-            readonly property real barH: root.style.snap(root.style.unit * 0.9)
+            readonly property real barTop: root.style.snap(root.style.tabHeight * 0.8)
+            readonly property real barH: root.style.snap(root.style.unit * 0.7)
             readonly property real pitch: width / 24
             readonly property real skew: root.style.snap(barH * 0.4)
             readonly property real cw: Math.max(1, pitch - skew - root.style.hairline * 2)
@@ -208,7 +208,8 @@ ColumnLayout {
         }
 
         // The readouts; the next event is in the accent.
-        Row {
+        // A flow: the three times and the elevation wrap onto a second line rather than clip.
+        Flow {
             Layout.fillWidth: true
             spacing: root.style.gap2
 

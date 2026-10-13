@@ -82,7 +82,7 @@ ColumnLayout {
             id: arc
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * 3.1)
+            implicitHeight: root.style.snap(root.style.unit * 2.1)
 
             readonly property real inset: root.style.unit * 0.9
             readonly property real baseY: height - root.style.unit * 0.25
@@ -147,6 +147,7 @@ ColumnLayout {
             Repeater {
                 model: root.available ? root.events : []
 
+                // The legend over the time, as the three columns of the day's times.
                 delegate: ColumnLayout {
                     id: event
 

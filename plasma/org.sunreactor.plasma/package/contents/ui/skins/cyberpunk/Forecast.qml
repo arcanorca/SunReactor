@@ -123,7 +123,7 @@ ColumnLayout {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.leftMargin: column.index > 0 ? root.style.gap : 0
-                        spacing: root.style.gap
+                        spacing: root.style.snap(root.style.unit * 0.25)
 
                         Text {
                             Layout.alignment: Qt.AlignHCenter
@@ -138,7 +138,7 @@ ColumnLayout {
                             night: column.modelData.isNight === true
                             glyphStyle: "line"
                             palette: root.glyphColours
-                            size: Math.round(root.style.unit * 2.2)
+                            size: Math.round(root.style.unit * 1.7)
                         }
                         Text {
                             Layout.alignment: Qt.AlignHCenter
@@ -159,7 +159,7 @@ ColumnLayout {
                         }
                         CellBar {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: root.style.snap(root.style.unit * 1.2)
+                            Layout.preferredHeight: root.style.snap(root.style.unit * 0.8)
                             style: root.style
                             cells: 5
                             value: column.pct

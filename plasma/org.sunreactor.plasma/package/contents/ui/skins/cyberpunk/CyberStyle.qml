@@ -41,10 +41,10 @@ QtObject {
     readonly property bool compact: theme.compact
     /*! Chamfer of a plain strip. A titled panel is cut as deep as its tab is high. */
     readonly property real cut: snap(Math.round(unit * 0.7))
-    readonly property real pad: snap(unit * (compact ? 0.75 : 1.0))
+    readonly property real pad: snap(unit * (compact ? 0.5 : 0.7))
     readonly property real gap: snap(unit * 0.5)
     readonly property real gap2: snap(unit)
-    readonly property real rowGap: snap(unit * (compact ? 0.5 : 0.7))
+    readonly property real rowGap: snap(unit * (compact ? 0.35 : 0.45))
     /*! Height of a title tab (and the cut of a titled panel). */
     readonly property real tabHeight: snap(Math.round(sizeLabel * 1.8))
     readonly property real hatchStep: Math.max(4, Math.round(unit * 0.7))

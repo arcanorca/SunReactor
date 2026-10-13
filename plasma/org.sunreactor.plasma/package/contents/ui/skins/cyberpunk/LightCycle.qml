@@ -242,7 +242,7 @@ ColumnLayout {
             id: plotBox
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * 5)
+            implicitHeight: root.style.snap(root.style.unit * 4.2)
 
             readonly property real axisH: root.style.snap(root.style.sizeTiny * 2.2)
             readonly property real gutter: root.style.snap(gutterMetrics.width + root.style.gap * 2)

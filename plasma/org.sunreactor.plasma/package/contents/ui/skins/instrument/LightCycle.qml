@@ -271,7 +271,7 @@ ColumnLayout {
             id: plotBox
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * (root.theme.compact ? 4.4 : 5.2))
+            implicitHeight: root.style.snap(root.style.unit * (root.theme.compact ? 3.8 : 4.2))
 
             TextMetrics {
                 id: gutterMetrics

@@ -25,14 +25,20 @@ Item {
     /*! Outline colour. */
     property color edge: style.yellow
 
+    /*! Inset from the outline to the content, on the sides and at the bottom. */
+    property real inset: style.pad
+    /*! Gap between the rows of the content. */
+    property real contentSpacing: style.rowGap
     /*! A titled panel is cut as deep as its tab is high, so the tab edge is the cut. */
     readonly property real cut: title.length > 0 ? style.tabHeight : style.cut
-    readonly property real topInset: title.length > 0 ? style.tabHeight + style.gap2 : style.pad
+    readonly property real topInset: title.length > 0 ? style.tabHeight + style.gap : inset
+    /*! An untitled panel is cut at its top-right and bottom-left: its rows keep clear of the cut. */
+    readonly property real sideInset: inset + (title.length > 0 ? 0 : cut * 0.5)
 
     default property alias content: body.data
 
-    implicitWidth: body.implicitWidth + style.pad * 2
-    implicitHeight: topInset + body.implicitHeight + style.pad
+    implicitWidth: body.implicitWidth + sideInset * 2
+    implicitHeight: topInset + body.implicitHeight + inset
 
     Accessible.role: Accessible.Grouping
     Accessible.name: root.title
@@ -117,9 +123,9 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.leftMargin: root.style.pad
-        anchors.rightMargin: root.style.pad
+        anchors.leftMargin: root.sideInset
+        anchors.rightMargin: root.sideInset
         anchors.topMargin: root.topInset
-        spacing: root.style.rowGap
+        spacing: root.contentSpacing
     }
 }

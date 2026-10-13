@@ -92,7 +92,7 @@ ColumnLayout {
 
             WeatherGlyph {
                 Layout.alignment: Qt.AlignVCenter
-                size: root.style.snap(root.style.unit * 2.7)
+                size: root.style.snap(root.style.unit * 2.2)
                 condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
                 night: root.client.hasWeatherReading && root.client.weatherIsNight
                 glyphStyle: "line"

@@ -155,7 +155,7 @@ QtObject {
     readonly property int sizeData: Math.max(10, Math.round(unit * 0.62))
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.72))
     readonly property int sizeMid: Math.round(unit * (theme.compact ? 1.0 : 1.12))
-    readonly property int sizeReadout: Math.round(unit * (theme.compact ? 1.6 : 1.95))
+    readonly property int sizeReadout: Math.round(unit * (theme.compact ? 1.5 : 1.7))
 
     function makeFont(base, size, spacing, caps, tabular) {
         return Qt.font({

@@ -70,13 +70,13 @@ ColumnLayout {
             id: strip
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * 5.7)
+            implicitHeight: root.style.snap(root.style.unit * 4.3)
 
             readonly property int count: root.points.length
             readonly property real colW: width / Math.max(1, count)
             /*! The trace band (top) and the glyph and time rows (below it). */
             readonly property real traceH: root.style.unit * 2.0
-            readonly property real glyphTop: root.style.unit * 2.5
+            readonly property real glyphTop: root.style.unit * 2.1
 
             function xOf(i) {
                 return colW * (i + 0.5);
@@ -146,7 +146,7 @@ ColumnLayout {
                     WeatherGlyph {
                         x: Math.round((column.width - width) / 2)
                         y: strip.glyphTop
-                        size: root.style.snap(root.style.unit * 1.5)
+                        size: root.style.snap(root.style.unit * 1.3)
                         condition: column.modelData.condition
                         glyphStyle: "line"
                         palette: root.style.glyphPalette
@@ -155,7 +155,7 @@ ColumnLayout {
                     // The hour.
                     Text {
                         x: Math.round((column.width - width) / 2)
-                        y: strip.glyphTop + root.style.unit * 1.7
+                        y: strip.glyphTop + root.style.unit * 1.4
                         text: Format.timeText(column.modelData.epochS)
                         textFormat: Text.PlainText
                         font: root.style.dataSmallFont

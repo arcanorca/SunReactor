@@ -28,7 +28,7 @@ Item {
     signal clicked()
 
     readonly property real padX: root.style.snap(root.style.gap2 * 1.4)
-    readonly property real padY: root.style.snap(root.style.gap * 1.2)
+    readonly property real padY: root.style.snap(root.style.gap * 0.8)
 
     implicitWidth: row.implicitWidth + 2 * padX
     implicitHeight: Math.max(label.implicitHeight, root.style.sizeLabel * 1.6) + 2 * padY

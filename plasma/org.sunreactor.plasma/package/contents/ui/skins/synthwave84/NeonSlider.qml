@@ -41,7 +41,7 @@ T.Slider {
     to: 100
     stepSize: 1
     implicitWidth: style.unit * 10
-    implicitHeight: style.snap(style.unit * 1.1)
+    implicitHeight: style.snap(style.unit * 1.0)
 
     background: Item {
         // The unlit tube, the whole travel.

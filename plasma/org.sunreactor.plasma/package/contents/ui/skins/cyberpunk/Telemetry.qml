@@ -91,7 +91,9 @@ ColumnLayout {
         hatched: false
         visible: root.available
 
-        RowLayout {
+        // A flow, not a row: with many displays the readouts wrap onto a second line
+        // rather than clip or push the clock off the strip.
+        Flow {
             Layout.fillWidth: true
             spacing: root.style.gap2
 
@@ -114,72 +116,45 @@ ColumnLayout {
                 }
             }
 
-            // The readouts clip rather than push the clock off the strip.
-            Item {
-                id: readouts
-
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: readoutRow.implicitWidth
-                implicitHeight: readoutRow.implicitHeight
-                clip: true
-
-                Row {
-                    id: readoutRow
-
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: root.style.gap2
-
-                    Repeater {
-                        model: root.channels
-
-                        delegate: Row {
-                            id: readout
-
-                            required property var modelData
-
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: root.style.gap
-
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: readout.modelData.label
-                                textFormat: Text.PlainText
-                                font: root.style.labelFont
-                                color: root.style.cyan
-                            }
-                            Bracket {
-                                anchors.verticalCenter: parent.verticalCenter
-                                style: root.style
-                                value: readout.modelData.value
-                                font: root.style.techFont
-                                color: root.style.ink
-                            }
-                        }
+            Repeater {
+                model: root.channels
+                delegate: Row {
+                    id: readout
+                    required property var modelData
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: root.style.gap
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: readout.modelData.label
+                        textFormat: Text.PlainText
+                        font: root.style.labelFont
+                        color: root.style.cyan
+                    }
+                    Bracket {
+                        anchors.verticalCenter: parent.verticalCenter
+                        style: root.style
+                        value: readout.modelData.value
+                        font: root.style.techFont
+                        color: root.style.ink
                     }
                 }
             }
-
-            // Hex-like tick ruler: the space between the readouts and the clock.
+            // Hex-like tick ruler: a short run between the readouts and the clock.
             Item {
                 id: ruler
-
-                Layout.fillWidth: true
-                Layout.preferredWidth: 1
-                Layout.preferredHeight: root.style.snap(root.style.unit * 0.7)
+                width: root.style.snap(root.style.unit * 1.2)
+                height: root.style.snap(root.style.unit * 0.7)
                 Layout.alignment: Qt.AlignVCenter
-
                 Shape {
                     anchors.fill: parent
                     ShapePath {
                         strokeColor: root.style.rule
                         strokeWidth: root.style.hairline
                         fillColor: "transparent"
-                        PathSvg { path: G.ticks(ruler.width, 40, 5, 2, 4) }
+                        PathSvg { path: G.ticks(ruler.width, 8, 5, 2, 4) }
                     }
                 }
             }
-
             Text {
                 visible: root.client.hasTemperature
                 Layout.alignment: Qt.AlignVCenter

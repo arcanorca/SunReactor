@@ -17,6 +17,9 @@ import QtQuick.Layouts
 CyberFrame {
     id: root
 
+    // Tighter than a page panel: a strip is one line of readout and a bar.
+    inset: style.gap
+    contentSpacing: style.gap * 0.5
     property string domain: ""
     property string channel: ""
     property string name: ""
@@ -50,7 +53,10 @@ CyberFrame {
             color: root.style.cyan
         }
         Text {
+            // The name gives way first: it elides rather than push the readouts off the strip.
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.preferredWidth: 0
             text: root.name
             textFormat: Text.PlainText
             font: root.style.headFont
@@ -86,10 +92,11 @@ CyberFrame {
         onCommitted: v => root.requested(v)
     }
 
-    RowLayout {
+    // A flow: the three readouts wrap onto a second line on a narrow strip rather than overflow it.
+    Flow {
         Layout.fillWidth: true
         visible: !root.master
-        spacing: root.style.gap2
+        spacing: root.style.gap
 
         Row {
             spacing: root.style.gap
@@ -130,9 +137,6 @@ CyberFrame {
                 color: root.style.ink
                 bracketColor: root.style.muted
             }
-        }
-        Item {
-            Layout.fillWidth: true
         }
         Row {
             visible: root.hasLimits

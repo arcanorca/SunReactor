@@ -96,7 +96,7 @@ ColumnLayout {
                 night: root.client.weatherIsNight
                 glyphStyle: "line"
                 palette: root.glyphColours
-                size: Math.round(root.style.unit * 3)
+                size: Math.round(root.style.unit * 2.2)
             }
 
             ColumnLayout {
@@ -170,8 +170,8 @@ ColumnLayout {
                     spacing: root.style.gap
 
                     CellBar {
-                        Layout.preferredWidth: root.style.snap(root.style.unit * 6.5)
-                        Layout.preferredHeight: root.style.snap(root.style.unit * 1.4)
+                        Layout.preferredWidth: root.style.snap(root.style.unit * 5.5)
+                        Layout.preferredHeight: root.style.snap(root.style.unit * 1.0)
                         style: root.style
                         cells: 10
                         value: Math.round(Math.max(0, Math.min(1, root.client.weatherMultiplier)) * 100)
@@ -191,7 +191,7 @@ ColumnLayout {
         Flow {
             Layout.fillWidth: true
             visible: root.extras.length > 0 && root.client.hasWeatherReading
-            spacing: root.style.gap2
+            spacing: root.style.gap
 
             Repeater {
                 model: root.extras

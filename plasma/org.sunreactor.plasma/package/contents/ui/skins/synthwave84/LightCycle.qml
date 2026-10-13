@@ -180,9 +180,57 @@ ColumnLayout {
 
     // --- heading and the readout ----------------------------------------------------
 
-    Heading {
-        style: root.style
-        text: i18ndc(root.domain, "Synthwave heading of the brightness curve", "Daylight")
+    // The heading (as Heading.qml draws it), with the display chips at its right
+    // end when there are several: they choose the display on the chart.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: root.style.gap2
+
+        Text {
+            Layout.alignment: Qt.AlignVCenter
+            text: i18ndc(root.domain, "Synthwave heading of the brightness curve", "Daylight")
+            textFormat: Text.PlainText
+            font: root.style.headingFont
+            color: root.style.pink
+            // Shear about the centre, as the other headings.
+            transformOrigin: Item.Center
+            transform: Matrix4x4 {
+                matrix: Qt.matrix4x4(1, -root.style.shear, 0, 0,
+                                     0, 1, 0, 0,
+                                     0, 0, 1, 0,
+                                     0, 0, 0, 1)
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            implicitHeight: root.style.hairline
+            color: root.style.alpha(root.style.cyan, 0.45)
+        }
+
+        Flow {
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.curves.length > 1
+            spacing: root.style.gap
+
+            Repeater {
+                model: root.curves
+
+                delegate: Pill {
+                    id: chip
+
+                    required property var modelData
+                    required property int index
+
+                    style: root.style
+                    text: Curve.shortName(chip.modelData.monitorId)
+                    tone: root.style.cyan
+                    filled: chip.index === root.selected
+                    onClicked: root.selected = chip.index
+                }
+            }
+        }
     }
 
     /*! The big figure: pink to cyan, through the glyphs' alpha, with a neon bloom.
@@ -294,30 +342,7 @@ ColumnLayout {
                 color: root.style.muted
                 horizontalAlignment: Text.AlignRight
             }
-        }
-    }
 
-    // Chips choose the display on the chart when there are several.
-    Flow {
-        Layout.fillWidth: true
-        visible: root.curves.length > 1
-        spacing: root.style.gap
-
-        Repeater {
-            model: root.curves
-
-            delegate: Pill {
-                id: chip
-
-                required property var modelData
-                required property int index
-
-                style: root.style
-                text: Curve.shortName(chip.modelData.monitorId)
-                tone: root.style.cyan
-                filled: chip.index === root.selected
-                onClicked: root.selected = chip.index
-            }
         }
     }
 
@@ -327,7 +352,7 @@ ColumnLayout {
         id: plot
 
         Layout.fillWidth: true
-        implicitHeight: root.style.snap(root.style.unit * 9.5)
+        implicitHeight: root.style.snap(root.style.unit * 7.4)
         visible: root.available
 
         /*! Where the horizon is, and the floor below it. */

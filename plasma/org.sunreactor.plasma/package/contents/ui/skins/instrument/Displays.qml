@@ -44,7 +44,7 @@ ColumnLayout {
     DisplayWindow {
         Layout.fillWidth: true
         style: root.style
-        spacing: root.style.snap(root.style.rowGap * 1.5)
+        spacing: root.style.snap(root.style.rowGap * 0.75)
 
         ChannelStrip {
             visible: root.showAllDisplays
