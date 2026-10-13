@@ -1,15 +1,11 @@
 /*
- * The popup footer: a thin container. Its parts - the theme chip and Update
- * now - are loaded through footer/Parts.js, the same skin lookup the modules
- * use, so a family skin can replace any one of them.
+ * The popup footer: a thin container for its parts, loaded through
+ * footer/Parts.js (the same skin lookup the modules use). Today the part is
+ * Update now; the theme choice lives in the tab row (ThemeButton).
  *
  * Chrome comes from the theme: the theme background a step lighter, a hairline
  * in the theme's line colour on top. Without a daemon theme it is Plasma's own
  * footer heading.
- *
- * The footer never writes settings itself: it asks with followRequested() /
- * pinRequested(id) and FullRepresentation stores the choice in the plasmoid
- * config (per instance; the daemon config is never touched).
  */
 
 pragma ComponentBehavior: Bound
@@ -32,19 +28,8 @@ Item {
     /*! No longer read: pausing moved to the Automation module. Kept because
         FullRepresentation still passes it, and that file is not edited here. */
     property int defaultPauseMinutes: 60
-    /*! Plasmoid config: "follow" or "pinned", and the pinned id. */
-    property string themeMode: "follow"
-    property string pinnedId: ""
-    /*! Why a pin is not in effect (ThemeEngine.notice). */
-    property string pinNotice: ""
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
-    readonly property bool pinned: themeMode === "pinned" && pinnedId.length > 0
-    /*! Name of the theme the daemon is on (what "follow" means right now). */
-    readonly property string followedName: client.theme && client.theme.name ? client.theme.name : client.themeName
-
-    signal followRequested()
-    signal pinRequested(string id)
 
     implicitHeight: row.implicitHeight + 2 * Kirigami.Units.smallSpacing
     implicitWidth: row.implicitWidth + 2 * Kirigami.Units.smallSpacing

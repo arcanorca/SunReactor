@@ -21,9 +21,6 @@ QQC2.AbstractButton {
     required property Theme theme
     property bool iconOnly: false
     property string toolTip: ""
-    /*! Extra content after the label (swatches, lock, ...). */
-    default property alias trailing: extra.data
-    property alias leading: lead.data
 
     property bool highlighted: false
     readonly property color ink: root.highlighted ? root.theme.onColor(root.theme.accent) : root.theme.fg
@@ -56,11 +53,6 @@ QQC2.AbstractButton {
     contentItem: RowLayout {
         spacing: Kirigami.Units.smallSpacing
 
-        Row {
-            id: lead
-            visible: children.length > 0
-            spacing: Kirigami.Units.smallSpacing
-        }
         Kirigami.Icon {
             visible: root.icon.name.length > 0
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
@@ -82,11 +74,6 @@ QQC2.AbstractButton {
             theme: root.theme
             text: root.text.toUpperCase()
             color: root.ink
-        }
-        Row {
-            id: extra
-            visible: children.length > 0
-            spacing: Kirigami.Units.smallSpacing
         }
     }
 }

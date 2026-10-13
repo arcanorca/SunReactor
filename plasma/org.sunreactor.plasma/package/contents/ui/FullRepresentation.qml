@@ -76,6 +76,9 @@ PlasmaExtras.Representation {
     readonly property string startPage: Modules.PAGES.indexOf(harnessPage) >= 0 ? harnessPage : Modules.PAGES[0]
     /*! The page the user picked. Kept while the popup is open; in memory only. */
     property string currentPage: startPage
+    // A page change can move the tab row and the popup window: re-hang the theme picker.
+    onCurrentPageChanged: themeButton.relayout()
+    onTabsShownChanged: themeButton.relayout()
 
     /*! The status line: modules that stay above the tab bar, in the theme's order. */
     readonly property var topModules: root.theme.modules.filter(id => Modules.ABOVE_TABS.indexOf(id) >= 0)
@@ -130,6 +133,40 @@ PlasmaExtras.Representation {
         onActivated: root.showPage(Modules.step(root.shownPage, -1))
     }
 
+    /*! Screenshot harness only (tools/shot.sh --config "picker=open|trip|open-trip"):
+        "open" opens the theme picker; "trip" makes a tab round trip (Brightness,
+        Weather, Brightness) and then opens it; "open-trip" opens it, then makes the
+        round trip while it is open. Empty outside the harness. */
+    readonly property var harness: root.client.harnessConfig()
+
+    Timer {
+        id: harnessTimer
+
+        property var steps: []
+        property int next: 0
+
+        interval: 800
+        repeat: true
+        running: next < steps.length && root.client.isConnected
+        onTriggered: {
+            steps[next]();
+            next += 1;
+        }
+    }
+
+    Component.onCompleted: {
+        const trip = [() => root.showPage("weather"), () => root.showPage("brightness")];
+        const open = () => themeButton.openPicker();
+        const mode = String(root.harness.picker || "");
+        if (mode === "open") {
+            harnessTimer.steps = [open];
+        } else if (mode === "trip") {
+            harnessTimer.steps = trip.concat([open]);
+        } else if (mode === "open-trip") {
+            harnessTimer.steps = [open].concat(trip);
+        }
+    }
+
     contentItem: ColumnLayout {
         spacing: 0
 
@@ -160,37 +197,68 @@ PlasmaExtras.Representation {
             delegate: ModuleSlot {}
         }
 
-        Loader {
-            id: tabSlot
-
-            // Skin by theme and renderer; no daemon theme means the plain bar.
-            readonly property string tabSource: Modules.tabBarSource(
-                root.theme.available ? root.theme.themeId : "",
-                root.theme.available ? root.theme.renderer : "")
-
-            function load() {
-                setSource(Qt.resolvedUrl(tabSource), { theme: root.theme });
-            }
+        // The tab row: the tab bar (when the theme has both pages) and, at its
+        // right end, the theme button. The row stays when the bar hides itself.
+        RowLayout {
+            id: tabRow
 
             Layout.fillWidth: true
             Layout.topMargin: Kirigami.Units.smallSpacing
             Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
             Layout.rightMargin: Layout.leftMargin
-            visible: root.tabsShown && status === Loader.Ready
+            visible: root.tabsShown || root.client.isConnected
+            spacing: 0
 
-            onTabSourceChanged: load()
-            Component.onCompleted: load()
-            onLoaded: {
-                item.tabs = Qt.binding(() => root.tabEntries);
-                item.current = Qt.binding(() => root.shownPage);
+            Loader {
+                id: tabSlot
+
+                // Skin by theme and renderer; no daemon theme means the plain bar.
+                readonly property string tabSource: Modules.tabBarSource(
+                    root.theme.available ? root.theme.themeId : "",
+                    root.theme.available ? root.theme.renderer : "")
+
+                function load() {
+                    setSource(Qt.resolvedUrl(tabSource), { theme: root.theme });
+                }
+
+                Layout.fillWidth: true
+                visible: root.tabsShown && status === Loader.Ready
+
+                onTabSourceChanged: load()
+                Component.onCompleted: load()
+                onLoaded: {
+                    item.tabs = Qt.binding(() => root.tabEntries);
+                    item.current = Qt.binding(() => root.shownPage);
+                }
+
+                Connections {
+                    target: tabSlot.item
+                    ignoreUnknownSignals: true
+
+                    function onPicked(id: string): void {
+                        root.showPage(id);
+                    }
+                }
             }
 
-            Connections {
-                target: tabSlot.item
-                ignoreUnknownSignals: true
+            // Pushes the theme button to the right edge when the bar is hidden.
+            Item {
+                Layout.fillWidth: true
+                visible: !tabSlot.visible
+            }
 
-                function onPicked(id: string): void {
-                    root.showPage(id);
+            ThemeButton {
+                id: themeButton
+
+                theme: root.theme
+                client: root.client
+                visible: root.client.isConnected
+                themeMode: Plasmoid.configuration.themeMode
+                pinnedId: Plasmoid.configuration.pinnedTheme
+                onFollowRequested: Plasmoid.configuration.themeMode = "follow"
+                onPinRequested: id => {
+                    Plasmoid.configuration.pinnedTheme = id;
+                    Plasmoid.configuration.themeMode = "pinned";
                 }
             }
         }
@@ -285,14 +353,6 @@ PlasmaExtras.Representation {
         client: root.client
         theme: root.theme
         defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes
-        themeMode: Plasmoid.configuration.themeMode
-        pinnedId: Plasmoid.configuration.pinnedTheme
-        pinNotice: engine.notice
         visible: root.client.isConnected
-        onFollowRequested: Plasmoid.configuration.themeMode = "follow"
-        onPinRequested: id => {
-            Plasmoid.configuration.pinnedTheme = id;
-            Plasmoid.configuration.themeMode = "pinned";
-        }
     }
 }

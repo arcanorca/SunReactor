@@ -180,7 +180,7 @@ Implementation notes (deviations from the first draft of this contract):
 report): set when the configured `tui.theme` could not be used as-is and
 `status.theme` is a fallback, e.g. `"theme file …/mine.toml is invalid: …;
 using the default `amber` theme instead"`. Clients should show it next to
-the theme chip; it never means brightness automation is affected.
+the theme button; it never means brightness automation is affected.
 
 Saved-only propagation: the TUI theme modal previews locally; only a saved
 theme reaches status.
@@ -209,7 +209,8 @@ package/contents/ui/
     Telemetry.qml  LightCycle.qml  Displays.qml  Automation.qml
     Weather.qml  Forecast.qml  SunTimes.qml
   components/              rows shared by modules: DisplayItem, ThemeSlider,
-                           PopupFooter (theme chip), WeatherText
+                           WeatherText; ThemeButton + ThemePicker (tab row);
+                           PopupFooter (Update now)
   skins/                   pixel/ (this branch), instrument/, terminal/
   FullRepresentation.qml   Repeater + Loader over theme.modules
   CompactRepresentation.qml  sprite + temperature (panel modes still to come)
@@ -365,8 +366,10 @@ Popup, top to bottom (order and presence come from `modules`):
 4. **Automation** — mode, reason, and **what happens next** ("08:54 · Rise
    50% → 34%"), way back to automatic.
 5. **Weather / Forecast / Sun times** — compact, only when present.
-6. Footer — Pause (durations), Update now, theme chip: shows the active
-   theme, a lock when pinned; click opens a swatch list (follow / pin).
+6. Footer — Update now. The theme button sits at the right end of the tab
+   row: a 2x2 swatch of the active theme, a dot while following the terminal
+   app, a lock when pinned, a warning when the daemon fell back; click opens
+   the picker (Follow SunReactor first, then the themes by family).
 
 Panel (`CompactRepresentation`) modes, user-selectable: **sky sprite**
 (family-styled), **readout** (brightness % in the theme's font / segment

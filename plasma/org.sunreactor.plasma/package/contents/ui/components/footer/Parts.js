@@ -5,23 +5,22 @@
  * or flagship skin can replace one footer part without touching the others.
  *
  * Part contract - every file listed here:
- *   required property PopupFooter footer   theme, client, theme-choice state
- *                                          and the follow/pin requests
+ *   required property PopupFooter footer   theme, client and the domain
  *   implicitWidth / implicitHeight         from its content
  * Parts read colours, fonts and metrics from footer.theme only.
  *
  * SKINS keys are "id:<theme id>" (wins) or a renderer name; values map a part
- * id to a path relative to ui/ (e.g. skins/pixel/FooterThemeChip.qml).
+ * id to a path relative to ui/ (e.g. skins/pixel/FooterRefresh.qml).
  */
 
 var FILES = {
-    theme: "components/footer/ThemeChip.qml",
     refresh: "components/footer/RefreshControl.qml"
 };
 
 /*! Left to right; a null entry is the flexible gap. Pausing lives in the
-    Automation module (modules/ModeControl.qml), not here. */
-var ORDER = [null, "theme", "refresh"];
+    Automation module (modules/ModeControl.qml), and the theme choice in the
+    tab row (components/ThemeButton.qml), not here. */
+var ORDER = [null, "refresh"];
 
 var SKINS = {
     "pixel": {},
