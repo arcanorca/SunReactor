@@ -163,12 +163,6 @@ PlasmoidItem {
         }
     ]
 
-    Timer {
-        interval: 1500
-        running: true
-        onTriggered: root.expanded = true
-    }
-
     compactRepresentation: CompactRepresentation {
         plasmoidItem: root
         client: daemon

@@ -1,26 +1,53 @@
 /*
- * Says what the daemon is doing and, when the user has taken over, offers the
- * way back. This is the only row that explains the widget's behaviour, so it
- * stays to one line of plain language.
+ * Automation module: what the daemon is doing, why, and what happens next.
+ * When the user has taken over it offers the way back. While the daemon is
+ * simply following the sun it only appears if the day curve says what the
+ * next step is ("08:54 · Rise 50% → 34%"); otherwise there is nothing to say.
  */
+
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
-import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../engine"
 import "../Format.js" as Format
-import "../wardrobe/amiga"
 
 PlasmaComponents3.ItemDelegate {
     id: root
 
+    required property Theme theme
     required property SunReactorClient client
-    property var tokens: null
+    required property ModuleSettings settings
 
-    readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+    readonly property string domain: settings.domain
+
+    /*! The next milestone of the first display's curve still ahead, or null. */
+    readonly property var nextMilestone: {
+        const curve = client.dayCurve;
+        if (!curve || !curve.monitors || curve.monitors.length === 0) {
+            return null;
+        }
+        for (const milestone of curve.monitors[0].milestones) {
+            if (milestone.t > client.nowEpochS) {
+                return milestone;
+            }
+        }
+        return null;
+    }
+    readonly property string nextText: nextMilestone
+        ? (nextMilestone.pct >= 0
+            ? i18ndc(domain, "Time, then the daemon's milestone name, then the brightness it targets",
+                     "%1 · %2 → %3%", Format.timeText(nextMilestone.t), nextMilestone.label, nextMilestone.pct)
+            : i18ndc(domain, "Time, then the daemon's milestone name", "%1 · %2",
+                     Format.timeText(nextMilestone.t), nextMilestone.label))
+        : ""
+
+    readonly property bool available: client.isConnected
+        && (client.mode !== SunReactorClient.Automatic || nextText.length > 0)
 
     // One icon per mode, and none of them repeats an icon used further down
     // the popup: the sky belongs to the weather row, not to this one.
@@ -46,7 +73,9 @@ PlasmaComponents3.ItemDelegate {
         case SunReactorClient.IdleDimmed:
             return i18nd(root.domain, "Dimmed while idle");
         default:
-            return i18nd(root.domain, "Automatic");
+            return client.hasWeatherReading
+                ? i18nd(root.domain, "Following the sun and the weather")
+                : i18nd(root.domain, "Following the sun");
         }
     }
 
@@ -65,15 +94,12 @@ PlasmaComponents3.ItemDelegate {
         case SunReactorClient.IdleDimmed:
             return i18nd(root.domain, "Restored as soon as you come back");
         default:
-            return client.hasWeatherReading
-                ? i18nd(root.domain, "Following the sun and the weather")
-                : i18nd(root.domain, "Following the sun");
+            return root.nextText.length > 0
+                ? i18ndc(root.domain, "Placeholder is the next step of the brightness curve", "Next: %1",
+                         root.nextText)
+                : "";
         }
     }
-
-    readonly property color accentColor: (tokens && tokens.accentColor)
-        ? tokens.accentColor
-        : ((client.themeAccent && client.themeAccent.length > 0) ? client.themeAccent : Kirigami.Theme.highlightColor)
 
     Layout.fillWidth: true
 
@@ -82,32 +108,13 @@ PlasmaComponents3.ItemDelegate {
     topPadding: Kirigami.Units.smallSpacing
     bottomPadding: Kirigami.Units.smallSpacing
 
-    background: Rectangle {
-        radius: root.tokens ? root.tokens.cardRadius : Kirigami.Units.smallSpacing * 1.5
-        color: root.tokens ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.12)
-                           : Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.10)
-        border.width: root.tokens ? root.tokens.cardBorderWidth : 1
-        border.color: root.tokens ? root.tokens.cardBorderColor
-                                  : Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.25)
-
-        // Nothing OS pulsing indicator dot
-        Rectangle {
-            visible: root.tokens && root.tokens.isNothing
-            width: 5
-            height: 5
-            radius: 2.5
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.margins: 4
-            color: root.tokens ? root.tokens.liveIndicatorColor : "#E50914"
-
-            SequentialAnimation on opacity {
-                running: root.tokens && root.tokens.isNothing
-                loops: Animation.Infinite
-                NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutQuad }
-                NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutQuad }
-            }
-        }
+    background: Frame {
+        theme: root.theme
+        pixel: false
+        style: root.theme.available ? root.theme.border : "line"
+        color: root.client.mode === SunReactorClient.Automatic ? root.theme.line : root.theme.warning
+        fillColor: root.theme.alpha(root.client.mode === SunReactorClient.Automatic
+                                        ? root.theme.fg : root.theme.warning, 0.08)
     }
 
     hoverEnabled: false
@@ -116,18 +123,12 @@ PlasmaComponents3.ItemDelegate {
     contentItem: RowLayout {
         spacing: Kirigami.Units.gridUnit
 
-        // Amiga Boing Ball or standard mode icon
         Kirigami.Icon {
-            visible: !(root.tokens && root.tokens.boingBallVisible)
             Layout.preferredWidth: Kirigami.Units.iconSizes.medium
             Layout.preferredHeight: Kirigami.Units.iconSizes.medium
             source: root.modeIcon
-        }
-
-        AmigaBoingBall {
-            visible: root.tokens && root.tokens.boingBallVisible
-            size: Kirigami.Units.iconSizes.medium
-            running: true
+            color: root.theme.fg
+            isMask: root.theme.available
         }
 
         ColumnLayout {
@@ -138,17 +139,18 @@ PlasmaComponents3.ItemDelegate {
                 Layout.fillWidth: true
                 text: root.modeTitle
                 textFormat: Text.PlainText
-                font.family: (root.tokens && root.tokens.fontFamily) || ""
-                color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
+                font.family: root.theme.bodyFont
+                color: root.theme.fg
                 elide: Text.ElideRight
             }
 
-            PlasmaExtras.DescriptiveLabel {
+            PlasmaComponents3.Label {
                 Layout.fillWidth: true
+                visible: text.length > 0
                 text: root.modeDetail
                 textFormat: Text.PlainText
-                font.family: (root.tokens && root.tokens.fontFamily) || ""
-                color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
+                font.family: root.theme.bodyFont
+                color: root.theme.textMuted
                 elide: Text.ElideRight
             }
         }
@@ -157,7 +159,6 @@ PlasmaComponents3.ItemDelegate {
             visible: root.client.isOverrideActive
             icon.name: "edit-undo"
             text: i18ndc(root.domain, "@action:button Return to automatic brightness", "Automatic")
-            font.family: (root.tokens && root.tokens.fontFamily) || ""
             onClicked: root.client.clearAllOverrides()
         }
     }

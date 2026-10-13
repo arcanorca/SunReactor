@@ -1,26 +1,31 @@
 /*
- * Weather as it concerns brightness: what it is outside, and what that does to
- * the targets. The daemon's bounded multiplier is stated in words, because
- * "0.88x" is not something to put in front of a user.
+ * Weather module: what it is outside, and what that does to the targets. The
+ * daemon's bounded multiplier is stated in words, because "0.88x" is not
+ * something to put in front of a user. Shown only when weather is enabled.
  */
+
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
-import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../engine"
+import "../components"
 import "../Icons.js" as Icons
 
 PlasmaComponents3.ItemDelegate {
     id: root
 
+    required property Theme theme
     required property SunReactorClient client
-    property var tokens: null
+    required property ModuleSettings settings
 
-    readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+    readonly property string domain: settings.domain
+    readonly property bool available: client.isConnected && client.weatherEnabled
 
     readonly property string summary: {
         const text = weatherText.summary(client);
@@ -113,17 +118,17 @@ PlasmaComponents3.ItemDelegate {
                 Layout.fillWidth: true
                 text: root.summary
                 textFormat: Text.PlainText
-                font.family: (root.tokens && root.tokens.fontFamily) || ""
-                color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
+                font.family: root.theme.bodyFont
+                color: root.theme.fg
                 elide: Text.ElideRight
             }
 
-            PlasmaExtras.DescriptiveLabel {
+            PlasmaComponents3.Label {
                 Layout.fillWidth: true
                 text: root.effect
                 textFormat: Text.PlainText
-                font.family: (root.tokens && root.tokens.fontFamily) || ""
-                color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
+                font.family: root.theme.bodyFont
+                color: root.theme.textMuted
                 elide: Text.ElideRight
             }
         }

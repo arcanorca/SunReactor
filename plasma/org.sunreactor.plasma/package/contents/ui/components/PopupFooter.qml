@@ -11,11 +11,13 @@ import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../engine"
+
 PlasmaExtras.PlasmoidHeading {
     id: root
 
     required property SunReactorClient client
-    property var tokens: null
+    required property Theme theme
     /*! Duration of the plain "Pause" click, from the widget's settings. */
     property int defaultPauseMinutes: 60
 
@@ -43,7 +45,6 @@ PlasmaExtras.PlasmoidHeading {
                 : i18ndc(root.domain, "@action:button", "Pause")
             highlighted: root.client.isSuspended
             down: pauseMenu.visible
-            font.family: (root.tokens && root.tokens.fontFamily) || ""
 
             onClicked: {
                 if (root.client.isSuspended) {
@@ -98,6 +99,37 @@ PlasmaExtras.PlasmoidHeading {
 
         Item {
             Layout.fillWidth: true
+        }
+
+        // Which theme is showing, and whether this widget pinned it. The
+        // swatch picker that opens from here belongs to the redesign; for now
+        // the settings page chooses.
+        RowLayout {
+            visible: root.theme.available
+            spacing: Kirigami.Units.smallSpacing
+
+            Rectangle {
+                implicitWidth: Kirigami.Units.iconSizes.small
+                implicitHeight: implicitWidth
+                radius: root.theme.isVector ? width / 2 : 0
+                color: root.theme.bg
+                border.width: root.theme.lineWidth
+                border.color: root.theme.accent
+            }
+
+            PlasmaComponents3.Label {
+                text: root.theme.name
+                textFormat: Text.PlainText
+                font: Kirigami.Theme.smallFont
+                opacity: 0.75
+            }
+
+            Kirigami.Icon {
+                visible: root.theme.source === "pinned"
+                implicitWidth: Kirigami.Units.iconSizes.small
+                implicitHeight: implicitWidth
+                source: "object-locked"
+            }
         }
 
         PlasmaComponents3.ToolButton {

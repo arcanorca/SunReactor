@@ -2,21 +2,22 @@
  * One brightness row: icon, name, state, value and slider. Used both for a
  * single display and for the "All displays" master row, so it knows nothing
  * about monitors or the daemon - it reports the value the user asked for and
- * lets the popup decide what that means.
+ * lets the Displays module decide what that means.
  */
+
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
-import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 
-import "../wardrobe"
-import "../wardrobe/amiga"
+import "../engine"
 
 PlasmaComponents3.ItemDelegate {
     id: root
 
+    required property Theme theme
     /*! Percentage to display, or -1 when the daemon has no value for it. */
     required property int percent
     property string iconName: "video-display-brightness"
@@ -24,7 +25,6 @@ PlasmaComponents3.ItemDelegate {
     property string hint: ""
     /*! False disables the slider: a display that is off, or not responding. */
     property bool controllable: true
-    property color accentColor: tokens ? tokens.accentColor : Kirigami.Theme.highlightColor
 
     property int minPct: 15
     property int maxPct: 60
@@ -32,17 +32,16 @@ PlasmaComponents3.ItemDelegate {
     property bool hasOverride: false
     property bool limitsExpanded: false
 
-    property var tokens: null
-
-    /*! Emitted while dragging (debounced) and once on release. */
+    /*! Emitted while dragging (throttled) and once on release. */
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
     signal clearOverrideRequested()
 
+    readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property bool hasValue: percent >= 0
     readonly property string valueText: hasValue
-        ? i18ndc("plasma_applet_org.sunreactor.plasma", "Brightness percentage", "%1%", percent)
-        : i18ndc("plasma_applet_org.sunreactor.plasma", "No value is known yet", "—")
+        ? i18ndc(domain, "Brightness percentage", "%1%", percent)
+        : i18ndc(domain, "No value is known yet", "—")
 
     Layout.fillWidth: true
 
@@ -81,27 +80,21 @@ PlasmaComponents3.ItemDelegate {
     }
 
     contentItem: RowLayout {
-        spacing: Kirigami.Units.gridUnit
+        spacing: root.theme.compact ? Kirigami.Units.largeSpacing : Kirigami.Units.gridUnit
 
         Kirigami.Icon {
             Layout.alignment: Qt.AlignTop
             Layout.preferredWidth: Kirigami.Units.iconSizes.medium
             Layout.preferredHeight: Kirigami.Units.iconSizes.medium
             source: root.iconName
+            color: root.theme.fg
+            isMask: root.theme.available
         }
 
         ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignTop
             spacing: Kirigami.Units.smallSpacing
-
-            // Guru Meditation Alert banner for unreachable monitors on Amiga theme
-            GuruMeditationAlert {
-                Layout.fillWidth: true
-                visible: !root.controllable && root.tokens && root.tokens.guruMeditationStyle
-                logicalId: root.text
-                fontName: (root.tokens && root.tokens.digitFontFamily) ? root.tokens.digitFontFamily : "VT323, monospace"
-            }
 
             RowLayout {
                 Layout.fillWidth: true
@@ -111,39 +104,36 @@ PlasmaComponents3.ItemDelegate {
                     Layout.fillWidth: true
                     text: root.text
                     textFormat: Text.PlainText
-                    font.family: (root.tokens && root.tokens.fontFamily) || ""
-                    color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
+                    font.family: root.theme.bodyFont
+                    color: root.theme.fg
                     elide: Text.ElideRight
                 }
 
-                // If in manual override, provide instant one-click return to solar curve
+                // In a manual override, one click returns to the solar curve.
                 PlasmaComponents3.Button {
                     visible: root.hasOverride
                     icon.name: "edit-undo"
-                    text: i18ndc("plasma_applet_org.sunreactor.plasma", "Return to automatic solar tracking", "Auto")
+                    text: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
                     display: PlasmaComponents3.AbstractButton.TextBesideIcon
-                    font.family: (root.tokens && root.tokens.fontFamily) || ""
                     onClicked: root.clearOverrideRequested()
                 }
 
-                PlasmaExtras.DescriptiveLabel {
+                PlasmaComponents3.Label {
                     text: root.hint
                     textFormat: Text.PlainText
-                    font.family: (root.tokens && root.tokens.fontFamily) || ""
-                    color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
-                    visible: root.hint.length > 0 && !root.hasOverride && !(root.tokens && root.tokens.guruMeditationStyle && !root.controllable)
+                    font.family: root.theme.bodyFont
+                    color: root.theme.textMuted
+                    visible: root.hint.length > 0 && !root.hasOverride
                 }
 
-                // Limits toggle button showing current limits range
-                PlasmaComponents3.Button {
+                PlasmaComponents3.ToolButton {
                     visible: root.hasLimits
-                    flat: true
                     checkable: true
                     checked: root.limitsExpanded
                     icon.name: root.limitsExpanded ? "arrow-up" : "configure"
-                    text: i18ndc("plasma_applet_org.sunreactor.plasma", "Range limits", "%1%–%2%", root.minPct, root.maxPct)
+                    text: i18ndc(root.domain, "Range limits", "%1%–%2%", root.minPct, root.maxPct)
                     display: PlasmaComponents3.AbstractButton.TextBesideIcon
-                    font.family: (root.tokens && root.tokens.digitFontFamily) || ""
+                    font.family: root.theme.digitsFont
                     onClicked: root.limitsExpanded = !root.limitsExpanded
                 }
 
@@ -151,19 +141,15 @@ PlasmaComponents3.ItemDelegate {
                     text: root.valueText
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
-                    font.family: (root.tokens && root.tokens.digitFontFamily) || ""
-                    font.pixelSize: Math.round(Kirigami.Theme.defaultFont.pixelSize * (root.tokens ? root.tokens.digitFontScale : 1.0))
-                    color: root.hasValue && (slider.pressed || root.activeFocus)
-                        ? (root.tokens ? root.tokens.accentColor : root.accentColor)
-                        : ((root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor)
+                    font.family: root.theme.digitsFont
+                    color: root.hasValue && (slider.pressed || root.activeFocus) ? root.theme.accent : root.theme.fg
                 }
             }
 
-            ThemedSlider {
+            ThemeSlider {
                 id: slider
 
-                tokens: root.tokens
-                customAccent: root.tokens ? root.tokens.accentColor : root.accentColor
+                theme: root.theme
                 Layout.fillWidth: true
                 from: 0
                 to: 100
@@ -189,111 +175,94 @@ PlasmaComponents3.ItemDelegate {
                 Accessible.description: root.valueText
             }
 
-            // Expandable GNOME HIG Limits Section
-            ColumnLayout {
+            // Day maximum and night minimum, folded away until asked for.
+            GridLayout {
                 Layout.fillWidth: true
                 visible: root.hasLimits && root.limitsExpanded
-                spacing: Kirigami.Units.smallSpacing
+                columns: 4
+                columnSpacing: Kirigami.Units.smallSpacing
+                rowSpacing: 0
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: 1
-                    color: root.tokens ? root.tokens.cardBorderColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g,
-                                                                               Kirigami.Theme.textColor.b, 0.08)
+                Kirigami.Icon {
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                    source: "weather-clear-night"
                 }
 
-                // Night Minimum Brightness row
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Kirigami.Icon {
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                        Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                        source: "weather-clear-night"
-                    }
-
-                    PlasmaComponents3.Label {
-                        text: i18ndc("plasma_applet_org.sunreactor.plasma", "Night minimum boundary", "Night Min:")
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        font.family: (root.tokens && root.tokens.fontFamily) || ""
-                        color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
-                    }
-
-                    ThemedSlider {
-                        id: minSlider
-                        tokens: root.tokens
-                        customAccent: root.tokens ? root.tokens.accentColor : root.accentColor
-                        Layout.fillWidth: true
-                        from: 0
-                        to: Math.min(100, Math.round(maxSlider.value))
-                        stepSize: 1
-                        value: root.minPct
-                        onMoved: limitsThrottle.restart()
-                        onPressedChanged: {
-                            if (!pressed) {
-                                limitsThrottle.stop();
-                                root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
-                            }
-                        }
-                    }
-
-                    PlasmaComponents3.Label {
-                        text: i18ndc("plasma_applet_org.sunreactor.plasma", "Percentage", "%1%", Math.round(minSlider.value))
-                        font.features: ({ "tnum": 1 })
-                        font.family: (root.tokens && root.tokens.digitFontFamily) || ""
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
-                        Layout.preferredWidth: Kirigami.Units.gridUnit * 2
-                        horizontalAlignment: Text.AlignRight
-                    }
+                PlasmaComponents3.Label {
+                    text: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                    font: Kirigami.Theme.smallFont
+                    color: root.theme.textMuted
                 }
 
-                // Day Maximum Brightness row
-                RowLayout {
+                ThemeSlider {
+                    id: minSlider
+
+                    theme: root.theme
                     Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Kirigami.Icon {
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                        Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                        source: "weather-clear"
-                    }
-
-                    PlasmaComponents3.Label {
-                        text: i18ndc("plasma_applet_org.sunreactor.plasma", "Day maximum boundary", "Day Max:")
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        font.family: (root.tokens && root.tokens.fontFamily) || ""
-                        color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
-                    }
-
-                    ThemedSlider {
-                        id: maxSlider
-                        tokens: root.tokens
-                        customAccent: root.tokens ? root.tokens.accentColor : root.accentColor
-                        Layout.fillWidth: true
-                        from: Math.max(0, Math.round(minSlider.value))
-                        to: 100
-                        stepSize: 1
-                        value: root.maxPct
-                        onMoved: limitsThrottle.restart()
-                        onPressedChanged: {
-                            if (!pressed) {
-                                limitsThrottle.stop();
-                                root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
-                            }
+                    from: 0
+                    to: Math.min(100, Math.round(maxSlider.value))
+                    stepSize: 1
+                    value: root.minPct
+                    onMoved: limitsThrottle.restart()
+                    onPressedChanged: {
+                        if (!pressed) {
+                            limitsThrottle.stop();
+                            root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
                         }
                     }
+                    Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                }
 
-                    PlasmaComponents3.Label {
-                        text: i18ndc("plasma_applet_org.sunreactor.plasma", "Percentage", "%1%", Math.round(maxSlider.value))
-                        font.features: ({ "tnum": 1 })
-                        font.family: (root.tokens && root.tokens.digitFontFamily) || ""
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
-                        Layout.preferredWidth: Kirigami.Units.gridUnit * 2
-                        horizontalAlignment: Text.AlignRight
+                PlasmaComponents3.Label {
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 2
+                    horizontalAlignment: Text.AlignRight
+                    text: i18ndc(root.domain, "Percentage", "%1%", Math.round(minSlider.value))
+                    font.features: ({ "tnum": 1 })
+                    font.family: root.theme.digitsFont
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: root.theme.fg
+                }
+
+                Kirigami.Icon {
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                    source: "weather-clear"
+                }
+
+                PlasmaComponents3.Label {
+                    text: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+                    font: Kirigami.Theme.smallFont
+                    color: root.theme.textMuted
+                }
+
+                ThemeSlider {
+                    id: maxSlider
+
+                    theme: root.theme
+                    Layout.fillWidth: true
+                    from: Math.max(0, Math.round(minSlider.value))
+                    to: 100
+                    stepSize: 1
+                    value: root.maxPct
+                    onMoved: limitsThrottle.restart()
+                    onPressedChanged: {
+                        if (!pressed) {
+                            limitsThrottle.stop();
+                            root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
+                        }
                     }
+                    Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+                }
+
+                PlasmaComponents3.Label {
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 2
+                    horizontalAlignment: Text.AlignRight
+                    text: i18ndc(root.domain, "Percentage", "%1%", Math.round(maxSlider.value))
+                    font.features: ({ "tnum": 1 })
+                    font.family: root.theme.digitsFont
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: root.theme.fg
                 }
             }
         }

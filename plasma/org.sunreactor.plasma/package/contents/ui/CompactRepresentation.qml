@@ -1,6 +1,8 @@
 /*
  * The panel item: the current sky as pixel art, with the temperature and -
- * when asked for - the sun's height beside it.
+ * when asked for - the sun's height beside it. Labels use the theme's digit
+ * font (pixel themes: the bitmap font via BitmapText, crisp at any scale) in
+ * the panel's own text colour, because the panel is not themed.
  *
  * Scrolling deliberately does nothing. A wheel event over a panel icon is far
  * too easy to trigger by accident, and the accident here is every monitor
@@ -15,7 +17,7 @@ import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
-import "wardrobe"
+import "engine"
 
 MouseArea {
     id: root
@@ -23,10 +25,18 @@ MouseArea {
     required property PlasmoidItem plasmoidItem
     required property SunReactorClient client
 
-    ThemeTokens {
-        id: tokens
+    ThemeEngine {
+        id: engine
+
         client: root.client
+        mode: Plasmoid.configuration.themeMode
+        pinnedId: Plasmoid.configuration.pinnedTheme
+        accentOverride: Plasmoid.configuration.accentOverride
+        densityOverride: Plasmoid.configuration.densityOverride
+        pixelScaleOverride: Plasmoid.configuration.pixelScale
     }
+
+    readonly property Theme theme: engine.theme
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -108,31 +118,55 @@ MouseArea {
             spacing: 0
             visible: root.showLabels
 
-            PlasmaComponents3.Label {
+            readonly property string temperatureText: i18ndc(root.domain, "Temperature in degrees, panel-sized",
+                                                              "%1°", Math.round(root.client.temperatureC))
+            readonly property string elevationText: i18ndc(root.domain, "Sun height above the horizon, panel-sized",
+                                                            "%1°", root.client.solarElevation.toFixed(1))
+            /*! Bitmap labels only where they fit: a vertical panel may be
+                narrower than whole-art-pixel glyphs; vector text there. */
+            readonly property bool bitmap: root.theme.isPixel
+                && (!root.vertical || Math.max(bitmapTemperature.implicitWidth,
+                                               root.showElevation ? bitmapElevation.implicitWidth : 0) <= root.width)
+
+            BitmapText {
+                id: bitmapTemperature
                 Layout.alignment: Qt.AlignCenter
-                visible: root.showTemperature
-                text: i18ndc(root.domain, "Temperature in degrees, panel-sized", "%1°",
-                             Math.round(root.client.temperatureC))
-                textFormat: Text.PlainText
-                font.features: ({ "tnum": 1 })
-                font.family: tokens.digitFontFamily
-                font.pixelSize: Math.round((root.vertical || root.showElevation
-                    ? Kirigami.Theme.smallFont.pixelSize
-                    : Kirigami.Theme.defaultFont.pixelSize) * tokens.digitFontScale)
-                color: (tokens.textColor && !tokens.isModern) ? tokens.textColor : Kirigami.Theme.textColor
+                visible: labels.bitmap && root.showTemperature
+                theme: root.theme
+                text: labels.temperatureText
+                color: Kirigami.Theme.textColor
+            }
+
+            BitmapText {
+                id: bitmapElevation
+                Layout.alignment: Qt.AlignCenter
+                visible: labels.bitmap && root.showElevation
+                theme: root.theme
+                text: labels.elevationText
+                color: Kirigami.Theme.textColor
             }
 
             PlasmaComponents3.Label {
                 Layout.alignment: Qt.AlignCenter
-                visible: root.showElevation
-                text: i18ndc(root.domain, "Sun height above the horizon, panel-sized", "%1°",
-                             root.client.solarElevation.toFixed(1))
+                visible: !labels.bitmap && root.showTemperature
+                text: labels.temperatureText
                 textFormat: Text.PlainText
                 font.features: ({ "tnum": 1 })
-                font.family: tokens.digitFontFamily
-                font.pixelSize: Math.round(Kirigami.Theme.smallFont.pixelSize * tokens.digitFontScale)
-                color: (tokens.textMutedColor && !tokens.isModern) ? tokens.textMutedColor : Kirigami.Theme.textColor
-                opacity: (!tokens.isModern) ? 1.0 : 0.75
+                font.family: root.theme.digitsFont
+                font.pixelSize: root.vertical || root.showElevation
+                    ? Kirigami.Theme.smallFont.pixelSize
+                    : Kirigami.Theme.defaultFont.pixelSize
+            }
+
+            PlasmaComponents3.Label {
+                Layout.alignment: Qt.AlignCenter
+                visible: !labels.bitmap && root.showElevation
+                text: labels.elevationText
+                textFormat: Text.PlainText
+                font.features: ({ "tnum": 1 })
+                font.family: root.theme.digitsFont
+                font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                opacity: 0.75
             }
         }
     }

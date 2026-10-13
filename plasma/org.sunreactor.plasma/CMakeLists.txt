@@ -123,8 +123,13 @@ target_link_libraries(test_sunreactorclient PRIVATE
 
 add_test(NAME test_sunreactorclient COMMAND test_sunreactorclient)
 
-find_program(QML_EXECUTABLE NAMES qml6 qml)
-if (QML_EXECUTABLE)
-    add_test(NAME test_wardrobe COMMAND ${QML_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wardrobe.qml)
-    set_tests_properties(test_wardrobe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Theme engine tests: QML TestCase against the plugin in the build tree.
+find_program(QMLTESTRUNNER_EXECUTABLE NAMES qmltestrunner6 qmltestrunner
+    HINTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}" /usr/lib/qt6/bin)
+if (QMLTESTRUNNER_EXECUTABLE)
+    add_test(NAME test_engine
+        COMMAND ${QMLTESTRUNNER_EXECUTABLE} -input ${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_engine.qml
+                -import ${CMAKE_CURRENT_BINARY_DIR}/qml)
+    set_tests_properties(test_engine PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QML_IMPORT_PATH=${CMAKE_CURRENT_BINARY_DIR}/qml")
 endif()

@@ -1,6 +1,6 @@
 /*
- * The next few forecast intervals the daemon already fetched for its own
- * policy. Same sprites as the panel, so the strip reads at a glance.
+ * Forecast module: the next few intervals the daemon already fetched for its
+ * own policy. Same sprites as the panel, so the strip reads at a glance.
  */
 
 pragma ComponentBehavior: Bound
@@ -8,18 +8,19 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
-import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../engine"
 import "../Format.js" as Format
 import "../Icons.js" as Icons
 
 PlasmaComponents3.ItemDelegate {
     id: root
 
+    required property Theme theme
     required property SunReactorClient client
-    property var tokens: null
+    required property ModuleSettings settings
 
     /*! How many intervals to show; five fits the popup at its narrowest. */
     property int slots: 5
@@ -37,8 +38,9 @@ PlasmaComponents3.ItemDelegate {
         return upcoming;
     }
 
+    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+
     Layout.fillWidth: true
-    visible: points.length > 0
 
     background.visible: false
     hoverEnabled: false
@@ -59,14 +61,16 @@ PlasmaComponents3.ItemDelegate {
                 Layout.preferredWidth: 1
                 spacing: 0
 
-                PlasmaExtras.DescriptiveLabel {
+                PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     text: Format.timeText(slot.modelData.epochS)
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
-                    font.family: (root.tokens && root.tokens.fontFamily) || ""
-                    color: (root.tokens && root.tokens.textMutedColor) ? root.tokens.textMutedColor : Kirigami.Theme.disabledTextColor
+                    font.family: root.theme.digitsFont
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: root.theme.textMuted
+                    elide: Text.ElideRight
                 }
 
                 Kirigami.Icon {
@@ -81,14 +85,13 @@ PlasmaComponents3.ItemDelegate {
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
-                    text: i18ndc("plasma_applet_org.sunreactor.plasma",
+                    text: i18ndc(root.settings.domain,
                                  "Temperature in degrees, compact", "%1°",
                                  Math.round(slot.modelData.temperatureC))
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
-                    font.family: (root.tokens && root.tokens.digitFontFamily) || ""
-                    font.pixelSize: Math.round(Kirigami.Theme.defaultFont.pixelSize * (root.tokens ? root.tokens.digitFontScale : 1.0))
-                    color: (root.tokens && root.tokens.textColor) ? root.tokens.textColor : Kirigami.Theme.textColor
+                    font.family: root.theme.digitsFont
+                    color: root.theme.fg
                 }
             }
         }

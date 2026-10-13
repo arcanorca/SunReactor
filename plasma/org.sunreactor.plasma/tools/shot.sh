@@ -155,6 +155,17 @@ EOF
     wait "$FAKE_PID" 2>/dev/null || true
     FAKE_PID=""
     cp "$log" "$OUT/$name.requests.jsonl"
+    # Pixel surfaces report where they landed (device px); conformance.py
+    # --regions checks exactly those areas of the capture.
+    python3 - "$OUT/$name.log" "$OUT/$name.regions.json" <<'PY'
+import json, sys
+regions = {}
+for line in open(sys.argv[1], errors="replace"):
+    if "SUNREACTOR_PIXEL_REGION " in line:
+        r = json.loads(line.split("SUNREACTOR_PIXEL_REGION ", 1)[1])
+        regions[r["name"]] = r
+json.dump(list(regions.values()), open(sys.argv[2], "w"), indent=1)
+PY
     if [[ -f "$OUT/$name.png" ]]; then
         echo "$OUT/$name.png ($(grep -c . "$log") requests)"
     else

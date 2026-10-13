@@ -26,4 +26,26 @@
             <default>60</default>
         </entry>
     </group>
+    <group name="Appearance">
+        <!-- "follow": the theme the terminal app saved; "pinned": pinnedTheme. -->
+        <entry name="themeMode" type="String">
+            <default>follow</default>
+        </entry>
+        <!-- Theme id fetched with get_theme while themeMode is "pinned". -->
+        <entry name="pinnedTheme" type="String">
+            <default></default>
+        </entry>
+        <!-- "#rrggbb" replacing the theme accent; empty keeps the theme's. -->
+        <entry name="accentOverride" type="String">
+            <default></default>
+        </entry>
+        <!-- "compact" or "comfortable"; empty keeps the theme's density. -->
+        <entry name="densityOverride" type="String">
+            <default></default>
+        </entry>
+        <!-- Art-pixel size in logical px for pixel themes, 1..6; 0 = theme / automatic. -->
+        <entry name="pixelScale" type="Int">
+            <default>0</default>
+        </entry>
+    </group>
 </kcfg>

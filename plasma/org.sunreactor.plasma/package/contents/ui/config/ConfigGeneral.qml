@@ -22,6 +22,11 @@ KCM.SimpleKCM {
     property alias cfg_showSolarElevation: elevationCheckBox.checked
     property int cfg_defaultSuspendMinutes: 60
     property int cfg_overrideDurationMinutes: 60
+    property string cfg_themeMode: "follow"
+    property string cfg_pinnedTheme: ""
+    property alias cfg_accentOverride: accentField.text
+    property string cfg_densityOverride: ""
+    property alias cfg_pixelScale: pixelScaleBox.value
 
     // Plasma assigns these from main.xml so the Defaults button knows what to
     // restore. They exist to be written to, not read.
@@ -30,6 +35,11 @@ KCM.SimpleKCM {
     property bool cfg_showSolarElevationDefault: false
     property int cfg_defaultSuspendMinutesDefault: 60
     property int cfg_overrideDurationMinutesDefault: 60
+    property string cfg_themeModeDefault: "follow"
+    property string cfg_pinnedThemeDefault: ""
+    property string cfg_accentOverrideDefault: ""
+    property string cfg_densityOverrideDefault: ""
+    property int cfg_pixelScaleDefault: 0
 
     /*! Durations offered for both "set by hand" and "pause". */
     readonly property var durations: [
@@ -44,7 +54,14 @@ KCM.SimpleKCM {
     SunReactorClient {
         id: preview
         socketPath: root.cfg_socketPath
+        onThemeRegistryChanged: {
+            if (themeRegistry === SunReactorClient.CapabilitySupported) {
+                refreshThemeList();
+            }
+        }
     }
+
+    readonly property bool themesAvailable: preview.themeRegistry === SunReactorClient.CapabilitySupported
 
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
@@ -177,6 +194,119 @@ KCM.SimpleKCM {
             QQC2.Label {
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 18
                 text: i18nd(root.domain, "Used by the Pause button and by middle-clicking the panel icon. In the popup you can also pause until sunrise or sunset.")
+                wrapMode: Text.WordWrap
+                font: Kirigami.Theme.smallFont
+                opacity: 0.75
+            }
+
+            Item {
+                Kirigami.FormData.isSection: true
+                Kirigami.FormData.label: i18nd(root.domain, "Look")
+            }
+
+            QQC2.ComboBox {
+                id: themeModeBox
+                Kirigami.FormData.label: i18nd(root.domain, "Theme:")
+                model: [
+                    { value: "follow", label: i18nd(root.domain, "Same as the terminal app") },
+                    { value: "pinned", label: i18nd(root.domain, "Pick one for this widget") },
+                ]
+                textRole: "label"
+                valueRole: "value"
+                onActivated: root.cfg_themeMode = currentValue
+                Component.onCompleted: currentIndex = Math.max(0, indexOfValue(root.cfg_themeMode))
+            }
+
+            QQC2.ComboBox {
+                id: pinnedBox
+                visible: root.cfg_themeMode === "pinned"
+                enabled: root.themesAvailable
+                Kirigami.FormData.label: i18nd(root.domain, "Pinned theme:")
+                model: preview.themeList
+                textRole: "name"
+                valueRole: "id"
+                displayText: currentIndex >= 0 ? currentText
+                    : (root.cfg_pinnedTheme.length > 0 ? root.cfg_pinnedTheme : i18nd(root.domain, "Choose a theme"))
+                onActivated: root.cfg_pinnedTheme = currentValue
+                onCountChanged: currentIndex = indexOfValue(root.cfg_pinnedTheme)
+                delegate: QQC2.ItemDelegate {
+                    id: swatch
+                    required property var modelData
+                    required property int index
+                    width: ListView.view ? ListView.view.width : implicitWidth
+                    highlighted: pinnedBox.highlightedIndex === index
+                    contentItem: RowLayout {
+                        spacing: Kirigami.Units.smallSpacing
+                        Repeater {
+                            model: [swatch.modelData.bg, swatch.modelData.fg, swatch.modelData.accent,
+                                    swatch.modelData.secondaryAccent]
+                            Rectangle {
+                                required property string modelData
+                                implicitWidth: Kirigami.Units.iconSizes.small
+                                implicitHeight: implicitWidth
+                                color: modelData
+                                border.width: 1
+                                border.color: Qt.rgba(0.5, 0.5, 0.5, 0.5)
+                            }
+                        }
+                        QQC2.Label {
+                            Layout.fillWidth: true
+                            text: swatch.modelData.name
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+
+            QQC2.Label {
+                visible: root.cfg_themeMode === "pinned" && !root.themesAvailable
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 18
+                text: preview.isConnected
+                    ? i18nd(root.domain, "The background service is too old to offer other themes; the widget keeps following the terminal app's theme.")
+                    : i18nd(root.domain, "The theme list appears once the background service answers.")
+                wrapMode: Text.WordWrap
+                font: Kirigami.Theme.smallFont
+                opacity: 0.75
+            }
+
+            QQC2.TextField {
+                id: accentField
+                Kirigami.FormData.label: i18nd(root.domain, "Accent colour:")
+                placeholderText: i18nd(root.domain, "Theme default, or #rrggbb")
+                validator: RegularExpressionValidator { regularExpression: /^(#[0-9a-fA-F]{6})?$/ }
+            }
+
+            QQC2.ComboBox {
+                id: densityBox
+                Kirigami.FormData.label: i18nd(root.domain, "Density:")
+                model: [
+                    { value: "", label: i18nd(root.domain, "Theme default") },
+                    { value: "compact", label: i18nd(root.domain, "Compact") },
+                    { value: "comfortable", label: i18nd(root.domain, "Comfortable") },
+                ]
+                textRole: "label"
+                valueRole: "value"
+                onActivated: root.cfg_densityOverride = currentValue
+                Component.onCompleted: currentIndex = Math.max(0, indexOfValue(root.cfg_densityOverride))
+            }
+
+            QQC2.SpinBox {
+                id: pixelScaleBox
+                Kirigami.FormData.label: i18nd(root.domain, "Pixel size:")
+                from: 0
+                to: 6
+                textFromValue: (value, locale) => value === 0
+                    ? i18ndc(root.domain, "Pixel size chosen from the screen scale", "Automatic")
+                    : i18ndp(root.domain, "%1 px", "%1 px", value)
+                valueFromText: (text, locale) => {
+                    const n = parseInt(text);
+                    return isNaN(n) ? 0 : n;
+                }
+            }
+
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 18
+                text: i18nd(root.domain, "Pixel themes draw every art pixel as a whole block of screen pixels, so they stay sharp at any display scale.")
                 wrapMode: Text.WordWrap
                 font: Kirigami.Theme.smallFont
                 opacity: 0.75
