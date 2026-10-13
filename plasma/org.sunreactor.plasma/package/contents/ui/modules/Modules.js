@@ -34,13 +34,29 @@ var FILES = {
  * skins/<name>/<Module>.qml). A skin file follows the same module contract.
  * Each skin author edits only the entries for their own key.
  */
+// Instrument family (skins/instrument): one set of files for every vector
+// theme; flagship identities (VFD, Nixie, scope, ThinkPad, Braun) are chosen
+// inside from the theme id and tokens (InstrumentStyle.flavour), so switching
+// between instrument themes needs no reload.
+var INSTRUMENT = {
+    telemetry: "skins/instrument/Telemetry.qml",
+    curve: "skins/instrument/LightCycle.qml",
+    displays: "skins/instrument/Displays.qml",
+    automation: "skins/instrument/Automation.qml",
+    weather: "skins/instrument/Weather.qml",
+    forecast: "skins/instrument/Forecast.qml",
+    suntimes: "skins/instrument/SunTimes.qml"
+};
+
 var SKINS = {
     "pixel": {},
     "terminal": {},
-    "vector": {},
-    "id:braun": {},
-    "id:vfd_hifi": {},
-    "id:nixie": {}
+    "vector": INSTRUMENT,
+    "id:braun": INSTRUMENT,
+    "id:vfd_hifi": INSTRUMENT,
+    "id:nixie": INSTRUMENT,
+    "id:oscilloscope": INSTRUMENT,
+    "id:thinkpad": INSTRUMENT
 };
 
 function file(id) {
