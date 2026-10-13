@@ -44,7 +44,15 @@ var SKINS = {
         forecast: "skins/pixel/Forecast.qml",
         suntimes: "skins/pixel/SunTimes.qml"
     },
-    "terminal": {},
+    "terminal": {
+        telemetry: "skins/terminal/Telemetry.qml",
+        curve: "skins/terminal/LightCycle.qml",
+        displays: "skins/terminal/Displays.qml",
+        automation: "skins/terminal/Automation.qml",
+        weather: "skins/terminal/Weather.qml",
+        forecast: "skins/terminal/Forecast.qml",
+        suntimes: "skins/terminal/SunTimes.qml"
+    },
     "vector": {},
     "id:braun": {},
     "id:vfd_hifi": {},

@@ -23,6 +23,10 @@ IBMPlexMono-Regular.ttf     IBM Plex Mono        OFL 1.1        (c) 2017 IBM Cor
 Orbitron-Variable.ttf       Orbitron             OFL 1.1        (c) 2018 The Orbitron Project Authors,
                                                                 Reserved Font Name "Orbitron"
 Sysfont.ttf                 Sysfont C            OFL 1.1        (c) 2021 Alina Sava
+JetBrainsMono-Regular.ttf   JetBrains Mono       OFL 1.1        (c) 2020 The JetBrains Mono Project Authors
+JetBrainsMono-Bold.ttf      JetBrains Mono       OFL 1.1        (https://github.com/JetBrains/JetBrainsMono),
+                                                                v2.304, static instances; full licence
+                                                                text in OFL-JetBrainsMono.txt
 
 Font roles (Theme.qml) and native pixel grids
 ---------------------------------------------
@@ -32,6 +36,11 @@ bitmap_vga   unscii           grid-exact only at 16, 32 px (8x16 cells)
 mono         IBM Plex Mono    vector
 sans         IBM Plex Sans    vector (digits: IBM Plex Mono)
 display      Orbitron         vector (body text stays IBM Plex Sans)
+
+JetBrains Mono (regular + bold) is the terminal skins' cell font
+(skins/terminal/TermMetrics.qml): it covers the TUI's status glyphs
+(● ○ ▲ ❯ › ━ ┈ ▁..▇) so a text run never falls back to a font with another
+advance, and has a real bold for titles and values.
 
 VT323, Geist and Sysfont are kept for skins; VT323 and Sysfont are not
 grid-aligned outlines, so they are never used as bitmap fonts. Bitmap fonts are
