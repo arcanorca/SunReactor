@@ -145,6 +145,15 @@ var SKINS = {
         forecast: "skins/ps3/Forecast.qml",
         suntimes: "skins/ps3/SunTimes.qml"
     },
+    "id:amiga": {
+        telemetry: "skins/amiga/Telemetry.qml",
+        curve: "skins/amiga/LightCycle.qml",
+        displays: "skins/amiga/Displays.qml",
+        automation: "skins/amiga/Automation.qml",
+        weather: "skins/amiga/Weather.qml",
+        forecast: "skins/amiga/Forecast.qml",
+        suntimes: "skins/amiga/SunTimes.qml"
+    },
     "id:wii": {
         telemetry: "skins/wii/Telemetry.qml",
         curve: "skins/wii/LightCycle.qml",
@@ -247,6 +256,7 @@ var TABBAR = {
     "id:winxp": "skins/winxp/Tabs.qml",
     "id:ps3": "skins/ps3/Tabs.qml",
     "id:macos": "skins/macos/Tabs.qml",
+    "id:amiga": "skins/amiga/Tabs.qml",
     "id:wii": "skins/wii/Tabs.qml",
     "id:commodore64": "skins/commodore64/Tabs.qml",
     "id:nds": "skins/nds/Tabs.qml"

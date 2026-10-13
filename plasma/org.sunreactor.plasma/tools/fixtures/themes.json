@@ -50,35 +50,35 @@
  },
  "amiga": {
   "name": "Amiga",
-  "accent": "#ee2233",
-  "secondary_accent": "#5588bb",
-  "bg": "#141820",
-  "fg": "#f0f4fa",
-  "text_muted": "#72869e",
+  "accent": "#ff8800",
+  "secondary_accent": "#aaaaaa",
+  "bg": "#0055aa",
+  "fg": "#ffffff",
+  "text_muted": "#aaaaaa",
   "id": "amiga",
   "family": "pixel",
   "glyph_style": "pixel",
   "palette": {
-   "bg": "#141820",
-   "fg": "#f0f4fa",
-   "accent": "#ee2233",
-   "secondary_accent": "#5588bb",
+   "bg": "#0055aa",
+   "fg": "#ffffff",
+   "accent": "#ff8800",
+   "secondary_accent": "#aaaaaa",
    "border_active": "#ff8800",
-   "border_inactive": "#283244",
-   "text_muted": "#72869e",
-   "success": "#3fbf5f",
+   "border_inactive": "#000000",
+   "text_muted": "#aaaaaa",
+   "success": "#ffffff",
    "warning": "#ff8800",
-   "error": "#dd3322"
+   "error": "#ff8800"
   },
   "widget": {
    "renderer": "pixel",
    "font": "bitmap8",
    "pixel_scale": 0,
    "shades": [
-    "#141820",
-    "#283244",
-    "#72869e",
-    "#f0f4fa"
+    "#000000",
+    "#0055aa",
+    "#aaaaaa",
+    "#ffffff"
    ],
    "density": "compact",
    "border": "line",
@@ -1393,7 +1393,7 @@
   }
  },
  "rosepine": {
-  "name": "Ros\u00e9 Pine",
+  "name": "Rosé Pine",
   "accent": "#ebbcba",
   "secondary_accent": "#c4a7e7",
   "bg": "#191724",

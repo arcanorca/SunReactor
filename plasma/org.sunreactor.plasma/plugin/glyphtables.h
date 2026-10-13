@@ -27,6 +27,10 @@ using Face = QHash<char32_t, Glyph>;
 const Face &smallFace();
 /*! 3x5 capitals, digits and the few symbols axis labels need. */
 const Face &tinyFace();
+/*! Topaz-style 8x8 monospace face (Amiga Workbench system font): 8 columns per
+ *  glyph, cap rows 0..6, descender row 7; the ellipsis, the triangle used by
+ *  drop-down gadgets, degree sign and middle dot are included. */
+const Face &topazFace();
 /*! PETSCII-style 4x8 text-mode face (Commodore 64 screen, the C64 skin): one
  *  4-column cell per character so 36+ cells fit a 19 gu popup at integer art
  *  pixels; cap rows 0..6, row 7 blank except descenders and graphics; the

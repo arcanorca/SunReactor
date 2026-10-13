@@ -105,7 +105,7 @@ int PixelGlyphs::cellHeight() const
     if (m_face == QLatin1String("seg")) {
         return capHeight();
     }
-    if (m_face == QLatin1String("petscii")) {
+    if (m_face == QLatin1String("topaz") || m_face == QLatin1String("petscii")) {
         return 8 * m_pitch;
     }
     return (m_face == QLatin1String("tiny") ? 5 : 9) * m_pitch;
@@ -125,7 +125,7 @@ bool PixelGlyphs::covers(const QString &text, const QString &face) const
             if (!segFace().contains(c) && !isSegNarrow(c)) {
                 return false;
             }
-        } else if (!(f == QLatin1String("tiny") ? tinyFace() : f == QLatin1String("petscii") ? petsciiFace() : smallFace()).contains(c)) {
+        } else if (!(f == QLatin1String("tiny") ? tinyFace() : f == QLatin1String("topaz") ? topazFace() : f == QLatin1String("petscii") ? petsciiFace() : smallFace()).contains(c)) {
             return false;
         }
     }
@@ -139,6 +139,7 @@ int PixelGlyphs::advance(char32_t c) const
         return w + m_letterSpacing * m_segWidth + 1;
     }
     const Face &face = m_face == QLatin1String("tiny") ? tinyFace()
+        : m_face == QLatin1String("topaz") ? topazFace()
         : m_face == QLatin1String("petscii") ? petsciiFace() : smallFace();
     const auto it = face.constFind(c);
     const int w = it == face.constEnd() ? 3 : it->width;
@@ -273,6 +274,7 @@ void PixelGlyphs::drawGlyph(QImage &img, char32_t c, int x, int y, QRgb lit, QRg
     }
 
     const Face &face = m_face == QLatin1String("tiny") ? tinyFace()
+        : m_face == QLatin1String("topaz") ? topazFace()
         : m_face == QLatin1String("petscii") ? petsciiFace() : smallFace();
     const auto it = face.constFind(c);
     if (it == face.constEnd()) {
