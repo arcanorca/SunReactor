@@ -124,6 +124,25 @@ PlasmaExtras.Representation {
         fillGradient: backdropSlot.item
         color: root.theme.line
         style: root.theme.border === "none" ? "none" : "line"
+
+        /*! A skin's overlay (Modules.OVERLAY): an Item over the fill, under the content. */
+        Loader {
+            id: overlaySlot
+
+            anchors.fill: parent
+            readonly property string wanted: Modules.overlaySource(root.theme.available ? root.theme.themeId : "")
+
+            function load() {
+                if (wanted.length > 0) {
+                    setSource(Qt.resolvedUrl(wanted), { theme: root.theme });
+                } else {
+                    source = "";
+                }
+            }
+
+            onWantedChanged: load()
+            Component.onCompleted: load()
+        }
     }
 
     // --- tab pages -------------------------------------------------------------

@@ -1248,6 +1248,54 @@
    ]
   }
  },
+ "ps3": {
+  "name": "PlayStation 3",
+  "accent": "#3d9bff",
+  "secondary_accent": "#9fd4ff",
+  "bg": "#050b1e",
+  "fg": "#ffffff",
+  "text_muted": "#8ca3cf",
+  "id": "ps3",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#050b1e",
+   "fg": "#ffffff",
+   "accent": "#3d9bff",
+   "secondary_accent": "#9fd4ff",
+   "border_active": "#ffffff",
+   "border_inactive": "#26407a",
+   "text_muted": "#8ca3cf",
+   "success": "#5be0a0",
+   "warning": "#ffb347",
+   "error": "#ff5a5a"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#050b1e",
+    "#26407a",
+    "#8ca3cf",
+    "#ffffff"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.5,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
  "rosepine": {
   "name": "Ros\u00e9 Pine",
   "accent": "#ebbcba",

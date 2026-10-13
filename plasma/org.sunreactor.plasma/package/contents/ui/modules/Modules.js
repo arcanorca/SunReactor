@@ -126,6 +126,15 @@ var SKINS = {
         weather: "skins/nothing/Weather.qml",
         forecast: "skins/nothing/Forecast.qml",
         suntimes: "skins/nothing/SunTimes.qml"
+    },
+    "id:ps3": {
+        telemetry: "skins/ps3/Telemetry.qml",
+        curve: "skins/ps3/LightCycle.qml",
+        displays: "skins/ps3/Displays.qml",
+        automation: "skins/ps3/Automation.qml",
+        weather: "skins/ps3/Weather.qml",
+        forecast: "skins/ps3/Forecast.qml",
+        suntimes: "skins/ps3/SunTimes.qml"
     }
 };
 
@@ -199,7 +208,8 @@ var TABBAR = {
     "id:synthwave84": "skins/synthwave84/Tabs.qml",
     "id:cyberpunk": "skins/cyberpunk/CyberTabs.qml",
     "id:nothing": "skins/nothing/Tabs.qml",
-    "id:winxp": "skins/winxp/Tabs.qml"
+    "id:winxp": "skins/winxp/Tabs.qml",
+    "id:ps3": "skins/ps3/Tabs.qml"
 };
 
 /*
@@ -208,12 +218,27 @@ var TABBAR = {
  * background. Keys are "id:<theme id>"; a theme without one keeps the flat fill.
  */
 var BACKDROP = {
-    "id:synthwave84": "skins/synthwave84/Backdrop.qml"
+    "id:synthwave84": "skins/synthwave84/Backdrop.qml",
+    "id:ps3": "skins/ps3/Backdrop.qml"
 };
 
 /*! Path (relative to ui/) of a theme's popup backdrop, or "" for the flat fill. */
 function backdropSource(themeId) {
     return BACKDROP["id:" + themeId] || "";
+}
+
+/*
+ * Popup overlays: an Item a skin lays over the popup's fill and under its
+ * content (FullRepresentation loads it inside the popup Frame, handed the theme).
+ * Static art only; keys are "id:<theme id>" as for BACKDROP.
+ */
+var OVERLAY = {
+    "id:ps3": "skins/ps3/Waves.qml"
+};
+
+/*! Path (relative to ui/) of a theme's popup overlay, or "" for none. */
+function overlaySource(themeId) {
+    return OVERLAY["id:" + themeId] || "";
 }
 
 /*! Path (relative to ui/) of the tab bar. Pass themeId "" and renderer "" for no theme. */
