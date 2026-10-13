@@ -11,6 +11,7 @@ refuses to bind the real daemon socket.
                  day_curve answer `invalid_request` exactly like serde would
   --scenario S   default | manual | paused | single | unknown | noweather
   --live         report the real clock instead of the fixed demo moment
+  --theme-warning TEXT   status.theme_warning, as when a user theme is broken
   --log FILE     append every request as one JSON line (the harness waits on it)
 
 Commands (set_override, suspend, set_monitor_limits, ...) are acknowledged and
@@ -220,7 +221,11 @@ class FakeDaemon:
         manual = self.global_override is not None or any(m["override_percent"] is not None for m in self.monitors)
         noon = sun["solar_noon"]
         elevation = 38.0 * math.cos(math.pi * (now - noon) / (sun["sunset"] - sun["sunrise"]))
+        extra = {}
+        if self.args.theme_warning and not self.args.old:
+            extra["theme_warning"] = self.args.theme_warning
         return {
+            **extra,
             "daemon_alive": True, "config_path": "/fake/config.toml", "tick_seconds": 60, "dry_run": True,
             "suspended": self.suspended, "desktop_idle_dimmed": False,
             "suspend_until_epoch_s": self.suspended_until if self.suspended else None,
@@ -390,6 +395,8 @@ def main() -> None:
     ap.add_argument("--scenario", default="default",
                     choices=["default", "manual", "paused", "single", "unknown", "noweather"])
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--theme-warning", default="",
+                    help="send this as status.theme_warning (the daemon fell back to another theme)")
     ap.add_argument("--log")
     ap.add_argument("--dump", choices=["status", "day_curve", "themes"],
                     help="print one response body and exit (no socket)")
