@@ -30,6 +30,16 @@ Item {
     readonly property real fraction: known ? view.percent / 100 : 0
     readonly property bool pixel: theme.isPixel && theme.bitmapFont.length > 0
 
+    // --- Nothing: the percentage in the dot face, a row of dots under it ------------
+
+    readonly property bool dotted: view.dotted
+    /*! Vertical panels are narrow: the face goes tiny and the sign goes, so the digits fit the thickness. */
+    readonly property string dotFace: view.vertical ? "tiny" : "small"
+    readonly property string dotText: known ? (view.vertical ? digits : digits + "%") : "—"
+    readonly property real dotPitch: view.vertical
+        ? Math.max(3, Math.floor(view.thickness * view.dpr * 0.9 / 11)) / view.dpr
+        : Math.max(3, Math.floor(view.graphicSize * view.dpr * 0.6 / 7)) / view.dpr
+
     // --- pixel layout: pick the biggest variant that fits ----------------------
 
     readonly property real unit: theme.grid.unit
@@ -60,8 +70,41 @@ Item {
         return { mag: 1, border: 0, text: digits, w: 0, h: 0, tile: false };
     }
 
-    implicitWidth: pixel ? (variant.tile ? tile.implicitWidth : bare.implicitWidth) : vector.implicitWidth
-    implicitHeight: pixel ? (variant.tile ? tile.implicitHeight : bare.implicitHeight) : vector.implicitHeight
+    implicitWidth: dotted ? dotsColumn.implicitWidth
+        : (pixel ? (variant.tile ? tile.implicitWidth : bare.implicitWidth) : vector.implicitWidth)
+    implicitHeight: dotted ? dotsColumn.implicitHeight
+        : (pixel ? (variant.tile ? tile.implicitHeight : bare.implicitHeight) : vector.implicitHeight)
+
+    Column {
+        id: dotsColumn
+
+        visible: root.dotted
+        spacing: root.dotPitch * 2
+
+        DotText {
+            id: dotReadout
+
+            text: root.dotText
+            face: root.dotFace
+            size: 1
+            pitch: root.dotPitch
+            litColor: root.view.panelText
+            accentColor: root.view.dataInk
+            dimColor: root.view.textGhost
+        }
+
+        // The level as a row of dots, as wide as the figures. (DotText reports its
+        // width through implicitWidth, not through its cols notification.)
+        DotBar {
+            cols: Math.max(1, Math.round(dotReadout.implicitWidth / root.dotPitch))
+            rows: 1
+            pitch: root.dotPitch
+            value: root.fraction
+            thumbAccent: false
+            litColor: root.view.panelText
+            dimColor: root.view.dotGhost
+        }
+    }
 
     PixelSurface {
         id: tile
@@ -131,7 +174,7 @@ Item {
         }
         readonly property real barHeight: root.theme.grid.snap(Math.max(2, fontSize * 0.12))
 
-        visible: !root.pixel
+        visible: !root.pixel && !root.dotted
         spacing: Math.max(1, root.theme.grid.snap(fontSize * 0.08))
 
         Row {

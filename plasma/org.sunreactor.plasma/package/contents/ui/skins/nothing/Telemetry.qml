@@ -47,6 +47,11 @@ Item {
         }
     }
 
+    /*! Temperature and the daemon's clock, one string: "15° 2:30 PM" (or "15° 14:30"). */
+    readonly property string clockText: (client.hasTemperature
+        ? i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°", Math.round(client.temperatureC)) + " "
+        : "") + Format.timeText(client.nowEpochS)
+
     /*! Air above the status line, so the tiny digits clear the popup's edge. */
     readonly property real inset: style.gap
 
@@ -83,6 +88,7 @@ Item {
 
         Text {
             Layout.alignment: Qt.AlignVCenter
+            Layout.minimumWidth: implicitWidth
             text: root.stateText
             textFormat: Text.PlainText
             font: root.style.label
@@ -103,6 +109,7 @@ Item {
                 Text {
                     Layout.alignment: Qt.AlignVCenter
                     Layout.leftMargin: root.style.gap * 0.5
+                    Layout.minimumWidth: implicitWidth
                     text: root.style.shortName(channel.modelData.logicalId)
                     textFormat: Text.PlainText
                     font: root.style.label
@@ -111,6 +118,7 @@ Item {
 
                 DotText {
                     Layout.alignment: Qt.AlignVCenter
+                    Layout.minimumWidth: implicitWidth
                     text: channel.modelData.appliedPercent >= 0
                         ? String(channel.modelData.appliedPercent)
                         : i18ndc(root.domain, "No value is known yet", "—")
@@ -129,28 +137,19 @@ Item {
             Layout.minimumWidth: root.style.gap
         }
 
+        // The clock, one run of tiny face at the right edge: "15° 2:30 PM" in the
+        // locale's hour convention, the same as the other skins. Its unlit cells
+        // are nearly black, so only the glyphs show.
         DotText {
             Layout.alignment: Qt.AlignVCenter
-            visible: root.client.hasTemperature
-            text: i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1°",
-                         Math.round(root.client.temperatureC))
-            face: "tiny"
-            size: 1
-            pitch: root.style.pitchFine
-            litColor: root.style.muted
-            accentColor: root.style.accent
-            dimColor: root.style.textGhost
-        }
-
-        DotText {
-            Layout.alignment: Qt.AlignVCenter
-            text: Format.timeText(root.client.nowEpochS)
+            Layout.minimumWidth: implicitWidth
+            text: root.clockText
             face: "tiny"
             size: 1
             pitch: root.style.pitchFine
             litColor: root.style.ink
             accentColor: root.style.accent
-            dimColor: root.style.textGhost
+            dimColor: root.style.theme.alpha(root.style.ink, 0.03)
         }
     }
 }

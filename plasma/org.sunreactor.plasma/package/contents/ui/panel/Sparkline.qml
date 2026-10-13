@@ -32,8 +32,38 @@ Item {
     readonly property real nowFraction: curve ? PanelData.dayFraction(curve, now) : 0
     readonly property real nowLevel: curve ? PanelData.level(curve, PanelData.valueAt(curve, now)) : 0
 
-    implicitWidth: theme.isPixel ? tile.implicitWidth : (theme.isTerminal ? blocks.implicitWidth : line.width)
-    implicitHeight: theme.isPixel ? tile.implicitHeight : (theme.isTerminal ? blocks.implicitHeight : line.height)
+    implicitWidth: dotted ? curveDots.implicitWidth
+        : (theme.isPixel ? tile.implicitWidth : (theme.isTerminal ? blocks.implicitWidth : line.width))
+    implicitHeight: dotted ? curveDots.implicitHeight
+        : (theme.isPixel ? tile.implicitHeight : (theme.isTerminal ? blocks.implicitHeight : line.height))
+
+    // --- Nothing: a column-of-dots plot of the day ---------------------------------------
+
+    readonly property bool dotted: view.dotted
+    /*! Six rows of dots; across the panel eighteen columns, down it twelve. */
+    readonly property real dotPitch: view.vertical
+        ? Math.max(3, Math.floor(view.thickness * view.dpr * 0.9 / 12)) / view.dpr
+        : Math.max(3, Math.floor(view.graphicSize * view.dpr / 6)) / view.dpr
+    /*! The curve as the band's level, 0..100, so the plot fills its rows whatever the limits. */
+    readonly property var dotSamples: curve
+        ? curve.points.map(p => ({ t: p.t, pct: PanelData.level(curve, p.pct) * 100 })) : []
+
+    DotCurve {
+        id: curveDots
+
+        visible: root.dotted
+        cols: view.vertical ? 12 : 18
+        rows: 6
+        pitch: root.dotPitch
+        samples: root.dotSamples
+        t0: root.curve ? root.curve.t0 : 0
+        t1: root.curve ? root.curve.t1 : 1
+        nowT: root.now
+        maxPct: 100
+        litColor: root.view.panelText
+        accentColor: root.view.dataInk
+        dimColor: root.view.dotGhost
+    }
 
     // --- pixel -------------------------------------------------------------------------
 
@@ -186,7 +216,7 @@ Item {
             return out;
         }
 
-        visible: !root.theme.isPixel && !root.theme.isTerminal
+        visible: !root.theme.isPixel && !root.theme.isTerminal && !root.dotted
         height: root.theme.grid.snap(root.view.vertical ? root.view.thickness * 0.5 : root.view.graphicSize * 0.72)
         width: root.theme.grid.snap(root.view.vertical ? root.view.thickness * 0.86 : height * 2.6)
 

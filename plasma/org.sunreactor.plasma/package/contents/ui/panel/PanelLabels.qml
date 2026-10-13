@@ -37,6 +37,10 @@ ColumnLayout {
                                                     "%1°", client.solarElevation.toFixed(1))
     readonly property bool bitmap: theme.isPixel
         && Math.max(bitmapTemperature.implicitWidth, elevationShown ? bitmapElevation.implicitWidth : 0) <= available
+    /*! Nothing: the figures in the dot face at the graphic's pitch; small across, tiny down a vertical panel. */
+    readonly property bool dotted: theme.themeId === "nothing"
+    property real dotPitch: 3 / theme.grid.devicePixelRatio
+    readonly property string dotFace: vertical ? "tiny" : "small"
 
     spacing: 0
 
@@ -58,9 +62,31 @@ ColumnLayout {
         color: root.color
     }
 
+    DotText {
+        Layout.alignment: Qt.AlignCenter
+        visible: root.dotted && root.temperatureShown
+        text: root.temperatureText
+        face: root.dotFace
+        size: 1
+        pitch: root.dotPitch
+        litColor: root.color
+        dimColor: "transparent"
+    }
+
+    DotText {
+        Layout.alignment: Qt.AlignCenter
+        visible: root.dotted && root.elevationShown
+        text: root.elevationText
+        face: root.dotFace
+        size: 1
+        pitch: root.dotPitch
+        litColor: root.color
+        dimColor: "transparent"
+    }
+
     PlasmaComponents3.Label {
         Layout.alignment: Qt.AlignCenter
-        visible: !root.bitmap && root.temperatureShown
+        visible: !root.bitmap && !root.dotted && root.temperatureShown
         text: root.temperatureText
         textFormat: Text.PlainText
         color: root.color
@@ -73,7 +99,7 @@ ColumnLayout {
 
     PlasmaComponents3.Label {
         Layout.alignment: Qt.AlignCenter
-        visible: !root.bitmap && root.elevationShown
+        visible: !root.bitmap && !root.dotted && root.elevationShown
         text: root.elevationText
         textFormat: Text.PlainText
         color: root.color

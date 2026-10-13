@@ -17,6 +17,7 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"
+import "../skins/nothing"
 
 QQC2.AbstractButton {
     id: root
@@ -28,6 +29,8 @@ QQC2.AbstractButton {
     property string pinnedId: ""
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+    /*! The Nothing flagship draws a 24 px round hairline with a dot matrix (skins/nothing/ThemeGlyph.qml). */
+    readonly property bool dotted: theme.themeId === "nothing"
     readonly property bool pinned: themeMode === "pinned" && pinnedId.length > 0
     readonly property bool warned: client.themeWarning.length > 0
     readonly property bool pickerOpen: picker.opened
@@ -65,8 +68,8 @@ QQC2.AbstractButton {
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
     padding: 0
-    implicitWidth: snapped(28)
-    implicitHeight: snapped(28)
+    implicitWidth: dotted ? box : snapped(28)
+    implicitHeight: dotted ? box : snapped(28)
 
     Accessible.role: Accessible.Button
     Accessible.name: i18ndc(domain, "Accessible name; placeholder is a theme name", "Theme: %1", shownName)
@@ -85,29 +88,54 @@ QQC2.AbstractButton {
         y: root.inset
         width: root.box
         height: root.box
-        radius: root.theme.radius
-        color: root.pickerOpen || root.down ? root.theme.alpha(root.theme.accent, 0.25)
-            : root.hovered ? root.theme.alpha(root.theme.fg, 0.08) : "transparent"
-        border.width: root.theme.border === "none" && !root.visualFocus ? 0 : root.theme.lineWidth
-        border.color: root.visualFocus || root.hovered || root.pickerOpen ? root.theme.accent : root.theme.line
+        radius: root.dotted ? width / 2 : root.theme.radius
+        antialiasing: root.dotted
+        color: root.dotted
+            ? (root.pickerOpen || root.down ? root.theme.alpha(root.theme.fg, 0.12)
+               : root.hovered ? root.theme.alpha(root.theme.fg, 0.06) : "transparent")
+            : (root.pickerOpen || root.down ? root.theme.alpha(root.theme.accent, 0.25)
+               : root.hovered ? root.theme.alpha(root.theme.fg, 0.08) : "transparent")
+        border.width: root.dotted ? root.theme.hairline
+            : (root.theme.border === "none" && !root.visualFocus ? 0 : root.theme.lineWidth)
+        border.color: root.dotted
+            ? (root.visualFocus || root.hovered || root.pickerOpen ? root.theme.fg : root.theme.borderInactive)
+            : (root.visualFocus || root.hovered || root.pickerOpen ? root.theme.accent : root.theme.line)
+    }
+
+    /*! The Nothing glyph: the palette as a dot matrix and the dot badge. */
+    Component {
+        id: dottedGlyph
+
+        ThemeGlyph {
+            theme: root.theme
+            pinned: root.pinned
+            warned: root.warned
+        }
     }
 
     contentItem: Item {
-        // Keyboard focus: an accent ring round the whole square.
+        // Keyboard focus: an accent ring round the whole square (ink for Nothing).
         Rectangle {
             visible: root.visualFocus
             anchors.fill: parent
             color: "transparent"
             border.width: root.theme.isPixel ? root.theme.grid.unit : 2 * root.theme.lineWidth
-            border.color: root.theme.accent
+            border.color: root.dotted ? root.theme.fg : root.theme.accent
             radius: root.theme.radius > 0 ? root.theme.radius + root.inset : 0
             antialiasing: radius > 0
+        }
+
+        Loader {
+            anchors.fill: parent
+            active: root.dotted
+            sourceComponent: dottedGlyph
         }
 
         // The swatch, centred on whole device pixels.
         Item {
             id: swatch
 
+            visible: !root.dotted
             x: root.snapped((parent.width - width) / 2)
             y: root.snapped((parent.height - height) / 2)
             width: root.cell * 2
@@ -163,6 +191,7 @@ QQC2.AbstractButton {
 
         // The corner badge, on a ring in the surface colour so it reads over the frame.
         Rectangle {
+            visible: !root.dotted
             x: parent.width - width
             y: 0
             width: root.badgeSize

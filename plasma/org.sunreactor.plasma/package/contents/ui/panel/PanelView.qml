@@ -79,6 +79,12 @@ Item {
                                                                     : Kirigami.Theme.highlightColor,
                                                     panelBackground, panelText, 3)
     readonly property color trackInk: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.22)
+    /*! Nothing (skins/nothing/BRAND.md): the dot-matrix variants, and their unlit cells in the panel text. */
+    readonly property bool dotted: theme.themeId === "nothing"
+    readonly property color dotGhost: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.12)
+    readonly property color textGhost: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.055)
+    /*! Nothing: the dot pitch of a panel graphic (twelve dots across the graphic box, a whole device pixel each). */
+    readonly property real dotPitch: Math.max(3, Math.floor(graphicSize * dpr / 12)) / dpr
     /*! Pixel tiles: the palette colour that reads best on the theme bg. */
     readonly property color tileInk: PanelData.bestOn([theme.fg, theme.accent, theme.secondaryAccent], theme.bg)
     readonly property color tileState: {
@@ -135,6 +141,7 @@ Item {
             showTemperature: root.showTemperature
             showElevation: root.showElevation
             vertical: root.vertical
+            dotPitch: root.dotPitch
             available: root.vertical ? root.thickness : Number.POSITIVE_INFINITY
             color: root.panelText
         }

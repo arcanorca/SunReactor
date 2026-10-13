@@ -47,10 +47,14 @@ Item {
     /*! The glyph's side: the panel's graphic box, in whole logical px. */
     readonly property int glyphSize: Math.round(view.graphicSize)
     readonly property bool useSprite: view.theme.glyphStyle === "pixel" && !paused
-    readonly property bool useGlyph: !paused && !useSprite
+    /*! Nothing: the dot-matrix pictogram, a whole device pixel per dot, twelve dots across. */
+    readonly property bool useDots: view.dotted && !paused
+    readonly property bool useGlyph: !paused && !useSprite && !useDots
 
-    implicitWidth: paused ? icon.implicitWidth : (useSprite ? sprite.implicitWidth : glyph.implicitWidth)
-    implicitHeight: paused ? icon.implicitHeight : (useSprite ? sprite.implicitHeight : glyph.implicitHeight)
+    implicitWidth: paused ? icon.implicitWidth
+        : (useSprite ? sprite.implicitWidth : (useDots ? dots.implicitWidth : glyph.implicitWidth))
+    implicitHeight: paused ? icon.implicitHeight
+        : (useSprite ? sprite.implicitHeight : (useDots ? dots.implicitHeight : glyph.implicitHeight))
 
     PixelSkySprite {
         id: sprite
@@ -80,6 +84,18 @@ Item {
         // The theme's own colours, lifted to 3:1 against the panel where needed.
         palette: root.view.theme.glyphColours(root.view.panelBackground, root.view.theme.fg)
         size: root.glyphSize
+    }
+
+    DotIcon {
+        id: dots
+
+        visible: root.useDots
+        condition: root.condition
+        night: root.night
+        pitch: root.view.dotPitch
+        litColor: root.view.panelText
+        accentColor: root.view.dataInk
+        dimColor: root.view.dotGhost
     }
 
     Kirigami.Icon {

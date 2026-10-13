@@ -25,7 +25,10 @@ var ORDER = [null, "refresh"];
 var SKINS = {
     "pixel": {},
     "terminal": {},
-    "vector": {}
+    "vector": {},
+    "id:nothing": {
+        refresh: "skins/nothing/RefreshControl.qml"
+    }
 };
 
 function source(part, themeId, renderer) {

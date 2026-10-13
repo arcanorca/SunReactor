@@ -77,7 +77,10 @@ var SKINS = {
         telemetry: "skins/nothing/Telemetry.qml",
         curve: "skins/nothing/LightCycle.qml",
         displays: "skins/nothing/Displays.qml",
-        automation: "skins/nothing/Automation.qml"
+        automation: "skins/nothing/Automation.qml",
+        weather: "skins/nothing/Weather.qml",
+        forecast: "skins/nothing/Forecast.qml",
+        suntimes: "skins/nothing/SunTimes.qml"
     }
 };
 
@@ -147,7 +150,8 @@ var TABBAR_PLAIN = "components/tabs/PlainTabs.qml";
 var TABBAR = {
     "pixel": "components/tabs/PixelTabs.qml",
     "terminal": "components/tabs/TerminalTabs.qml",
-    "vector": "components/tabs/InstrumentTabs.qml"
+    "vector": "components/tabs/InstrumentTabs.qml",
+    "id:nothing": "skins/nothing/Tabs.qml"
 };
 
 /*! Path (relative to ui/) of the tab bar. Pass themeId "" and renderer "" for no theme. */

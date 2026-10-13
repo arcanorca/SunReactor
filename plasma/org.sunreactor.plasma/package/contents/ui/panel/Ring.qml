@@ -29,8 +29,40 @@ Item {
     readonly property bool known: view.percent >= 0
     readonly property real fraction: known ? view.percent / 100 : 0
 
-    implicitWidth: theme.isPixel ? tile.implicitWidth : gauge.width
-    implicitHeight: theme.isPixel ? tile.implicitHeight : gauge.height
+    implicitWidth: dotted ? ringDots.implicitWidth : (theme.isPixel ? tile.implicitWidth : gauge.width)
+    implicitHeight: dotted ? ringDots.implicitHeight : (theme.isPixel ? tile.implicitHeight : gauge.height)
+
+    // --- Nothing: a dotted circle with the figure inside -------------------------------
+
+    readonly property bool dotted: view.dotted
+    /*! Thirteen dots across: the figure fits the hole, and the ring a whole device pixel per dot. */
+    readonly property real dotPitch: Math.max(3, Math.floor(view.graphicSize * view.dpr / 13)) / view.dpr
+
+    DotRing {
+        id: ringDots
+
+        visible: root.dotted
+        diameter: 13
+        dots: 36
+        value: root.fraction
+        headAccent: root.known
+        pitch: root.dotPitch
+        litColor: root.view.panelText
+        accentColor: root.view.dataInk
+        dimColor: root.view.dotGhost
+    }
+
+    DotText {
+        anchors.centerIn: parent
+        visible: root.dotted
+        text: root.known ? String(root.view.percent) : "—"
+        face: "tiny"
+        size: 1
+        letterSpacing: 0
+        pitch: root.dotPitch
+        litColor: root.view.panelText
+        dimColor: "transparent"
+    }
 
     // --- pixel -------------------------------------------------------------------------
 
@@ -134,7 +166,7 @@ Item {
         readonly property real stroke: root.theme.grid.snap(Math.max(2, width * (root.theme.isTerminal ? 0.14 : 0.1)))
         readonly property real radius: (width - stroke) / 2
 
-        visible: !root.theme.isPixel
+        visible: !root.theme.isPixel && !root.dotted
         width: root.theme.grid.snap(root.view.graphicSize)
         height: width
 
