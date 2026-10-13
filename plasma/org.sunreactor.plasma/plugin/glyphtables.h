@@ -31,11 +31,12 @@ const Face &tinyFace();
  *  glyph, cap rows 0..6, descender row 7; the ellipsis, the triangle used by
  *  drop-down gadgets, degree sign and middle dot are included. */
 const Face &topazFace();
-/*! PETSCII-style 4x8 text-mode face (Commodore 64 screen, the C64 skin): one
- *  4-column cell per character so 36+ cells fit a 19 gu popup at integer art
- *  pixels; cap rows 0..6, row 7 blank except descenders and graphics; the
- *  box-drawing, half/eighth/full blocks, shade blocks, the bullets, the
- *  triangles, sun/cloud symbols and the ellipsis / middle dot / degree sign. */
+/*! PETSCII-style 6x8 text-mode face (Commodore 64 screen, the C64 skin): a
+ *  5x7 capital cell plus one blank column and one blank row, so every glyph
+ *  advances 6 columns and a line is 8 rows; cap rows 0..6, row 7 blank. The
+ *  graphics (box-drawing, half/eighth/full blocks, shades, bullets, triangles,
+ *  sun/cloud symbols) fill the whole cell, and the ellipsis / middle dot /
+ *  degree sign are included. */
 const Face &petsciiFace();
 /*! Seven-segment cells: bit 0 a (top) .. bit 6 g (middle). */
 const QHash<char32_t, quint8> &segFace();

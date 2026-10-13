@@ -1,9 +1,10 @@
 /*
- * One line, or wrapped lines, of PETSCII text in art px: 4 art px per character
- * cell, 8 rows per line. PixelGlyphs rasterises it on the CPU at art resolution
- * (exact inside a PixelSurface). Lower case shows as capitals; labels are
- * folded to the glyphs the face has (Petscii.js). Measured in cells: artWidth is
- * 4 per character.
+ * One line, or wrapped lines, of PETSCII text in art px: 6 art px per character
+ * cell (a 5x7 glyph and a blank column), 8 rows per line. PixelGlyphs rasterises
+ * it on the CPU at art resolution (exact inside a PixelSurface). Lower case shows
+ * as capitals; labels are folded to the glyphs the face has (Petscii.js).
+ * Measured in cells: artWidth is 6 per character. Pass maximumArtWidth wherever a
+ * line can be longer than its column: an unwrapped line is not cut, it overflows.
  */
 
 pragma ComponentBehavior: Bound

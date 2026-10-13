@@ -55,7 +55,7 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-displays"
 
         readonly property int cols: style.cols(artWidth)
@@ -64,12 +64,13 @@ Item {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             C64Text {
                 ink: style.ink
                 text: "LOAD \"MI-MONITOR\",8,1"
+                maximumArtWidth: body.width
             }
 
             Repeater {
@@ -87,7 +88,8 @@ Item {
                     readonly property bool controllable: modelData.enabled !== false && !unavailable
                     readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
                     readonly property bool overridden: modelData.hasOverride === true
-                    readonly property int nameCols: surface.cols - 5 - (overridden ? 5 : 0)
+                    /*! Name, then the 4-cell percent, a gap, and the CLR key (3 cells) when held. */
+                    readonly property int nameCols: surface.cols - 5 - (overridden ? 3 : 0)
 
                     width: body.width
 
@@ -136,6 +138,7 @@ Item {
                         C64Gauge {
                             visible: monitorRow.controllable
                             cells: surface.cols - 2
+                            cw: style.cw
                             value: monitorRow.percent < 0 ? 0 : monitorRow.percent
                             active: monitorRow.controllable
                             ink: style.ink

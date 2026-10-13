@@ -43,7 +43,7 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-suntimes"
 
         readonly property int cols: style.cols(artWidth)
@@ -52,13 +52,15 @@ Item {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             C64Text {
                 ink: style.hot
                 text: "RISE " + PixelFormat.time(root.client.sunriseEpochS)
                     + "  SET " + PixelFormat.time(root.client.sunsetEpochS)
+                maximumArtWidth: body.width
+                maximumLines: 2
             }
             C64Text {
                 ink: style.ink

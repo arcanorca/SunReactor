@@ -118,6 +118,13 @@ Item {
         return Math.round(Petscii.valueAt(samples, client.nowEpochS, "pct")) + "%";
     }
 
+    /*! The curve's title, with its ",8,1" suffix only when the NOW readout still fits beside it. */
+    function titleFor(cols) {
+        const full = "LOAD \"DAYLIGHT\",8,1";
+        const short = "LOAD \"DAYLIGHT\"";
+        return Petscii.cells(full) + 1 + Petscii.cells("NOW " + nowLabel) <= cols ? full : short;
+    }
+
     implicitHeight: surface.implicitHeight
 
     Accessible.role: Accessible.Graphic
@@ -130,7 +137,7 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-curve"
 
         readonly property int cols: style.cols(artWidth)
@@ -141,7 +148,7 @@ Item {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             Row {
@@ -151,7 +158,8 @@ Item {
                     id: curveTitle
 
                     ink: style.ink
-                    text: "LOAD \"DAYLIGHT\",8,1"
+                    text: root.titleFor(surface.cols)
+                    maximumArtWidth: body.width
                 }
                 Item {
                     width: Math.max(0, body.width - curveTitle.width - nowText.width)
@@ -162,6 +170,7 @@ Item {
 
                     ink: style.hot
                     text: "NOW " + root.nowLabel
+                    maximumArtWidth: body.width
                 }
             }
             Repeater {

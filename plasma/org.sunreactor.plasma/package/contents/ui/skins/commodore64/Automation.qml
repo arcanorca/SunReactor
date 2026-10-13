@@ -15,6 +15,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
+import "Petscii.js" as Petscii
 
 Item {
     id: root
@@ -41,6 +42,14 @@ Item {
         manual: "F3 " + i18ndc(control.domain, "Mode segment, compact: set brightness by hand", "MAN"),
         paused: "F5 " + i18ndc(control.domain, "Mode segment, compact: stop adjusting for a while", "PAUSE"),
     })
+    /*! The captions by choice id, shortened to fit the row (one cell between keys). */
+    function keyTexts(cols) {
+        const ids = ["automatic", "manual", "paused"];
+        const fitted = Petscii.fitRow(ids.map(id => root.captions[id]), cols, 1);
+        const out = {};
+        ids.forEach((id, i) => { out[id] = fitted[i]; });
+        return out;
+    }
 
     /*! The status sentence and the idle note, joined: one line that may wrap. */
     readonly property string statusLine: root.control.hinting || root.control.note.length === 0
@@ -103,21 +112,23 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-automation"
 
         readonly property int cols: style.cols(artWidth)
+        readonly property var keyTexts: root.keyTexts(cols)
 
         Column {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             C64Text {
                 ink: style.ink
                 text: "LOAD \"MODE\",8,1"
+                maximumArtWidth: body.width
             }
 
             Row {
@@ -136,7 +147,7 @@ Item {
 
                         readonly property string choiceId: modelData.id
 
-                        text: root.captions[key.choiceId] || modelData.label
+                        text: surface.keyTexts[key.choiceId] || modelData.label
                         lit: root.control.choice === key.choiceId
                         fill: lit ? style.hot : style.ink
                         ink: style.screen
@@ -162,7 +173,7 @@ Item {
                 ink: root.control.hinting ? style.hot : style.ink
                 text: root.statusLine
                 maximumArtWidth: body.width
-                maximumLines: 2
+                maximumLines: 3
             }
 
             C64Text {

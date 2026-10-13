@@ -58,7 +58,7 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-telemetry"
 
         readonly property int cols: style.cols(artWidth)
@@ -67,24 +67,31 @@ Item {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             C64Text {
                 ink: style.hot
                 text: "**** SUNREACTOR LUMINANCE V1 ****"
+                maximumArtWidth: body.width
+                maximumLines: 2
             }
             C64Text {
                 ink: style.ink
                 text: "64K RAM SYSTEM  " + root.displayCount + " DISPLAYS"
+                maximumArtWidth: body.width
+                maximumLines: 2
             }
             C64Text {
                 ink: style.ink
                 text: root.stateWord + "  " + PixelFormat.time(root.client.nowEpochS)
+                maximumArtWidth: body.width
+                maximumLines: 2
             }
             C64Text {
                 ink: style.ink
                 text: "READY. █"
+                maximumArtWidth: body.width
             }
         }
     }

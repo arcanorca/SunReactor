@@ -15,6 +15,7 @@ const ALLOWED = /[^A-Z0-9 !"#$%&'()*+,\-.\/:;<=>?@\[\\\]_°·…─│┌┐└�
  *  rest replaced by "?". One character is one cell, so the result is safe to measure. */
 function fold(text) {
     let s = String(text === undefined || text === null ? "" : text).toUpperCase();
+    s = s.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
     s = s.replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, "\"");
     s = s.replace(/\u2192/g, ">").replace(/\u2190/g, "<").replace(/\u2191/g, "^").replace(/\u2193/g, "v").replace(/[\u2022\u2219\u22C5]/g, "\u00B7");
     s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -31,6 +32,33 @@ function fit(text, n) {
         return s;
     }
     return s.slice(0, Math.max(0, n - 1)) + ".";
+}
+
+/*! Cells a label takes on the screen: one per character after folding. */
+function cells(text) {
+    return fold(text).length;
+}
+
+/*! Labels side by side with `gap` cells between them, folded, shortened to fit
+ *  `cols` cells. While the row is too wide the longest label loses one cell,
+ *  ending in a visible "."; ties go to the first label, so the result is the
+ *  same every time. */
+function fitRow(labels, cols, gap) {
+    const out = labels.map(fold);
+    const width = () => out.reduce((sum, s) => sum + s.length, 0) + gap * Math.max(0, out.length - 1);
+    while (width() > cols) {
+        let longest = -1;
+        for (let i = 0; i < out.length; ++i) {
+            if (out[i].length > 1 && (longest < 0 || out[i].length > out[longest].length)) {
+                longest = i;
+            }
+        }
+        if (longest < 0) {
+            break;
+        }
+        out[longest] = fit(out[longest], out[longest].length - 1);
+    }
+    return out;
 }
 
 /*! Eighths of a cell filled from the bottom: 0 blank .. 8 full block. */

@@ -3,9 +3,12 @@
  * roles of the Pepto-style palette. Every colour is a theme token (palette
  * entry), never a literal, so the pixel conformance check stays meaningful.
  *
- * Grid: a character cell is 4 art px wide and 8 art px tall (a half-width PETSCII
- * cell: 36 to 42 columns in the 19 gu popup at integer art pixels). The popup
- * frame is `frameWidth` art px thick; modules keep `margin` art px clear of it.
+ * Grid: a character cell is 6 art px wide (a 5x7 glyph and one blank column) and
+ * 8 art px tall (seven glyph rows and one blank row). A module is about 20 to 36
+ * cells across at the usual ratios and art pixel sizes (the tab bar is a few
+ * cells narrower); every layout takes its column count from `cols` and shortens
+ * its labels to fit. The popup frame is `frameWidth` art px thick; modules keep
+ * `margin` art px clear of it.
  */
 
 pragma ComponentBehavior: Bound
@@ -20,10 +23,15 @@ QtObject {
     required property Theme theme
 
     /*! Cell width and height, art px. */
-    readonly property int cw: 4
+    readonly property int cw: 6
     readonly property int ch: 8
     /*! Art px between the popup frame and the content. */
     readonly property int margin: 4
+    /*! Art px above and below a module's text. The bottom pad is the larger one:
+     *  the screen's bottom edge is rounded down to whole art px, so the last
+     *  text row of a module needs more than the frame's band (3 art px) clear. */
+    readonly property int padTop: 2
+    readonly property int padBottom: 4
     /*! Thickness of the light-blue popup frame, art px. */
     readonly property int frameWidth: 3
 

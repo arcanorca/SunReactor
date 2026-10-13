@@ -81,7 +81,7 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-weather"
 
         readonly property int cols: style.cols(artWidth)
@@ -92,12 +92,13 @@ Item {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             C64Text {
                 ink: style.ink
                 text: "LOAD \"WEATHER\",8,1"
+                maximumArtWidth: body.width
             }
 
             Row {
@@ -130,6 +131,7 @@ Item {
                         ink: style.hot
                         text: "TEMP " + (root.client.hasTemperature
                             ? Math.round(root.client.temperatureC) + "°C" : "--°C")
+                        maximumArtWidth: surface.infoCols * style.cw
                     }
                     C64Text {
                         ink: style.ink

@@ -1,8 +1,9 @@
 /*
  * A reverse-video keycap: the label in the screen colour on a solid block of
- * `fill` (light blue, or white when lit). Used for the function-key tabs and
- * the mode control. Click, Space and Enter activate it; the focus ring is one
- * art px inside the block.
+ * `fill` (light blue, or white when lit), the block exactly as wide as its cells
+ * (no padding, as on the C64 screen). Used for the function-key tabs and the
+ * mode control. Click, Space and Enter activate it; the focus ring is one art px
+ * inside the block.
  */
 
 pragma ComponentBehavior: Bound
@@ -16,8 +17,8 @@ Item {
     property color fill: "transparent"
     property color ink: "transparent"
     property bool lit: false
-    /*! Blank cells either side of the label, art px. */
-    property int padX: 4
+    /*! Blank art px either side of the label (0: the block is the label's cells). */
+    property int padX: 0
 
     signal activated()
 

@@ -14,6 +14,8 @@ Item {
 
     /*! Cells between the two half blocks (at least one). */
     property int cells: 20
+    /*! Art px per character cell (the skin's C64Style.cw). */
+    property int cw: 6
     /*! 0..100 as the daemon reports it. */
     property int value: 0
     /*! False: shows the value, takes no input. */
@@ -33,7 +35,7 @@ Item {
     readonly property int filled: cellsOf(shownValue)
     readonly property string glyphs: "▐" + "█".repeat(filled) + "░".repeat(slots - filled) + "▌"
 
-    readonly property int artWidth: (slots + 2) * 4
+    readonly property int artWidth: (slots + 2) * cw
     readonly property int artHeight: 8
 
     implicitWidth: artWidth
@@ -58,7 +60,7 @@ Item {
 
     /*! The value a click at art x `ax` (from the gauge's left edge) sets. */
     function valueAtX(ax) {
-        const i = Math.floor(ax / 4) - 1;
+        const i = Math.floor(ax / cw) - 1;
         return valueOf(Math.max(0, Math.min(slots - 1, i)) + 1);
     }
 

@@ -21,6 +21,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
+    /*! Up to five slots; fewer when the popup is narrow (at least four cells each). */
     readonly property int slotCount: 5
     readonly property var points: client.forecast.slice(0, slotCount)
 
@@ -28,6 +29,15 @@ Item {
         id: style
 
         theme: root.theme
+    }
+
+    /*! The condition icon and the temperature in a slot of `cells`, one cell kept
+     *  clear on the right; the degree sign goes first when the slot is narrow. */
+    function slotTemperature(point, cells) {
+        const icon = Petscii.icon(point.condition, point.isNight);
+        const degrees = Math.round(point.temperatureC);
+        const full = icon + degrees + "°";
+        return Petscii.cells(full) <= cells - 1 ? full : Petscii.fit(icon + degrees, cells - 1);
     }
 
     implicitHeight: surface.implicitHeight
@@ -41,27 +51,29 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + 2 * style.margin
+        artHeight: body.height + style.padTop + style.padBottom
         regionName: "c64-forecast"
 
         readonly property int cols: style.cols(artWidth)
-        readonly property int slotCols: Math.floor(cols / root.slotCount)
+        readonly property int shown: Math.max(1, Math.min(root.points.length, Math.floor(cols / 4)))
+        readonly property int slotCols: Math.floor(cols / shown)
 
         Column {
             id: body
 
             x: style.left(surface.artWidth)
-            y: style.margin
+            y: style.padTop
             width: surface.cols * style.cw
 
             C64Text {
                 ink: style.ink
                 text: "LOAD \"FORECAST\",8,1"
+                maximumArtWidth: body.width
             }
 
             Row {
                 Repeater {
-                    model: root.points
+                    model: root.points.slice(0, surface.shown)
 
                     delegate: Column {
                         id: slot
@@ -73,12 +85,13 @@ Item {
 
                         C64Text {
                             ink: style.hot
-                            text: PixelFormat.time(slot.modelData.epochS)
+                            text: PixelFormat.hour(new Date(slot.modelData.epochS * 1000).getHours())
+                            maximumArtWidth: slot.width
                         }
                         C64Text {
                             ink: style.ink
-                            text: Petscii.icon(slot.modelData.condition, slot.modelData.isNight) + " "
-                                + Math.round(slot.modelData.temperatureC) + "°"
+                            text: root.slotTemperature(slot.modelData, slot.width / style.cw)
+                            maximumArtWidth: slot.width
                         }
                     }
                 }
