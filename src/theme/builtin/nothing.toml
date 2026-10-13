@@ -1,7 +1,7 @@
 id = "nothing"
 name = "Nothing"
 aliases = ["glyph"]
-family = "pixel"
+family = "instrument"
 
 [palette]
 bg = "#000000"
@@ -17,3 +17,13 @@ error = "#d71921"
 
 [tui]
 glyph_style = "rounded"
+
+# Flagship dot-matrix skin for the Plasma widget (DESIGN.md section 2, BRAND.md):
+# an instrument family with its own skin, not pixel art.
+[widget]
+renderer = "vector"
+font = "mono"
+radius = 24
+border = "line"
+density = "comfortable"
+glow = 0.0

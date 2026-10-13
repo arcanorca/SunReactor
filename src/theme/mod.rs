@@ -254,7 +254,7 @@ pub struct WidgetStyle {
 
 /// Limits enforced by validation.
 pub const MAX_PIXEL_SCALE: u8 = 6;
-pub const MAX_RADIUS: u8 = 16;
+pub const MAX_RADIUS: u8 = 24;
 pub const MIN_SHADES: usize = 2;
 pub const MAX_SHADES: usize = 16;
 

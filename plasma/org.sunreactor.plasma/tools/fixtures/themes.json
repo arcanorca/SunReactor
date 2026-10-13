@@ -1064,7 +1064,7 @@
   "fg": "#ffffff",
   "text_muted": "#8a8a8a",
   "id": "nothing",
-  "family": "pixel",
+  "family": "instrument",
   "glyph_style": "rounded",
   "palette": {
    "bg": "#000000",
@@ -1079,8 +1079,8 @@
    "error": "#d71921"
   },
   "widget": {
-   "renderer": "pixel",
-   "font": "bitmap8",
+   "renderer": "vector",
+   "font": "mono",
    "pixel_scale": 0,
    "shades": [
     "#000000",
@@ -1088,10 +1088,10 @@
     "#8a8a8a",
     "#ffffff"
    ],
-   "density": "compact",
+   "density": "comfortable",
    "border": "line",
-   "radius": 0,
-   "dither": "bayer4",
+   "radius": 24,
+   "dither": "none",
    "glow": 0.0,
    "modules": [
     "telemetry",

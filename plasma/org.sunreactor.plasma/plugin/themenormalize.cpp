@@ -234,7 +234,7 @@ QVariantMap normalizeTheme(const QJsonObject &theme)
     }
     const QJsonValue radius = widget.value(QStringLiteral("radius"));
     if (radius.isDouble()) {
-        w[QStringLiteral("radius")] = qBound(0, radius.toInt(), 16);
+        w[QStringLiteral("radius")] = qBound(0, radius.toInt(), 24);
     }
     const QJsonValue glow = widget.value(QStringLiteral("glow"));
     if (glow.isDouble()) {

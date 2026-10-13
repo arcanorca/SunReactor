@@ -51,6 +51,10 @@ target_sources(sunreactorplugin PRIVATE
     plugin/pixelart.h
     plugin/pixelsprite.cpp
     plugin/pixelsprite.h
+    plugin/glyphtables.cpp
+    plugin/glyphtables.h
+    plugin/dotmatrix.cpp
+    plugin/dotmatrix.h
 )
 
 target_include_directories(sunreactorplugin PUBLIC
@@ -126,6 +130,27 @@ target_link_libraries(test_sunreactorclient PRIVATE
 )
 
 add_test(NAME test_sunreactorclient COMMAND test_sunreactorclient)
+
+# Dot-matrix primitives: glyph coverage and the pitch snapping rule (no QML).
+add_executable(test_dotmatrix
+    tests/test_dotmatrix.cpp
+    plugin/dotmatrix.cpp
+    plugin/glyphtables.cpp
+)
+
+target_include_directories(test_dotmatrix PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin
+)
+
+target_link_libraries(test_dotmatrix PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::Test
+)
+
+add_test(NAME test_dotmatrix COMMAND test_dotmatrix)
 
 # Theme engine tests: QML TestCase against the plugin in the build tree.
 find_program(QMLTESTRUNNER_EXECUTABLE NAMES qmltestrunner6 qmltestrunner

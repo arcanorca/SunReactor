@@ -57,7 +57,7 @@ pixel_scale = 0                 # 0 = auto from DPR; 1..6 = preferred art-pixel 
 shades     = ["#0f380f","#306230","#8bac0f","#9bbc0f"]   # dark->light, 2..16; derived if absent (see below)
 density    = "compact"          # compact | comfortable
 border     = "line"             # none | line | bevel | inset | double
-radius     = 0                  # 0..16 logical px (ignored by pixel renderer)
+radius     = 0                  # 0..24 logical px (ignored by pixel renderer)
 dither     = "bayer4"           # none | bayer2 | bayer4
 glow       = 0.0                # 0..1 phosphor/tube bloom
 modules    = ["telemetry","curve","displays","automation","weather","forecast","suntimes"]
@@ -75,14 +75,16 @@ As implemented: `instrument` defaults to `font = "sans"`; `pixel_scale` defaults
 to 0 and `modules` to all seven in the order above. `shades` is always
 resolved for every family (so a renderer override still has a ramp): when
 absent it is `[bg, border_inactive, text_muted, fg]` sorted by luminance.
-Validation: `pixel_scale` 0..=6, `radius` 0..=16, `glow` 0.0..=1.0, modules
+Validation: `pixel_scale` 0..=6, `radius` 0..=24, `glow` 0.0..=1.0, modules
 unique; unknown keys anywhere are errors. Name/alias matching is
 case-insensitive and treats `-`/space as `_` (and `vfdhifi` == `vfd_hifi`).
 
 Classification of the 35 built-ins: **pixel** = handheld, commodore64, amiga,
-classicmacintosh, casiodigital, nothing, cyberpunk, synthwave84, hackergreen;
+classicmacintosh, casiodigital, cyberpunk, synthwave84, hackergreen;
 **instrument** = braun, vfd_hifi, nixie, oscilloscope, thinkpad,
-unixworkstation, phosphorblue, amber, grayscale; **terminal** = all editor
+unixworkstation, phosphorblue, amber, grayscale, and nothing (the flagship
+dot-matrix skin: round dots, not pixel art, so it takes the instrument defaults
+with `renderer = "vector"`, `font = "mono"`, `radius = 24`); **terminal** = all editor
 palettes (dracula, nord, gruvbox, catppuccinmocha, tokyonight, onedark,
 ayudark, ayumirage, solarizeddark, everforest, kanagawa, zenburn, monokai,
 nightowl, materialocean, rosepine, terminal). Built-in palettes must be

@@ -759,7 +759,6 @@ fn builtin_families_follow_design_classification() {
         "amiga",
         "classicmacintosh",
         "casiodigital",
-        "nothing",
         "cyberpunk",
         "synthwave84",
         "hackergreen",
@@ -774,6 +773,7 @@ fn builtin_families_follow_design_classification() {
         "phosphorblue",
         "amber",
         "grayscale",
+        "nothing",
     ];
     let registry = Registry::builtin();
     for theme in registry.themes() {
@@ -868,6 +868,15 @@ fn family_defaults_fill_widget_tokens() {
     assert_eq!(braun.widget.font, Font::Sans);
     assert_eq!(braun.widget.radius, 4);
     assert_eq!(braun.widget.density, Density::Comfortable);
+
+    let nothing = registry.get("nothing").unwrap();
+    assert_eq!(nothing.family, Family::Instrument);
+    assert_eq!(nothing.widget.renderer, Renderer::Vector);
+    assert_eq!(nothing.widget.font, Font::Mono);
+    assert_eq!(nothing.widget.radius, 24);
+    assert_eq!(nothing.widget.border, Border::Line);
+    assert_eq!(nothing.widget.density, Density::Comfortable);
+    assert_eq!(nothing.widget.glow, 0.0);
 
     let nord = registry.get("nord").unwrap();
     assert_eq!(nord.widget.renderer, Renderer::Terminal);

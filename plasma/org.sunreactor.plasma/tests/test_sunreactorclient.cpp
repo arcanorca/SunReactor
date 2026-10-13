@@ -973,7 +973,7 @@ void TestSunReactorClient::testMalformedThemeFallsBackToDefaults()
     const QVariantMap widget = out.value(QStringLiteral("widget")).toMap();
     QCOMPARE(widget.value(QStringLiteral("renderer")).toString(), QStringLiteral("pixel"));
     QCOMPARE(widget.value(QStringLiteral("font")).toString(), QStringLiteral("bitmap8"));
-    QCOMPARE(widget.value(QStringLiteral("radius")).toInt(), 16);
+    QCOMPARE(widget.value(QStringLiteral("radius")).toInt(), 24);
     QCOMPARE(widget.value(QStringLiteral("pixelScale")).toInt(), 0);
     QCOMPARE(widget.value(QStringLiteral("glow")).toDouble(), 1.0);
     // One bad colour voids the whole ramp: QML derives shades from the palette.
