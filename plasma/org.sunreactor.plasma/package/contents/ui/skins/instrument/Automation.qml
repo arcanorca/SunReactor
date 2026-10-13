@@ -1,25 +1,29 @@
 /*
- * Automation, instrument family: mode, reason and what happens next, as a
- * legend block.
+ * Automation, instrument family: the mode as a three-cell front-panel switch,
+ * then what the daemon is doing and until when.
  *
- *   AUTOMATION ──────────────────────────────────────────────────
- *   [AUTO]  Following the sun and the weather
- *   NEXT    16:20   Set 50%  → 23 %                     IN 1 H 50
+ *   AUTOMATION ──────────────────────────────────────────────
+ *   ┌──────────────┬──────────────┬──────────────┐
+ *   │  AUTOMATIC   │    MANUAL    │  PAUSED  ▾   │
+ *   └──────────────┴──────────────┴──────────────┘
+ *   Following the sun and the weather · Next 4:20 PM · Set 50% → 23%
  *
- * When the user has taken over, the tag turns to the warning tone and the
- * block offers the way back. Hidden while the daemon simply follows the sun
- * and the curve has no next step.
+ * The lit cell is the state (ok for automatic, warning for manual and paused).
+ * While the daemon is not automatic, AUTOMATIC takes the accent: the way back.
+ * Left and Right move between cells, Space or Enter picks one, Down opens the
+ * pause durations on PAUSED. The rules are in modules/ModeControl.qml.
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../../Format.js" as Format
+import "../../components"
 
 ColumnLayout {
     id: root
@@ -28,185 +32,222 @@ ColumnLayout {
     required property SunReactorClient client
     required property ModuleSettings settings
 
-    readonly property string domain: settings.domain
     readonly property InstrumentStyle style: InstrumentStyle {
         theme: root.theme
     }
-
-    /*! The next milestone of the first display's curve still ahead, or null. */
-    readonly property var nextMilestone: {
-        const curve = client.dayCurve;
-        if (!curve || !curve.monitors || curve.monitors.length === 0) {
-            return null;
-        }
-        for (const milestone of curve.monitors[0].milestones) {
-            if (milestone.t > client.nowEpochS) {
-                return milestone;
-            }
-        }
-        return null;
+    readonly property ModeControl control: ModeControl {
+        client: root.client
+        settings: root.settings
     }
-    readonly property bool automatic: client.mode === SunReactorClient.Automatic
-    readonly property bool available: client.isConnected && (!automatic || nextMilestone !== null)
-
-    readonly property string modeTag: {
-        switch (client.mode) {
-        case SunReactorClient.Paused:
-            return i18ndc(domain, "Automation mode tag", "Paused");
-        case SunReactorClient.Manual:
-            return i18ndc(domain, "Automation mode tag", "Manual");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Automation mode tag", "Idle");
-        default:
-            return i18ndc(domain, "Automation mode tag", "Auto");
-        }
-    }
-    readonly property string modeTitle: {
-        switch (client.mode) {
-        case SunReactorClient.Paused:
-            return i18nd(domain, "Paused");
-        case SunReactorClient.Manual:
-            return i18nd(domain, "Set by hand");
-        case SunReactorClient.IdleDimmed:
-            return i18nd(domain, "Dimmed while idle");
-        default:
-            return client.hasWeatherReading
-                ? i18nd(domain, "Following the sun and the weather")
-                : i18nd(domain, "Following the sun");
-        }
-    }
-    /*! Until when the current non-automatic state lasts, as text. */
-    readonly property string untilText: {
-        switch (client.mode) {
-        case SunReactorClient.Paused:
-            return client.suspendUntilEpochS > 0 ? Format.timeText(client.suspendUntilEpochS)
-                                                 : i18ndc(domain, "Paused with no end time", "until resumed");
-        case SunReactorClient.Manual:
-            return client.overrideUntilEpochS > 0 ? Format.timeText(client.overrideUntilEpochS)
-                                                  : i18ndc(domain, "Manual with no end time", "until switched back");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Idle dimming ends", "until you return");
-        default:
-            return "";
-        }
-    }
-
-    function durationText(seconds) {
-        const minutes = Math.max(0, Math.round(seconds / 60));
-        const h = Math.floor(minutes / 60);
-        const m = minutes % 60;
-        if (h > 0) {
-            return i18ndc(domain, "Time remaining, hours and minutes, compact", "in %1 h %2", h,
-                          String(m).padStart(2, "0"));
-        }
-        return i18ndc(domain, "Time remaining in minutes, compact", "in %1 min", m);
-    }
-
-    /*! Tag column width, shared by the "Next"/"Until" legend so values align. */
-    readonly property real labelColumn: style.snap(tagMetrics.width + style.snap(style.sizeLegend * 0.55) * 2)
+    readonly property bool available: client.isConnected
 
     spacing: style.rowGap
 
-    Accessible.role: Accessible.StaticText
-    Accessible.name: modeTitle
+    Accessible.role: Accessible.Grouping
+    Accessible.name: i18ndc(control.domain, "Accessible name of the automation mode switch", "Automation mode")
+
+    function focusCell(index) {
+        const count = control.order.length;
+        const cell = cells.itemAt((index + count) % count);
+        if (cell) {
+            cell.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
+
+    function openDurations(cell) {
+        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
+        durations.y = cell.mapToItem(root, 0, cell.height).y;
+        durations.open();
+    }
 
     Legend {
         Layout.fillWidth: true
         style: root.style
-        text: i18ndc(root.domain, "Instrument legend over the automation state", "Automation")
+        text: i18ndc(root.control.domain, "Instrument legend over the automation state", "Automation")
     }
 
-    RowLayout {
+    Rectangle {
+        id: panel
+
         Layout.fillWidth: true
-        spacing: root.style.gap2
+        implicitHeight: root.style.snap(root.style.sizeLegend * 2.5)
+        radius: root.style.tagRadius
+        antialiasing: radius > 0
+        color: "transparent"
 
-        Tag {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: root.labelColumn
-            style: root.style
-            text: root.modeTag
-            tone: root.automatic ? root.style.ok : root.style.warning
-            filled: !root.automatic
+        RowLayout {
+            anchors.fill: parent
+            spacing: 0
+
+            Repeater {
+                id: cells
+
+                model: root.control.choices
+
+                delegate: Item {
+                    id: cell
+
+                    required property var modelData
+                    required property int index
+
+                    readonly property string choiceId: modelData.id
+                    readonly property bool lit: root.control.choice === choiceId
+                    readonly property bool call: choiceId === "automatic" && root.control.choice !== ""
+                        && root.control.choice !== "automatic"
+                    readonly property color tone: choiceId === "automatic" ? root.style.ok : root.style.warning
+                    readonly property color ink: {
+                        if (lit) {
+                            return root.style.theme.onColor(tone);
+                        }
+                        if (call) {
+                            return root.style.accent;
+                        }
+                        return hover.containsMouse ? root.style.ink : root.style.inkMuted;
+                    }
+
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    activeFocusOnTab: true
+
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.description: modelData.tip
+                    Accessible.checkable: true
+                    Accessible.checked: lit
+                    Accessible.onPressAction: root.control.pick(choiceId, root)
+
+                    Keys.onLeftPressed: root.focusCell(index - 1)
+                    Keys.onRightPressed: root.focusCell(index + 1)
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            root.control.pick(choiceId, root);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Down && choiceId === "paused") {
+                            root.openDurations(cell);
+                            event.accepted = true;
+                        }
+                    }
+
+                    // Lit cell face, the accent frame of the way back, hairline divider, focus ring.
+                    Rectangle {
+                        anchors.fill: parent
+                        color: cell.lit ? cell.tone : "transparent"
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: root.style.line2
+                        visible: cell.call
+                        color: "transparent"
+                        border.width: root.style.line2
+                        border.color: root.style.accent
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: !cell.lit && !cell.call && hover.containsMouse
+                        color: root.style.theme.alpha(root.style.ink, 0.08)
+                    }
+                    Rectangle {
+                        visible: cell.index > 0
+                        anchors.left: parent.left
+                        width: root.style.hairline
+                        height: parent.height
+                        color: root.style.ruleStrong
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: root.style.line2
+                        visible: cell.activeFocus
+                        color: "transparent"
+                        border.width: root.style.line2
+                        border.color: root.style.theme.borderActive
+                    }
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: root.style.gap
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: cell.modelData.label
+                            textFormat: Text.PlainText
+                            font: root.style.legendFont
+                            color: cell.ink
+                        }
+
+                        // The arrow has its own hit area: a click there opens the durations.
+                        Item {
+                            visible: cell.choiceId === "paused"
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: arrow.width + root.style.gap * 2
+                            height: root.style.snap(root.style.sizeLegend * 2)
+
+                            Kirigami.Icon {
+                                id: arrow
+
+                                anchors.centerIn: parent
+                                width: root.style.snap(root.style.sizeLegend)
+                                height: width
+                                source: "arrow-down"
+                                isMask: true
+                                color: cell.ink
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openDurations(cell)
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: hover
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            cell.forceActiveFocus(Qt.MouseFocusReason);
+                            root.control.pick(cell.choiceId, root);
+                        }
+                    }
+                }
+            }
         }
 
-        Text {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            text: root.modeTitle
-            textFormat: Text.PlainText
-            font: root.style.bodyFont
-            color: root.style.ink
-            elide: Text.ElideRight
-        }
-
-        PushButton {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.client.isOverrideActive
-            style: root.style
-            tone: root.style.ink
-            text: i18ndc(root.domain, "@action:button Return to automatic brightness", "Automatic")
-            onClicked: root.client.clearAllOverrides()
-        }
-
-        TextMetrics {
-            id: tagMetrics
-            font: root.style.legendFont
-            text: "MANUAL"
+        // The frame is drawn over the cells, so a lit cell does not cover its edge.
+        Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            radius: root.style.tagRadius
+            antialiasing: radius > 0
+            border.width: root.style.hairline
+            border.color: root.style.ruleStrong
         }
     }
 
-    // Until when (paused / manual / idle) or what the curve does next.
-    RowLayout {
+    Text {
         Layout.fillWidth: true
-        spacing: root.style.gap2
-        visible: root.untilText.length > 0 || root.nextMilestone !== null
+        text: root.control.displayText
+        textFormat: Text.PlainText
+        font: root.style.bodyFont
+        color: root.control.hinting ? root.style.warning : root.style.ink
+        wrapMode: Text.WordWrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+    }
 
-        Text {
-            Layout.alignment: Qt.AlignBaseline
-            Layout.preferredWidth: root.labelColumn
-            text: root.automatic ? i18ndc(root.domain, "Legend: the next step of the curve", "Next")
-                                 : i18ndc(root.domain, "Legend: how long the current state lasts", "Until")
-            textFormat: Text.PlainText
-            font: root.style.legendFont
-            color: root.style.inkMuted
-        }
+    Text {
+        Layout.fillWidth: true
+        visible: text.length > 0
+        text: root.control.note
+        textFormat: Text.PlainText
+        font: root.style.legendFont
+        color: root.style.inkMuted
+    }
 
-        Text {
-            Layout.alignment: Qt.AlignBaseline
-            text: root.automatic ? Format.timeText(root.nextMilestone ? root.nextMilestone.t : 0) : root.untilText
-            textFormat: Text.PlainText
-            font: root.style.dataFont
-            color: root.style.ink
-        }
+    ModeDurationMenu {
+        id: durations
 
-        Text {
-            Layout.alignment: Qt.AlignBaseline
-            Layout.fillWidth: true
-            visible: root.automatic && root.nextMilestone !== null
-            text: root.nextMilestone
-                ? (root.nextMilestone.pct >= 0
-                    ? i18ndc(root.domain, "Milestone name, then the brightness it targets", "%1 → %2%",
-                             root.nextMilestone.label, root.nextMilestone.pct)
-                    : root.nextMilestone.label)
-                : ""
-            textFormat: Text.PlainText
-            font: root.style.bodyFont
-            color: root.style.inkMuted
-            elide: Text.ElideRight
-        }
-
-        Item {
-            Layout.fillWidth: true
-            visible: !root.automatic
-        }
-
-        Text {
-            Layout.alignment: Qt.AlignBaseline
-            visible: root.automatic && root.nextMilestone !== null
-            text: root.nextMilestone ? root.durationText(root.nextMilestone.t - root.client.nowEpochS) : ""
-            textFormat: Text.PlainText
-            font: root.style.legendFont
-            color: root.style.inkFaint
-        }
+        control: root.control
     }
 }

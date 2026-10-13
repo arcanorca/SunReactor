@@ -15,13 +15,13 @@
  */
 
 var FILES = {
-    pause: "components/footer/PauseControl.qml",
     theme: "components/footer/ThemeChip.qml",
     refresh: "components/footer/RefreshControl.qml"
 };
 
-/*! Left to right; a null entry is the flexible gap. */
-var ORDER = ["pause", null, "theme", "refresh"];
+/*! Left to right; a null entry is the flexible gap. Pausing lives in the
+    Automation module (modules/ModeControl.qml), not here. */
+var ORDER = [null, "theme", "refresh"];
 
 var SKINS = {
     "pixel": {},

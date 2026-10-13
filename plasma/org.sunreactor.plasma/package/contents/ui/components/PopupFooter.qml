@@ -1,7 +1,7 @@
 /*
- * The popup footer: a thin container. Its parts - Pause, the theme chip,
- * Update now - are loaded through footer/Parts.js, the same skin lookup the
- * modules use, so a family skin can replace any one of them.
+ * The popup footer: a thin container. Its parts - the theme chip and Update
+ * now - are loaded through footer/Parts.js, the same skin lookup the modules
+ * use, so a family skin can replace any one of them.
  *
  * Chrome comes from the theme: the theme background a step lighter, a hairline
  * in the theme's line colour on top. Without a daemon theme it is Plasma's own
@@ -29,7 +29,8 @@ Item {
 
     required property SunReactorClient client
     required property Theme theme
-    /*! Duration of the plain "Pause" click, from the widget's settings. */
+    /*! No longer read: pausing moved to the Automation module. Kept because
+        FullRepresentation still passes it, and that file is not edited here. */
     property int defaultPauseMinutes: 60
     /*! Plasmoid config: "follow" or "pinned", and the pinned id. */
     property string themeMode: "follow"

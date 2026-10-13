@@ -1,21 +1,18 @@
 /*
- * Terminal skin of the automation module: the TUI's automation panel and
- * schedule table (src/tui/ui/automation.rs) in one box.
+ * Terminal skin of the automation module: the mode as bracketed cells, in the
+ * same box as the TUI's automation panel.
  *
  *     ╭ Automation ─────────────────────── ● Live ╮
- *     │ ❯ Monitor   ‹ mi-monitor ›                │   with ≥2 displays
- *     │   Mode      Automatic                     │
- *     │   Next      Set 50% at 4:20 PM → 23%      │
- *     │                                           │
- *     │ Schedule ───────────────────────── ● now  │
- *     │      Event         Offset  Time    Target │
- *     │   ─────────────────────────────────────── │
- *     │   ●  Peak               —  12:55     50%  │
+ *     │ ❯[ Automatic ]  [ Manual ]  [ Paused ] ▾  │   the lit cell is inverse
+ *     │ Following the sun and the weather · Next  │
+ *     │ 4:20 PM · Set 50% → 23%                   │
+ *     │ ← → choose · ⏎ select · ↓ durations       │   while focused
  *     ╰───────────────────────────────────────────╯
  *
- * In a manual override or a pause it says until when and offers the way
- * back ("[ Automatic ]", or A / Enter while focused). Offsets are not part of
- * the day_curve answer, so that column shows the TUI's "—".
+ * One focus stop: Left and Right move the cursor (❯), Enter or Space picks the
+ * cell under it, Down opens the pause durations on Paused. Automatic is in the
+ * accent colour while the daemon is not automatic: the way back. The rules are
+ * in modules/ModeControl.qml.
  */
 
 pragma ComponentBehavior: Bound
@@ -25,8 +22,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../../Format.js" as Format
-import "Term.js" as Term
+import "../../components"
 
 FocusScope {
     id: root
@@ -35,88 +31,95 @@ FocusScope {
     required property SunReactorClient client
     required property ModuleSettings settings
 
-    readonly property string domain: settings.domain
-    readonly property var curves: client.dayCurve && client.dayCurve.monitors ? client.dayCurve.monitors : []
-    property int selected: 0
-    readonly property var current: curves.length > 0 ? curves[Math.max(0, Math.min(selected, curves.length - 1))] : null
-    readonly property var milestones: current ? current.milestones : []
-    readonly property int currentIndex: {
-        let found = -1;
-        for (let i = 0; i < milestones.length; ++i) {
-            if (milestones[i].t <= client.nowEpochS) {
-                found = i;
-            }
-        }
-        return found;
+    readonly property ModeControl control: ModeControl {
+        client: root.client
+        settings: root.settings
     }
-    readonly property var nextMilestone: currentIndex + 1 < milestones.length ? milestones[currentIndex + 1] : null
-    readonly property bool manual: client.mode === SunReactorClient.Manual
-    readonly property bool paused: client.mode === SunReactorClient.Paused
-    readonly property bool canReturn: client.isOverrideActive || paused
-
+    readonly property string domain: settings.domain
     readonly property bool available: client.isConnected
-        && (client.mode !== SunReactorClient.Automatic || milestones.length > 0)
+
+    /*! The cell the keys act on: 0 automatic, 1 manual, 2 paused. */
+    property int cursor: 0
+
+    readonly property int gap: 2
+    readonly property var labels: control.choices.map(choice => "[ " + choice.label + " ]")
+    /*! Column of each cell's marker; the label follows one cell later. */
+    readonly property var starts: {
+        const out = [];
+        let at = 2;
+        for (let i = 0; i < labels.length; ++i) {
+            out.push(at);
+            at += 1 + term.len(labels[i]) + gap;
+        }
+        return out;
+    }
+
+    activeFocusOnTab: true
+    implicitHeight: frame.implicitHeight
+
+    Accessible.role: Accessible.Grouping
+    Accessible.name: i18ndc(domain, "Accessible name of the automation mode switch", "Automation mode")
 
     TermMetrics {
         id: term
+
         theme: root.theme
     }
 
-    activeFocusOnTab: curves.length > 1 || canReturn
-    implicitHeight: frame.implicitHeight
-
-    function back() {
-        if (paused) {
-            client.resume();
-        } else {
-            client.clearAllOverrides();
-        }
-    }
-    function step(direction) {
-        if (curves.length > 1) {
-            selected = (Math.max(0, Math.min(selected, curves.length - 1)) + direction + curves.length) % curves.length;
-        }
+    function pick(index) {
+        root.cursor = index;
+        root.control.pick(root.control.order[index], root);
     }
 
-    Keys.onLeftPressed: root.step(-1)
-    Keys.onRightPressed: root.step(1)
+    function openDurations(cell) {
+        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
+        durations.y = cell.mapToItem(root, 0, cell.height).y;
+        durations.open();
+    }
+
+    /*! Splits the sentence at its " · " separators into lines of at most `width` cells. */
+    function wrapParts(text, width) {
+        const out = [];
+        let line = "";
+        for (const part of text.split(" · ")) {
+            const joined = line.length > 0 ? line + " · " + part : part;
+            if (line.length > 0 && term.len(joined) > width) {
+                out.push(line);
+                line = part;
+            } else {
+                line = joined;
+            }
+        }
+        if (line.length > 0) {
+            out.push(line);
+        }
+        return out;
+    }
+
+    Keys.onLeftPressed: root.cursor = (root.cursor + root.labels.length - 1) % root.labels.length
+    Keys.onRightPressed: root.cursor = (root.cursor + 1) % root.labels.length
     Keys.onPressed: event => {
-        if ((event.key === Qt.Key_A || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && root.canReturn) {
-            root.back();
+        if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            root.pick(root.cursor);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Down && root.cursor === 2) {
+            root.openDurations(cells.itemAt(2));
             event.accepted = true;
         }
     }
 
     readonly property var modeRuns: {
-        const t = theme;
-        switch (client.mode) {
-        case SunReactorClient.Paused:
-            return [{ t: "▲ " + i18ndc(domain, "Automation state", "Suspended"), c: t.warning, b: true },
-                    { t: client.suspendUntilEpochS > 0
-                         ? " · " + i18ndc(domain, "Placeholder is a time of day", "until %1", Format.timeText(client.suspendUntilEpochS))
-                         : " · " + i18nd(domain, "until you resume it"), c: t.textMuted }];
-        case SunReactorClient.Manual:
-            return [{ t: i18ndc(domain, "Automation state", "Manual override"), c: t.warning, b: true },
-                    { t: client.overrideUntilEpochS > 0
-                         ? " · " + i18ndc(domain, "Placeholder is a time of day", "until %1", Format.timeText(client.overrideUntilEpochS))
-                         : "", c: t.textMuted }];
+        const t = root.theme;
+        switch (root.client.mode) {
+        case SunReactorClient.Automatic:
         case SunReactorClient.IdleDimmed:
-            return [{ t: i18ndc(domain, "Automation state", "Idle dimmed"), c: t.warning }];
+            return [{ t: "● ", c: t.success }, { t: i18ndc(root.domain, "Daemon state in the status line", "Live"), c: t.textMuted }];
+        case SunReactorClient.Offline:
+            return [{ t: "○ ", c: t.error }, { t: i18ndc(root.domain, "Daemon state in the status line", "Offline"), c: t.textMuted }];
         default:
-            return [{ t: client.hasWeatherReading ? i18ndc(domain, "Automation state", "Automatic · sun and weather")
-                                                  : i18ndc(domain, "Automation state", "Automatic"), c: t.success }];
+            return [{ t: "▲ ", c: t.warning }, { t: i18ndc(root.domain, "Daemon state in the status line", "Attention"), c: t.textMuted }];
         }
     }
-    readonly property var nextRuns: nextMilestone
-        ? [{ t: nextMilestone.label, c: theme.fg },
-           { t: " " + i18ndc(domain, "Placeholder is a time of day, followed by an arrow and a percentage", "at %1",
-                             Format.timeText(nextMilestone.t)) + " → ", c: theme.textMuted },
-           { t: nextMilestone.pct >= 0 ? nextMilestone.pct + "%" : "—", c: theme.fg }]
-        : [{ t: milestones.length > 0 ? i18nd(domain, "Nothing more today") : "—", c: theme.textMuted }]
-
-    readonly property int labelCells: 10
-    readonly property bool showSelector: curves.length > 1
-    readonly property bool showTable: milestones.length > 0 && frame.innerCols >= 24
 
     TermFrame {
         id: frame
@@ -127,17 +130,7 @@ FocusScope {
         focused: root.activeFocus
         regionName: "automation"
         title: i18nd(root.domain, "Automation")
-        rightRuns: {
-            const t = root.theme;
-            switch (root.client.mode) {
-            case SunReactorClient.Automatic:
-                return [{ t: "● ", c: t.success }, { t: i18ndc(root.domain, "Daemon state in the status line", "Live"), c: t.textMuted }];
-            case SunReactorClient.Offline:
-                return [{ t: "○ ", c: t.error }, { t: i18ndc(root.domain, "Daemon state in the status line", "Offline"), c: t.textMuted }];
-            default:
-                return [{ t: "▲ ", c: t.warning }, { t: i18ndc(root.domain, "Daemon state in the status line", "Attention"), c: t.textMuted }];
-            }
-        }
+        rightRuns: root.modeRuns
         contentRows: Math.max(1, lines.rows)
 
         Column {
@@ -147,167 +140,146 @@ FocusScope {
 
             width: term.cx(frame.innerCols)
 
-            TermField {
-                visible: root.showSelector
-                tm: term
-                theme: root.theme
-                cells: frame.innerCols
-                labelCells: root.labelCells
-                valueCells: Math.min(18, Math.max(6, frame.innerCols - root.labelCells - 8))
-                label: i18nd(root.domain, "Monitor")
-                value: root.current ? Term.fit(root.current.monitorId, Math.min(18, Math.max(6, frame.innerCols - root.labelCells - 8))) : ""
-                current: true
-                active: root.activeFocus
-                onClicked: root.forceActiveFocus(Qt.MouseFocusReason)
-                onStepped: direction => root.step(direction)
+            // The choices.
+            Item {
+                width: parent.width
+                height: term.ch
+
+                Repeater {
+                    id: cells
+
+                    model: root.control.choices
+
+                    delegate: Item {
+                        id: cell
+
+                        required property var modelData
+                        required property int index
+
+                        readonly property string choiceId: modelData.id
+                        readonly property bool lit: root.control.choice === choiceId
+                        readonly property bool call: choiceId === "automatic" && root.control.choice !== ""
+                            && root.control.choice !== "automatic"
+                        readonly property bool here: root.activeFocus && root.cursor === index
+                        readonly property color tone: choiceId === "automatic" ? root.theme.success : root.theme.warning
+                        readonly property int caretCells: choiceId === "paused" ? 2 : 0
+
+                        x: term.cx(root.starts[index])
+                        y: 0
+                        width: term.cx(1 + term.len(root.labels[index]) + caretCells)
+                        height: term.ch
+
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: modelData.label
+                        Accessible.description: modelData.tip
+                        Accessible.checkable: true
+                        Accessible.checked: lit
+                        Accessible.onPressAction: root.pick(index)
+
+                        TermText {
+                            tm: term
+                            value: cell.here ? "❯" : " "
+                            strong: true
+                            color: root.theme.accent
+                        }
+
+                        TermText {
+                            tm: term
+                            x: term.cx(1)
+                            value: root.labels[cell.index]
+                            strong: cell.lit || cell.call || cell.here
+                            color: cell.lit ? root.theme.onColor(cell.tone)
+                                : (cell.call ? root.theme.accent : (cell.here ? root.theme.fg : root.theme.textMuted))
+                            inverse: cell.lit
+                            inverseColor: cell.tone
+                        }
+
+                        TermText {
+                            visible: cell.choiceId === "paused"
+                            tm: term
+                            x: term.cx(1 + term.len(root.labels[cell.index]) + 1)
+                            value: "▾"
+                            color: cell.here ? root.theme.fg : root.theme.textMuted
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.forceActiveFocus(Qt.MouseFocusReason);
+                                root.pick(cell.index);
+                            }
+                        }
+
+                        // The arrow has its own hit area: a click there opens the durations.
+                        MouseArea {
+                            visible: cell.choiceId === "paused"
+                            x: term.cx(1 + term.len(root.labels[cell.index]))
+                            width: term.cx(2)
+                            height: term.ch
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.forceActiveFocus(Qt.MouseFocusReason);
+                                root.openDurations(cell);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // What the daemon is doing, and until when; wrapped at " · ".
+            Repeater {
+                model: root.wrapParts(root.control.displayText, frame.innerCols - 3)
+
+                delegate: Item {
+                    id: line
+
+                    required property string modelData
+
+                    width: lines.width
+                    height: term.ch
+
+                    TermText {
+                        tm: term
+                        x: term.cx(2)
+                        value: line.modelData
+                        color: root.control.hinting ? root.theme.warning : root.theme.fg
+                    }
+                }
             }
 
             Item {
-                width: parent.width
+                visible: root.control.note.length > 0
+                width: lines.width
                 height: term.ch
 
                 TermText {
                     tm: term
                     x: term.cx(2)
-                    value: i18ndc(root.domain, "Label of the automation state row", "Mode")
-                    cells: root.labelCells
+                    value: root.control.note
                     color: root.theme.textMuted
-                }
-                TermRuns {
-                    tm: term
-                    x: term.cx(2 + root.labelCells + 1)
-                    runs: root.modeRuns
-                    cells: Math.max(0, frame.innerCols - root.labelCells - 3)
                 }
             }
 
             Item {
-                width: parent.width
+                visible: root.activeFocus
+                width: lines.width
                 height: term.ch
 
                 TermText {
                     tm: term
                     x: term.cx(2)
-                    value: i18ndc(root.domain, "Label of the next automation step", "Next")
-                    cells: root.labelCells
+                    value: i18ndc(root.domain, "Key hint for the automation mode switch",
+                                  "← → choose · ⏎ select · ↓ durations")
                     color: root.theme.textMuted
                 }
-                TermRuns {
-                    tm: term
-                    x: term.cx(2 + root.labelCells + 1)
-                    runs: root.nextRuns
-                    cells: Math.max(0, frame.innerCols - root.labelCells - 3)
-                }
-            }
-
-            // The way back: a terminal button.
-            Item {
-                visible: root.canReturn
-                width: parent.width
-                height: term.cy(2)
-
-                TermText {
-                    id: backButton
-
-                    readonly property bool lit: root.activeFocus || backMouse.containsMouse
-                    tm: term
-                    x: term.cx(2 + root.labelCells + 1)
-                    y: term.ch
-                    value: root.paused ? i18ndc(root.domain, "@action:button Resume automatic brightness", "[ Resume ]")
-                                       : i18ndc(root.domain, "@action:button Return to automatic brightness", "[ Automatic ]")
-                    strong: true
-                    color: lit ? root.theme.onColor(root.theme.accent) : root.theme.accent
-                    inverse: lit
-                    inverseColor: root.theme.accent
-
-                    MouseArea {
-                        id: backMouse
-
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.back()
-                    }
-                }
-                TermRuns {
-                    tm: term
-                    visible: root.activeFocus
-                    x: backButton.x + backButton.width + term.cw
-                    y: term.ch
-                    runs: [{ t: "a", c: root.theme.fg, b: true },
-                           { t: " " + i18ndc(root.domain, "Key hint", "or ⏎"), c: root.theme.textMuted }]
-                    cells: Math.max(0, frame.innerCols - root.labelCells - 3 - backButton.usedCells - 1)
-                }
-            }
-
-            // Schedule heading: bold text, a faint rule, "● now" on the right.
-            Item {
-                visible: root.showTable
-                width: parent.width
-                height: term.cy(2)
-
-                TermText {
-                    id: heading
-
-                    tm: term
-                    y: term.ch
-                    value: i18nd(root.domain, "Schedule")
-                    strong: true
-                    color: root.theme.fg
-                }
-                Rectangle {
-                    x: heading.width + term.cw
-                    y: term.ch + term.lineY(0)
-                    width: Math.max(0, term.cx(frame.innerCols - nowKey.usedCells - 1) - x)
-                    height: term.lw
-                    color: root.theme.borderInactive
-                    antialiasing: false
-                }
-                TermRuns {
-                    id: nowKey
-
-                    tm: term
-                    x: term.cx(frame.innerCols - usedCells)
-                    y: term.ch
-                    runs: [{ t: "● ", c: root.theme.secondaryAccent },
-                           { t: i18ndc(root.domain, "Legend: the dot marks the step in effect now", "now"), c: root.theme.textMuted }]
-                }
-            }
-
-            TermTable {
-                id: table
-
-                visible: root.showTable
-                tm: term
-                theme: root.theme
-                width: parent.width
-                height: implicitHeight
-                columns: {
-                    const time = Term.len(Format.timeText(root.client.nowEpochS || 1)) + 1;
-                    const cols = [{ title: i18ndc(root.domain, "Schedule column", "Event"), cells: 0 }];
-                    if (frame.innerCols >= 40) {
-                        cols.push({ title: i18ndc(root.domain, "Schedule column", "Offset"), cells: 6, right: true });
-                    }
-                    cols.push({ title: i18ndc(root.domain, "Schedule column", "Time"), cells: Math.max(5, time) });
-                    cols.push({ title: i18ndc(root.domain, "Schedule column", "Target"), cells: 6, right: true });
-                    return cols;
-                }
-                rows: root.milestones.map((m, i) => {
-                    const values = [m.label];
-                    if (frame.innerCols >= 40) {
-                        values.push("—");
-                    }
-                    values.push(Format.timeText(m.t));
-                    values.push(m.pct >= 0 ? m.pct + "%" : "—");
-                    const colors = values.map(() => "");
-                    if (frame.innerCols >= 40) {
-                        colors[1] = root.theme.textMuted;
-                    }
-                    return { values: values, colors: colors, current: i === root.currentIndex,
-                             strong: root.nextMilestone !== null && m === root.nextMilestone,
-                             muted: i < root.currentIndex };
-                })
             }
         }
+    }
+
+    ModeDurationMenu {
+        id: durations
+
+        control: root.control
     }
 }
