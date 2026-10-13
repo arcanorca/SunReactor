@@ -248,7 +248,7 @@
   "fg": "#e0f8dc",
   "text_muted": "#607a5e",
   "id": "casiodigital",
-  "family": "pixel",
+  "family": "instrument",
   "glyph_style": "rounded",
   "palette": {
    "bg": "#121814",
@@ -263,8 +263,8 @@
    "error": "#ff5252"
   },
   "widget": {
-   "renderer": "pixel",
-   "font": "bitmap8",
+   "renderer": "vector",
+   "font": "display",
    "pixel_scale": 0,
    "shades": [
     "#121814",
@@ -273,9 +273,9 @@
     "#e0f8dc"
    ],
    "density": "compact",
-   "border": "line",
-   "radius": 0,
-   "dither": "bayer4",
+   "border": "inset",
+   "radius": 6,
+   "dither": "none",
    "glow": 0.0,
    "modules": [
     "telemetry",

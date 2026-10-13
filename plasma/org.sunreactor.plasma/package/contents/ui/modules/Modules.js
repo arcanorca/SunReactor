@@ -73,6 +73,15 @@ var SKINS = {
     "id:nixie": INSTRUMENT,
     "id:oscilloscope": INSTRUMENT,
     "id:thinkpad": INSTRUMENT,
+    "id:casiodigital": {
+        telemetry: "skins/casiodigital/Telemetry.qml",
+        curve: "skins/casiodigital/LightCycle.qml",
+        displays: "skins/casiodigital/Displays.qml",
+        automation: "skins/casiodigital/Automation.qml",
+        weather: "skins/casiodigital/Weather.qml",
+        forecast: "skins/casiodigital/Forecast.qml",
+        suntimes: "skins/casiodigital/SunTimes.qml"
+    },
     "id:nothing": {
         telemetry: "skins/nothing/Telemetry.qml",
         curve: "skins/nothing/LightCycle.qml",
