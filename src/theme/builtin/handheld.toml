@@ -1,0 +1,19 @@
+id = "handheld"
+name = "Handheld"
+aliases = ["gameboy", "dmg", "dmg01"]
+family = "pixel"
+
+[palette]
+bg = "#141c12"
+fg = "#9bbc0f"
+accent = "#8b1d42"
+secondary_accent = "#8bac0f"
+border_active = "#9bbc0f"
+border_inactive = "#283824"
+text_muted = "#567648"
+success = "#8bac0f"
+warning = "#c8a646"
+error = "#9a2257"
+
+[tui]
+glyph_style = "pixel"

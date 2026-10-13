@@ -1,0 +1,19 @@
+id = "ayudark"
+name = "Ayu Dark"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#0f1419"
+fg = "#e6e1cf"
+accent = "#ffb454"
+secondary_accent = "#36a3d9"
+border_active = "#ffb454"
+border_inactive = "#3e4b59"
+text_muted = "#5c6773"
+success = "#91b55c"
+warning = "#ffb454"
+error = "#f07178"
+
+[tui]
+glyph_style = "rounded"

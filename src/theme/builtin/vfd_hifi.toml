@@ -1,0 +1,19 @@
+id = "vfd_hifi"
+name = "VFD Hi-Fi"
+aliases = ["vfdhifi", "vfd", "hifi"]
+family = "instrument"
+
+[palette]
+bg = "#0b0e11"
+fg = "#00f0a8"
+accent = "#66ffd4"
+secondary_accent = "#1bb289"
+border_active = "#00f0a8"
+border_inactive = "#182824"
+text_muted = "#527a70"
+success = "#00f0a8"
+warning = "#ffb000"
+error = "#ff3b30"
+
+[tui]
+glyph_style = "rounded"

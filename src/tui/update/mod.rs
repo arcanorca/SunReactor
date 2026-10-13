@@ -239,7 +239,7 @@ mod tests {
         let mut model = Model::new();
         let mut state = ratatui::widgets::ListState::default();
         state.select(Some(0));
-        model.active_modal = ActiveModal::ThemeSelect(state, crate::tui::theme::Theme::Amber);
+        model.active_modal = ActiveModal::ThemeSelect(state, crate::config::ThemeId::new("amber"));
 
         update(
             &mut model,

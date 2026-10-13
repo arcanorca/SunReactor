@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 pub const CONFIG_DIR: &str = "~/.config/sunreactor/";
 pub const CONFIG_FILE: &str = "~/.config/sunreactor/config.toml";
+pub const THEMES_DIR: &str = "~/.config/sunreactor/themes/";
 pub const STATE_DIR: &str = "~/.local/state/sunreactor/";
 pub const STATE_FILE: &str = "~/.local/state/sunreactor/runtime-state.json";
 pub const CACHE_DIR: &str = "~/.cache/sunreactor/";
@@ -13,6 +14,7 @@ pub const SOCKET_PATH_TEMPLATE: &str = "/run/user/$UID/sunreactor/control.sock";
 #[cfg(target_os = "linux")]
 const APP_DIR_NAME: &str = "sunreactor";
 const CONFIG_FILE_NAME: &str = "config.toml";
+const THEMES_DIR_NAME: &str = "themes";
 const STATE_FILE_NAME: &str = "runtime-state.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -47,6 +49,11 @@ pub fn config_dir() -> Result<PathBuf, PathError> {
 
 pub fn config_file() -> Result<PathBuf, PathError> {
     config_dir().map(|path| path.join(CONFIG_FILE_NAME))
+}
+
+/// User theme directory (`<config dir>/themes`); files there shadow built-ins.
+pub fn themes_dir() -> Result<PathBuf, PathError> {
+    config_dir().map(|path| path.join(THEMES_DIR_NAME))
 }
 
 pub fn state_dir() -> Result<PathBuf, PathError> {

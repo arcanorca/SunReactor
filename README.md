@@ -15,7 +15,7 @@
 
 ## // PREVIEW (TUI WORKSPACES & THEMES)
 
-SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 28 built-in themes, orthographic daylight globes, and real-time hardware telemetry:
+SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 35 built-in themes (plus your own TOML themes), orthographic daylight globes, and real-time hardware telemetry:
 
 <div align="center">
   <img src="docs/images/SunReactor_1.png" alt="Monitors Workspace (Amber Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
@@ -137,7 +137,7 @@ SunReactor computes target brightness deterministically without requiring consta
 - Full keyboard-driven navigation with browser-style shortcuts (`1`-`5` tabs, `Tab`/`Shift+Tab`).
 - Real-time ASCII light cycle and 24-hour solar trajectory visualizer.
 - Interactive orthographic globe with real-time solar terminator rendering.
-- 28 built-in palettes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha.
+- 35 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
 
 ### 2. Native KDE Plasma 6 Desktop Integration
 SunReactor includes an integrated KDE Plasma 6 panel widget and C++ IPC plugin located in [`plasma/`](plasma/):
@@ -153,6 +153,8 @@ sunreactorctl set --global 60      # Temporarily lock all displays to 60%
 sunreactorctl suspend --minutes 90 # Pause brightness updates for 90 minutes
 sunreactorctl resume               # Clear overrides and return to the active solar curve
 sunreactorctl reload-config        # Atomically validate and reload config.toml
+sunreactorctl theme list           # Built-in and user themes (* marks the configured one)
+sunreactorctl theme set nord       # Set tui.theme and reload the daemon
 ```
 
 ---
@@ -248,9 +250,50 @@ min_multiplier = 0.75
 
 [tui]
 fps = 60
-theme = "amber"
+theme = "amber"        # any id or alias from `sunreactorctl theme list`
 effects = "instrument"
 show_logo = true
+```
+
+### Themes
+
+Themes are data shared by the TUI and the Plasma widget. The 35 built-ins are
+embedded in the binaries; user themes live in `~/.config/sunreactor/themes/<id>.toml`
+(the file stem must equal `id`; a user file shadows a built-in with the same id).
+`tui.theme` accepts any theme id or alias, including legacy names such as
+`workbench` or `vfdhifi`; an unknown name fails `config validate` with the nearest matches.
+
+A broken theme never stops automatic brightness: the daemon logs and skips
+invalid theme files, falls back to the built-in theme of the same id (or
+`amber`) and reports the reason as `theme_warning` in `sunreactorctl status`.
+`sunreactorctl config validate`, `theme validate` and `doctor` report the same
+problems as errors with the file name and exit non-zero.
+
+```toml
+# ~/.config/sunreactor/themes/pocket_night.toml
+id = "pocket_night"
+name = "Pocket Night"
+aliases = ["gbp_night"]
+extends = "handheld"      # inherit everything, override only what changes
+family = "pixel"          # pixel | instrument | terminal (widget defaults)
+
+[palette]                 # bg fg accent secondary_accent border_active border_inactive
+bg = "#0b120a"            # text_muted success warning error, all "#rrggbb"
+accent = "#c23b5f"
+
+[tui]
+glyph_style = "pixel"     # rounded | pixel
+
+[widget]                  # optional; family defaults fill every missing key
+glow = 0.25
+modules = ["telemetry", "curve", "displays", "automation"]
+```
+
+```bash
+sunreactorctl theme show handheld            # resolved palette and widget tokens
+sunreactorctl theme export dracula > ~/.config/sunreactor/themes/mine.toml
+sunreactorctl theme validate                 # check every user theme file
+sunreactorctl theme validate ./mine.toml     # check one file (extends / aliases included)
 ```
 
 ---

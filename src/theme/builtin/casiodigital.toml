@@ -1,0 +1,19 @@
+id = "casiodigital"
+name = "Casio Digital"
+aliases = ["casio", "digitalwatch", "digital_watch"]
+family = "pixel"
+
+[palette]
+bg = "#121814"
+fg = "#e0f8dc"
+accent = "#0088ff"
+secondary_accent = "#88a684"
+border_active = "#9df09a"
+border_inactive = "#2a382e"
+text_muted = "#607a5e"
+success = "#9df09a"
+warning = "#f2d06b"
+error = "#ff5252"
+
+[tui]
+glyph_style = "rounded"

@@ -1,0 +1,19 @@
+id = "gruvbox"
+name = "Gruvbox"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#282828"
+fg = "#ebdbb2"
+accent = "#d79921"
+secondary_accent = "#cc241d"
+border_active = "#d79921"
+border_inactive = "#665c54"
+text_muted = "#a89984"
+success = "#98971a"
+warning = "#d79921"
+error = "#cc241d"
+
+[tui]
+glyph_style = "rounded"

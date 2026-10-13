@@ -772,14 +772,14 @@ mod tests {
     #[test]
     fn test_location_workspace_non_amber_themes() {
         for theme in [
-            crate::config::Theme::Nord,
-            crate::config::Theme::HackerGreen,
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("hackergreen"),
         ] {
             let backend = TestBackend::new(85, 26);
             let mut terminal = Terminal::new(backend).unwrap();
 
             let mut model = Model::new();
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.active_tab = Tab::Location;
             model.active_setting = 1; // Latitude focused
 

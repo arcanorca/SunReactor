@@ -54,7 +54,7 @@ glyph_style = "pixel"           # rounded | pixel
 renderer   = "pixel"            # pixel | vector | terminal
 font       = "bitmap8"          # bitmap8 | bitmap_vga | mono | sans | display
 pixel_scale = 0                 # 0 = auto from DPR; 1..6 = preferred art-pixel size in logical px
-shades     = ["#0f380f","#306230","#8bac0f","#9bbc0f"]   # pixel only, dark->light; derived from palette if absent
+shades     = ["#0f380f","#306230","#8bac0f","#9bbc0f"]   # dark->light, 2..16; derived if absent (see below)
 density    = "compact"          # compact | comfortable
 border     = "line"             # none | line | bevel | inset | double
 radius     = 0                  # 0..16 logical px (ignored by pixel renderer)
@@ -71,6 +71,14 @@ Family defaults (resolved by the daemon, so TUI-less consumers get them too):
 | instrument | vector | sans / mono | line | 4 | none | 0 | comfortable |
 | terminal | terminal | mono | line (box-drawing) | 0 | none | 0 | compact |
 
+As implemented: `instrument` defaults to `font = "sans"`; `pixel_scale` defaults
+to 0 and `modules` to all seven in the order above. `shades` is always
+resolved for every family (so a renderer override still has a ramp): when
+absent it is `[bg, border_inactive, text_muted, fg]` sorted by luminance.
+Validation: `pixel_scale` 0..=6, `radius` 0..=16, `glow` 0.0..=1.0, modules
+unique; unknown keys anywhere are errors. Name/alias matching is
+case-insensitive and treats `-`/space as `_` (and `vfdhifi` == `vfd_hifi`).
+
 Classification of the 35 built-ins: **pixel** = handheld, commodore64, amiga,
 classicmacintosh, casiodigital, nothing, cyberpunk, synthwave84, hackergreen;
 **instrument** = braun, vfd_hifi, nixie, oscilloscope, thinkpad,
@@ -86,13 +94,27 @@ Config: `tui.theme` becomes a string validated against the registry
 (built-ins + user dir + aliases). Old values keep working; unknown value is a
 validation error that lists nearest matches. `Default` stays `amber`.
 
+Theme problems are cosmetic and never stop automatic brightness:
+- Daemon start / `reload_config`: an invalid or unreadable user theme file is
+  logged (warning, `theme_file_skipped`) and skipped; all valid themes and
+  built-ins still load. If `tui.theme` cannot be used as-is (unknown id, or
+  its user file is broken) the daemon keeps running on the built-in with the
+  same id if one exists, else on `amber`, and reports why in
+  `status.theme_warning` (§3).
+- Strict reporting lives in the tools: `sunreactorctl config validate`
+  (unusable `tui.theme` → error, exit non-zero; unrelated broken files →
+  listed as warnings), `sunreactorctl theme validate` (any broken file →
+  exit non-zero) and `doctor` (`SR-THEME-UNRESOLVED` error → exit non-zero,
+  `SR-THEME-FILE-INVALID` warning per file). All name the file and reason.
+
 ## 3. IPC additions (backward compatible)
 
 Existing: one JSON request, one JSON response per connection, tag `request` /
 `response`. Additions use `#[serde(default)]` so older plugins/daemons still
 parse; a plugin talking to an older daemon must degrade (see §5).
 
-`status.theme` (extend `ThemeStatus`, keep legacy flat fields):
+`status.theme` (extend `ThemeStatus`, keep legacy flat fields; the new keys
+are omitted — not `null` — by an older daemon, and old clients ignore them):
 
 ```json
 "theme": {
@@ -118,7 +140,7 @@ New requests / responses:
 | `{"request":"day_curve","monitor_id":null}` | see below |
 
 `day_curve` reuses the TUI's `build_policy_previews` / `build_monitor_milestones`
-(move to the library if needed — the TUI must keep working):
+(moved to the library as `policy::preview`, shared with the TUI):
 
 ```json
 {"response":"day_curve","day_curve":{
@@ -127,12 +149,38 @@ New requests / responses:
   "sun":{"dawn":0,"sunrise":0,"solar_noon":0,"sunset":0,"dusk":0},
   "monitors":[{"monitor_id":"mi-monitor","min_pct":1,"max_pct":50,
      "samples":[{"t":0,"pct":3,"pct_no_weather":3}],
-     "milestones":[{"label":"Rise 50%","t":0,"pct":34}]}]}}
+     "milestones":[{"id":"rise_50","label":"Rise 50%","t":0,"pct":34}]}]}}
 ```
 
-`t` is Unix seconds. Samples cover local midnight to midnight. `pct_no_weather`
-lets the widget shade what the weather is costing. `sun.*` may be `null` at
-polar edges (structured, no invented values).
+`t` is Unix seconds. Samples cover local midnight to the next local midnight,
+both included (145 samples; 139 / 151 on DST days). `pct_no_weather`
+lets the widget shade what the weather is costing; `pct` applies the current
+`weather_multiplier` (`null` when weather is inactive, then `pct ==
+pct_no_weather`). `sun.*` may be `null` at polar edges (structured, no
+invented values).
+
+Implementation notes (deviations from the first draft of this contract):
+- `milestones[].id` was added (stable `rise_start` … `night_floor`) so QML can
+  translate labels; `label` stays the TUI's English text.
+- Milestones are the schedule of the cycle containing today's solar noon (so a
+  request at 03:00 still gets today's milestones). If the schedule cannot be
+  built (polar day/night) `milestones` is `[]` and an extra
+  `"milestones_error": "<reason>"` key is present; samples stay valid.
+- Errors: unknown `monitor_id` → `{"response":"error","code":"invalid_request"}`;
+  a nonexistent/ambiguous local midnight → `internal_error` with the solar
+  error text. `get_theme` accepts ids and aliases; unknown → `invalid_request`
+  with nearest-match suggestions in `message`.
+- The daemon caches the last answer keyed by (local date, location, policy
+  config, selected monitors, weather multiplier); `generated_at_epoch_s` is
+  the time it was computed.
+- `PROTOCOL_VERSION` stays 1: all additions are new request/response tags or
+  optional keys.
+
+`status.theme_warning` (optional string, omitted when there is nothing to
+report): set when the configured `tui.theme` could not be used as-is and
+`status.theme` is a fallback, e.g. `"theme file …/mine.toml is invalid: …;
+using the default `amber` theme instead"`. Clients should show it next to
+the theme chip; it never means brightness automation is affected.
 
 Saved-only propagation: the TUI theme modal previews locally; only a saved
 theme reaches status.

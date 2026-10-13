@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::backends::BackendKind;
@@ -205,56 +207,96 @@ pub enum TemperatureUnit {
     Fahrenheit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Theme {
-    #[default]
-    Amber,
-    #[serde(alias = "workbench")]
-    Amiga,
-    AyuDark,
-    AyuMirage,
-    #[serde(alias = "din")]
-    Braun,
-    #[serde(alias = "casio", alias = "digitalwatch", alias = "digital_watch")]
-    CasioDigital,
-    CatppuccinMocha,
-    #[serde(alias = "macintosh128k", alias = "mac128k")]
-    ClassicMacintosh,
-    #[serde(alias = "c64")]
-    Commodore64,
-    Cyberpunk,
-    Dracula,
-    Everforest,
-    Grayscale,
-    Gruvbox,
-    HackerGreen,
-    #[serde(alias = "gameboy", alias = "dmg", alias = "dmg01")]
-    Handheld,
-    Kanagawa,
-    MaterialOcean,
-    Monokai,
-    NightOwl,
-    #[serde(alias = "tubes", alias = "nixie_tubes")]
-    Nixie,
-    Nord,
-    #[serde(alias = "glyph")]
-    Nothing,
-    OneDark,
-    #[serde(alias = "scope", alias = "crt")]
-    Oscilloscope,
-    PhosphorBlue,
-    RosePine,
-    SolarizedDark,
-    Synthwave84,
-    Terminal,
-    ThinkPad,
-    TokyoNight,
-    #[serde(alias = "unix", alias = "workstation", alias = "motif", alias = "irix")]
-    UnixWorkstation,
-    #[serde(alias = "vfd_hifi", alias = "vfd", alias = "hifi")]
-    VfdHiFi,
-    Zenburn,
+/// `tui.theme`: the id of a theme in the [theme registry](crate::theme).
+///
+/// Deserialisation accepts any id or alias the registry knows (built-ins,
+/// user themes, legacy names such as `workbench` or `vfdhifi`) and stores
+/// the canonical id, so re-saving a config writes the canonical spelling.
+/// Unknown names are kept verbatim and rejected by [`Config::validate`]
+/// with nearest-match suggestions.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct ThemeId(String);
+
+impl ThemeId {
+    /// Wraps a raw name without consulting the registry.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Resolves against the process-wide registry.
+    pub fn resolve(&self) -> Result<Arc<crate::theme::Theme>, crate::theme::UnknownTheme> {
+        crate::theme::registry().resolve(&self.0).map(Arc::clone)
+    }
+
+    /// Resolves against the process-wide registry, never failing: see
+    /// [`crate::theme::Registry::resolve_or_fallback`].
+    #[must_use]
+    pub fn resolve_or_default(&self) -> Arc<crate::theme::Theme> {
+        self.resolve_with_warning().0
+    }
+
+    /// Like [`Self::resolve_or_default`], plus a human-readable warning when
+    /// the configured theme could not be used as-is (unknown name, or its
+    /// user theme file is invalid).
+    #[must_use]
+    pub fn resolve_with_warning(&self) -> (Arc<crate::theme::Theme>, Option<String>) {
+        crate::theme::registry().resolve_or_fallback(&self.0)
+    }
+}
+
+impl Config {
+    /// Strict check of `tui.theme` for `sunreactorctl config validate` and
+    /// `doctor`. Deliberately not part of [`Config::validate`]: the theme is
+    /// cosmetic, so the daemon loads such configs, falls back to a built-in
+    /// theme and reports the problem in `status.theme_warning` instead of
+    /// refusing to run automatic brightness.
+    pub fn validate_theme(&self) -> Result<(), super::ValidationError> {
+        self.validate_theme_with(&crate::theme::registry())
+    }
+
+    /// [`Self::validate_theme`] against an explicit registry.
+    pub fn validate_theme_with(
+        &self,
+        registry: &crate::theme::Registry,
+    ) -> Result<(), super::ValidationError> {
+        match registry.resolve_or_fallback(self.tui.theme.as_str()).1 {
+            None => Ok(()),
+            Some(problem) => Err(super::ValidationError::new(
+                "tui.theme",
+                format!("{problem} (run `sunreactorctl theme list` / `theme validate`)"),
+            )),
+        }
+    }
+}
+
+impl Default for ThemeId {
+    fn default() -> Self {
+        Self::new(crate::theme::DEFAULT_THEME_ID)
+    }
+}
+
+impl std::fmt::Display for ThemeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ThemeId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        let registry = crate::theme::registry();
+        Ok(Self(
+            registry
+                .canonical_id(&raw)
+                .map_or_else(|| raw.trim().to_owned(), str::to_owned),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -309,7 +351,7 @@ pub struct TuiConfig {
     pub fps: u32,
     pub use_12h_time: bool,
     pub temperature_unit: TemperatureUnit,
-    pub theme: Theme,
+    pub theme: ThemeId,
     pub effects: MotionLevel,
     /// Keep the original SunReactor masthead visible on terminals with room for it.
     pub show_logo: bool,
@@ -321,7 +363,7 @@ impl Default for TuiConfig {
             fps: 1,
             use_12h_time: false,
             temperature_unit: TemperatureUnit::Celsius,
-            theme: Theme::default(),
+            theme: ThemeId::default(),
             effects: MotionLevel::default(),
             show_logo: true,
         }

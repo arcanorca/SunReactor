@@ -1,0 +1,19 @@
+id = "braun"
+name = "Braun"
+aliases = ["din"]
+family = "instrument"
+
+[palette]
+bg = "#161616"
+fg = "#f2f2f0"
+accent = "#ff5500"
+secondary_accent = "#f0b01e"
+border_active = "#ff5500"
+border_inactive = "#404040"
+text_muted = "#8a8781"
+success = "#248a3d"
+warning = "#d97706"
+error = "#dc2626"
+
+[tui]
+glyph_style = "rounded"

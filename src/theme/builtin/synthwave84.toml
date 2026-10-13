@@ -1,0 +1,19 @@
+id = "synthwave84"
+name = "Synthwave '84"
+aliases = []
+family = "pixel"
+
+[palette]
+bg = "#262335"
+fg = "#ffffff"
+accent = "#ff7edb"
+secondary_accent = "#36f9f6"
+border_active = "#ff7edb"
+border_inactive = "#614d85"
+text_muted = "#848bbd"
+success = "#72f1b8"
+warning = "#feda33"
+error = "#fe4450"
+
+[tui]
+glyph_style = "pixel"

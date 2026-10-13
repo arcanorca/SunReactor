@@ -1,0 +1,51 @@
+//! Embedded built-in theme files: `(file stem, TOML source)`.
+//!
+//! Palettes are byte-identical to the pre-registry `Theme::palette()` table
+//! (enforced by `theme::tests::builtin_palettes_match_frozen_legacy_table`).
+
+pub(super) const BUILTIN_THEMES: &[(&str, &str)] = &[
+    ("amber", include_str!("builtin/amber.toml")),
+    ("amiga", include_str!("builtin/amiga.toml")),
+    ("ayudark", include_str!("builtin/ayudark.toml")),
+    ("ayumirage", include_str!("builtin/ayumirage.toml")),
+    ("braun", include_str!("builtin/braun.toml")),
+    ("casiodigital", include_str!("builtin/casiodigital.toml")),
+    (
+        "catppuccinmocha",
+        include_str!("builtin/catppuccinmocha.toml"),
+    ),
+    (
+        "classicmacintosh",
+        include_str!("builtin/classicmacintosh.toml"),
+    ),
+    ("commodore64", include_str!("builtin/commodore64.toml")),
+    ("cyberpunk", include_str!("builtin/cyberpunk.toml")),
+    ("dracula", include_str!("builtin/dracula.toml")),
+    ("everforest", include_str!("builtin/everforest.toml")),
+    ("grayscale", include_str!("builtin/grayscale.toml")),
+    ("gruvbox", include_str!("builtin/gruvbox.toml")),
+    ("hackergreen", include_str!("builtin/hackergreen.toml")),
+    ("handheld", include_str!("builtin/handheld.toml")),
+    ("kanagawa", include_str!("builtin/kanagawa.toml")),
+    ("materialocean", include_str!("builtin/materialocean.toml")),
+    ("monokai", include_str!("builtin/monokai.toml")),
+    ("nightowl", include_str!("builtin/nightowl.toml")),
+    ("nixie", include_str!("builtin/nixie.toml")),
+    ("nord", include_str!("builtin/nord.toml")),
+    ("nothing", include_str!("builtin/nothing.toml")),
+    ("onedark", include_str!("builtin/onedark.toml")),
+    ("oscilloscope", include_str!("builtin/oscilloscope.toml")),
+    ("phosphorblue", include_str!("builtin/phosphorblue.toml")),
+    ("rosepine", include_str!("builtin/rosepine.toml")),
+    ("solarizeddark", include_str!("builtin/solarizeddark.toml")),
+    ("synthwave84", include_str!("builtin/synthwave84.toml")),
+    ("terminal", include_str!("builtin/terminal.toml")),
+    ("thinkpad", include_str!("builtin/thinkpad.toml")),
+    ("tokyonight", include_str!("builtin/tokyonight.toml")),
+    (
+        "unixworkstation",
+        include_str!("builtin/unixworkstation.toml"),
+    ),
+    ("vfd_hifi", include_str!("builtin/vfd_hifi.toml")),
+    ("zenburn", include_str!("builtin/zenburn.toml")),
+];

@@ -1,0 +1,19 @@
+id = "hackergreen"
+name = "Hacker Green"
+aliases = []
+family = "pixel"
+
+[palette]
+bg = "#000000"
+fg = "#33ff00"
+accent = "#00ff00"
+secondary_accent = "#00c800"
+border_active = "#33ff00"
+border_inactive = "#006400"
+text_muted = "#009600"
+success = "#33ff00"
+warning = "#c8ff00"
+error = "#ff3232"
+
+[tui]
+glyph_style = "pixel"

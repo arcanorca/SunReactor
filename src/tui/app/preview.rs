@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 
 use crate::config::Config;
-use crate::policy::{self, MonitorMilestoneSchedule, PolicyContext};
+use crate::policy::preview::PreviewInputs as PolicyPreviewInputs;
+use crate::policy::MonitorMilestoneSchedule;
 use crate::solar::Location;
 use crate::tui::model::{CurvePreview, Model, TargetPreview, CURVE_SAMPLE_MINUTES};
 use crate::tui::motion::TransientKind;
@@ -180,11 +181,7 @@ fn compute_preview_outcome(inputs: &PreviewInputs) -> PreviewOutcome {
             inputs.midnight_utc,
             inputs.weather_multiplier,
         ),
-        milestones: super::milestones::build_monitor_milestones(
-            &inputs.config,
-            inputs.now_utc,
-            inputs.weather_multiplier,
-        ),
+        milestones: super::milestones::build_monitor_milestones(&inputs.config, inputs.now_utc),
     }
 }
 
@@ -198,32 +195,25 @@ fn build_policy_previews(
         return Ok((Vec::new(), Vec::new()));
     }
     config.validate().map_err(|error| error.to_string())?;
-    let location = Location::from_timezone_name(
-        config.location.latitude,
-        config.location.longitude,
-        &config.location.timezone,
-    )
-    .map_err(|error| error.to_string())?;
-    let evaluate = |at: chrono::DateTime<Utc>, multiplier: Option<f64>| {
-        policy::compute_policy(&PolicyContext {
-            now_utc: at,
-            location: &location,
-            config: &config.solar_policy,
-            weather_multiplier: multiplier,
-            monitors: &config.monitors,
-        })
-        .map_err(|error| error.to_string())
+    let location = resolve_location(config)?;
+    let inputs = PolicyPreviewInputs {
+        location: &location,
+        config: &config.solar_policy,
+        monitors: &config.monitors,
     };
 
-    let solar = evaluate(now_utc, None)?;
+    let solar = inputs
+        .targets_at(now_utc, None)
+        .map_err(|error| error.to_string())?;
     let weather = match weather_multiplier {
-        Some(multiplier) => evaluate(now_utc, Some(multiplier))?,
+        Some(multiplier) => inputs
+            .targets_at(now_utc, Some(multiplier))
+            .map_err(|error| error.to_string())?,
         None => solar.clone(),
     };
     let targets = solar
-        .targets
         .iter()
-        .zip(&weather.targets)
+        .zip(&weather)
         .map(|(solar, weather)| TargetPreview {
             logical_id: solar.logical_id.clone(),
             solar_percent: solar.percent,
@@ -232,23 +222,26 @@ fn build_policy_previews(
         .collect();
 
     let sample_count = (24 * 60 / CURVE_SAMPLE_MINUTES + 1) as usize;
-    let mut curves: Vec<CurvePreview> = config
-        .monitors
-        .iter()
-        .map(|monitor| CurvePreview {
+    let curves = inputs
+        .sample_curves(midnight_utc, CURVE_SAMPLE_MINUTES, sample_count, None)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .zip(&config.monitors)
+        .map(|(samples, monitor)| CurvePreview {
             logical_id: monitor.logical_id.clone(),
-            samples: Vec::with_capacity(sample_count),
+            samples: samples.into_iter().map(f32::from).collect(),
         })
         .collect();
-    for index in 0..sample_count {
-        let at = midnight_utc
-            + chrono::Duration::minutes(i64::from(CURVE_SAMPLE_MINUTES) * index as i64);
-        let output = evaluate(at, None)?;
-        for (curve, target) in curves.iter_mut().zip(&output.targets) {
-            curve.samples.push(f32::from(target.percent));
-        }
-    }
     Ok((targets, curves))
+}
+
+pub(super) fn resolve_location(config: &Config) -> Result<Location, String> {
+    Location::from_timezone_name(
+        config.location.latitude,
+        config.location.longitude,
+        &config.location.timezone,
+    )
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

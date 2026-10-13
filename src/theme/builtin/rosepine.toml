@@ -1,0 +1,19 @@
+id = "rosepine"
+name = "Rosé Pine"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#191724"
+fg = "#e0def4"
+accent = "#ebbcba"
+secondary_accent = "#c4a7e7"
+border_active = "#ebbcba"
+border_inactive = "#524f67"
+text_muted = "#908caa"
+success = "#9ccfd8"
+warning = "#f6c177"
+error = "#eb6f92"
+
+[tui]
+glyph_style = "rounded"

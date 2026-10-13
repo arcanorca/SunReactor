@@ -1,0 +1,19 @@
+id = "commodore64"
+name = "Commodore 64"
+aliases = ["c64"]
+family = "pixel"
+
+[palette]
+bg = "#101225"
+fg = "#a7b7ff"
+accent = "#ffffff"
+secondary_accent = "#7fe5e5"
+border_active = "#ffffff"
+border_inactive = "#3b3f78"
+text_muted = "#6672a8"
+success = "#ffffff"
+warning = "#ffffff"
+error = "#ff0000"
+
+[tui]
+glyph_style = "pixel"

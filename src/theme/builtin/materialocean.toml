@@ -1,0 +1,19 @@
+id = "materialocean"
+name = "Material Ocean"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#0f111a"
+fg = "#8f93a2"
+accent = "#82aaff"
+secondary_accent = "#c792ea"
+border_active = "#82aaff"
+border_inactive = "#465564"
+text_muted = "#788296"
+success = "#c3e88d"
+warning = "#ffcb6b"
+error = "#f07178"
+
+[tui]
+glyph_style = "rounded"

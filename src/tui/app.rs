@@ -430,13 +430,15 @@ impl Model {
             match self.active_setting {
                 settings_index::THEME => {
                     let mut state = ratatui::widgets::ListState::default();
-                    let current_index = crate::tui::theme::Theme::ALL
+                    let current_index = crate::config::ThemeId::all()
                         .iter()
                         .position(|t| *t == self.config.tui.theme)
                         .unwrap_or(0);
                     state.select(Some(current_index));
-                    self.active_modal =
-                        super::model::ActiveModal::ThemeSelect(state, self.config.tui.theme);
+                    self.active_modal = super::model::ActiveModal::ThemeSelect(
+                        state,
+                        self.config.tui.theme.clone(),
+                    );
                 }
                 settings_index::EFFECTS => {
                     self.config.tui.effects = self.config.tui.effects.next();
@@ -520,35 +522,26 @@ impl Model {
 
     pub fn theme_modal_down(&mut self) {
         if let super::model::ActiveModal::ThemeSelect(ref mut state, _) = self.active_modal {
+            let mut themes = crate::config::ThemeId::all();
             let i = match state.selected() {
-                Some(i) => {
-                    if i >= crate::tui::theme::Theme::ALL.len() - 1 {
-                        0
-                    } else {
-                        i + 1
-                    }
-                }
-                None => 0,
+                Some(i) if i + 1 < themes.len() => i + 1,
+                _ => 0,
             };
             state.select(Some(i));
-            self.config.tui.theme = crate::tui::theme::Theme::ALL[i];
+            self.config.tui.theme = themes.swap_remove(i);
         }
     }
 
     pub fn theme_modal_up(&mut self) {
         if let super::model::ActiveModal::ThemeSelect(ref mut state, _) = self.active_modal {
+            let mut themes = crate::config::ThemeId::all();
             let i = match state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        crate::tui::theme::Theme::ALL.len() - 1
-                    } else {
-                        i - 1
-                    }
-                }
+                Some(i) if i > 0 => (i - 1).min(themes.len() - 1),
+                Some(_) => themes.len() - 1,
                 None => 0,
             };
             state.select(Some(i));
-            self.config.tui.theme = crate::tui::theme::Theme::ALL[i];
+            self.config.tui.theme = themes.swap_remove(i);
         }
     }
 
@@ -560,8 +553,9 @@ impl Model {
     }
 
     pub fn theme_modal_cancel(&mut self) {
-        if let super::model::ActiveModal::ThemeSelect(_, original_theme) = self.active_modal {
-            self.active_modal = super::model::ActiveModal::None;
+        if let super::model::ActiveModal::ThemeSelect(_, original_theme) =
+            std::mem::take(&mut self.active_modal)
+        {
             self.config.tui.theme = original_theme;
         }
     }
