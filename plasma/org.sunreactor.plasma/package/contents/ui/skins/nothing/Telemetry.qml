@@ -4,8 +4,8 @@
  *   ● LIVE   MI 39   LEN 48                              15° 14:30
  *
  * The red lamp is the daemon's state (live, manual, paused: the accent; not
- * answering: grey). Each display reads its applied value in the tiny 3x5 dot
- * face; temperature and the daemon's clock sit at the right in the same face.
+ * answering: grey). Each display reads its applied value in the 5x7 dot face;
+ * the temperature and the daemon's clock sit at the right as label text.
  */
 
 pragma ComponentBehavior: Bound
@@ -52,7 +52,7 @@ Item {
         ? i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°", Math.round(client.temperatureC)) + " "
         : "") + Format.timeText(client.nowEpochS)
 
-    /*! Air above the status line, so the tiny digits clear the popup's edge. */
+    /*! Air above the status line, so the digits clear the popup's edge. */
     readonly property real inset: style.gap
 
     implicitWidth: row.implicitWidth
@@ -122,8 +122,9 @@ Item {
                     text: channel.modelData.appliedPercent >= 0
                         ? String(channel.modelData.appliedPercent)
                         : i18ndc(root.domain, "No value is known yet", "—")
-                    face: "tiny"
+                    face: "small"
                     size: 1
+                    letterSpacing: 1
                     pitch: root.style.pitchFine
                     litColor: root.style.ink
                     accentColor: root.style.accent
@@ -137,19 +138,15 @@ Item {
             Layout.minimumWidth: root.style.gap
         }
 
-        // The clock, one run of tiny face at the right edge: "15° 2:30 PM" in the
-        // locale's hour convention, the same as the other skins. Its unlit cells
-        // are nearly black, so only the glyphs show.
-        DotText {
+        // The clock at the right edge: "15° 2:30 PM" in the locale's hour convention,
+        // as label text (AM and PM would collide in the dot face).
+        Text {
             Layout.alignment: Qt.AlignVCenter
             Layout.minimumWidth: implicitWidth
             text: root.clockText
-            face: "tiny"
-            size: 1
-            pitch: root.style.pitchFine
-            litColor: root.style.ink
-            accentColor: root.style.accent
-            dimColor: root.style.theme.alpha(root.style.ink, 0.03)
+            textFormat: Text.PlainText
+            font: root.style.label
+            color: root.style.muted
         }
     }
 }

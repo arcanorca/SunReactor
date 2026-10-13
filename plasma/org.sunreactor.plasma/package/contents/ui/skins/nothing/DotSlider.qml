@@ -134,8 +134,8 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         cols: Math.max(8, Math.floor(root.width / Math.max(1, bar.pitch)))
-        rows: 2
-        pitch: root.style.pitch + 1
+        rows: 1
+        pitch: root.style.pitch
         value: root.shown / 100
         thumbAccent: root.known
         litColor: root.enabled ? root.style.ink : root.style.muted

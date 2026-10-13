@@ -1,14 +1,15 @@
 /*
- * Light cycle, Nothing: today's target as a dot-matrix numeral over the day as a
- * column of dots, with the readings beside it.
+ * Light cycle, Nothing: today's target as a dotted ring with the 5x7 percentage
+ * inside it, the readings beside the ring, and the day below as a sparse dot plot.
  *
- *   ┌──────────────────────────────────────────── 24 px radius, hairline ─┐
- *   │ TARGET · NOW                                         [MI] [LEN] [ALL]
- *   │ 39%   APPLIED      WEATHER      RANGE       (the readings beside the numeral)
- *   │       39           −5           1–50
- *   │ ⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮ lit columns, red now column, dim cost
- *   │ 06       12       18       00
- *   └────────────────────────────────────────────────────────────────────┘
+ *   TARGET                                   (MI) (LEN) (ALL)
+ *   (dotted ring) APPLIED                              39
+ *   ( 39%       ) WEATHER                              -5
+ *   (  ring     ) RANGE                              1-50
+ *   . . . . . . . . . . .     clear-sky dots: the weather cost
+ *       o o o o ●             one dot per column, red at now
+ *   . . . . . . . . . . .     dotted baseline
+ *   00      06      12      18      00
  *
  * Hover scrubs the readings (time, clear-sky target, weather cost) and never
  * sets brightness. The display pills choose which day curve is drawn; ALL
@@ -56,8 +57,9 @@ Rectangle {
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: available && now >= t0 && now <= t1
 
-    readonly property int plotRows: 18
-    readonly property real pitch: style.pitch
+    /*! Dot rows of the day plot; the ring is `ringDiameter` dots across. */
+    readonly property int plotRows: 12
+    readonly property int ringDiameter: 21
 
     function appliedFor(monitorId) {
         for (const monitor of client.monitors) {
@@ -76,10 +78,10 @@ Rectangle {
     readonly property int appliedNow: current ? appliedFor(current.monitorId) : -1
 
     readonly property string caption: showAll
-        ? i18ndc(root.domain, "Caption over the plot when every display is plotted", "Today · all displays")
+        ? i18ndc(root.domain, "Caption over the plot when every display is plotted", "Today")
         : (scrubbing
             ? i18ndc(root.domain, "Caption: the time under the pointer", "Target · %1", Format.timeText(readTime))
-            : i18ndc(root.domain, "Caption: what the curve targets right now", "Target · now"))
+            : i18ndc(root.domain, "Caption: what the curve targets right now", "Target"))
 
     /*! Clock ticks every six local hours: { f: 0..1 along the day, label }. */
     readonly property var ticks: {
@@ -118,25 +120,26 @@ Rectangle {
         text: "00"
     }
 
-    /*! One reading: a small caption over its figure, flush left. */
-    component Stat: ColumnLayout {
-        id: stat
+    /*! One reading: a label flush left, its figure flush right. */
+    component Reading: RowLayout {
+        id: reading
 
         required property string caption
         required property string value
 
-        spacing: root.style.gap * 0.25
+        Layout.fillWidth: true
+        spacing: root.style.gap
 
         Text {
             Layout.fillWidth: true
-            text: stat.caption
+            text: reading.caption
             textFormat: Text.PlainText
             font: root.style.label
             color: root.style.muted
             elide: Text.ElideRight
         }
         Text {
-            text: stat.value
+            text: reading.value
             textFormat: Text.PlainText
             font: root.style.figure
             color: root.style.ink
@@ -151,10 +154,10 @@ Rectangle {
         width: root.width - 2 * root.style.pad
         spacing: root.style.gap
 
-        // --- caption and display pills ---------------------------------------------
+        // --- the caption and the display pills ------------------------------------------
         RowLayout {
             Layout.fillWidth: true
-            spacing: root.style.gap
+            spacing: root.style.gap * 0.5
 
             Text {
                 Layout.fillWidth: true
@@ -177,7 +180,6 @@ Rectangle {
                     readonly property int value: isAll ? -1 : index
 
                     style: root.style
-                    compact: true
                     radio: true
                     active: root.selected === value
                     text: isAll ? i18ndc(root.domain, "Display selector: every display", "ALL")
@@ -188,31 +190,55 @@ Rectangle {
             }
         }
 
-        // --- the target numeral, with the readings beside it ---------------------------
+        // --- the dial and the readings beside it ----------------------------------------
         RowLayout {
             Layout.fillWidth: true
-            spacing: root.style.gap * 1.5
+            spacing: root.style.gap * 2
 
-            DotText {
-                Layout.alignment: Qt.AlignTop
-                text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
-                face: "small"
-                size: 1
-                letterSpacing: 1
-                pitch: root.style.pitchBig
-                litColor: root.style.ink
-                accentColor: root.style.accent
-                dimColor: root.style.textGhost
+            Item {
+                id: dial
+
+                Layout.alignment: Qt.AlignVCenter
+                width: ring.implicitWidth
+                height: ring.implicitHeight
+
+                // The dotted gauge: the lit arc is the target, the red head is the one signal.
+                DotRing {
+                    id: ring
+
+                    diameter: root.ringDiameter
+                    // Two dots per cell of circumference: an even dotted circle.
+                    dots: 32
+                    pitch: root.style.pitch
+                    value: root.readTarget >= 0 && !root.showAll ? root.readTarget / 100 : 0
+                    headAccent: true
+                    litColor: root.style.ink
+                    accentColor: root.style.accent
+                    dimColor: root.style.dotGhost
+                }
+
+                // The target numeral, centred in the ring's hollow.
+                DotText {
+                    x: root.style.snap((dial.width - width) / 2)
+                    y: root.style.snap((dial.height - height) / 2)
+                    text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
+                    face: "small"
+                    size: 1
+                    letterSpacing: 1
+                    pitch: root.style.pitch
+                    litColor: root.style.ink
+                    accentColor: root.style.accent
+                    dimColor: root.style.textGhost
+                }
             }
 
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 visible: !root.showAll
-                spacing: root.style.gap
+                spacing: root.style.gap * 0.9
 
-                Stat {
-                    Layout.fillWidth: true
+                Reading {
                     caption: root.scrubbing
                         ? i18ndc(root.domain, "Readout: target with a clear sky, under the pointer", "CLEAR SKY")
                         : i18ndc(root.domain, "Readout: brightness the daemon last applied", "APPLIED")
@@ -221,71 +247,37 @@ Rectangle {
                         : (root.appliedNow >= 0 ? String(root.appliedNow) : "—")
                 }
 
-                Stat {
-                    Layout.fillWidth: true
+                Reading {
                     caption: i18ndc(root.domain, "Readout: brightness the weather takes away", "WEATHER")
                     value: Math.round(root.readCost) >= 1 ? "−" + Math.round(root.readCost) : "0"
                 }
 
-                Stat {
-                    Layout.fillWidth: true
+                Reading {
                     caption: i18ndc(root.domain, "Readout: the display's automatic minimum and maximum", "RANGE")
                     value: root.current ? root.current.minPct + "–" + root.current.maxPct : "—"
                 }
             }
         }
 
-        // --- the day -------------------------------------------------------------------
+        // --- the day: a sparse dot plot ---------------------------------------------------
         Item {
             id: plot
 
             Layout.fillWidth: true
             Layout.topMargin: root.style.gap * 0.5
-            implicitHeight: root.plotRows * root.pitch
+            implicitHeight: root.plotRows * root.style.pitch
 
-            readonly property int cols: Math.max(8, Math.floor(width / root.pitch))
-
-            // The matrix itself: every cell unlit, so the curve reads as lit dots.
-            DotField {
-                id: grid
-
-                cols: plot.cols
+            DotPlot {
+                anchors.fill: parent
+                style: root.style
+                curves: root.plotted
+                t0: root.t0
+                t1: root.t1
+                nowT: root.nowInDay ? root.now : -1
                 rows: root.plotRows
-                pitch: root.pitch
-                litColor: root.style.ink
-                dimColor: root.style.dotGhost
             }
 
-            Repeater {
-                model: root.plotted
-
-                delegate: DotCurve {
-                    id: trace
-
-                    required property var modelData
-                    required property int index
-
-                    // The first trace owns the red now column and the weather-cost outline.
-                    readonly property bool lead: index === 0
-
-                    cols: plot.cols
-                    rows: root.plotRows
-                    pitch: root.pitch
-                    samples: modelData.samples
-                    samplesNoWeather: lead && !root.showAll ? root.style.plainCurve(modelData.samples) : []
-                    t0: root.t0
-                    t1: root.t1
-                    nowT: lead && root.nowInDay ? root.now : -1
-                    maxPct: 100
-                    // The matrix shows the unlit cells; the curve draws only what it lights.
-                    dimColor: "transparent"
-                    litColor: lead ? root.style.ink : root.style.muted
-                    accentColor: root.style.accent
-                    ghostColor: root.style.muted
-                }
-            }
-
-            // Scrub cursor: a hairline and the point on the curve, under the pointer only.
+            // Scrub cursor: one hairline under the pointer, only while hovering.
             Rectangle {
                 visible: root.scrubbing
                 x: root.style.snap(hover.mouseX)
@@ -293,17 +285,6 @@ Rectangle {
                 width: root.style.hairline
                 height: plot.height
                 color: root.style.theme.alpha(root.style.ink, 0.5)
-            }
-            Rectangle {
-                visible: root.scrubbing && root.readTarget >= 0
-                width: root.style.snap(root.pitch + 2)
-                height: width
-                radius: width / 2
-                antialiasing: true
-                x: root.style.snap(hover.mouseX) - width / 2
-                y: root.style.snap((1 - Math.max(0, Math.min(100, root.readTarget)) / 100)
-                                   * (root.plotRows - 1) * root.pitch + root.pitch / 2) - height / 2
-                color: root.style.ink
             }
 
             MouseArea {

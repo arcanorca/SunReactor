@@ -1,13 +1,16 @@
 /*
- * Automation, Nothing: the mode as three round pills, then what the daemon is
- * doing, in one plain lower-case line.
+ * Automation, Nothing: a card with the mode as three round pills, then what the
+ * daemon is doing, in one small grey sentence.
  *
- *   ( AUTOMATIC )  ( MANUAL )  ( PAUSED ▾ )
- *   following the sun and the weather · next 16:20 → 23%
+ *   ┌──────────────────────────────────────── card ─┐
+ *   │ AUTOMATION                                    │
+ *   │ (AUTOMATIC)  (MANUAL)  (PAUSED ⌄)             │
+ *   │ following the sun and the weather · next …    │
+ *   └───────────────────────────────────────────────┘
  *
  * The filled pill is the state. While the daemon is not automatic, AUTOMATIC
  * carries the one red lamp: the way back. Left and Right move between pills,
- * Space or Enter picks one, Down (or the arrow) opens the pause durations. The
+ * Space or Enter picks one, Down (or the caret) opens the pause durations. The
  * rules are in modules/ModeControl.qml; this file only draws them.
  */
 
@@ -21,7 +24,7 @@ import "../../engine"
 import "../../modules"
 import "../../components"
 
-ColumnLayout {
+Rectangle {
     id: root
 
     required property Theme theme
@@ -37,7 +40,12 @@ ColumnLayout {
     }
     readonly property bool available: client.isConnected
 
-    spacing: style.gap
+    implicitHeight: content.implicitHeight + 2 * style.pad
+    radius: style.radius
+    antialiasing: true
+    color: style.surface
+    border.width: style.hairline
+    border.color: style.outline
 
     Accessible.role: Accessible.Grouping
     Accessible.name: i18ndc(root.control.domain, "Accessible name of the automation mode switch", "Automation mode")
@@ -56,62 +64,78 @@ ColumnLayout {
         durations.open();
     }
 
-    RowLayout {
-        Layout.fillWidth: true
+    ColumnLayout {
+        id: content
+
+        x: root.style.pad
+        y: root.style.pad
+        width: root.width - 2 * root.style.pad
         spacing: root.style.gap
 
-        Repeater {
-            id: cells
+        Text {
+            Layout.fillWidth: true
+            text: i18ndc(root.control.domain, "Section label of the automation card", "Automation")
+            textFormat: Text.PlainText
+            font: root.style.label
+            color: root.style.muted
+        }
 
-            model: root.control.choices
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: root.style.gap * 0.5
 
-            delegate: Pill {
-                id: cell
+            Repeater {
+                id: cells
 
-                required property var modelData
-                required property int index
+                model: root.control.choices
 
-                readonly property string choiceId: modelData.id
+                delegate: Pill {
+                    id: cell
 
-                Layout.fillWidth: true
-                style: root.style
-                radio: true
-                text: modelData.label
-                accessibleName: modelData.label
-                accessibleDescription: modelData.tip
-                active: root.control.choice === choiceId
-                // The way back from a pause or a manual setting carries the red lamp.
-                call: choiceId === "automatic" && root.control.choice !== ""
-                    && root.control.choice !== "automatic"
-                arrow: choiceId === "paused"
+                    required property var modelData
+                    required property int index
 
-                Keys.onLeftPressed: root.focusCell(index - 1)
-                Keys.onRightPressed: root.focusCell(index + 1)
-                Keys.onDownPressed: {
-                    if (choiceId === "paused") {
-                        root.openDurations(cell);
+                    readonly property string choiceId: modelData.id
+
+                    Layout.fillWidth: true
+                    style: root.style
+                    radio: true
+                    text: modelData.label
+                    accessibleName: modelData.label
+                    accessibleDescription: modelData.tip
+                    active: root.control.choice === choiceId
+                    // The way back from a pause or a manual setting carries the red lamp.
+                    call: choiceId === "automatic" && root.control.choice !== ""
+                        && root.control.choice !== "automatic"
+                    arrow: choiceId === "paused"
+
+                    Keys.onLeftPressed: root.focusCell(index - 1)
+                    Keys.onRightPressed: root.focusCell(index + 1)
+                    Keys.onDownPressed: {
+                        if (choiceId === "paused") {
+                            root.openDurations(cell);
+                        }
                     }
-                }
 
-                onClicked: root.control.pick(choiceId, root)
-                onArrowClicked: root.openDurations(cell)
+                    onClicked: root.control.pick(choiceId, root)
+                    onArrowClicked: root.openDurations(cell)
+                }
             }
         }
-    }
 
-    Text {
-        // Wrapped text reports its one-line width as implicit: a preferred width of 1 keeps the column narrow.
-        Layout.fillWidth: true
-        Layout.preferredWidth: 1
-        Layout.topMargin: root.style.gap * 0.5
-        text: (root.control.displayText + (root.control.note.length > 0 ? " · " + root.control.note : ""))
-            .toLowerCase()
-        textFormat: Text.PlainText
-        font: root.style.plain
-        color: root.style.ink
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
+        Text {
+            // Wrapped text reports its one-line width as implicit: a preferred width of 1 keeps the column narrow.
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            text: (root.control.displayText + (root.control.note.length > 0 ? " · " + root.control.note : ""))
+                .toLowerCase()
+            textFormat: Text.PlainText
+            font: root.style.sentence
+            color: root.style.muted
+            wrapMode: Text.WordWrap
+            maximumLineCount: 1
+            elide: Text.ElideRight
+        }
     }
 
     ModeDurationMenu {

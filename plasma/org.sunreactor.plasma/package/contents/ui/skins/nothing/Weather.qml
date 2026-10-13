@@ -1,15 +1,14 @@
 /*
- * Weather, Nothing: the reading as a dot-matrix pictogram and numeral, the
- * condition in small lower-case mono, the secondary readings as tiny columns,
- * and what the weather does to the targets as a row of dots. Lit dots are the
- * brightness the weather leaves, so a dimmed day shows unlit dots at the right.
+ * Weather, Nothing: the reading as a dot-matrix pictogram beside its temperature
+ * in dot numerals, the condition and what the weather does to the targets in one
+ * small lower-case line, and the secondary readings as a 2 x 2 grid of label and
+ * value.
  *
  *   ┌──────────────────────────────────────── 24 px radius, hairline ─┐
  *   │  [pictogram]  15°                                              │
- *   │               partly cloudy                                    │
- *   │  FEELS        RH          WIND          AQI                    │
- *   │  14°          62%         3.4 m/s       42                     │
- *   │  DIM −12%     ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▫▫▫▫▫▫▫▫▫▫▫▫                    │
+ *   │               partly cloudy · dim −12%                         │
+ *   │  FEELS  14°               RH  62%                              │
+ *   │  WIND   3.4 m/s           AQI  42                              │
  *   └────────────────────────────────────────────────────────────────┘
  *
  * Shown only when weather is enabled. Without a reading the card says why.
@@ -64,16 +63,20 @@ Rectangle {
         }
     }
 
+    /*! The condition, the staleness and the weather's effect, in one lower-case line. */
     readonly property string conditionText: {
         if (!root.reading) {
             return root.stateNote;
         }
         const label = weatherText.conditionLabel(root.client.weatherCondition)
             || i18nd(root.domain, "No weather reading");
-        const text = root.client.weatherStale
+        const parts = [root.client.weatherStale
             ? label + " · " + i18ndc(root.domain, "Tag: the weather reading is out of date", "Stale")
-            : label;
-        return text.toLowerCase();
+            : label];
+        if (root.fresh) {
+            parts.push(root.dimText);
+        }
+        return parts.join(" · ").toLowerCase();
     }
 
     readonly property string dimText: {
@@ -130,24 +133,25 @@ Rectangle {
         width: root.width - 2 * root.style.pad
         spacing: root.style.gap
 
-        // --- the reading: pictogram, numeral and condition ---------------------------
+        // --- the reading: pictogram, temperature and condition --------------------------
         RowLayout {
             Layout.fillWidth: true
             spacing: root.style.pad
 
             DotIcon {
-                // Twelve dots tall: about the height of the temperature and condition beside it.
+                // The 12 x 12 pictogram, drawn bare: its lit dots only, no unlit grid.
                 Layout.alignment: Qt.AlignTop
-                pitch: root.style.pitch
+                pitch: root.style.pitchIcon
                 condition: root.reading ? root.client.weatherCondition : ""
                 night: root.reading && root.client.weatherIsNight
                 litColor: root.style.ink
                 accentColor: root.style.accent
-                dimColor: root.style.dotGhost
+                dimColor: root.style.textGhost
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
                 spacing: root.style.gap * 0.5
 
                 DotText {
@@ -157,7 +161,7 @@ Rectangle {
                     face: "small"
                     size: 1
                     letterSpacing: 1
-                    pitch: root.style.pitchBig
+                    pitch: root.style.pitch
                     litColor: root.style.ink
                     accentColor: root.style.accent
                     dimColor: root.style.textGhost
@@ -167,80 +171,48 @@ Rectangle {
                     Layout.fillWidth: true
                     text: root.conditionText
                     textFormat: Text.PlainText
-                    font: root.style.plain
+                    font: root.style.sentence
                     color: root.reading ? root.style.ink : root.style.muted
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
                     elide: Text.ElideRight
                 }
             }
         }
 
-        // --- the effect on the targets: a row of dots, lit by what the weather leaves ---
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: root.style.gap * 0.5
-            visible: root.fresh
-            spacing: root.style.gap
-
-            Text {
-                text: root.dimText
-                textFormat: Text.PlainText
-                font: root.style.label
-                color: root.style.muted
-            }
-
-            Item {
-                id: track
-
-                Layout.fillWidth: true
-                implicitHeight: dimBar.implicitHeight
-
-                DotBar {
-                    id: dimBar
-
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    cols: Math.max(8, Math.floor(track.width / root.style.pitch))
-                    rows: 1
-                    pitch: root.style.pitch
-                    value: Math.max(0, Math.min(1, root.client.weatherMultiplier))
-                    thumbAccent: false
-                    litColor: root.style.ink
-                    dimColor: root.style.dotGhost
-                }
-            }
-        }
-
-        // --- the secondary readings, as tiny columns ---------------------------------------
-        RowLayout {
+        // --- the secondary readings: a 2 x 2 grid, each a label and its value --------------
+        GridLayout {
             Layout.fillWidth: true
             visible: root.reading
-            spacing: root.style.gap
+            columns: 2
+            columnSpacing: root.style.gap * 2
+            rowSpacing: root.style.gap * 0.5
 
             Repeater {
                 model: root.readings
 
-                delegate: ColumnLayout {
-                    id: column
+                delegate: RowLayout {
+                    id: cell
 
                     required property var modelData
 
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
-                    spacing: 0
+                    spacing: root.style.gap * 0.6
 
                     Text {
-                        Layout.fillWidth: true
-                        text: column.modelData.k
+                        Layout.alignment: Qt.AlignBaseline
+                        text: cell.modelData.k
                         textFormat: Text.PlainText
                         font: root.style.label
                         color: root.style.muted
-                        elide: Text.ElideRight
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: column.modelData.v
+                        Layout.alignment: Qt.AlignBaseline
+                        text: cell.modelData.v
                         textFormat: Text.PlainText
-                        font: root.style.plain
+                        font: root.style.figure
                         color: root.style.ink
                         elide: Text.ElideRight
                     }

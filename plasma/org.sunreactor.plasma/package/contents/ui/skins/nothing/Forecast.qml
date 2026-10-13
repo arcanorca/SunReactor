@@ -1,7 +1,7 @@
 /*
  * Forecast, Nothing: the next intervals the daemon already fetched, one column
- * each: the time in tiny mono, the pictogram as dots, the temperature in the
- * tiny dot face. No boxes; a hairline between two intervals is the only rule.
+ * each: the time in small mono, the pictogram as bare dots, the temperature in
+ * the 5x7 dot face. No boxes; a hairline between two intervals is the only rule.
  *
  *   16:00      17:00      18:00      19:00      20:00
  *   [icon]     [icon]     [icon]     [icon]     [icon]
@@ -105,7 +105,7 @@ Item {
                         night: slot.modelData.isNight
                         litColor: root.style.ink
                         accentColor: root.style.accent
-                        dimColor: root.style.dotGhost
+                        dimColor: root.style.textGhost
                     }
 
                     DotText {
@@ -114,6 +114,7 @@ Item {
                                      Math.round(slot.modelData.temperatureC))
                         face: "small"
                         size: 1
+                        letterSpacing: 1
                         pitch: root.style.pitchFine
                         litColor: root.style.ink
                         accentColor: root.style.accent

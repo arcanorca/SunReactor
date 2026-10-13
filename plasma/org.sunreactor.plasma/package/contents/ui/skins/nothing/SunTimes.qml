@@ -1,12 +1,13 @@
 /*
- * Sun times, Nothing: the three turning points as dot-matrix times, and the
- * day as a row of dots with one red dot for now (between sunrise and sunset,
- * the only red in the card). Lit dots are the day so far; the rest is the
- * matrix's ghost grid. At night the track is all unlit and no dot is red.
+ * Sun times, Nothing: the three turning points as mono times under their labels,
+ * and the day as a dotted track. Lit dots are the day so far, the head is the one
+ * red dot for now (between sunrise and sunset, the only red in the card). At night
+ * the track is all unlit and no dot is red. Times are text, never dot numerals:
+ * AM and PM would collide in the dot face.
  *
  *   RISE          NOON          SET
- *   06:12         13:04         19:51
- *   ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪●▫▫▫▫▫▫▫▫▫▫▫▫▫
+ *   7:12 AM       12:55 PM      6:33 PM
+ *   ●●●●●●●●●●●●●●●●●●●●●●●●●●●●●○○○○○○○○○○○○○○○○○○○○○○○○
  *   sun 23.4° above the horizon
  */
 
@@ -77,37 +78,43 @@ ColumnLayout {
                 id: column
 
                 required property var modelData
+                required property int index
                 readonly property bool isNext: modelData.epoch === root.nextEpoch
+                /*! Rise flush left, noon centred, set flush right: the times never run together. */
+                readonly property int align: index === 0 ? Text.AlignLeft
+                    : (index === 1 ? Text.AlignHCenter : Text.AlignRight)
 
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 spacing: root.style.gap * 0.5
 
                 Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: column.align
                     text: column.modelData.label
                     textFormat: Text.PlainText
                     font: root.style.label
                     color: root.style.muted
                 }
 
-                DotText {
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: column.align
                     text: Format.timeText(column.modelData.epoch)
-                    face: "tiny"
-                    size: 1
-                    pitch: root.style.pitch
-                    litColor: column.isNext ? root.style.ink : root.style.muted
-                    accentColor: root.style.accent
-                    dimColor: root.style.textGhost
+                    textFormat: Text.PlainText
+                    font: root.style.figure
+                    color: column.isNext ? root.style.ink : root.style.muted
                 }
             }
         }
     }
 
-    // --- the day as a row of dots ----------------------------------------------------
+    // --- the day as a dotted track ---------------------------------------------------
     Item {
         id: track
 
         Layout.fillWidth: true
+        Layout.topMargin: root.style.gap * 0.5
         implicitHeight: bar.implicitHeight
 
         DotBar {
@@ -135,13 +142,8 @@ ColumnLayout {
             : i18ndc(root.domain, "Placeholder is an angle in degrees",
                      "Sun %1° below the horizon", (-root.client.solarElevation).toFixed(1))).toLowerCase()
         textFormat: Text.PlainText
-        font: root.style.plain
+        font: root.style.sentence
         color: root.style.muted
         elide: Text.ElideRight
-    }
-
-    // Air below the card's last line, before the footer's hairline.
-    Item {
-        Layout.preferredHeight: root.style.gap * 0.5
     }
 }

@@ -1,16 +1,16 @@
 /*
- * A round pill: a hairline outline, or a white fill with black text when it is
- * the active choice. `call` adds the red lamp of the one call to action;
- * `arrow` adds a down arrow with its own hit area (`arrowClicked`), the way
- * PAUSED offers its durations. `interactive: false` makes a badge: shown, never
- * pressed. Space and Enter press it; the focus ring sits one gap outside.
+ * A round pill, one height everywhere (NothingStyle.pillHeight): white fill with
+ * black text when it is the active choice, otherwise a hairline outline with
+ * grey text that turns white on hover. `call` adds the red lamp of the one call
+ * to action; `arrow` adds a thin down caret with its own hit area (`arrowClicked`),
+ * the way PAUSED offers its durations. `interactive: false` makes a badge: shown,
+ * never pressed. Space and Enter press it; the focus ring sits one gap outside.
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import org.kde.kirigami as Kirigami
 
 Item {
     id: root
@@ -20,7 +20,6 @@ Item {
     property bool active: false
     property bool call: false
     property bool arrow: false
-    property bool compact: false
     property bool interactive: true
     /*! A choice of a group: exposed to assistive tech as a radio button. */
     property bool radio: false
@@ -30,11 +29,12 @@ Item {
     signal clicked()
     signal arrowClicked()
 
+    readonly property bool hovered: body.containsMouse && root.interactive
     readonly property color fill: active ? style.ink : "transparent"
-    readonly property color ink: active ? style.theme.bg : (interactive ? style.ink : style.muted)
+    readonly property color ink: active ? style.theme.bg : (hovered ? style.ink : style.muted)
 
-    implicitHeight: Math.round(style.unit * (compact ? 1.3 : 1.9))
-    implicitWidth: row.implicitWidth + height * 1.1
+    implicitHeight: style.pillHeight
+    implicitWidth: row.implicitWidth + height * 1.2
     activeFocusOnTab: interactive
 
     Accessible.role: radio ? Accessible.RadioButton : Accessible.Button
@@ -64,7 +64,7 @@ Item {
         antialiasing: true
         color: root.fill
         border.width: root.style.hairline
-        border.color: root.active || (body.containsMouse && root.interactive) ? root.style.ink : root.style.outline
+        border.color: root.active || root.hovered ? root.style.ink : root.style.outline
     }
 
     MouseArea {
@@ -84,7 +84,7 @@ Item {
         id: row
 
         anchors.centerIn: parent
-        spacing: root.style.gap
+        spacing: root.style.gap * 0.6
 
         Lamp {
             Layout.alignment: Qt.AlignVCenter
@@ -100,24 +100,41 @@ Item {
             color: root.ink
         }
 
-        // The arrow has its own hit area, stacked over the body: a click there opens the durations.
+        // The caret has its own hit area, stacked over the body: a click there opens the durations.
         Item {
             id: arrowHit
 
+            readonly property real side: root.style.snap(8)
+
             Layout.alignment: Qt.AlignVCenter
             visible: root.arrow
-            implicitWidth: arrowIcon.width + root.style.gap * 2
+            implicitWidth: side + root.style.gap * 1.5
             implicitHeight: root.height
 
-            Kirigami.Icon {
-                id: arrowIcon
-
+            // A thin chevron: two device-pixel strokes meeting at the bottom.
+            Item {
                 anchors.centerIn: parent
-                width: root.style.snap(root.style.unit * 0.6)
-                height: width
-                source: "arrow-down"
-                isMask: true
-                color: root.ink
+                width: arrowHit.side
+                height: arrowHit.side * 0.5
+
+                Rectangle {
+                    x: 0
+                    y: 0
+                    width: arrowHit.side * Math.SQRT2 / 2
+                    height: root.style.hairline * 1.5
+                    transformOrigin: Item.TopLeft
+                    rotation: 45
+                    color: root.ink
+                }
+                Rectangle {
+                    x: parent.width - width
+                    y: 0
+                    width: arrowHit.side * Math.SQRT2 / 2
+                    height: root.style.hairline * 1.5
+                    transformOrigin: Item.TopRight
+                    rotation: -45
+                    color: root.ink
+                }
             }
 
             MouseArea {
