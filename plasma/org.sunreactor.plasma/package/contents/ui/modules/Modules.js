@@ -27,6 +27,38 @@ var FILES = {
     suntimes: "SunTimes.qml"
 };
 
+/*
+ * Skins replace one module for a renderer or a single theme. Keys are
+ * "id:<theme id>" (flagship, wins) or the renderer name ("pixel", "terminal",
+ * "vector"); values map a module id to a path relative to ui/ (normally
+ * skins/<name>/<Module>.qml). A skin file follows the same module contract.
+ * Each skin author edits only the entries for their own key.
+ */
+var SKINS = {
+    "pixel": {},
+    "terminal": {},
+    "vector": {},
+    "id:braun": {},
+    "id:vfd_hifi": {},
+    "id:nixie": {}
+};
+
 function file(id) {
     return FILES[id] || "";
+}
+
+/*! Path (relative to ui/) of the QML file to load for a module id. */
+function source(id, themeId, renderer) {
+    const base = FILES[id];
+    if (!base) {
+        return "";
+    }
+    const keys = ["id:" + themeId, renderer];
+    for (let i = 0; i < keys.length; ++i) {
+        const skin = SKINS[keys[i]];
+        if (skin && skin[id]) {
+            return skin[id];
+        }
+    }
+    return "modules/" + base;
 }

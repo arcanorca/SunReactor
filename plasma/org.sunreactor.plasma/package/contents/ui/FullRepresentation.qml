@@ -111,7 +111,7 @@ PlasmaExtras.Representation {
                     Component.onCompleted: {
                         const file = Modules.file(modelData);
                         if (file.length > 0) {
-                            setSource(Qt.resolvedUrl("modules/" + file), {
+                            setSource(Qt.resolvedUrl(Modules.source(modelData, root.theme.themeId, root.theme.renderer)), {
                                 theme: root.theme,
                                 client: root.client,
                                 settings: moduleSettings,
