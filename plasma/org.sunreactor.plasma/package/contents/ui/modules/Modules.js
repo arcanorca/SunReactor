@@ -94,3 +94,64 @@ function source(id, themeId, renderer) {
     }
     return "modules/" + base;
 }
+
+/*
+ * Tab pages (DESIGN.md section 6). The popup's modules are grouped into the
+ * pages a tab bar switches between: Brightness (light cycle, displays,
+ * automation) and Weather (weather, forecast, sun times). Telemetry is not a
+ * page: it is the status line above the tab bar (ABOVE_TABS).
+ *
+ * FullRepresentation shows the tab bar only when the theme's modules include
+ * modules for every page; otherwise one page holds them all, in the theme's
+ * order. A module id no page lists belongs to the first page.
+ */
+var PAGES = ["brightness", "weather"];
+
+var PAGE_OF = {
+    curve: "brightness",
+    displays: "brightness",
+    automation: "brightness",
+    weather: "weather",
+    forecast: "weather",
+    suntimes: "weather"
+};
+
+/*! Modules that stay above the tab bar, whatever the theme's order. */
+var ABOVE_TABS = ["telemetry"];
+
+/*! The page a module id belongs to. */
+function page(id) {
+    return PAGE_OF[id] || PAGES[0];
+}
+
+/*! The page `delta` places away from `current`, wrapping (+1 next, -1 previous). */
+function step(current, delta) {
+    const n = PAGES.length;
+    const at = Math.max(0, PAGES.indexOf(current));
+    return PAGES[((at + delta) % n + n) % n];
+}
+
+/*
+ * Tab bar skins (components/tabs/), looked up like footer/Parts.js: a theme id
+ * key wins, then the renderer. Without one (no daemon theme, or a renderer with
+ * no skin) the plain Plasma tab bar is used.
+ */
+var TABBAR_PLAIN = "components/tabs/PlainTabs.qml";
+
+var TABBAR = {
+    "pixel": "components/tabs/PixelTabs.qml",
+    "terminal": "components/tabs/TerminalTabs.qml",
+    "vector": "components/tabs/InstrumentTabs.qml"
+};
+
+/*! Path (relative to ui/) of the tab bar. Pass themeId "" and renderer "" for no theme. */
+function tabBarSource(themeId, renderer) {
+    const keys = ["id:" + themeId, renderer];
+    for (let i = 0; i < keys.length; ++i) {
+        const skin = TABBAR[keys[i]];
+        if (skin) {
+            return skin;
+        }
+    }
+    return TABBAR_PLAIN;
+}

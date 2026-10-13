@@ -6,6 +6,10 @@
  * a scrollable column of flat rows, with a footer for the actions. There is no
  * title: the popup does not repeat the name of the widget. When a daemon theme
  * is in effect the content sits on the theme's background.
+ *
+ * Telemetry is the status line and stays on top. When the theme lists modules
+ * for both tab pages (Modules.PAGES), a tab bar under it switches between the
+ * pages; each page scrolls on its own and the footer stays put.
  */
 
 pragma ComponentBehavior: Bound
@@ -64,64 +68,217 @@ PlasmaExtras.Representation {
         style: root.theme.border === "none" ? "none" : "line"
     }
 
-    contentItem: PlasmaComponents3.ScrollView {
-        id: scrollView
+    // --- tab pages -------------------------------------------------------------
 
-        implicitHeight: contentColumn.implicitHeight
-        PlasmaComponents3.ScrollBar.horizontal.visible: false
+    /*! Screenshot harness only (tools/shot.sh --config "tab=weather"): empty otherwise. */
+    readonly property string harnessPage: String(client.harnessConfig().tab || "")
+    /*! The page the popup starts on each time it opens. */
+    readonly property string startPage: Modules.PAGES.indexOf(harnessPage) >= 0 ? harnessPage : Modules.PAGES[0]
+    /*! The page the user picked. Kept while the popup is open; in memory only. */
+    property string currentPage: startPage
 
-        ColumnLayout {
-            id: contentColumn
+    /*! The status line: modules that stay above the tab bar, in the theme's order. */
+    readonly property var topModules: root.theme.modules.filter(id => Modules.ABOVE_TABS.indexOf(id) >= 0)
+    /*! Every other module: the tab pages' modules, in the theme's order. */
+    readonly property var bodyModules: root.theme.modules.filter(id => Modules.ABOVE_TABS.indexOf(id) < 0)
+    /*! The pages this theme has at least one module for. */
+    readonly property var populatedPages: Modules.PAGES.filter(
+        page => root.bodyModules.some(id => Modules.page(id) === page))
+    /*! The tab bar shows only when every page has modules. */
+    readonly property bool tabsShown: root.populatedPages.length === Modules.PAGES.length
+    readonly property string shownPage: root.tabsShown ? root.currentPage
+        : (root.populatedPages.length > 0 ? root.populatedPages[0] : Modules.PAGES[0])
 
-            width: scrollView.availableWidth
-            spacing: root.theme.sectionSpacing
+    /*! The module ids on one page. Without tabs, the one page holds them all. */
+    function modulesOn(page) {
+        if (!root.tabsShown) {
+            return page === root.shownPage ? root.bodyModules : [];
+        }
+        return root.bodyModules.filter(id => Modules.page(id) === page);
+    }
 
-            PlasmaExtras.PlaceholderMessage {
-                Layout.fillWidth: true
-                Layout.topMargin: Kirigami.Units.gridUnit
-                Layout.bottomMargin: Kirigami.Units.gridUnit
-                visible: !root.client.isConnected
-                iconName: "network-disconnect"
-                text: i18nd(root.domain, "Not connected")
-                explanation: i18nd(root.domain,
-                    "The background service is not answering. Start it with:\nsystemctl --user start sunreactord")
-            }
+    function showPage(page) {
+        if (Modules.PAGES.indexOf(page) >= 0) {
+            root.currentPage = page;
+        }
+    }
 
-            Repeater {
-                model: root.theme.modules
+    function pageTitle(page) {
+        return page === "weather"
+            ? i18ndc(root.domain, "Tab title: the weather page", "Weather")
+            : i18ndc(root.domain, "Tab title: the brightness page", "Brightness");
+    }
 
-                delegate: Loader {
-                    id: slot
+    /*! Live hint on the weather tab: the temperature, as the status line shows it. */
+    readonly property string weatherHint: root.client.hasTemperature
+        ? i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1°C", Math.round(root.client.temperatureC))
+        : ""
+    readonly property var tabEntries: Modules.PAGES.map(page => ({
+        id: page,
+        text: root.pageTitle(page),
+        hint: page === "weather" ? root.weatherHint : "",
+    }))
 
-                    required property string modelData
-                    // The file depends on the theme (skins per renderer / id),
-                    // so a theme change can swap it after creation.
-                    readonly property string moduleSource: Modules.file(modelData).length > 0
-                        ? Modules.source(modelData, root.theme.themeId, root.theme.renderer) : ""
+    Shortcut {
+        sequence: "Ctrl+Tab"
+        enabled: root.tabsShown
+        onActivated: root.showPage(Modules.step(root.shownPage, 1))
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+Tab"
+        enabled: root.tabsShown
+        onActivated: root.showPage(Modules.step(root.shownPage, -1))
+    }
 
-                    function load() {
-                        if (moduleSource.length > 0) {
-                            setSource(Qt.resolvedUrl(moduleSource), {
-                                theme: root.theme,
-                                client: root.client,
-                                settings: moduleSettings,
-                            });
-                        }
-                    }
+    contentItem: ColumnLayout {
+        spacing: 0
 
-                    Layout.fillWidth: true
-                    Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
-                    Layout.rightMargin: Layout.leftMargin
-                    // Every module exposes `available` (modules/Modules.js); the
-                    // loaded type is only known at run time.
-                    visible: status === Loader.Ready && item.available === true // qmllint disable missing-property
-                    active: moduleSource.length > 0
+        Connections {
+            target: root.client
 
-                    onModuleSourceChanged: load()
-                    Component.onCompleted: load()
+            function onPopupOpenChanged(): void {
+                if (root.client.popupOpen) {
+                    root.currentPage = root.startPage;
                 }
             }
         }
+
+        PlasmaExtras.PlaceholderMessage {
+            Layout.fillWidth: true
+            Layout.topMargin: Kirigami.Units.gridUnit
+            Layout.bottomMargin: Kirigami.Units.gridUnit
+            visible: !root.client.isConnected
+            iconName: "network-disconnect"
+            text: i18nd(root.domain, "Not connected")
+            explanation: i18nd(root.domain,
+                "The background service is not answering. Start it with:\nsystemctl --user start sunreactord")
+        }
+
+        Repeater {
+            model: root.topModules
+
+            delegate: ModuleSlot {}
+        }
+
+        Loader {
+            id: tabSlot
+
+            // Skin by theme and renderer; no daemon theme means the plain bar.
+            readonly property string tabSource: Modules.tabBarSource(
+                root.theme.available ? root.theme.themeId : "",
+                root.theme.available ? root.theme.renderer : "")
+
+            function load() {
+                setSource(Qt.resolvedUrl(tabSource), { theme: root.theme });
+            }
+
+            Layout.fillWidth: true
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
+            Layout.rightMargin: Layout.leftMargin
+            visible: root.tabsShown && status === Loader.Ready
+
+            onTabSourceChanged: load()
+            Component.onCompleted: load()
+            onLoaded: {
+                item.tabs = Qt.binding(() => root.tabEntries);
+                item.current = Qt.binding(() => root.shownPage);
+            }
+
+            Connections {
+                target: tabSlot.item
+                ignoreUnknownSignals: true
+
+                function onPicked(id: string): void {
+                    root.showPage(id);
+                }
+            }
+        }
+
+        // The pages. All of them load, so the popup keeps one height whichever
+        // page is shown: the tallest one decides.
+        Item {
+            id: pages
+
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.topMargin: root.theme.sectionSpacing
+            implicitHeight: {
+                let tallest = 0;
+                for (let i = 0; i < pageRepeater.count; ++i) {
+                    tallest = Math.max(tallest, pageRepeater.itemAt(i).implicitHeight);
+                }
+                return tallest;
+            }
+
+            Repeater {
+                id: pageRepeater
+
+                model: Modules.PAGES
+
+                delegate: PagePanel {
+                    anchors.fill: parent
+                    visible: modelData === root.shownPage
+                }
+            }
+        }
+    }
+
+    // One tab page: its modules in the theme's order, scrolling on its own.
+    component PagePanel: PlasmaComponents3.ScrollView {
+        id: panel
+
+        /*! The page id (Modules.PAGES). */
+        required property string modelData
+
+        implicitHeight: pageColumn.implicitHeight
+        PlasmaComponents3.ScrollBar.horizontal.visible: false
+
+        ColumnLayout {
+            id: pageColumn
+
+            width: panel.availableWidth
+            spacing: root.theme.sectionSpacing
+
+            Repeater {
+                model: root.modulesOn(panel.modelData)
+
+                delegate: ModuleSlot {}
+            }
+        }
+    }
+
+    // One module's slot: the file for the theme's skin, shown while the module
+    // reports itself available.
+    component ModuleSlot: Loader {
+        id: slot
+
+        required property string modelData
+        // The file depends on the theme (skins per renderer / id),
+        // so a theme change can swap it after creation.
+        readonly property string moduleSource: Modules.file(modelData).length > 0
+            ? Modules.source(modelData, root.theme.themeId, root.theme.renderer) : ""
+
+        function load() {
+            if (moduleSource.length > 0) {
+                setSource(Qt.resolvedUrl(moduleSource), {
+                    theme: root.theme,
+                    client: root.client,
+                    settings: moduleSettings,
+                });
+            }
+        }
+
+        Layout.fillWidth: true
+        Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
+        Layout.rightMargin: Layout.leftMargin
+        // Every module exposes `available` (modules/Modules.js); the
+        // loaded type is only known at run time.
+        visible: status === Loader.Ready && item.available === true // qmllint disable missing-property
+        active: moduleSource.length > 0
+
+        onModuleSourceChanged: load()
+        Component.onCompleted: load()
     }
 
     footer: PopupFooter {
