@@ -75,8 +75,8 @@ ColumnLayout {
             DotText {
                 Layout.alignment: Qt.AlignVCenter
                 text: channel.percent >= 0 ? channel.percent + "%" : "--%"
-                face: "small"
-                size: 2
+                face: "tiny"
+                size: 1
                 pitch: root.style.pitchFine
                 litColor: channel.percent >= 0 ? root.style.ink : root.style.muted
                 accentColor: root.style.accent

@@ -58,7 +58,7 @@ QtObject {
     readonly property real pitch: Math.max(3, Math.round(unit * 0.2))
     /*! Finer pitch for the tiny face and the row percentages: one step under the text pitch. */
     readonly property real pitchFine: Math.max(3, pitch - 1)
-    /*! The big numerals use the text pitch: the numeral is size 3 of it. */
+    /*! The hero numerals use the text pitch at size 1 of the 5x7 face: 7 dots, about twice a label. */
     readonly property real pitchBig: pitch
 
     // --- type ---------------------------------------------------------------------

@@ -57,7 +57,7 @@ Rectangle {
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: available && now >= t0 && now <= t1
 
-    readonly property int plotRows: 20
+    readonly property int plotRows: 24
     readonly property real pitch: style.pitch
 
     function appliedFor(monitorId) {
@@ -194,7 +194,7 @@ Rectangle {
             Layout.topMargin: root.style.gap * 0.5
             text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
             face: "small"
-            size: 3
+            size: 1
             letterSpacing: 1
             pitch: root.style.pitchBig
             litColor: root.style.ink

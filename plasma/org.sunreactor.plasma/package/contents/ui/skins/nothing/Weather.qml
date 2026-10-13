@@ -136,9 +136,9 @@ Rectangle {
             spacing: root.style.pad
 
             DotIcon {
-                // Twelve dots tall: about the height of the numeral beside it.
+                // Twelve dots tall: about the height of the temperature and condition beside it.
                 Layout.alignment: Qt.AlignTop
-                pitch: root.style.pitchBig + 2
+                pitch: root.style.pitch
                 condition: root.reading ? root.client.weatherCondition : ""
                 night: root.reading && root.client.weatherIsNight
                 litColor: root.style.ink
@@ -155,7 +155,8 @@ Rectangle {
                     text: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
                                  Math.round(root.client.temperatureC))
                     face: "small"
-                    size: 3
+                    size: 1
+                    letterSpacing: 1
                     pitch: root.style.pitchBig
                     litColor: root.style.ink
                     accentColor: root.style.accent
