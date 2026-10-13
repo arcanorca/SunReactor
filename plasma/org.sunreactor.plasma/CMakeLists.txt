@@ -47,6 +47,8 @@ target_sources(sunreactorplugin PRIVATE
     plugin/themenormalize.h
     plugin/pixelitems.cpp
     plugin/pixelitems.h
+    plugin/pixelart.cpp
+    plugin/pixelart.h
 )
 
 target_include_directories(sunreactorplugin PUBLIC
