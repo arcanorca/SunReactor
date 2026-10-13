@@ -57,7 +57,13 @@ ColumnLayout {
 
     readonly property real t0: available ? curves[0].samples[0].t : 0
     readonly property real t1: available ? curves[0].samples[curves[0].samples.length - 1].t : 1
-    readonly property real hours: Math.max(1, Math.round((t1 - t0) / 3600))
+    // Derived from the curve itself, not from t0/t1: while the bindings above
+    // update one after the other (t1 new, t0 still 0) a difference of t1 - t0 is
+    // ~497 000 h, which made the tick scales instantiate that many items.
+    readonly property real hours: available
+        ? Math.max(1, Math.min(48, Math.round((curves[0].samples[curves[0].samples.length - 1].t
+                                               - curves[0].samples[0].t) / 3600)))
+        : 1
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: now >= t0 && now <= t1
     readonly property var sun: available && curve.sun ? curve.sun : ({})
