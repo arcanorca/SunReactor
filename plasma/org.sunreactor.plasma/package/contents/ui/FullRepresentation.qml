@@ -31,15 +31,10 @@ PlasmaExtras.Representation {
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property Theme theme: engine.theme
 
-    ThemeEngine {
+    PlasmoidEngine {
         id: engine
 
         client: root.client
-        mode: Plasmoid.configuration.themeMode
-        pinnedId: Plasmoid.configuration.pinnedTheme
-        accentOverride: Plasmoid.configuration.accentOverride
-        densityOverride: Plasmoid.configuration.densityOverride
-        pixelScaleOverride: Plasmoid.configuration.pixelScale
     }
 
     ModuleSettings {
@@ -127,6 +122,14 @@ PlasmaExtras.Representation {
         client: root.client
         theme: root.theme
         defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes
+        themeMode: Plasmoid.configuration.themeMode
+        pinnedId: Plasmoid.configuration.pinnedTheme
+        pinNotice: engine.notice
         visible: root.client.isConnected
+        onFollowRequested: Plasmoid.configuration.themeMode = "follow"
+        onPinRequested: id => {
+            Plasmoid.configuration.pinnedTheme = id;
+            Plasmoid.configuration.themeMode = "pinned";
+        }
     }
 }
