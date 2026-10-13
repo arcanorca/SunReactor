@@ -6,6 +6,7 @@
  */
 
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QList>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -59,6 +60,9 @@ private Q_SLOTS:
     void testDayCurveFollowsLimitChanges();
     void testThemeListAndFetch();
     void testPinnedThemeIsKeptFetched();
+    void testThemeWarningIsOptional();
+    void testThemesFolderFollowsXdgConfigHome();
+    void testHarnessConfigNeedsHarness();
 
 private:
     using Handler = std::function<QJsonObject(const QJsonObject &request)>;
@@ -1277,6 +1281,114 @@ void TestSunReactorClient::testPinnedThemeIsKeptFetched()
 
     client.setPinnedThemeId(QString());
     QCOMPARE(client.pinnedThemeError(), QString());
+}
+
+void TestSunReactorClient::testThemeWarningIsOptional()
+{
+    // The daemon only sends theme_warning when tui.theme could not be used
+    // as-is (DESIGN.md section 3); older daemons never send it.
+    auto warning = std::make_shared<QJsonValue>(QJsonValue::Undefined);
+    serveWith([warning](const QJsonObject &request) {
+        if (request.value(QStringLiteral("request")).toString() != QStringLiteral("status")) {
+            return errorResponse(QStringLiteral("invalid_request"), QStringLiteral("unknown variant"));
+        }
+        QJsonObject status;
+        status[QStringLiteral("now_epoch_s")] = 1773998400;
+        status[QStringLiteral("theme")] = fullTheme(QStringLiteral("amber"));
+        if (!warning->isUndefined()) {
+            status[QStringLiteral("theme_warning")] = *warning;
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeWarning(), QString());
+
+    *warning = QStringLiteral("  theme file /home/u/.config/sunreactor/themes/mine.toml is invalid: palette.bg "
+                              "is missing; using the default `amber` theme instead\n");
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.themeWarning().isEmpty(), 2000);
+    QVERIFY(client.themeWarning().startsWith(QStringLiteral("theme file ")));
+    QVERIFY2(client.themeWarning().endsWith(QStringLiteral("instead")), "surrounding whitespace is trimmed");
+    // A warning is cosmetic: the theme it fell back to is still followed.
+    QCOMPARE(client.theme().value(QStringLiteral("id")).toString(), QStringLiteral("amber"));
+
+    // Omitted again (the user fixed the file) clears it.
+    *warning = QJsonValue(QJsonValue::Undefined);
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.themeWarning(), QString(), 2000);
+
+    // Anything but a string is treated as nothing to report.
+    *warning = QJsonValue(42);
+    statusSpy.clear();
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeWarning(), QString());
+    *warning = QJsonValue(QJsonValue::Null);
+    statusSpy.clear();
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeWarning(), QString());
+
+    // Losing the daemon forgets it along with the rest of the status.
+    *warning = QStringLiteral("fallback");
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.themeWarning(), QStringLiteral("fallback"), 2000);
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected(), 4000);
+    QCOMPARE(client.themeWarning(), QString());
+}
+
+void TestSunReactorClient::testThemesFolderFollowsXdgConfigHome()
+{
+    const QByteArray savedXdg = qgetenv("XDG_CONFIG_HOME");
+    const bool hadXdg = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+    const QString base = m_tempDir.filePath(QStringLiteral("xdg-config"));
+
+    SunReactorClient client(m_socketPath);
+    qputenv("XDG_CONFIG_HOME", base.toUtf8());
+    const QString expected = base + QStringLiteral("/sunreactor/themes");
+    QCOMPARE(client.themesFolder(), expected);
+    QVERIFY2(!QFileInfo::exists(expected), "asking for the path creates nothing");
+    QCOMPARE(client.ensureThemesFolder(), expected);
+    QVERIFY(QFileInfo(expected).isDir());
+    QCOMPARE(client.ensureThemesFolder(), expected); // idempotent
+
+    // A relative XDG_CONFIG_HOME is invalid for the daemon too: no folder.
+    qputenv("XDG_CONFIG_HOME", "relative/config");
+    QCOMPARE(client.themesFolder(), QString());
+    QCOMPARE(client.ensureThemesFolder(), QString());
+
+    if (hadXdg) {
+        qputenv("XDG_CONFIG_HOME", savedXdg);
+    } else {
+        qunsetenv("XDG_CONFIG_HOME");
+    }
+}
+
+void TestSunReactorClient::testHarnessConfigNeedsHarness()
+{
+    SunReactorClient client(m_socketPath);
+    qputenv("SUNREACTOR_HARNESS_CONFIG", "panelMode=ring showTemperature=false pixelScale=3 "
+                                         "Appearance/moduleOrder=[\"curve\",\"displays\"] bogus =x");
+    qunsetenv("SUNREACTOR_HARNESS");
+    QVERIFY2(client.harnessConfig().isEmpty(), "never outside the screenshot harness");
+
+    qputenv("SUNREACTOR_HARNESS", "1");
+    const QVariantMap config = client.harnessConfig();
+    QCOMPARE(config.value(QStringLiteral("panelMode")).toString(), QStringLiteral("ring"));
+    QCOMPARE(config.value(QStringLiteral("showTemperature")).typeId(), QMetaType::Bool);
+    QCOMPARE(config.value(QStringLiteral("showTemperature")).toBool(), false);
+    QCOMPARE(config.value(QStringLiteral("pixelScale")).toInt(), 3);
+    QCOMPARE(config.value(QStringLiteral("moduleOrder")).toStringList(),
+             (QStringList{QStringLiteral("curve"), QStringLiteral("displays")}));
+    QCOMPARE(config.size(), 4);
+    qunsetenv("SUNREACTOR_HARNESS");
+    qunsetenv("SUNREACTOR_HARNESS_CONFIG");
 }
 
 QTEST_MAIN(TestSunReactorClient)

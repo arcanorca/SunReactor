@@ -1,6 +1,7 @@
 #include "sunreactorclient.h"
 
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -8,6 +9,7 @@
 #include <QJsonValue>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QUrl>
 #include <QVariantMap>
 
 #include <utility>
@@ -478,6 +480,53 @@ void SunReactorClient::ping()
     enqueueRequest(request(QStringLiteral("ping")));
 }
 
+QString SunReactorClient::themesFolder() const
+{
+    // The daemon's paths::config_dir(): XDG_CONFIG_HOME when set (it must be
+    // absolute, otherwise the daemon refuses it too), else $HOME/.config.
+    const QString xdg = qEnvironmentVariable("XDG_CONFIG_HOME");
+    if (!xdg.isEmpty()) {
+        return QDir::isAbsolutePath(xdg) ? QDir::cleanPath(xdg + QStringLiteral("/sunreactor/themes")) : QString();
+    }
+    const QString home = qEnvironmentVariable("HOME");
+    return home.isEmpty() ? QString() : QDir::cleanPath(home + QStringLiteral("/.config/sunreactor/themes"));
+}
+
+QString SunReactorClient::ensureThemesFolder() const
+{
+    const QString path = themesFolder();
+    return !path.isEmpty() && QDir().mkpath(path) ? path : QString();
+}
+
+QVariantMap SunReactorClient::harnessConfig() const
+{
+    QVariantMap out;
+    if (qEnvironmentVariableIsEmpty("SUNREACTOR_HARNESS")) {
+        return out;
+    }
+    const QStringList items = qEnvironmentVariable("SUNREACTOR_HARNESS_CONFIG").split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (const QString &item : items) {
+        const qsizetype eq = item.indexOf(QLatin1Char('='));
+        if (eq <= 0) {
+            continue;
+        }
+        const QString key = item.left(eq).section(QLatin1Char('/'), -1); // "Group/key" -> "key"
+        const QString raw = item.mid(eq + 1);
+        QJsonParseError error{};
+        const QJsonDocument doc = QJsonDocument::fromJson(QByteArray("[") + raw.toUtf8() + QByteArray("]"), &error);
+        out.insert(key, error.error == QJsonParseError::NoError && doc.array().size() == 1
+                            ? doc.array().first().toVariant()
+                            : QVariant(raw));
+    }
+    return out;
+}
+
+bool SunReactorClient::openThemesFolder() const
+{
+    const QString path = ensureThemesFolder();
+    return !path.isEmpty() && QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
 void SunReactorClient::openTerminal()
 {
     QString cliPath = QStandardPaths::findExecutable(QStringLiteral("sunreactorctl"));
@@ -804,6 +853,9 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     m_themeBg = themeObj.value(QStringLiteral("bg")).toString();
     m_themeFg = themeObj.value(QStringLiteral("fg")).toString();
     m_themeTextMuted = themeObj.value(QStringLiteral("text_muted")).toString();
+    // Optional and omitted when there is nothing to say; a non-string is
+    // treated as nothing too.
+    m_themeWarning = statusObj.value(QStringLiteral("theme_warning")).toString().trimmed();
 
     parseWeather(statusObj);
     parseMonitors(statusObj);
@@ -1127,5 +1179,6 @@ void SunReactorClient::clearStatus()
     m_themeBg.clear();
     m_themeFg.clear();
     m_themeTextMuted.clear();
+    m_themeWarning.clear();
     Q_EMIT statusChanged();
 }
