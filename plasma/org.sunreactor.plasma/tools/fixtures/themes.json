@@ -680,7 +680,7 @@
   "fg": "#33ff00",
   "text_muted": "#009600",
   "id": "hackergreen",
-  "family": "pixel",
+  "family": "terminal",
   "glyph_style": "pixel",
   "palette": {
    "bg": "#000000",
@@ -695,8 +695,8 @@
    "error": "#ff3232"
   },
   "widget": {
-   "renderer": "pixel",
-   "font": "bitmap8",
+   "renderer": "terminal",
+   "font": "mono",
    "pixel_scale": 0,
    "shades": [
     "#000000",
@@ -707,8 +707,8 @@
    "density": "compact",
    "border": "line",
    "radius": 0,
-   "dither": "bayer4",
-   "glow": 0.0,
+   "dither": "none",
+   "glow": 0.5,
    "modules": [
     "telemetry",
     "curve",

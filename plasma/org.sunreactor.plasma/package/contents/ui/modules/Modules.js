@@ -82,6 +82,15 @@ var SKINS = {
         forecast: "skins/casiodigital/Forecast.qml",
         suntimes: "skins/casiodigital/SunTimes.qml"
     },
+    "id:hackergreen": {
+        telemetry: "skins/hackergreen/Telemetry.qml",
+        curve: "skins/hackergreen/LightCycle.qml",
+        displays: "skins/hackergreen/Displays.qml",
+        automation: "skins/hackergreen/Automation.qml",
+        weather: "skins/hackergreen/Weather.qml",
+        forecast: "skins/hackergreen/Forecast.qml",
+        suntimes: "skins/hackergreen/SunTimes.qml"
+    },
     "id:nothing": {
         telemetry: "skins/nothing/Telemetry.qml",
         curve: "skins/nothing/LightCycle.qml",
