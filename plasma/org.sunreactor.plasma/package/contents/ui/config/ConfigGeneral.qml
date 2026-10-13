@@ -17,6 +17,7 @@ import org.sunreactor.plasma
 import "../Icons.js" as Icons
 import "../modules/Modules.js" as Modules
 import "../components"
+import "../engine"
 
 KCM.SimpleKCM {
     id: root
@@ -34,6 +35,7 @@ KCM.SimpleKCM {
     property string cfg_densityOverride: ""
     property int cfg_pixelScale: 0
     property string cfg_rendererOverride: ""
+    property string cfg_weatherIconStyle: "auto"
     property var cfg_moduleOrder: []
     property var cfg_hiddenModules: []
     property string cfg_panelMode: "sky"
@@ -52,6 +54,7 @@ KCM.SimpleKCM {
     property string cfg_densityOverrideDefault: ""
     property int cfg_pixelScaleDefault: 0
     property string cfg_rendererOverrideDefault: ""
+    property string cfg_weatherIconStyleDefault: "auto"
     property var cfg_moduleOrderDefault: []
     property var cfg_hiddenModulesDefault: []
     property string cfg_panelModeDefault: "sky"
@@ -76,6 +79,18 @@ KCM.SimpleKCM {
                 refreshThemeList();
             }
         }
+    }
+
+    // The unsaved look, resolved the way the widget resolves it, for the preview.
+    Theme {
+        id: previewTheme
+        spec: root.cfg_themeMode === "pinned" && preview.pinnedTheme && preview.pinnedTheme.palette !== undefined
+            ? preview.pinnedTheme : preview.theme
+        overrides: ({
+            accent: root.cfg_accentOverride,
+            renderer: root.cfg_rendererOverride,
+            weatherIconStyle: root.cfg_weatherIconStyle,
+        })
     }
 
     readonly property bool themesAvailable: preview.themeRegistry === SunReactorClient.CapabilitySupported
@@ -196,15 +211,32 @@ KCM.SimpleKCM {
                     anchors.centerIn: parent
                     spacing: Kirigami.Units.smallSpacing
 
-                    Kirigami.Icon {
-                        // 32 is two screen pixels per art pixel, like a panel.
+                    Item {
+                        // 32 px: two screen pixels per art pixel, like a panel.
                         Layout.preferredWidth: 32
                         Layout.preferredHeight: 32
-                        roundToIconSize: false
-                        source: preview.hasWeatherReading
-                            ? Icons.conditionArt(preview.weatherCondition, preview.weatherIsNight)
-                            : (preview.isConnected ? Icons.skyArt(!preview.isDaylight)
-                                                   : Icons.art("unknown"))
+
+                        Kirigami.Icon {
+                            anchors.fill: parent
+                            visible: previewTheme.glyphStyle === "pixel"
+                            roundToIconSize: false
+                            source: preview.hasWeatherReading
+                                ? Icons.conditionArt(preview.weatherCondition, preview.weatherIsNight)
+                                : (preview.isConnected ? Icons.skyArt(!preview.isDaylight)
+                                                       : Icons.art("unknown"))
+                        }
+
+                        WeatherGlyph {
+                            anchors.centerIn: parent
+                            visible: previewTheme.glyphStyle !== "pixel"
+                            size: 32
+                            condition: preview.hasWeatherReading ? preview.weatherCondition
+                                                                 : (preview.isConnected ? "clear" : "")
+                            night: preview.hasWeatherReading ? preview.weatherIsNight : !preview.isDaylight
+                            glyphStyle: previewTheme.glyphStyle
+                            palette: previewTheme.glyphColours(Kirigami.Theme.backgroundColor,
+                                                               Kirigami.Theme.textColor)
+                        }
                     }
 
                     ColumnLayout {
@@ -517,6 +549,18 @@ KCM.SimpleKCM {
                 wrapMode: Text.WordWrap
                 font: Kirigami.Theme.smallFont
                 opacity: 0.75
+            }
+
+            ValueComboBox {
+                Kirigami.FormData.label: i18nd(root.domain, "Weather icons:")
+                configValue: root.cfg_weatherIconStyle
+                model: [
+                    { value: "auto", label: i18ndc(root.domain, "Weather icon style", "Match the theme") },
+                    { value: "line", label: i18ndc(root.domain, "Weather icon style", "Outline") },
+                    { value: "solid", label: i18ndc(root.domain, "Weather icon style", "Filled") },
+                    { value: "pixel", label: i18ndc(root.domain, "Weather icon style", "Pixel art") },
+                ]
+                onValueSelected: value => root.cfg_weatherIconStyle = value
             }
 
             Item {
