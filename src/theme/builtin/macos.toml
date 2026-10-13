@@ -24,4 +24,4 @@ font = "sans"
 radius = 12
 glow = 0.0
 border = "line"
-density = "comfortable"
+density = "compact"

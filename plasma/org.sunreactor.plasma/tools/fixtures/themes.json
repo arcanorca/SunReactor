@@ -848,7 +848,7 @@
     "#98989d",
     "#f5f5f7"
    ],
-   "density": "comfortable",
+   "density": "compact",
    "border": "line",
    "radius": 12,
    "dither": "none",
@@ -1136,7 +1136,7 @@
     "#8a8a8a",
     "#ffffff"
    ],
-   "density": "comfortable",
+   "density": "compact",
    "border": "line",
    "radius": 24,
    "dither": "none",

@@ -25,5 +25,5 @@ renderer = "vector"
 font = "mono"
 radius = 24
 border = "line"
-density = "comfortable"
+density = "compact"
 glow = 0.0

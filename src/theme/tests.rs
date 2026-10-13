@@ -883,7 +883,7 @@ fn family_defaults_fill_widget_tokens() {
     assert_eq!(nothing.widget.font, Font::Mono);
     assert_eq!(nothing.widget.radius, 24);
     assert_eq!(nothing.widget.border, Border::Line);
-    assert_eq!(nothing.widget.density, Density::Comfortable);
+    assert_eq!(nothing.widget.density, Density::Compact);
     assert_eq!(nothing.widget.glow, 0.0);
 
     let nord = registry.get("nord").unwrap();
