@@ -9,7 +9,9 @@ refuses to bind the real daemon socket.
   --old          behave like a daemon that predates the theme registry:
                  legacy flat status.theme only, and list_themes / get_theme /
                  day_curve answer `invalid_request` exactly like serde would
-  --scenario S   default | manual | paused | single | unknown | noweather
+  --scenario S   default | manual | paused | single | unknown | noweather |
+                 triple (3rd display unavailable) | longnames (+ override) |
+                 offline (stops answering after two status replies)
   --live         report the real clock instead of the fixed demo moment
   --log FILE     append every request as one JSON line (the harness waits on it)
 
@@ -104,6 +106,16 @@ class FakeDaemon:
         scenario = args.scenario
         if scenario == "single":
             self.monitors = self.monitors[:1]
+        if scenario in ("triple", "longnames"):
+            # A third display that is not answering, with a name too long for any row.
+            self.monitors.append(
+                {"logical_id": "dell-ultrasharp-u2723qe-left-portrait-hdmi2", "backend": "ddc", "enabled": True,
+                 "override_percent": None, "override_until": None, "min_pct": 10, "max_pct": 80,
+                 "topology": "temporarily_unavailable"})
+        if scenario == "longnames":
+            self.monitors[0]["logical_id"] = "samsung-odyssey-g9-neo-49-ultrawide-dp1"
+            self.monitors[1]["override_percent"] = 33
+            self.monitors[1]["override_until"] = self.now() + 5400
         if scenario == "manual":
             self.monitors[1]["override_percent"] = 70
             self.monitors[1]["override_until"] = self.now() + 3600
@@ -352,8 +364,15 @@ def serve(args: argparse.Namespace) -> None:
     signal.signal(signal.SIGINT, stop)
     print(f"READY {path}", flush=True)
 
+    served_status = 0
     while True:
         conn, _ = server.accept()
+        if args.scenario == "offline" and served_status >= 2:
+            # The daemon "dies" after two status answers: the connection is
+            # dropped unanswered, so the widget goes offline with a theme it
+            # already knows (DESIGN.md section 5).
+            conn.close()
+            continue
         with conn:
             conn.settimeout(2.0)
             buf = b""
@@ -373,6 +392,8 @@ def serve(args: argparse.Namespace) -> None:
                 resp = daemon.handle(req)
             except (ValueError, KeyError, TypeError) as exc:
                 req, resp = {}, daemon.error("invalid_request", f"failed to decode IPC request: {exc}")
+            if req.get("request") == "status":
+                served_status += 1
             if log:
                 log.write(json.dumps({"t": time.time(), "request": req.get("request"), "id": req.get("id"),
                                       "response": resp.get("response"), "code": resp.get("code")}) + "\n")
@@ -388,7 +409,8 @@ def main() -> None:
     ap.add_argument("--theme", default="handheld")
     ap.add_argument("--old", action="store_true")
     ap.add_argument("--scenario", default="default",
-                    choices=["default", "manual", "paused", "single", "unknown", "noweather"])
+                    choices=["default", "manual", "paused", "single", "unknown", "noweather",
+                             "triple", "longnames", "offline"])
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--log")
     ap.add_argument("--dump", choices=["status", "day_curve", "themes"],

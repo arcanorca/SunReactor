@@ -90,5 +90,229 @@
       "density": "compact", "border": "none", "radius": 0, "dither": "bayer4", "glow": 0.0,
       "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
     }
+  },
+  "ayudark": {
+    "name": "Ayu Dark", "id": "ayudark", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#0f1419", "fg": "#e6e1cf", "accent": "#ffb454", "secondary_accent": "#36a3d9",
+      "border_active": "#ffb454", "border_inactive": "#3e4b59", "text_muted": "#5c6773",
+      "success": "#91b55c", "warning": "#ffb454", "error": "#f07178"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "ayumirage": {
+    "name": "Ayu Mirage", "id": "ayumirage", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#212733", "fg": "#d9d7ce", "accent": "#ffcc66", "secondary_accent": "#5ccfe6",
+      "border_active": "#ffcc66", "border_inactive": "#5c6773", "text_muted": "#70748f",
+      "success": "#bae67e", "warning": "#ffcc66", "error": "#f28779"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "catppuccinmocha": {
+    "name": "Catppuccin Mocha", "id": "catppuccinmocha", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#1e1e2e", "fg": "#cdd6f4", "accent": "#89b4fa", "secondary_accent": "#cba6f7",
+      "border_active": "#89b4fa", "border_inactive": "#64697d", "text_muted": "#a6adc8",
+      "success": "#a6e3a1", "warning": "#f9e2af", "error": "#f38ba8"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "everforest": {
+    "name": "Everforest", "id": "everforest", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#2d353b", "fg": "#d3c6aa", "accent": "#a7c080", "secondary_accent": "#7fbba1",
+      "border_active": "#a7c080", "border_inactive": "#647378", "text_muted": "#a0afa5",
+      "success": "#a7c080", "warning": "#dbbc7f", "error": "#e67e80"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "gruvbox": {
+    "name": "Gruvbox", "id": "gruvbox", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#282828", "fg": "#ebdbb2", "accent": "#d79921", "secondary_accent": "#cc241d",
+      "border_active": "#d79921", "border_inactive": "#665c54", "text_muted": "#a89984",
+      "success": "#98971a", "warning": "#d79921", "error": "#cc241d"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "kanagawa": {
+    "name": "Kanagawa", "id": "kanagawa", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#1f1f28", "fg": "#dcd7ba", "accent": "#7e9cd8", "secondary_accent": "#957fb2",
+      "border_active": "#7e9cd8", "border_inactive": "#54546d", "text_muted": "#727169",
+      "success": "#76946a", "warning": "#c0a36e", "error": "#c34043"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "materialocean": {
+    "name": "Material Ocean", "id": "materialocean", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#0f111a", "fg": "#8f93a2", "accent": "#82aaff", "secondary_accent": "#c792ea",
+      "border_active": "#82aaff", "border_inactive": "#465564", "text_muted": "#788296",
+      "success": "#c3e88d", "warning": "#ffcb6b", "error": "#f07178"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "monokai": {
+    "name": "Monokai", "id": "monokai", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#272822", "fg": "#f8f8f2", "accent": "#a6e22e", "secondary_accent": "#66d9ef",
+      "border_active": "#a6e22e", "border_inactive": "#75715e", "text_muted": "#75715e",
+      "success": "#a6e22e", "warning": "#fd971f", "error": "#f92672"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "nightowl": {
+    "name": "Night Owl", "id": "nightowl", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#011627", "fg": "#d6deeb", "accent": "#82aaff", "secondary_accent": "#c792ea",
+      "border_active": "#82aaff", "border_inactive": "#2d5078", "text_muted": "#82a0be",
+      "success": "#22da6e", "warning": "#ffcb8b", "error": "#ef5350"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "onedark": {
+    "name": "One Dark", "id": "onedark", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#282c34", "fg": "#abb2bf", "accent": "#61afef", "secondary_accent": "#c678dd",
+      "border_active": "#61afef", "border_inactive": "#697387", "text_muted": "#707887",
+      "success": "#98c379", "warning": "#e5c07b", "error": "#e06c75"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "rosepine": {
+    "name": "Rosé Pine", "id": "rosepine", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#191724", "fg": "#e0def4", "accent": "#ebbcba", "secondary_accent": "#c4a7e7",
+      "border_active": "#ebbcba", "border_inactive": "#524f67", "text_muted": "#908caa",
+      "success": "#9ccfd8", "warning": "#f6c177", "error": "#eb6f92"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "solarizeddark": {
+    "name": "Solarized Dark", "id": "solarizeddark", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#002b36", "fg": "#839496", "accent": "#268bd2", "secondary_accent": "#2aa198",
+      "border_active": "#268bd2", "border_inactive": "#586e75", "text_muted": "#586e75",
+      "success": "#859900", "warning": "#b58900", "error": "#dc322f"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "terminal": {
+    "name": "Terminal", "id": "terminal", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#1a1a1a", "fg": "#50c878", "accent": "#8cffaa", "secondary_accent": "#3cb464",
+      "border_active": "#50c878", "border_inactive": "#28643c", "text_muted": "#3c965a",
+      "success": "#50c878", "warning": "#c8c800", "error": "#ff5050"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "tokyonight": {
+    "name": "Tokyo Night", "id": "tokyonight", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#1a1b26", "fg": "#c0caf5", "accent": "#7aa2f7", "secondary_accent": "#bb9af7",
+      "border_active": "#7aa2f7", "border_inactive": "#414868", "text_muted": "#565f89",
+      "success": "#9ece6a", "warning": "#e0af68", "error": "#f7768e"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "zenburn": {
+    "name": "Zenburn", "id": "zenburn", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#3f3f3f", "fg": "#dcdccc", "accent": "#8cd0d3", "secondary_accent": "#c0bed0",
+      "border_active": "#8cd0d3", "border_inactive": "#5f7f5f", "text_muted": "#7f9f7f",
+      "success": "#7f9f7f", "warning": "#f0dfaf", "error": "#cc9393"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "terminal_square": {
+    "name": "Terminal (square, double, glow)", "id": "terminal_square", "family": "terminal", "glyph_style": "pixel",
+    "palette": {
+      "bg": "#1a1a1a", "fg": "#50c878", "accent": "#8cffaa", "secondary_accent": "#3cb464",
+      "border_active": "#50c878", "border_inactive": "#28643c", "text_muted": "#3c965a",
+      "success": "#50c878", "warning": "#c8c800", "error": "#ff5050"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "double", "radius": 0, "dither": "none", "glow": 0.5,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
   }
 }
