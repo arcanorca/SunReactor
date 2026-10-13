@@ -351,7 +351,7 @@ KCM.SimpleKCM {
                 id: followRadio
                 Kirigami.FormData.label: i18nd(root.domain, "Theme:")
                 QQC2.ButtonGroup.group: themeModeGroup
-                text: i18nd(root.domain, "Same as the terminal app")
+                text: i18nd(root.domain, "Follow SunReactor")
                 onClicked: root.cfg_themeMode = "follow"
 
                 Binding {

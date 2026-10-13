@@ -188,7 +188,7 @@ QQC2.Popup {
                 focusPolicy: Qt.NoFocus
                 Accessible.role: Accessible.RadioButton
                 Accessible.name: isFollow
-                    ? i18ndc(root.domain, "Placeholder is the theme name", "Same as the terminal app (%1)", name)
+                    ? i18ndc(root.domain, "Placeholder is the theme name", "Follow SunReactor (%1)", name)
                     : i18ndc(root.domain, "Theme name, then its family", "Pin %1, %2 theme", name, root.familyLabel(family))
 
                 onClicked: root.choose(index)
@@ -217,7 +217,7 @@ QQC2.Popup {
                     PlasmaComponents3.Label {
                         Layout.fillWidth: true
                         text: row.isFollow
-                            ? i18ndc(root.domain, "Placeholder is the theme name", "Same as the terminal app (%1)", row.name)
+                            ? i18ndc(root.domain, "Placeholder is the theme name", "Follow SunReactor (%1)", row.name)
                             : row.name
                         textFormat: Text.PlainText
                         elide: Text.ElideRight

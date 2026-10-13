@@ -25,7 +25,7 @@ FooterButton {
     checked: picker.opened
     toolTip: picker.opened ? "" : (warned ? footer.client.themeWarning
         : (footer.pinned ? i18nd(domain, "Pinned for this widget. Click to choose another theme.")
-                         : i18nd(domain, "Same as the terminal app. Click to pin another theme.")))
+                         : i18nd(domain, "Following SunReactor. Click to pin another theme.")))
     Accessible.role: Accessible.ButtonMenu
     Accessible.name: footer.pinned
         ? i18ndc(domain, "Accessible name; placeholder is a theme name", "Theme: %1, pinned", footer.theme.name)
