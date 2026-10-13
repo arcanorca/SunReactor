@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Authors": [{ "Name": "SunReactor Developers" }],
+        "Description": "Screenshot harness: shows one applet filling the window over a popup background",
+        "Id": "org.sunreactor.harness",
+        "License": "MIT",
+        "Name": "SunReactor screenshot harness",
+        "Version": "1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-ContainmentType": "Desktop"
+}

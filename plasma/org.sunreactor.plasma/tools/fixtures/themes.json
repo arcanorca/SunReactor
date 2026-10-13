@@ -1,0 +1,94 @@
+{
+  "_comment": "status.theme objects as the theme-registry daemon emits them (DESIGN.md section 3). Palettes are copied from src/tui/theme.rs. The widget block is what the daemon sends after applying family defaults; 'commodore64' deliberately omits shades and modules to exercise the widget-side derivation, 'nord' carries an extends-style partial widget block.",
+  "handheld": {
+    "name": "Handheld", "id": "handheld", "family": "pixel", "glyph_style": "pixel",
+    "palette": {
+      "bg": "#141c12", "fg": "#9bbc0f", "accent": "#8b1d42", "secondary_accent": "#8bac0f",
+      "border_active": "#9bbc0f", "border_inactive": "#283824", "text_muted": "#567648",
+      "success": "#8bac0f", "warning": "#c8a646", "error": "#9a2257"
+    },
+    "widget": {
+      "renderer": "pixel", "font": "bitmap8", "pixel_scale": 0,
+      "shades": ["#141c12", "#306230", "#8bac0f", "#9bbc0f"],
+      "density": "compact", "border": "line", "radius": 0, "dither": "bayer4", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "commodore64": {
+    "name": "Commodore 64", "id": "commodore64", "family": "pixel", "glyph_style": "pixel",
+    "palette": {
+      "bg": "#101225", "fg": "#a7b7ff", "accent": "#ffffff", "secondary_accent": "#7fe5e5",
+      "border_active": "#ffffff", "border_inactive": "#3b3f78", "text_muted": "#6672a8",
+      "success": "#ffffff", "warning": "#ffffff", "error": "#ff0000"
+    },
+    "widget": {
+      "renderer": "pixel", "font": "bitmap_vga", "pixel_scale": 0,
+      "density": "compact", "border": "double", "radius": 0, "dither": "bayer2", "glow": 0.0
+    }
+  },
+  "braun": {
+    "name": "Braun", "id": "braun", "family": "instrument", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#161616", "fg": "#f2f2f0", "accent": "#ff5500", "secondary_accent": "#f0b01e",
+      "border_active": "#ff5500", "border_inactive": "#404040", "text_muted": "#8a8781",
+      "success": "#248a3d", "warning": "#d97706", "error": "#dc2626"
+    },
+    "widget": {
+      "renderer": "vector", "font": "sans", "pixel_scale": 0,
+      "shades": [],
+      "density": "comfortable", "border": "line", "radius": 4, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "amber": {
+    "name": "Amber", "id": "amber", "family": "instrument", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#0f0a05", "fg": "#ffd296", "accent": "#ffb000", "secondary_accent": "#dc8c00",
+      "border_active": "#ffb000", "border_inactive": "#785014", "text_muted": "#b47832",
+      "success": "#aadc64", "warning": "#ffb000", "error": "#ff3c3c"
+    },
+    "widget": {
+      "renderer": "vector", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "comfortable", "border": "line", "radius": 4, "dither": "none", "glow": 0.3,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "dracula": {
+    "name": "Dracula", "id": "dracula", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#282a36", "fg": "#f8f8f2", "accent": "#ff79c6", "secondary_accent": "#bd93f9",
+      "border_active": "#ff79c6", "border_inactive": "#6272a4", "text_muted": "#bfbfbf",
+      "success": "#50fa7b", "warning": "#f1fa8c", "error": "#ff5555"
+    },
+    "widget": {
+      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "shades": [],
+      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  },
+  "nord": {
+    "name": "Nord", "id": "nord", "family": "terminal", "glyph_style": "rounded",
+    "palette": {
+      "bg": "#2e3440", "fg": "#d8dee9", "accent": "#88c0d0", "secondary_accent": "#81a1c1",
+      "border_active": "#88c0d0", "border_inactive": "#647387", "text_muted": "#8fbcbb",
+      "success": "#a3be8c", "warning": "#ebcb8b", "error": "#bf616a"
+    },
+    "widget": { "density": "comfortable", "modules": ["telemetry", "displays", "curve", "automation", "suntimes"] }
+  },
+  "nothing": {
+    "name": "Nothing", "id": "nothing", "family": "pixel", "glyph_style": "pixel",
+    "palette": {
+      "bg": "#000000", "fg": "#ffffff", "accent": "#d71921", "secondary_accent": "#b3b3b3",
+      "border_active": "#ffffff", "border_inactive": "#3a3a3a", "text_muted": "#8a8a8a",
+      "success": "#e6e6e6", "warning": "#f5c400", "error": "#d71921"
+    },
+    "widget": {
+      "renderer": "pixel", "font": "bitmap8", "pixel_scale": 0,
+      "shades": ["#000000", "#3a3a3a", "#8a8a8a", "#ffffff"],
+      "density": "compact", "border": "none", "radius": 0, "dither": "bayer4", "glow": 0.0,
+      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+    }
+  }
+}
