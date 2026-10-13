@@ -225,6 +225,11 @@ impl Registry {
     /// spaces as `_`, and finally ignores `_` entirely (`vfdhifi` == `vfd_hifi`)
     /// when that is unambiguous.
     pub fn resolve(&self, name: &str) -> Result<&Arc<Theme>, UnknownTheme> {
+        // Fast path: canonical ids (what configs hold after loading) need no
+        // normalisation; renderers call this every frame.
+        if let Some(theme) = self.get(name) {
+            return Ok(theme);
+        }
         let key = normalize(name);
         if let Some(theme) = self.get(&key) {
             return Ok(theme);
