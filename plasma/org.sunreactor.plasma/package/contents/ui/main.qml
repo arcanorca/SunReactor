@@ -163,6 +163,15 @@ PlasmoidItem {
         }
     ]
 
+    // Screenshot harness only (tools/shot.sh --config): empty unless
+    // SUNREACTOR_HARNESS is set.
+    Component.onCompleted: {
+        const overrides = daemon.harnessConfig();
+        for (const key of Object.keys(overrides)) {
+            Plasmoid.configuration[key] = overrides[key];
+        }
+    }
+
     compactRepresentation: CompactRepresentation {
         plasmoidItem: root
         client: daemon

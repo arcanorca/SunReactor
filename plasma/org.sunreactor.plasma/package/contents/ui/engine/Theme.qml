@@ -19,6 +19,8 @@ import QtQuick
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../modules/Modules.js" as Modules
+
 Item {
     id: root
 
@@ -140,14 +142,23 @@ Item {
         }
         return available ? (widget.pixelScale || 0) : 0;
     }
+    /*! Popup modules in order: the `modules` override (a full order chosen
+        in settings) or the theme's list, minus `hidden` ones; unknown and
+        repeated ids are dropped. May be empty when everything is hidden. */
     readonly property var modules: {
         const wanted = overrides && overrides.modules && overrides.modules.length ? overrides.modules : null;
-        if (wanted) {
-            return wanted;
+        const base = wanted
+            ? wanted
+            : (available && widget.modules && widget.modules.length ? widget.modules : Object.keys(Modules.FILES));
+        const hidden = overrides && overrides.hidden ? overrides.hidden : [];
+        const out = [];
+        for (const id of base) {
+            const key = String(id);
+            if (Modules.file(key).length > 0 && hidden.indexOf(key) < 0 && out.indexOf(key) < 0) {
+                out.push(key);
+            }
         }
-        return available && widget.modules && widget.modules.length
-            ? widget.modules
-            : ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"];
+        return out;
     }
 
     // --- metrics (logical px) ------------------------------------------------------

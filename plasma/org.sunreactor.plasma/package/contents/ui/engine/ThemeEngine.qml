@@ -32,6 +32,8 @@ Item {
     property string rendererOverride: ""
     property int pixelScaleOverride: 0
     property var modulesOverride: []
+    /*! Module ids to leave out (plasmoid config hiddenModules). */
+    property var hiddenModules: []
 
     /*! The resolved tokens every module reads. */
     readonly property Theme theme: resolved
@@ -63,6 +65,7 @@ Item {
             renderer: root.rendererOverride,
             pixelScale: root.pixelScaleOverride,
             modules: root.modulesOverride,
+            hidden: root.hiddenModules,
         })
     }
 }
