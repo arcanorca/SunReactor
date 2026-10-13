@@ -67,6 +67,21 @@ QQC2.Popup {
         ? theme.bodyFont : Kirigami.Theme.defaultFont.family
     readonly property int textPx: 11
     readonly property int captionPx: 9
+    /*! The popover's fill: the theme's bg at 85%, so the widget behind shows through
+        while themes are flipped. Only the fill is translucent; text, swatches and
+        the hairline border stay opaque. */
+    readonly property color fill: root.theme.alpha(root.theme.bg, 0.85)
+    /*! Row text. The theme's fg when it reads on bg (WCAG 4.5:1); otherwise the
+        darkest or lightest tone of bg, by whether the surface is light (bg luminance
+        above 0.6) or dark. */
+    readonly property color ink: {
+        const la = root.theme.luminance(root.theme.fg);
+        const lb = root.theme.luminance(root.theme.bg);
+        if ((Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05) >= 4.5) {
+            return root.theme.fg;
+        }
+        return lb > 0.6 ? Qt.darker(root.theme.bg, 6) : root.theme.mix(root.theme.bg, Qt.rgba(1, 1, 1, 1), 0.9);
+    }
     /*! One row: 1.6 grid units. */
     readonly property real rowHeight: Kirigami.Units.gridUnit * 1.6
     /*! The popover's width: 11.5 grid units, and never wider than the window allows. */
@@ -249,7 +264,7 @@ QQC2.Popup {
     }
 
     background: Rectangle {
-        color: root.theme.bg
+        color: root.fill
         radius: root.theme.radius
         border.width: root.theme.isPixel ? root.theme.grid.unit : root.theme.lineWidth
         border.color: root.theme.borderActive
@@ -282,7 +297,7 @@ QQC2.Popup {
                 text: root.client.themeWarning
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
-                color: root.theme.fg
+                color: root.ink
                 font.family: root.textFamily
                 font.pixelSize: root.textPx
             }
@@ -340,7 +355,7 @@ QQC2.Popup {
                         text: i18nd(root.domain, "Follow SunReactor")
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
-                        color: root.theme.fg
+                        color: root.ink
                         font.family: root.textFamily
                         font.pixelSize: root.textPx
                         font.weight: Font.DemiBold
@@ -518,7 +533,7 @@ QQC2.Popup {
                         text: row.name
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
-                        color: root.theme.fg
+                        color: root.ink
                         font.family: root.textFamily
                         font.pixelSize: root.textPx
                         font.weight: row.active ? Font.DemiBold : Font.Normal
