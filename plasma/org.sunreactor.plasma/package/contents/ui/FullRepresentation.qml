@@ -7,10 +7,12 @@
  * title: the popup does not repeat the name of the widget. When a daemon theme
  * is in effect the content sits on the theme's background.
  *
- * Telemetry is the status line and stays on top. When the theme lists modules
- * for both tab pages (Modules.PAGES), a tab bar under it switches between the
- * pages; each page scrolls on its own and the footer stays put. The popup is as
- * tall as the page on screen needs (see popupHeight).
+ * Telemetry is the status line, on top and hidden by default (the config's
+ * hiddenModules). While it is hidden, a status lamp at the end of the tab row
+ * shows the daemon state. When the theme lists modules for both tab pages
+ * (Modules.PAGES), a tab bar under it switches between the pages; each page
+ * scrolls on its own and the footer stays put. The popup is as tall as the page
+ * on screen needs (see popupHeight).
  */
 
 pragma ComponentBehavior: Bound
@@ -51,7 +53,7 @@ PlasmaExtras.Representation {
     }
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-    Layout.preferredWidth: Kirigami.Units.gridUnit * 22
+    Layout.preferredWidth: Kirigami.Units.gridUnit * 19
     Layout.maximumWidth: Kirigami.Units.gridUnit * 40
     // The height is the page on screen plus the chrome around it: see popupHeight.
     Layout.minimumHeight: root.popupMinHeight
@@ -67,11 +69,11 @@ PlasmaExtras.Representation {
 
     /*! The smallest popup: 14 grid units. */
     readonly property real popupMinHeight: Kirigami.Units.gridUnit * 14
-    /*! The largest popup: 75% of the screen's available height, at most 46 grid
-        units (46 alone until the screen is known). */
+    /*! The largest popup: 60% of the screen's available height, at most 34 grid
+        units (34 alone until the screen is known). */
     readonly property real popupMaxHeight: Math.max(root.popupMinHeight, Math.min(
-        Kirigami.Units.gridUnit * 46,
-        Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.75 : Kirigami.Units.gridUnit * 46))
+        Kirigami.Units.gridUnit * 34,
+        Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.6 : Kirigami.Units.gridUnit * 34))
     /*! Status line, tab row and the gap above the pages. */
     readonly property real headerHeight: headerColumn.implicitHeight + pages.Layout.topMargin
     /*! The shown page's column. */
@@ -83,12 +85,18 @@ PlasmaExtras.Representation {
         Math.max(root.popupMinHeight, root.headerHeight + root.pageHeight + root.chromeHeight))
 
     collapseMarginsHint: true
-    // collapseMarginsHint extends the content 6 px past each side of the popup
-    // (into the Plasma frame's margins). This widget paints its own background
-    // over the popup's full width, so the sides stay inside it: the content is
-    // exactly the popup's width.
+    // collapseMarginsHint would extend the content into the Plasma frame's
+    // margins (negative paddings). This widget paints its own background over
+    // the popup's full width and keeps every padding at zero, so no content
+    // sits at a negative offset from the popup's edges.
     leftPadding: 0
     rightPadding: 0
+    topPadding: 0
+    bottomPadding: 0
+
+    /*! The inset of the content from each side of the popup, so no glyph or
+        focus ring of any skin touches the first or last device pixel column. */
+    readonly property real edgeInset: Kirigami.Units.smallSpacing
 
     /*! A skin's popup backdrop (Modules.BACKDROP): a Gradient the Frame fills with, or nothing. */
     Loader {
@@ -132,6 +140,16 @@ PlasmaExtras.Representation {
 
     /*! The status line: modules that stay above the tab bar, in the theme's order. */
     readonly property var topModules: root.theme.modules.filter(id => Modules.ABOVE_TABS.indexOf(id) >= 0)
+    /*! Whether the status line is on screen (its module is loaded and available). */
+    readonly property bool statusLineShown: {
+        for (let i = 0; i < topRepeater.count; ++i) {
+            const slot = topRepeater.itemAt(i);
+            if (slot && slot.visible) { // qmllint disable missing-property
+                return true;
+            }
+        }
+        return false;
+    }
     /*! Every other module: the tab pages' modules, in the theme's order. */
     readonly property var bodyModules: root.theme.modules.filter(id => Modules.ABOVE_TABS.indexOf(id) < 0)
     /*! The pages this theme has at least one module for. */
@@ -236,6 +254,8 @@ PlasmaExtras.Representation {
             id: headerColumn
 
             Layout.fillWidth: true
+            Layout.leftMargin: root.edgeInset
+            Layout.rightMargin: root.edgeInset
             spacing: 0
 
             PlasmaExtras.PlaceholderMessage {
@@ -250,6 +270,8 @@ PlasmaExtras.Representation {
             }
 
             Repeater {
+                id: topRepeater
+
                 model: root.topModules
 
                 delegate: ModuleSlot {}
@@ -262,8 +284,6 @@ PlasmaExtras.Representation {
 
                 Layout.fillWidth: true
                 Layout.topMargin: Kirigami.Units.smallSpacing
-                Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
-                Layout.rightMargin: Layout.leftMargin
                 visible: root.tabsShown || root.client.isConnected
                 spacing: 0
 
@@ -299,10 +319,19 @@ PlasmaExtras.Representation {
                     }
                 }
 
-                // Pushes the theme button to the right edge when the bar is hidden.
+                // Pushes the lamp and the theme button to the right edge when the bar is hidden.
                 Item {
                     Layout.fillWidth: true
                     visible: !tabSlot.visible
+                }
+
+                // The status lamp: the daemon state while the status line is hidden.
+                StatusLamp {
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.rightMargin: Kirigami.Units.smallSpacing
+                    visible: !root.statusLineShown
+                    theme: root.theme
+                    client: root.client
                 }
 
                 ThemeButton {
@@ -365,6 +394,13 @@ PlasmaExtras.Representation {
 
         implicitHeight: columnHeight
         PlasmaComponents3.ScrollBar.horizontal.visible: false
+        // The page scrolls up and down only: a sideways drift would shift its
+        // content past the left edge.
+        Binding {
+            target: panel.contentItem
+            property: "flickableDirection"
+            value: Flickable.VerticalFlick
+        }
 
         // A page opens at its top, not where it was left.
         onVisibleChanged: {
@@ -373,10 +409,13 @@ PlasmaExtras.Representation {
             }
         }
 
+        // The content column, inset by the same margin on both sides inside the
+        // viewport; the scrollbar keeps the viewport's edge.
         ColumnLayout {
             id: pageColumn
 
-            width: panel.availableWidth
+            x: root.edgeInset
+            width: panel.availableWidth - 2 * root.edgeInset
             spacing: root.theme.sectionSpacing
 
             Repeater {
@@ -409,11 +448,9 @@ PlasmaExtras.Representation {
         }
 
         Layout.fillWidth: true
-        Layout.leftMargin: root.theme.available ? Kirigami.Units.smallSpacing : 0
-        Layout.rightMargin: Layout.leftMargin
         // No module widens the page: a slot is at most its column's width, and
         // whatever a module paints past its slot is clipped.
-        Layout.maximumWidth: parent ? parent.width - Layout.leftMargin - Layout.rightMargin : 0
+        Layout.maximumWidth: parent ? parent.width : 0
         clip: true
         // Every module exposes `available` (modules/Modules.js); the
         // loaded type is only known at run time.

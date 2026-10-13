@@ -60,9 +60,10 @@
         <entry name="moduleOrder" type="StringList">
             <default></default>
         </entry>
-        <!-- Popup module ids not to show, whatever the order. -->
+        <!-- Popup module ids not to show, whatever the order. The status line
+             ("telemetry") starts hidden: the status lamp in the tab row stands in. -->
         <entry name="hiddenModules" type="StringList">
-            <default></default>
+            <default>telemetry</default>
         </entry>
     </group>
     <group name="Panel">

@@ -56,7 +56,7 @@ KCM.SimpleKCM {
     property string cfg_rendererOverrideDefault: ""
     property string cfg_weatherIconStyleDefault: "auto"
     property var cfg_moduleOrderDefault: []
-    property var cfg_hiddenModulesDefault: []
+    property var cfg_hiddenModulesDefault: ["telemetry"]
     property string cfg_panelModeDefault: "sky"
     property string cfg_panelDisplayDefault: ""
 
@@ -107,9 +107,12 @@ KCM.SimpleKCM {
 
     // --- popup sections: visibility and order ----------------------------------------
 
+    /*! The status line sits above the tab bar, whatever the order: it has a
+        checkbox of its own and stays out of the section list. */
+    readonly property string statusId: "telemetry"
     readonly property var allModules: Object.keys(Modules.FILES)
+    readonly property var sectionIds: allModules.filter(id => id !== statusId)
     readonly property var moduleLabels: ({
-        telemetry: i18ndc(root.domain, "Popup section", "Status line"),
         curve: i18ndc(root.domain, "Popup section", "Light cycle"),
         displays: i18ndc(root.domain, "Popup section", "Displays"),
         automation: i18ndc(root.domain, "Popup section", "Automation"),
@@ -123,20 +126,24 @@ KCM.SimpleKCM {
         const list = theme && theme.widget ? theme.widget.modules : null;
         return list && list.length > 0 ? Array.from(list) : allModules;
     }
+    /*! The order in effect: the chosen one, else the theme's. */
+    readonly property var effectiveOrder: Array.from(cfg_moduleOrder.length > 0 ? cfg_moduleOrder : themeModules)
+    /*! The status line is in the order (the theme's or the chosen one) ... */
+    readonly property bool statusLineInOrder: effectiveOrder.indexOf(statusId) >= 0
+    /*! ... and not hidden: the popup shows it above the tabs. */
+    readonly property bool statusLineShown: statusLineInOrder && cfg_hiddenModules.indexOf(statusId) < 0
     /*! Rows of the section list: those in the order first, then the rest (off). */
     readonly property var moduleRows: {
-        const chosen = Array.from(cfg_moduleOrder);
-        const base = chosen.length > 0 ? chosen : themeModules;
         const hidden = Array.from(cfg_hiddenModules);
         const order = [];
-        for (const id of base) {
-            if (allModules.indexOf(id) >= 0 && order.indexOf(id) < 0) {
+        for (const id of effectiveOrder) {
+            if (sectionIds.indexOf(id) >= 0 && order.indexOf(id) < 0) {
                 order.push(id);
             }
         }
         const rows = order.map((id, pos) => ({ id: id, label: moduleLabels[id], inOrder: true, pos: pos,
                                                count: order.length, shown: hidden.indexOf(id) < 0 }));
-        for (const id of allModules) {
+        for (const id of sectionIds) {
             if (order.indexOf(id) < 0) {
                 rows.push({ id: id, label: moduleLabels[id], inOrder: false, pos: -1, count: order.length,
                             shown: false });
@@ -144,12 +151,15 @@ KCM.SimpleKCM {
         }
         return rows;
     }
-    readonly property bool modulesCustomised: cfg_moduleOrder.length > 0 || cfg_hiddenModules.length > 0
+    readonly property bool modulesCustomised: cfg_moduleOrder.length > 0
+        || cfg_hiddenModules.join("\n") !== cfg_hiddenModulesDefault.join("\n")
 
     function orderedIds() {
         return moduleRows.filter(r => r.inOrder).map(r => r.id);
     }
 
+    /*! Shows or hides a section. Switching a section on that the theme leaves
+        out makes the order explicit, with the section at the end. */
     function toggleModule(id) {
         const row = moduleRows.find(r => r.id === id);
         if (!row) {
@@ -157,11 +167,23 @@ KCM.SimpleKCM {
         }
         const hidden = Array.from(cfg_hiddenModules).filter(h => h !== id);
         if (!row.inOrder) {
-            // The theme leaves this section out: switching it on makes the
-            // order explicit, with the section at the end.
             cfg_moduleOrder = orderedIds().concat([id]);
         } else if (row.shown) {
             hidden.push(id);
+        }
+        cfg_hiddenModules = hidden;
+    }
+
+    /*! Shows or hides the status line. Showing it when the order leaves it out
+        puts it first in the order. */
+    function setStatusLine(on) {
+        const hidden = Array.from(cfg_hiddenModules).filter(h => h !== statusId);
+        if (on) {
+            if (!statusLineInOrder) {
+                cfg_moduleOrder = [statusId].concat(orderedIds());
+            }
+        } else {
+            hidden.push(statusId);
         }
         cfg_hiddenModules = hidden;
     }
@@ -174,12 +196,13 @@ KCM.SimpleKCM {
             return;
         }
         order.splice(to, 0, order.splice(at, 1)[0]);
-        cfg_moduleOrder = order;
+        // The stored order keeps the status line in it, first, when it is in use.
+        cfg_moduleOrder = (statusLineInOrder ? [statusId] : []).concat(order);
     }
 
     function resetModules() {
         cfg_moduleOrder = [];
-        cfg_hiddenModules = [];
+        cfg_hiddenModules = Array.from(cfg_hiddenModulesDefault);
     }
 
     property string folderNote: ""
@@ -567,6 +590,13 @@ KCM.SimpleKCM {
                 Kirigami.FormData.label: i18nd(root.domain, "Popup sections")
             }
 
+            QQC2.CheckBox {
+                Kirigami.FormData.label: i18nd(root.domain, "Status line:")
+                text: i18nd(root.domain, "Show the status line at the top of the popup")
+                checked: root.statusLineShown
+                onToggled: root.setStatusLine(checked)
+            }
+
             ColumnLayout {
                 Kirigami.FormData.label: i18nd(root.domain, "Show and arrange:")
                 Kirigami.FormData.labelAlignment: Qt.AlignTop
@@ -575,7 +605,7 @@ KCM.SimpleKCM {
                 // A fixed number of rows that follow `moduleRows` by position:
                 // rebuilding the delegates while the form lays out crashes Qt Quick Layouts.
                 Repeater {
-                    model: root.allModules.length
+                    model: root.sectionIds.length
 
                     delegate: RowLayout {
                         id: moduleRow
