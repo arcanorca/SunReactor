@@ -15,7 +15,7 @@
 
 ## // PREVIEW (TUI WORKSPACES & THEMES)
 
-SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 35 built-in themes (plus your own TOML themes), orthographic daylight globes, and real-time hardware telemetry:
+SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 40 built-in themes (plus your own TOML themes), orthographic daylight globes, and real-time hardware telemetry:
 
 <div align="center">
   <img src="docs/images/SunReactor_1.png" alt="Monitors Workspace (Amber Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
@@ -137,7 +137,7 @@ SunReactor computes target brightness deterministically without requiring consta
 - Full keyboard-driven navigation with browser-style shortcuts (`1`-`5` tabs, `Tab`/`Shift+Tab`).
 - Real-time ASCII light cycle and 24-hour solar trajectory visualizer.
 - Interactive orthographic globe with real-time solar terminator rendering.
-- 35 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
+- 40 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
 
 ### 2. Native KDE Plasma 6 Desktop Integration
 SunReactor includes an integrated KDE Plasma 6 panel widget and C++ IPC plugin located in [`plasma/`](plasma/):
@@ -257,7 +257,7 @@ show_logo = true
 
 ### Themes
 
-Themes are data shared by the TUI and the Plasma widget. The 35 built-ins are
+Themes are data shared by the TUI and the Plasma widget. The 40 built-ins are
 embedded in the binaries; user themes live in `~/.config/sunreactor/themes/<id>.toml`
 (the file stem must equal `id`; a user file shadows a built-in with the same id).
 `tui.theme` accepts any theme id or alias, including legacy names such as
