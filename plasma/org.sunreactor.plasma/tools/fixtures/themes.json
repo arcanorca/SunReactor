@@ -960,6 +960,54 @@
    ]
   }
  },
+ "nds": {
+  "name": "Nintendo DS",
+  "accent": "#2f6fdb",
+  "secondary_accent": "#f08a24",
+  "bg": "#eef1f5",
+  "fg": "#1f2933",
+  "text_muted": "#7a8590",
+  "id": "nds",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#eef1f5",
+   "fg": "#1f2933",
+   "accent": "#2f6fdb",
+   "secondary_accent": "#f08a24",
+   "border_active": "#2f6fdb",
+   "border_inactive": "#b9c2cc",
+   "text_muted": "#7a8590",
+   "success": "#43b05c",
+   "warning": "#f2b01e",
+   "error": "#e04545"
+  },
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#1f2933",
+    "#7a8590",
+    "#b9c2cc",
+    "#eef1f5"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
  "nightowl": {
   "name": "Night Owl",
   "accent": "#82aaff",

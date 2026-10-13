@@ -153,6 +153,15 @@ var SKINS = {
         weather: "skins/wii/Weather.qml",
         forecast: "skins/wii/Forecast.qml",
         suntimes: "skins/wii/SunTimes.qml"
+    },
+    "id:nds": {
+        telemetry: "skins/nds/Telemetry.qml",
+        curve: "skins/nds/LightCycle.qml",
+        displays: "skins/nds/Displays.qml",
+        automation: "skins/nds/Automation.qml",
+        weather: "skins/nds/Weather.qml",
+        forecast: "skins/nds/Forecast.qml",
+        suntimes: "skins/nds/SunTimes.qml"
     }
 };
 
@@ -229,7 +238,8 @@ var TABBAR = {
     "id:winxp": "skins/winxp/Tabs.qml",
     "id:ps3": "skins/ps3/Tabs.qml",
     "id:macos": "skins/macos/Tabs.qml",
-    "id:wii": "skins/wii/Tabs.qml"
+    "id:wii": "skins/wii/Tabs.qml",
+    "id:nds": "skins/nds/Tabs.qml"
 };
 
 /*
