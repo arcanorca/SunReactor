@@ -1626,6 +1626,54 @@
    ]
   }
  },
+ "winxp": {
+  "name": "Windows XP",
+  "accent": "#245edb",
+  "secondary_accent": "#3c9a2c",
+  "bg": "#ece9d8",
+  "fg": "#000000",
+  "text_muted": "#6d6d6d",
+  "id": "winxp",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#ece9d8",
+   "fg": "#000000",
+   "accent": "#245edb",
+   "secondary_accent": "#3c9a2c",
+   "border_active": "#0054e3",
+   "border_inactive": "#7f9db9",
+   "text_muted": "#6d6d6d",
+   "success": "#3c9a2c",
+   "warning": "#e8a317",
+   "error": "#cc2200"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#000000",
+    "#6d6d6d",
+    "#7f9db9",
+    "#ece9d8"
+   ],
+   "density": "comfortable",
+   "border": "bevel",
+   "radius": 6,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
  "zenburn": {
   "name": "Zenburn",
   "accent": "#8cd0d3",

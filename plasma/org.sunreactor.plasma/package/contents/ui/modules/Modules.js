@@ -109,6 +109,15 @@ var SKINS = {
         forecast: "skins/cyberpunk/Forecast.qml",
         suntimes: "skins/cyberpunk/SunTimes.qml"
     },
+    "id:winxp": {
+        telemetry: "skins/winxp/Telemetry.qml",
+        curve: "skins/winxp/LightCycle.qml",
+        displays: "skins/winxp/Displays.qml",
+        automation: "skins/winxp/Automation.qml",
+        weather: "skins/winxp/Weather.qml",
+        forecast: "skins/winxp/Forecast.qml",
+        suntimes: "skins/winxp/SunTimes.qml"
+    },
     "id:nothing": {
         telemetry: "skins/nothing/Telemetry.qml",
         curve: "skins/nothing/LightCycle.qml",
@@ -189,7 +198,8 @@ var TABBAR = {
     "vector": "components/tabs/InstrumentTabs.qml",
     "id:synthwave84": "skins/synthwave84/Tabs.qml",
     "id:cyberpunk": "skins/cyberpunk/CyberTabs.qml",
-    "id:nothing": "skins/nothing/Tabs.qml"
+    "id:nothing": "skins/nothing/Tabs.qml",
+    "id:winxp": "skins/winxp/Tabs.qml"
 };
 
 /*
