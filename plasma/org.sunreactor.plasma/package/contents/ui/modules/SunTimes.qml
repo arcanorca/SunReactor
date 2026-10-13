@@ -14,8 +14,8 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"
+import "../components"
 import "../Format.js" as Format
-import "../Icons.js" as Icons
 
 PlasmaComponents3.ItemDelegate {
     id: root
@@ -126,15 +126,14 @@ PlasmaComponents3.ItemDelegate {
                 color: root.daylight ? root.theme.accent : root.theme.textMuted
             }
 
-            Kirigami.Icon {
-                // Native 16 px sprite, on a whole logical pixel.
-                width: 16
-                height: 16
+            WeatherIcon {
+                // The sprite's native 16 px, on a whole logical pixel.
+                size: 16
                 x: Math.round(root.dayProgress * (track.width - width))
                 anchors.verticalCenter: parent.verticalCenter
-                roundToIconSize: false
-                smooth: false
-                source: Icons.skyArt(!root.daylight)
+                theme: root.theme
+                condition: "clear"
+                night: !root.daylight
 
                 Behavior on x {
                     NumberAnimation { duration: Kirigami.Units.longDuration }

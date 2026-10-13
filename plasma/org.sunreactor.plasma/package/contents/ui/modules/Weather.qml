@@ -15,7 +15,6 @@ import org.sunreactor.plasma
 
 import "../engine"
 import "../components"
-import "../Icons.js" as Icons
 
 PlasmaComponents3.ItemDelegate {
     id: root
@@ -101,13 +100,12 @@ PlasmaComponents3.ItemDelegate {
     contentItem: RowLayout {
         spacing: Kirigami.Units.gridUnit
 
-        Kirigami.Icon {
+        WeatherIcon {
             Layout.preferredWidth: Kirigami.Units.iconSizes.medium
             Layout.preferredHeight: Kirigami.Units.iconSizes.medium
-            roundToIconSize: false
-            source: root.client.hasWeatherReading
-                ? Icons.conditionArt(root.client.weatherCondition, root.client.weatherIsNight)
-                : Icons.art("unknown")
+            theme: root.theme
+            condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+            night: root.client.hasWeatherReading && root.client.weatherIsNight
         }
 
         ColumnLayout {

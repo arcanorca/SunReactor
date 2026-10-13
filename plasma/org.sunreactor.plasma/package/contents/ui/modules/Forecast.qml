@@ -12,8 +12,8 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"
+import "../components"
 import "../Format.js" as Format
-import "../Icons.js" as Icons
 
 PlasmaComponents3.ItemDelegate {
     id: root
@@ -73,13 +73,13 @@ PlasmaComponents3.ItemDelegate {
                     elide: Text.ElideRight
                 }
 
-                Kirigami.Icon {
+                WeatherIcon {
                     Layout.alignment: Qt.AlignHCenter
-                    // Two screen pixels per art pixel.
                     Layout.preferredWidth: Kirigami.Units.iconSizes.medium
                     Layout.preferredHeight: Kirigami.Units.iconSizes.medium
-                    roundToIconSize: false
-                    source: Icons.conditionArt(slot.modelData.condition, slot.modelData.isNight)
+                    theme: root.theme
+                    condition: slot.modelData.condition
+                    night: slot.modelData.isNight
                 }
 
                 PlasmaComponents3.Label {
