@@ -64,7 +64,7 @@ Item {
             Column {
                 id: column
                 width: panel.contentWidth
-                spacing: 3
+                spacing: 2
 
                 Repeater {
                     model: root.rows
@@ -74,6 +74,8 @@ Item {
                         required property var modelData
                         required property int index
                         property bool expanded: false
+                        /*! The name / buttons / value line: the height of a framed button. */
+                        readonly property int line: 11
 
                         readonly property bool master: modelData.master === true
                         readonly property bool unavailable: modelData.unreachable === true
@@ -93,12 +95,12 @@ Item {
                         }
 
                         width: panel.contentWidth
-                        height: 13 + slider.height + (expanded && !master ? limits.height : 0)
+                        height: line + 1 + slider.height + (expanded && !master ? limits.height : 0)
 
                         PixelLabel {
                             id: name
                             theme: root.theme
-                            y: 3
+                            y: Math.floor((row.line - capHeight) / 2)
                             text: row.modelData.logicalId
                             face: pstyle.bodyFace
                             color: pstyle.ink
@@ -115,7 +117,6 @@ Item {
                                 theme: root.theme
                                 style: pstyle
                                 variant: "tag"
-                                y: 2
                                 tagColor: pstyle.dim
                                 text: row.hint
                             }
@@ -141,7 +142,7 @@ Item {
                             PixelDigits {
                                 theme: root.theme
                                 style: pstyle
-                                y: 3
+                                y: Math.floor((row.line - height) / 2)
                                 width: Math.max(artWidth, 18)
                                 kind: pstyle.digits === "bitmap" ? "bitmap" : "block"
                                 color: slider.editing || slider.activeFocus ? pstyle.hot : pstyle.ink
@@ -153,8 +154,9 @@ Item {
                             id: slider
                             theme: root.theme
                             style: pstyle
+                            cellHeight: 5
                             x: 2
-                            y: 13
+                            y: row.line + 1
                             width: row.width - 4
                             value: row.percent
                             enabled: row.controllable
@@ -170,9 +172,9 @@ Item {
                         Column {
                             id: limits
                             visible: row.expanded && !row.master
-                            y: slider.y + slider.height + 3
+                            y: slider.y + slider.height + 2
                             width: row.width
-                            spacing: 3
+                            spacing: 2
 
                             Repeater {
                                 model: [

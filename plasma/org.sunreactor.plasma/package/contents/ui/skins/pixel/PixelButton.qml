@@ -39,7 +39,8 @@ Item {
         : (style.kind === "amiga" ? theme.borderActive : (style.kind === "neon" || style.kind === "dots" ? style.hot : style.ink))
 
     implicitWidth: label.artWidth + 2 * padX
-    implicitHeight: label.capHeight + (variant === "tag" ? 4 : 6)
+    // Two art px of air above and below the capitals, for every variant.
+    implicitHeight: label.capHeight + 4
     width: implicitWidth
     height: implicitHeight
     activeFocusOnTab: interactive

@@ -75,7 +75,7 @@ Item {
 
     // --- layout in cells -------------------------------------------------------
     readonly property bool tabs: curves.length > 1
-    readonly property int chartRows: term.comfortable ? 9 : 7
+    readonly property int chartRows: term.comfortable ? 9 : 5
     readonly property int gutter: frame.innerCols >= 34 ? 5 : 0
     readonly property int plotCols: Math.max(8, frame.innerCols - gutter - (gutter > 0 ? 1 : 0))
     readonly property int plotHDev: chartRows * term.chDev

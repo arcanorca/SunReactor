@@ -3,15 +3,13 @@
  * controls (src/tui/ui/monitors.rs) as one panel.
  *
  *     ╭ Displays ───────────────────── 1 of 2 ╮
- *     │   All displays                    44% │
- *     │   ▕██████████████░░░░░░░░░░░░░░░░░░▏  │
+ *     │   All displays ‹  44% › ▕█████░░░░░░▏ │
  *     │ ───────────────────────────────────── │
- *     │ ❯ mi-monitor                ‹  39% ›  │  cursor row (inverse capsule)
- *     │   ▕███████████████░░░░░░░░░░░░░░░░░▏  │  bar gauge = slider
+ *     │ ❯ mi-monitor   ‹  39% › ▕████░░░░░░░▏ │
  *     │   ╰ ● Auto · target 39% · range 1–50% │
- *     │     0 ──┃━━━━━━━━●━━━┃──────────── 100 │  (range, when opened)
- *     │     Minimum              1%           │
- *     │     Maximum             50%           │
+ *     │                                       │
+ *     │   len-p24h-20…    48%   ▕█████░░░░░░▏ │
+ *     │   ╰ ● Auto · target 48% · range 5–60% │
  *     ╰ ↑↓ select  ←→ adjust  ⏎ range  a auto ╯
  *
  * Keyboard: ↑/↓ move the cursor (and leave the panel at either end), ←/→
@@ -42,6 +40,9 @@ FocusScope {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAll: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    /*! One row per display: name, value capsule, then the bar from barStart. */
+    readonly property int nameCells: 12
+    readonly property int barStart: 2 + nameCells + 10
 
     TermMetrics {
         id: term
@@ -296,35 +297,37 @@ FocusScope {
             width: frame.innerCols > 0 ? term.cx(frame.innerCols) : 0
 
             // --- All displays ---------------------------------------------------
-            TermField {
-                visible: root.showAll
-                tm: term
-                theme: root.theme
-                cells: frame.innerCols
-                label: i18nd(root.domain, "All displays")
-                value: {
-                    const v = root.shownPct("*", root.client.globalPercent);
-                    return v >= 0 ? v + "%" : "—";
-                }
-                current: root.isCursor(-1, "value")
-                active: root.activeFocus
-                labelColor: root.theme.fg
-                onClicked: root.select(-1, "value")
-                onStepped: direction => {
-                    root.select(-1, "value");
-                    root.adjust(direction);
-                }
-            }
             Item {
                 visible: root.showAll
                 width: parent.width
                 height: term.ch
 
+                TermField {
+                    tm: term
+                    theme: root.theme
+                    cells: frame.innerCols
+                    labelCells: root.nameCells
+                    label: i18nd(root.domain, "All displays")
+                    value: {
+                        const v = root.shownPct("*", root.client.globalPercent);
+                        return v >= 0 ? v + "%" : "—";
+                    }
+                    current: root.isCursor(-1, "value")
+                    active: root.activeFocus
+                    labelColor: root.theme.fg
+                    onClicked: root.select(-1, "value")
+                    onStepped: direction => {
+                        root.select(-1, "value");
+                        root.adjust(direction);
+                    }
+                }
+
                 TermBar {
                     tm: term
                     theme: root.theme
-                    x: term.cx(2)
-                    cells: Math.max(4, frame.innerCols - 2)
+                    x: term.cx(root.barStart)
+                    cells: frame.innerCols - root.barStart
+                    visible: cells >= 4
                     value: root.shownPct("*", root.client.globalPercent)
                     focused: root.activeFocus && root.isCursor(-1, "value")
                     interactive: root.client.globalPercent >= 0
@@ -382,33 +385,35 @@ FocusScope {
                         height: term.ch
                     }
 
-                    TermField {
-                        tm: term
-                        theme: root.theme
-                        cells: frame.innerCols
-                        label: block.m.logicalId
-                        value: block.shown >= 0 ? block.shown + "%" : "—"
-                        current: root.isCursor(block.index, "value")
-                        active: root.activeFocus
-                        adjustable: block.canWrite && block.shown >= 0
-                        labelColor: block.m.enabled ? root.theme.fg : root.theme.textMuted
-                        valueColor: block.manual ? root.theme.warning : root.theme.fg
-                        onClicked: root.select(block.index, "value")
-                        onStepped: direction => {
-                            root.select(block.index, "value");
-                            root.adjust(direction);
-                        }
-                    }
-
                     Item {
                         width: parent.width
                         height: term.ch
 
+                        TermField {
+                            tm: term
+                            theme: root.theme
+                            cells: frame.innerCols
+                            labelCells: root.nameCells
+                            label: block.m.logicalId
+                            value: block.shown >= 0 ? block.shown + "%" : "—"
+                            current: root.isCursor(block.index, "value")
+                            active: root.activeFocus
+                            adjustable: block.canWrite && block.shown >= 0
+                            labelColor: block.m.enabled ? root.theme.fg : root.theme.textMuted
+                            valueColor: block.manual ? root.theme.warning : root.theme.fg
+                            onClicked: root.select(block.index, "value")
+                            onStepped: direction => {
+                                root.select(block.index, "value");
+                                root.adjust(direction);
+                            }
+                        }
+
                         TermBar {
                             tm: term
                             theme: root.theme
-                            x: term.cx(2)
-                            cells: Math.max(4, frame.innerCols - 2)
+                            x: term.cx(root.barStart)
+                            cells: frame.innerCols - root.barStart
+                            visible: cells >= 4
                             value: block.shown
                             marker: block.manual && block.target >= 0 ? block.target : -1
                             interactive: block.canWrite && block.shown >= 0

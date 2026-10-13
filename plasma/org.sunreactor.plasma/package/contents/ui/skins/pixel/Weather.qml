@@ -90,7 +90,8 @@ Item {
             style: pstyle
             width: surface.artWidth
             title: i18ndc(root.domain, "Title of the weather panel", "Weather")
-            contentHeight: Math.max(sprite.height, temp.height, conditionText.height + 2 + effectText.height)
+            // The effect runs under the sky and the temperature, full width.
+            contentHeight: effectText.y + effectText.height
 
             // The 16 px sky sprite, or the vector glyph (solid, by default) on the
             // same 16 px footprint when the weather icon style is not "pixel".
@@ -132,13 +133,13 @@ Item {
             PixelLabel {
                 id: effectText
                 theme: root.theme
-                x: conditionText.x
-                y: conditionText.height + 2
+                x: 0
+                y: Math.max(sprite.height, temp.height) + 1
                 text: root.effect
                 face: pstyle.bodyFace
                 color: pstyle.dim
                 stipple: pstyle.stippleDim
-                maximumArtWidth: Math.max(8, panel.contentWidth - x)
+                maximumArtWidth: panel.contentWidth
                 maximumLines: 2
             }
         }

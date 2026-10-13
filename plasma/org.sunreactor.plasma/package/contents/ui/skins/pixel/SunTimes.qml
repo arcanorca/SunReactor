@@ -74,7 +74,7 @@ Item {
             style: pstyle
             width: surface.artWidth
             title: i18ndc(root.domain, "Title of the sun times panel", "Sun")
-            contentHeight: 19 + 4 + 8 + (elevation.visible ? 11 : 0)
+            contentHeight: 26 + (elevation.visible ? 10 : 0)
 
             Repeater {
                 model: root.entries
@@ -88,7 +88,7 @@ Item {
 
                     x: index * colWidth
                     width: colWidth
-                    height: 19
+                    height: 16
 
                     Row {
                         x: Math.floor((entry.width - width) / 2)
@@ -113,7 +113,7 @@ Item {
                     PixelLabel {
                         theme: root.theme
                         x: Math.floor((entry.width - artWidth) / 2)
-                        y: 10
+                        y: 9
                         face: pstyle.bodyFace
                         color: entry.isNext ? pstyle.hot : pstyle.ink
                         text: PixelFormat.time(entry.modelData.epoch)
@@ -124,7 +124,7 @@ Item {
             // The day as a cell track; the sky symbol rides it.
             Item {
                 id: track
-                y: 23
+                y: 18
                 width: panel.contentWidth
                 height: 8
                 readonly property int cells: Math.max(4, Math.floor((width - 8) / 3))
@@ -157,7 +157,7 @@ Item {
                 id: elevation
                 visible: root.showElevation
                 theme: root.theme
-                y: 34
+                y: 28
                 face: pstyle.bodyFace
                 color: pstyle.dim
                 maximumArtWidth: panel.contentWidth

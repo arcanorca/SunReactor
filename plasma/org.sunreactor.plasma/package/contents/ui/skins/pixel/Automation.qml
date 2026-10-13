@@ -54,6 +54,18 @@ Item {
         durations.open();
     }
 
+    /*! The segment captions: the full names do not fit three cells in a 19 gu popup. */
+    readonly property var captions: ({
+        automatic: i18ndc(control.domain, "Mode segment, compact: follow the sun again", "Auto"),
+        manual: i18ndc(control.domain, "Mode segment, compact: set brightness by hand", "Manual"),
+        paused: i18ndc(control.domain, "Mode segment, compact: stop adjusting for a while", "Pause"),
+    })
+
+    /*! The status sentence and the idle note, joined: one line. */
+    readonly property string statusLine: root.control.hinting || root.control.note.length === 0
+        ? root.control.displayText
+        : root.control.displayText + " · " + root.control.note
+
     /*! Art pixels of one cell, its frame, and the pixel arrow when it has one. */
     function chromeOf(cell) {
         const out = [];
@@ -98,7 +110,7 @@ Item {
             style: pstyle
             width: surface.artWidth
             title: i18ndc(root.control.domain, "Title of the automation panel", "Mode")
-            contentHeight: cellRow.height + 4 + statusLines.height + (note.visible ? 2 + note.height : 0)
+            contentHeight: cellRow.height + 3 + status.height
 
             Row {
                 id: cellRow
@@ -129,7 +141,7 @@ Item {
                         readonly property color ink: lit ? pstyle.inverse : (call ? pstyle.hot : pstyle.ink)
 
                         width: label.artWidth + 2 * padX + (caret ? 3 + 5 : 0)
-                        height: label.capHeight + 6
+                        height: label.capHeight + 4
                         activeFocusOnTab: true
 
                         Accessible.role: Accessible.RadioButton
@@ -172,7 +184,7 @@ Item {
                             theme: root.theme
                             x: cell.padX
                             y: Math.floor((cell.height - capHeight) / 2)
-                            text: cell.modelData.label
+                            text: root.captions[cell.choiceId] || cell.modelData.label
                             face: pstyle.bodyFace
                             capitals: true
                             color: cell.ink
@@ -203,42 +215,19 @@ Item {
                 }
             }
 
-            // One line per " · " part: a readout list, as the pixel panels print it.
-            Column {
-                id: statusLines
-
-                x: 0
-                y: cellRow.height + 4
-                spacing: 2
-
-                Repeater {
-                    model: root.control.displayText.split(" · ")
-
-                    delegate: PixelLabel {
-                        required property string modelData
-
-                        theme: root.theme
-                        text: modelData
-                        // The bitmap face for every line: the small face has no colon,
-                        // so lines with a time would otherwise change face mid-panel.
-                        face: "bitmap"
-                        color: root.control.hinting ? pstyle.hot : pstyle.ink
-                        maximumArtWidth: panel.contentWidth
-                    }
-                }
-            }
-
+            // What the daemon is doing, and until when, on one line (the rest elides);
+            // a dimmed-while-idle note follows it.
             PixelLabel {
-                id: note
+                id: status
 
-                visible: text.length > 0
                 theme: root.theme
                 x: 0
-                y: statusLines.y + statusLines.height + 2
-                text: root.control.note
-                face: pstyle.bodyFace
-                color: pstyle.dim
-                stipple: pstyle.stippleDim
+                y: cellRow.height + 3
+                text: root.statusLine
+                // The bitmap face for the line: the small face has no colon, and a
+                // time would otherwise change face mid-line.
+                face: "bitmap"
+                color: root.control.hinting ? pstyle.hot : pstyle.ink
                 maximumArtWidth: panel.contentWidth
                 maximumLines: 1
             }

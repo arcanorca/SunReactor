@@ -39,15 +39,15 @@ function ring(list, x, y, w, h, c, cut) {
 function metrics(chrome, hasTitle, titleH) {
     switch (chrome) {
     case "textbox":
-        return { l: 6, t: hasTitle ? titleH + 7 : 6, r: 6, b: 6, tx: 7, ty: 3 };
+        return { l: 6, t: hasTitle ? titleH + 6 : 6, r: 6, b: 4, tx: 7, ty: 3 };
     case "petscii":
-        return { l: 5, t: hasTitle ? titleH + 6 : 5, r: 5, b: 5, tx: 5, ty: 0 };
+        return { l: 5, t: hasTitle ? titleH + 6 : 5, r: 5, b: 4, tx: 5, ty: 0 };
     case "window":
-        return { l: 5, t: 16, r: 6, b: 6, tx: 0, ty: 3 };
+        return { l: 5, t: 14, r: 6, b: 4, tx: 0, ty: 3 };
     case "lcd":
         return { l: 5, t: hasTitle ? Math.ceil(titleH / 2) + 5 : 5, r: 5, b: 5, tx: 0, ty: 0 };
     case "workbench":
-        return { l: 5, t: 15, r: 5, b: 5, tx: 14, ty: 2 };
+        return { l: 5, t: 14, r: 5, b: 4, tx: 14, ty: 2 };
     case "card":
         return { l: 6, t: hasTitle ? titleH + 9 : 6, r: 6, b: 6, tx: 6, ty: 5 };
     default: // chamfer

@@ -91,8 +91,10 @@ Item {
         return out;
     }
 
+    /*! Label column: the longest reported label is 11 cells, so one cell of air. */
     readonly property int labelCells: 12
-    readonly property bool twoColumns: frame.innerCols >= 2 * (labelCells + 9) + 2
+    /*! Two readings side by side when a label and a short value fit in each half. */
+    readonly property bool twoColumns: frame.innerCols >= 2 * (labelCells + 6)
     readonly property int readingRows: twoColumns ? Math.ceil(readings.length / 2) : readings.length
 
     implicitHeight: frame.implicitHeight
@@ -161,12 +163,13 @@ Item {
                 required property var modelData
                 required property int index
 
-                readonly property int half: Math.floor((frame.innerCols + 2) / 2)
+                readonly property int half: Math.floor(frame.innerCols / 2)
 
                 tm: term
                 x: root.twoColumns && index % 2 === 1 ? term.cx(half) : 0
                 y: term.cy(2 + (root.twoColumns ? Math.floor(index / 2) : index))
-                cells: root.twoColumns ? half - 2 : frame.innerCols
+                cells: !root.twoColumns ? frame.innerCols
+                    : (index % 2 === 1 ? frame.innerCols - half : half - 1)
                 runs: [{ t: Term.padEnd(modelData[0], root.labelCells), c: root.theme.textMuted },
                        { t: modelData[1], c: root.theme.fg }]
             }

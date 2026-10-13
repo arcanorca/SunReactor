@@ -64,7 +64,7 @@ Item {
             style: pstyle
             width: surface.artWidth
             title: i18ndc(root.settings.domain, "Title of the forecast panel", "Forecast")
-            contentHeight: 5 + 2 + 16 + 2 + 9
+            contentHeight: 5 + 1 + 16 + 1 + 7
 
             Repeater {
                 model: root.points
@@ -92,7 +92,7 @@ Item {
                     }
                     PixelSprite {
                         x: Math.floor((slot.width - 16) / 2)
-                        y: 7
+                        y: 6
                         visible: root.theme.glyphStyle === "pixel"
                         source: Sprites.weatherAtlas()
                         frame: Sprites.conditionFrame(slot.modelData.condition, slot.modelData.isNight)
@@ -100,7 +100,7 @@ Item {
                     }
                     WeatherGlyph {
                         x: Math.floor((slot.width - 16) / 2)
-                        y: 7
+                        y: 6
                         visible: root.theme.glyphStyle !== "pixel"
                         size: 16
                         condition: slot.modelData.condition
@@ -111,7 +111,7 @@ Item {
                     PixelLabel {
                         theme: root.theme
                         x: Math.floor((slot.width - artWidth) / 2)
-                        y: 25
+                        y: 23
                         face: pstyle.bodyFace
                         color: pstyle.ink
                         text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",

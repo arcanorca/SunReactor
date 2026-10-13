@@ -86,14 +86,14 @@ Item {
             style: pstyle
             width: surface.artWidth
             title: i18ndc(root.domain, "Title of the day curve panel", "Today")
-            contentHeight: tabs.height + readout.height + 3 + plot.height + 2 + axis.height
+            contentHeight: tabs.height + readout.height + 2 + plot.height + 1 + axis.height
 
             // Display tabs.
             Row {
                 id: tabs
                 y: 0
                 spacing: 3
-                height: root.curves.length > 1 ? 15 : 0
+                height: root.curves.length > 1 ? 13 : 0
                 visible: root.curves.length > 1
 
                 Repeater {
@@ -124,7 +124,7 @@ Item {
                 id: readout
                 y: tabs.height
                 width: panel.contentWidth
-                height: Math.max(hero.height, 17)
+                height: hero.height
 
                 readonly property bool scrubbing: scrub.containsMouse && root.current !== null
                 readonly property real shownPct: scrubbing ? plot.valueAt(root.scrubTime)
@@ -190,9 +190,9 @@ Item {
 
             PixelCurve {
                 id: plot
-                y: readout.y + readout.height + 3
+                y: readout.y + readout.height + 2
                 width: panel.contentWidth
-                height: 28
+                height: 20
                 artScale: 1
 
                 samples: root.showAll ? [] : (root.current ? root.current.samples : [])
@@ -251,7 +251,7 @@ Item {
             // Hour axis.
             Item {
                 id: axis
-                y: plot.y + plot.height + 2
+                y: plot.y + plot.height + 1
                 width: panel.contentWidth
                 height: 5
 

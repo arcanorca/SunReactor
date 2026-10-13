@@ -4,8 +4,7 @@
  *
  *     ╭ Automation ─────────────────────── ● Live ╮
  *     │ ❯[ Automatic ]  [ Manual ]  [ Paused ] ▾  │   the lit cell is inverse
- *     │ Following the sun and the weather · Next  │
- *     │ 4:20 PM · Set 50% → 23%                   │
+ *     │ Following the sun and the weather · Ne…  │   one row, the rest elides
  *     │ ← → choose · ⏎ select · ↓ durations       │   while focused
  *     ╰───────────────────────────────────────────╯
  *
@@ -77,24 +76,10 @@ FocusScope {
         durations.open();
     }
 
-    /*! Splits the sentence at its " · " separators into lines of at most `width` cells. */
-    function wrapParts(text, width) {
-        const out = [];
-        let line = "";
-        for (const part of text.split(" · ")) {
-            const joined = line.length > 0 ? line + " · " + part : part;
-            if (line.length > 0 && term.len(joined) > width) {
-                out.push(line);
-                line = part;
-            } else {
-                line = joined;
-            }
-        }
-        if (line.length > 0) {
-            out.push(line);
-        }
-        return out;
-    }
+    /*! The status sentence and the idle note, one row: the hint replaces both. */
+    readonly property string statusLine: root.control.hinting || root.control.note.length === 0
+        ? root.control.displayText
+        : root.control.displayText + " · " + root.control.note
 
     Keys.onLeftPressed: root.cursor = (root.cursor + root.labels.length - 1) % root.labels.length
     Keys.onRightPressed: root.cursor = (root.cursor + 1) % root.labels.length
@@ -227,37 +212,17 @@ FocusScope {
                 }
             }
 
-            // What the daemon is doing, and until when; wrapped at " · ".
-            Repeater {
-                model: root.wrapParts(root.control.displayText, frame.innerCols - 3)
-
-                delegate: Item {
-                    id: line
-
-                    required property string modelData
-
-                    width: lines.width
-                    height: term.ch
-
-                    TermText {
-                        tm: term
-                        x: term.cx(2)
-                        value: line.modelData
-                        color: root.control.hinting ? root.theme.warning : root.theme.fg
-                    }
-                }
-            }
-
+            // What the daemon is doing, and until when: one row, the rest elides.
             Item {
-                visible: root.control.note.length > 0
                 width: lines.width
                 height: term.ch
 
                 TermText {
                     tm: term
                     x: term.cx(2)
-                    value: root.control.note
-                    color: root.theme.textMuted
+                    cells: Math.max(0, frame.innerCols - 2)
+                    value: root.statusLine
+                    color: root.control.hinting ? root.theme.warning : root.theme.fg
                 }
             }
 
