@@ -24,8 +24,11 @@ Item {
     property int maximumLines: 1
     property int alignment: Qt.AlignLeft
 
-    /*! The face draws printable ASCII plus a few Workbench symbols; the rest is "?". */
-    readonly property string shownText: text.replace(/[^\x20-\x7e°·–…▼]/g, "?")
+    /*! The face draws printable ASCII plus a few Workbench symbols. An arrow is
+        written as "->", no-break spaces (the locale's "4:20 PM") as spaces, and
+        the rest is "?". */
+    readonly property string shownText: text.replace(/→/g, "->").replace(/[\u00a0\u2009\u202f]/g, " ")
+        .replace(/[^\x20-\x7e°·–…▼]/g, "?")
     readonly property int artWidth: glyphs.artWidth
     readonly property int artHeight: glyphs.artHeight
     /*! Height of the capitals, for vertical centring (7 art px per pitch). */

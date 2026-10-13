@@ -76,7 +76,7 @@ Item {
             style: tokens
             width: surface.artWidth
             title: i18ndc(root.domain, "Title of the day curve window", "Today")
-            contentHeight: selector.height + readout.height + 2 + plot.height + 1 + axis.height
+            contentHeight: axis.y + axis.height
 
             // Display gadgets: one per display, then All.
             Row {
@@ -115,9 +115,10 @@ Item {
                                                           : (root.showAll ? -1 : root.targetNow)
                 readonly property int applied: root.current && !root.showAll ? root.appliedFor(root.current.monitorId) : -1
 
-                y: selector.height
+                // One art pixel under the gadgets; the hero is its glyph cell (16 at pitch 2).
+                y: selector.height > 0 ? selector.height + 1 : 0
                 width: panel.contentWidth
-                height: 14
+                height: hero.artHeight
 
                 AmigaText {
                     id: hero
@@ -140,7 +141,7 @@ Item {
                     id: setLine
 
                     x: hero.artWidth + 6
-                    y: 8
+                    y: caption.artHeight
                     color: tokens.ink
                     maximumArtWidth: Math.max(0, readout.width - x)
                     visible: !readout.scrubbing && readout.applied >= 0
@@ -152,9 +153,10 @@ Item {
             PixelCurve {
                 id: plot
 
-                y: readout.y + readout.height + 2
+                // 28 art px: at least 55 logical px at every device pixel ratio and font DPI.
+                y: readout.y + readout.height
                 width: panel.contentWidth
-                height: 16
+                height: 28
                 artScale: 1
 
                 samples: root.showAll ? [] : (root.current ? root.current.samples : [])

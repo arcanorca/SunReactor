@@ -60,10 +60,15 @@ Item {
         paused: i18ndc(root.control.domain, "Mode segment, compact: stop adjusting for a while", "Pause"),
     })
 
-    /*! The status sentence and the idle note, joined. */
-    readonly property string statusLine: root.control.hinting || root.control.note.length === 0
-        ? root.control.displayText
-        : root.control.displayText + " · " + root.control.note
+    /*! The status sentence and the idle note, joined. Automatic shows only its next step
+        ("Next 4:20 PM · Set 50% -> 23%", two lines): the full "Following the sun and the
+        weather" sentence needs three and would be cut. The AUTO gadget says the mode. */
+    readonly property string statusLine: {
+        const automatic = root.control.choice === "automatic" && !root.control.hinting
+            && root.control.nextText.length > 0;
+        const base = automatic ? root.control.nextText : root.control.displayText;
+        return root.control.note.length === 0 ? base : base + " · " + root.control.note;
+    }
 
     PixelSurface {
         id: surface

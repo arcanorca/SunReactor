@@ -1,10 +1,11 @@
 /*
  * Amiga Displays: a Workbench window with one row per display. Each row: the
- * name (elided with the face's ellipsis), the value in Workbench digits, and
- * gadgets - AUTO when a setting was made by hand (back to automatic), LIM to
- * open the night and day limits. Under it the proportional gadget, with the
- * range ticks. Sliders write overrides, throttled; unknown values show "--" and
- * an inert gadget. Module contract: modules/Modules.js.
+ * name on top (elided with the face's ellipsis); under it the proportional
+ * gadget with the range ticks, and on its line the value in Workbench digits
+ * and the gadgets - AUTO when a setting was made by hand (back to automatic),
+ * LIM to open the night and day limits, which open below the row. Sliders write
+ * overrides, throttled; unknown values show "--" and an inert gadget. Module
+ * contract: modules/Modules.js.
  */
 
 pragma ComponentBehavior: Bound
@@ -88,14 +89,16 @@ Item {
                         readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
                         readonly property bool offMark: modelData.enabled === false || unavailable
 
+                        // Name on the top line; value and gadgets share the slider's line, so a
+                        // row is 17 art px (the gadgets overhang it by two rows each way).
                         width: panel.contentWidth
-                        height: 11 + 1 + slider.height + (expanded && !master ? limits.height + 2 : 0)
+                        height: expanded && !master ? limits.y + limits.height : 17
 
                         AmigaText {
                             id: name
 
                             x: 0
-                            y: 2
+                            y: 0
                             text: row.modelData.logicalId
                             color: tokens.ink
                             maximumArtWidth: Math.max(8, rightGroup.x - 4)
@@ -105,6 +108,7 @@ Item {
                             id: rightGroup
 
                             x: row.width - width
+                            y: 6
                             spacing: 2
 
                             AmigaText {
@@ -136,8 +140,8 @@ Item {
 
                             theme: root.theme
                             style: tokens
-                            y: 12
-                            width: row.width
+                            y: 8
+                            width: Math.max(16, row.width - rightGroup.width - 4)
                             value: row.percent
                             enabled: row.controllable
                             minMark: row.master ? -1 : row.minPct
@@ -148,12 +152,12 @@ Item {
                                 : root.client.setMonitorOverride(row.modelData.logicalId, v, root.settings.overrideMinutes)
                         }
 
-                        // Night minimum and day maximum, opened by LIM.
+                        // Night minimum and day maximum, opened by LIM, below the row.
                         Column {
                             id: limits
 
                             visible: row.expanded && !row.master
-                            y: slider.y + slider.height + 2
+                            y: 18
                             width: row.width
                             spacing: 2
 
