@@ -440,7 +440,7 @@
   "fg": "#f9f1a5",
   "text_muted": "#b4a0dc",
   "id": "cyberpunk",
-  "family": "pixel",
+  "family": "instrument",
   "glyph_style": "pixel",
   "palette": {
    "bg": "#090622",
@@ -455,8 +455,8 @@
    "error": "#ff003c"
   },
   "widget": {
-   "renderer": "pixel",
-   "font": "bitmap8",
+   "renderer": "vector",
+   "font": "display",
    "pixel_scale": 0,
    "shades": [
     "#090622",
@@ -467,8 +467,8 @@
    "density": "compact",
    "border": "line",
    "radius": 0,
-   "dither": "bayer4",
-   "glow": 0.0,
+   "dither": "none",
+   "glow": 0.5,
    "modules": [
     "telemetry",
     "curve",
