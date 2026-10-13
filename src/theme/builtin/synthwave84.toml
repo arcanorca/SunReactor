@@ -1,7 +1,7 @@
 id = "synthwave84"
 name = "Synthwave '84"
 aliases = []
-family = "pixel"
+family = "instrument"
 
 [palette]
 bg = "#262335"
@@ -17,3 +17,11 @@ error = "#fe4450"
 
 [tui]
 glyph_style = "pixel"
+
+[widget]
+renderer = "vector"
+font = "display"
+radius = 6
+glow = 0.7
+border = "line"
+density = "comfortable"

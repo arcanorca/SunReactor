@@ -1,7 +1,7 @@
 id = "cyberpunk"
 name = "Cyberpunk"
 aliases = []
-family = "pixel"
+family = "instrument"
 
 [palette]
 bg = "#090622"
@@ -17,3 +17,11 @@ error = "#ff003c"
 
 [tui]
 glyph_style = "pixel"
+
+[widget]
+renderer = "vector"
+font = "display"
+radius = 0
+glow = 0.5
+border = "line"
+density = "compact"

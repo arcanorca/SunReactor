@@ -1,7 +1,7 @@
 id = "casiodigital"
 name = "Casio Digital"
 aliases = ["casio", "digitalwatch", "digital_watch"]
-family = "pixel"
+family = "instrument"
 
 [palette]
 bg = "#121814"
@@ -17,3 +17,11 @@ error = "#ff5252"
 
 [tui]
 glyph_style = "rounded"
+
+[widget]
+renderer = "vector"
+font = "display"
+radius = 6
+glow = 0.0
+border = "inset"
+density = "compact"

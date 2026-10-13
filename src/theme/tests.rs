@@ -758,10 +758,6 @@ fn builtin_families_follow_design_classification() {
         "commodore64",
         "amiga",
         "classicmacintosh",
-        "casiodigital",
-        "cyberpunk",
-        "synthwave84",
-        "hackergreen",
     ];
     let instrument = [
         "braun",
@@ -774,6 +770,9 @@ fn builtin_families_follow_design_classification() {
         "amber",
         "grayscale",
         "nothing",
+        "casiodigital",
+        "cyberpunk",
+        "synthwave84",
     ];
     let registry = Registry::builtin();
     for theme in registry.themes() {

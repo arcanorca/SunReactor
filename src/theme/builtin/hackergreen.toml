@@ -1,7 +1,7 @@
 id = "hackergreen"
 name = "Hacker Green"
 aliases = []
-family = "pixel"
+family = "terminal"
 
 [palette]
 bg = "#000000"
@@ -17,3 +17,11 @@ error = "#ff3232"
 
 [tui]
 glyph_style = "pixel"
+
+[widget]
+renderer = "terminal"
+font = "mono"
+radius = 0
+glow = 0.5
+border = "line"
+density = "compact"
