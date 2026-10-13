@@ -35,7 +35,15 @@ var FILES = {
  * Each skin author edits only the entries for their own key.
  */
 var SKINS = {
-    "pixel": {},
+    "pixel": {
+        telemetry: "skins/pixel/Telemetry.qml",
+        curve: "skins/pixel/LightCycle.qml",
+        displays: "skins/pixel/Displays.qml",
+        automation: "skins/pixel/Automation.qml",
+        weather: "skins/pixel/Weather.qml",
+        forecast: "skins/pixel/Forecast.qml",
+        suntimes: "skins/pixel/SunTimes.qml"
+    },
     "terminal": {},
     "vector": {},
     "id:braun": {},

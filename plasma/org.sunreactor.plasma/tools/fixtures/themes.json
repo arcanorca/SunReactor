@@ -1,94 +1,532 @@
 {
   "_comment": "status.theme objects as the theme-registry daemon emits them (DESIGN.md section 3). Palettes are copied from src/tui/theme.rs. The widget block is what the daemon sends after applying family defaults; 'commodore64' deliberately omits shades and modules to exercise the widget-side derivation, 'nord' carries an extends-style partial widget block.",
   "handheld": {
-    "name": "Handheld", "id": "handheld", "family": "pixel", "glyph_style": "pixel",
+    "name": "Handheld",
+    "id": "handheld",
+    "family": "pixel",
+    "glyph_style": "pixel",
     "palette": {
-      "bg": "#141c12", "fg": "#9bbc0f", "accent": "#8b1d42", "secondary_accent": "#8bac0f",
-      "border_active": "#9bbc0f", "border_inactive": "#283824", "text_muted": "#567648",
-      "success": "#8bac0f", "warning": "#c8a646", "error": "#9a2257"
+      "bg": "#141c12",
+      "fg": "#9bbc0f",
+      "accent": "#8b1d42",
+      "secondary_accent": "#8bac0f",
+      "border_active": "#9bbc0f",
+      "border_inactive": "#283824",
+      "text_muted": "#567648",
+      "success": "#8bac0f",
+      "warning": "#c8a646",
+      "error": "#9a2257"
     },
     "widget": {
-      "renderer": "pixel", "font": "bitmap8", "pixel_scale": 0,
-      "shades": ["#141c12", "#306230", "#8bac0f", "#9bbc0f"],
-      "density": "compact", "border": "line", "radius": 0, "dither": "bayer4", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#141c12",
+        "#283824",
+        "#567648",
+        "#9bbc0f"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
     }
   },
   "commodore64": {
-    "name": "Commodore 64", "id": "commodore64", "family": "pixel", "glyph_style": "pixel",
+    "name": "Commodore 64",
+    "id": "commodore64",
+    "family": "pixel",
+    "glyph_style": "pixel",
     "palette": {
-      "bg": "#101225", "fg": "#a7b7ff", "accent": "#ffffff", "secondary_accent": "#7fe5e5",
-      "border_active": "#ffffff", "border_inactive": "#3b3f78", "text_muted": "#6672a8",
-      "success": "#ffffff", "warning": "#ffffff", "error": "#ff0000"
+      "bg": "#101225",
+      "fg": "#a7b7ff",
+      "accent": "#ffffff",
+      "secondary_accent": "#7fe5e5",
+      "border_active": "#ffffff",
+      "border_inactive": "#3b3f78",
+      "text_muted": "#6672a8",
+      "success": "#ffffff",
+      "warning": "#ffffff",
+      "error": "#ff0000"
     },
     "widget": {
-      "renderer": "pixel", "font": "bitmap_vga", "pixel_scale": 0,
-      "density": "compact", "border": "double", "radius": 0, "dither": "bayer2", "glow": 0.0
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#101225",
+        "#3b3f78",
+        "#6672a8",
+        "#a7b7ff"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
     }
   },
   "braun": {
-    "name": "Braun", "id": "braun", "family": "instrument", "glyph_style": "rounded",
+    "name": "Braun",
+    "id": "braun",
+    "family": "instrument",
+    "glyph_style": "rounded",
     "palette": {
-      "bg": "#161616", "fg": "#f2f2f0", "accent": "#ff5500", "secondary_accent": "#f0b01e",
-      "border_active": "#ff5500", "border_inactive": "#404040", "text_muted": "#8a8781",
-      "success": "#248a3d", "warning": "#d97706", "error": "#dc2626"
+      "bg": "#161616",
+      "fg": "#f2f2f0",
+      "accent": "#ff5500",
+      "secondary_accent": "#f0b01e",
+      "border_active": "#ff5500",
+      "border_inactive": "#404040",
+      "text_muted": "#8a8781",
+      "success": "#248a3d",
+      "warning": "#d97706",
+      "error": "#dc2626"
     },
     "widget": {
-      "renderer": "vector", "font": "sans", "pixel_scale": 0,
+      "renderer": "vector",
+      "font": "sans",
+      "pixel_scale": 0,
       "shades": [],
-      "density": "comfortable", "border": "line", "radius": 4, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+      "density": "comfortable",
+      "border": "line",
+      "radius": 4,
+      "dither": "none",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
     }
   },
   "amber": {
-    "name": "Amber", "id": "amber", "family": "instrument", "glyph_style": "rounded",
+    "name": "Amber",
+    "id": "amber",
+    "family": "instrument",
+    "glyph_style": "rounded",
     "palette": {
-      "bg": "#0f0a05", "fg": "#ffd296", "accent": "#ffb000", "secondary_accent": "#dc8c00",
-      "border_active": "#ffb000", "border_inactive": "#785014", "text_muted": "#b47832",
-      "success": "#aadc64", "warning": "#ffb000", "error": "#ff3c3c"
+      "bg": "#0f0a05",
+      "fg": "#ffd296",
+      "accent": "#ffb000",
+      "secondary_accent": "#dc8c00",
+      "border_active": "#ffb000",
+      "border_inactive": "#785014",
+      "text_muted": "#b47832",
+      "success": "#aadc64",
+      "warning": "#ffb000",
+      "error": "#ff3c3c"
     },
     "widget": {
-      "renderer": "vector", "font": "mono", "pixel_scale": 0,
+      "renderer": "vector",
+      "font": "mono",
+      "pixel_scale": 0,
       "shades": [],
-      "density": "comfortable", "border": "line", "radius": 4, "dither": "none", "glow": 0.3,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+      "density": "comfortable",
+      "border": "line",
+      "radius": 4,
+      "dither": "none",
+      "glow": 0.3,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
     }
   },
   "dracula": {
-    "name": "Dracula", "id": "dracula", "family": "terminal", "glyph_style": "rounded",
+    "name": "Dracula",
+    "id": "dracula",
+    "family": "terminal",
+    "glyph_style": "rounded",
     "palette": {
-      "bg": "#282a36", "fg": "#f8f8f2", "accent": "#ff79c6", "secondary_accent": "#bd93f9",
-      "border_active": "#ff79c6", "border_inactive": "#6272a4", "text_muted": "#bfbfbf",
-      "success": "#50fa7b", "warning": "#f1fa8c", "error": "#ff5555"
+      "bg": "#282a36",
+      "fg": "#f8f8f2",
+      "accent": "#ff79c6",
+      "secondary_accent": "#bd93f9",
+      "border_active": "#ff79c6",
+      "border_inactive": "#6272a4",
+      "text_muted": "#bfbfbf",
+      "success": "#50fa7b",
+      "warning": "#f1fa8c",
+      "error": "#ff5555"
     },
     "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
+      "renderer": "terminal",
+      "font": "mono",
+      "pixel_scale": 0,
       "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "none",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
     }
   },
   "nord": {
-    "name": "Nord", "id": "nord", "family": "terminal", "glyph_style": "rounded",
+    "name": "Nord",
+    "id": "nord",
+    "family": "terminal",
+    "glyph_style": "rounded",
     "palette": {
-      "bg": "#2e3440", "fg": "#d8dee9", "accent": "#88c0d0", "secondary_accent": "#81a1c1",
-      "border_active": "#88c0d0", "border_inactive": "#647387", "text_muted": "#8fbcbb",
-      "success": "#a3be8c", "warning": "#ebcb8b", "error": "#bf616a"
-    },
-    "widget": { "density": "comfortable", "modules": ["telemetry", "displays", "curve", "automation", "suntimes"] }
-  },
-  "nothing": {
-    "name": "Nothing", "id": "nothing", "family": "pixel", "glyph_style": "pixel",
-    "palette": {
-      "bg": "#000000", "fg": "#ffffff", "accent": "#d71921", "secondary_accent": "#b3b3b3",
-      "border_active": "#ffffff", "border_inactive": "#3a3a3a", "text_muted": "#8a8a8a",
-      "success": "#e6e6e6", "warning": "#f5c400", "error": "#d71921"
+      "bg": "#2e3440",
+      "fg": "#d8dee9",
+      "accent": "#88c0d0",
+      "secondary_accent": "#81a1c1",
+      "border_active": "#88c0d0",
+      "border_inactive": "#647387",
+      "text_muted": "#8fbcbb",
+      "success": "#a3be8c",
+      "warning": "#ebcb8b",
+      "error": "#bf616a"
     },
     "widget": {
-      "renderer": "pixel", "font": "bitmap8", "pixel_scale": 0,
-      "shades": ["#000000", "#3a3a3a", "#8a8a8a", "#ffffff"],
-      "density": "compact", "border": "none", "radius": 0, "dither": "bayer4", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
+      "density": "comfortable",
+      "modules": [
+        "telemetry",
+        "displays",
+        "curve",
+        "automation",
+        "suntimes"
+      ]
+    }
+  },
+  "nothing": {
+    "name": "Nothing",
+    "id": "nothing",
+    "family": "pixel",
+    "glyph_style": "rounded",
+    "palette": {
+      "bg": "#000000",
+      "fg": "#ffffff",
+      "accent": "#d71921",
+      "secondary_accent": "#b3b3b3",
+      "border_active": "#ffffff",
+      "border_inactive": "#3a3a3a",
+      "text_muted": "#8a8a8a",
+      "success": "#e6e6e6",
+      "warning": "#f5c400",
+      "error": "#d71921"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#000000",
+        "#3a3a3a",
+        "#8a8a8a",
+        "#ffffff"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
+    }
+  },
+  "amiga": {
+    "name": "Amiga",
+    "id": "amiga",
+    "family": "pixel",
+    "glyph_style": "pixel",
+    "palette": {
+      "bg": "#141820",
+      "fg": "#f0f4fa",
+      "accent": "#ee2233",
+      "secondary_accent": "#5588bb",
+      "border_active": "#ff8800",
+      "border_inactive": "#283244",
+      "text_muted": "#72869e",
+      "success": "#3fbf5f",
+      "warning": "#ff8800",
+      "error": "#dd3322"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#141820",
+        "#283244",
+        "#72869e",
+        "#f0f4fa"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
+    }
+  },
+  "classicmacintosh": {
+    "name": "Classic Macintosh",
+    "id": "classicmacintosh",
+    "family": "pixel",
+    "glyph_style": "rounded",
+    "palette": {
+      "bg": "#121212",
+      "fg": "#f2f2ec",
+      "accent": "#009ddc",
+      "secondary_accent": "#963d97",
+      "border_active": "#f2f2ec",
+      "border_inactive": "#3e3e3e",
+      "text_muted": "#888882",
+      "success": "#61bb46",
+      "warning": "#fdb827",
+      "error": "#e03a3e"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#121212",
+        "#3e3e3e",
+        "#888882",
+        "#f2f2ec"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
+    }
+  },
+  "casiodigital": {
+    "name": "Casio Digital",
+    "id": "casiodigital",
+    "family": "pixel",
+    "glyph_style": "rounded",
+    "palette": {
+      "bg": "#121814",
+      "fg": "#e0f8dc",
+      "accent": "#0088ff",
+      "secondary_accent": "#88a684",
+      "border_active": "#9df09a",
+      "border_inactive": "#2a382e",
+      "text_muted": "#607a5e",
+      "success": "#9df09a",
+      "warning": "#f2d06b",
+      "error": "#ff5252"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#121814",
+        "#2a382e",
+        "#607a5e",
+        "#e0f8dc"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
+    }
+  },
+  "cyberpunk": {
+    "name": "Cyberpunk",
+    "id": "cyberpunk",
+    "family": "pixel",
+    "glyph_style": "pixel",
+    "palette": {
+      "bg": "#090622",
+      "fg": "#f9f1a5",
+      "accent": "#fcee0a",
+      "secondary_accent": "#00ffff",
+      "border_active": "#fcee0a",
+      "border_inactive": "#ff003c",
+      "text_muted": "#b4a0dc",
+      "success": "#00ff99",
+      "warning": "#ffcc00",
+      "error": "#ff003c"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#090622",
+        "#ff003c",
+        "#b4a0dc",
+        "#f9f1a5"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
+    }
+  },
+  "synthwave84": {
+    "name": "Synthwave '84",
+    "id": "synthwave84",
+    "family": "pixel",
+    "glyph_style": "pixel",
+    "palette": {
+      "bg": "#262335",
+      "fg": "#ffffff",
+      "accent": "#ff7edb",
+      "secondary_accent": "#36f9f6",
+      "border_active": "#ff7edb",
+      "border_inactive": "#614d85",
+      "text_muted": "#848bbd",
+      "success": "#72f1b8",
+      "warning": "#feda33",
+      "error": "#fe4450"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#262335",
+        "#614d85",
+        "#848bbd",
+        "#ffffff"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
+    }
+  },
+  "hackergreen": {
+    "name": "Hacker Green",
+    "id": "hackergreen",
+    "family": "pixel",
+    "glyph_style": "pixel",
+    "palette": {
+      "bg": "#000000",
+      "fg": "#33ff00",
+      "accent": "#00ff00",
+      "secondary_accent": "#00c800",
+      "border_active": "#33ff00",
+      "border_inactive": "#006400",
+      "text_muted": "#009600",
+      "success": "#33ff00",
+      "warning": "#c8ff00",
+      "error": "#ff3232"
+    },
+    "widget": {
+      "renderer": "pixel",
+      "font": "bitmap8",
+      "pixel_scale": 0,
+      "shades": [
+        "#000000",
+        "#006400",
+        "#009600",
+        "#33ff00"
+      ],
+      "density": "compact",
+      "border": "line",
+      "radius": 0,
+      "dither": "bayer4",
+      "glow": 0.0,
+      "modules": [
+        "telemetry",
+        "curve",
+        "displays",
+        "automation",
+        "weather",
+        "forecast",
+        "suntimes"
+      ]
     }
   }
 }

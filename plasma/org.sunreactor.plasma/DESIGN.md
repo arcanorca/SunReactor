@@ -210,7 +210,7 @@ package/contents/ui/
     Weather.qml  Forecast.qml  SunTimes.qml
   components/              rows shared by modules: DisplayItem, ThemeSlider,
                            PopupFooter (theme chip), WeatherText
-  skins/                   not created yet: pixel/ instrument/ terminal/
+  skins/                   pixel/ (this branch), instrument/, terminal/
   FullRepresentation.qml   Repeater + Loader over theme.modules
   CompactRepresentation.qml  sprite + temperature (panel modes still to come)
   config/ConfigGeneral.qml   "Look" section: follow/pin + swatch list, accent,
@@ -291,8 +291,25 @@ Measured on Qt 6.12, RHI/OpenGL (Mesa llvmpipe under Xvfb), QT_SCALE_FACTOR
 4. No SVG for pixel art; baked PNG atlases generated from indexed masks
    (extend `generate_weather_icons.py` — add palette-index output and recolour
    by the theme's `shades`). `Image.Nearest` semantics via
-   `layer`/`smooth:false`. *(Not done yet; the weather sprites are still the
-   16-grid SVGs.)*
+   `layer`/`smooth:false`. Done for the pixel skins:
+   `tools/generate_weather_icons.py` also writes `icons/pixel/weather16.png`
+   and `ui8.png` whose pixels are tone indices (0 none, 1-4 highlight..shadow,
+   5/6 warm, 7 water, 8 generated outline, 9 ray); `PixelSprite` maps index i
+   to the i-th colour the skin passes (PixelStyle.spriteColors, all theme
+   tokens). The vector skins keep the SVGs.
+6. Pixel skins (`skins/pixel/`, registered under SKINS.pixel): `PixelStyle`
+   picks the hardware idiom by theme id only (handheld=dmg, commodore64=c64,
+   classicmacintosh=mac, casiodigital=casio, amiga, nothing=dots, everything
+   else neon) and maps palette/shade tokens to roles (paper, ink, dim, ghost,
+   hot, cost, frame). Shared parts: PixelPanel + PixelChrome.js (window
+   chrome as art-pixel rects), PixelLabel (built-in `PixelGlyphs` 5x7 / 3x5
+   faces, falls back to the theme bitmap font for uncovered characters),
+   PixelDigits (block / LCD cells / dot matrix / seven-segment / bitmap 2x),
+   PixelCellSlider (discrete cells, keys, a11y value interface, throttled
+   commits), PixelButton (button / tab / tag). LightCycle uses `PixelCurve`
+   (C++ CPU raster: stepped line, patterned area, weather-cost band, limits,
+   night, sun/hour ticks, now/target/applied markers, optional dot lattice).
+   Every surface is opaque (the chrome paints the desk colour first).
 5. **Conformance test:** `tools/conformance.py` checks that pixel regions
    contain only palette + shade colours (exact, tolerance 0). PixelSurfaces
    report their device-pixel rect when `SUNREACTOR_HARNESS` is set, so both
