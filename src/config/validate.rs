@@ -249,6 +249,13 @@ impl Config {
             ));
         }
 
+        if let Err(unknown) = self.tui.theme.resolve() {
+            errors.push(ValidationError::new(
+                "tui.theme",
+                format!("{unknown}; run `sunreactorctl theme list` to see available themes"),
+            ));
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {

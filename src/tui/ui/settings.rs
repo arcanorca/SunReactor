@@ -106,7 +106,7 @@ fn setting_groups(app: &Model) -> Vec<Group> {
         Row::editable(
             setting::THEME,
             "Theme",
-            app.config.tui.theme.name().to_owned(),
+            app.config.tui.theme.name(),
             FieldKind::Text,
         ),
         Row::editable(
@@ -526,7 +526,7 @@ mod tests {
         }
         assert!(find_in_buffer(&buffer, "Running").is_some());
         assert!(find_in_buffer(&buffer, "Enabled").is_some());
-        assert!(find_in_buffer(&buffer, model.config.tui.theme.name()).is_some());
+        assert!(find_in_buffer(&buffer, &model.config.tui.theme.name()).is_some());
         assert!(find_in_buffer(&buffer, "Full").is_some());
         assert!(find_in_buffer(&buffer, "24-hour").is_some());
         assert!(find_in_buffer(&buffer, "°C").is_some());
@@ -631,17 +631,17 @@ mod tests {
     #[test]
     fn test_phase7_settings_themes_visual_hierarchy() {
         for theme in [
-            crate::config::Theme::Amber,
-            crate::config::Theme::Nord,
-            crate::config::Theme::HackerGreen,
-            crate::config::Theme::Grayscale,
-            crate::config::Theme::Commodore64,
+            crate::config::ThemeId::new("amber"),
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("hackergreen"),
+            crate::config::ThemeId::new("grayscale"),
+            crate::config::ThemeId::new("commodore64"),
         ] {
             let backend = TestBackend::new(85, 26);
             let mut terminal = Terminal::new(backend).unwrap();
 
             let mut model = Model::new();
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.config.tui.effects = crate::config::MotionLevel::Instrument;
             model.motion.level = crate::config::MotionLevel::Instrument;
             model.active_tab = Tab::Settings;

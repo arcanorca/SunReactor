@@ -659,7 +659,7 @@ mod tests {
         model.status = Some(dummy_status(2));
         model.daemon_connection = DaemonConnection::Connected;
         model.active_tab = Tab::Monitors;
-        model.config.tui.theme = crate::config::Theme::Amber;
+        model.config.tui.theme = crate::config::ThemeId::new("amber");
         model.config.location.city = String::from("Istanbul");
         model.config.location.timezone = String::from("Europe/Istanbul");
         model.motion.masthead_sweep_done = true;
@@ -764,7 +764,7 @@ mod tests {
         model.motion.masthead_sweep_done = true;
 
         // Create custom semantic styles with distinguishable overrides
-        let base_palette = crate::config::Theme::Amber.palette();
+        let base_palette = crate::config::ThemeId::new("amber").palette();
         let mut custom_styles = base_palette.styles();
         custom_styles.chrome_title = Style::default()
             .fg(Color::Cyan)
@@ -900,17 +900,17 @@ mod tests {
         use ratatui::style::Modifier;
 
         for theme in [
-            crate::config::Theme::Nord,
-            crate::config::Theme::TokyoNight,
-            crate::config::Theme::HackerGreen,
-            crate::config::Theme::Commodore64,
-            crate::config::Theme::Grayscale,
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("tokyonight"),
+            crate::config::ThemeId::new("hackergreen"),
+            crate::config::ThemeId::new("commodore64"),
+            crate::config::ThemeId::new("grayscale"),
         ] {
             let backend = TestBackend::new(80, 24);
             let mut terminal = Terminal::new(backend).unwrap();
 
             let mut model = Model::new();
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.status = Some(dummy_status(1));
             model.daemon_connection = DaemonConnection::Connected;
             model.active_tab = Tab::Monitors;
@@ -1508,14 +1508,14 @@ mod tests {
         model.active_tab = Tab::Monitors;
 
         for theme in [
-            crate::tui::theme::Theme::Amber,
-            crate::tui::theme::Theme::Nord,
-            crate::tui::theme::Theme::TokyoNight,
-            crate::tui::theme::Theme::HackerGreen,
-            crate::tui::theme::Theme::Grayscale,
-            crate::tui::theme::Theme::Commodore64,
+            crate::config::ThemeId::new("amber"),
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("tokyonight"),
+            crate::config::ThemeId::new("hackergreen"),
+            crate::config::ThemeId::new("grayscale"),
+            crate::config::ThemeId::new("commodore64"),
         ] {
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             let backend = TestBackend::new(85, 26);
             let mut terminal = Terminal::new(backend).unwrap();
             terminal.draw(|f| ui::ui(f, &mut model)).unwrap();

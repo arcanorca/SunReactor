@@ -15,7 +15,8 @@ pub(super) struct RuntimeConfig {
     pub location: Location,
     pub monitors: Vec<MonitorConfig>,
     pub weather: WeatherConfig,
-    pub tui_theme: crate::config::Theme,
+    /// The saved `tui.theme`, resolved against the theme registry.
+    pub tui_theme: std::sync::Arc<crate::theme::Theme>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,7 +58,7 @@ impl RuntimeConfig {
             apply,
             monitors: report.config.monitors,
             weather: report.config.weather,
-            tui_theme: report.config.tui.theme,
+            tui_theme: report.config.tui.theme.resolve_or_default(),
             location,
         })
     }

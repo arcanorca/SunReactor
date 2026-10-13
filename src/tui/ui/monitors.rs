@@ -999,14 +999,14 @@ mod tests {
     #[test]
     fn test_monitors_workspace_non_amber_themes() {
         for theme in [
-            crate::config::Theme::Nord,
-            crate::config::Theme::HackerGreen,
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("hackergreen"),
         ] {
             let backend = TestBackend::new(80, 24);
             let mut terminal = Terminal::new(backend).unwrap();
 
             let mut model = Model::new();
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.status = Some(dummy_status(1));
             model.daemon_connection = DaemonConnection::Connected;
             model.active_tab = Tab::Monitors;
@@ -1302,18 +1302,18 @@ mod tests {
     #[test]
     fn test_phase5_5_2_selected_monitor_legibility_and_contrast_across_themes() {
         for theme in [
-            crate::config::Theme::Amber,
-            crate::config::Theme::Nord,
-            crate::config::Theme::HackerGreen,
-            crate::config::Theme::TokyoNight,
-            crate::config::Theme::Grayscale,
-            crate::config::Theme::Commodore64,
+            crate::config::ThemeId::new("amber"),
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("hackergreen"),
+            crate::config::ThemeId::new("tokyonight"),
+            crate::config::ThemeId::new("grayscale"),
+            crate::config::ThemeId::new("commodore64"),
         ] {
             let backend = TestBackend::new(85, 26);
             let mut terminal = Terminal::new(backend).unwrap();
 
             let mut model = Model::new();
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.status = Some(dummy_status(2));
             model.daemon_connection = crate::tui::model::DaemonConnection::Connected;
             model.active_tab = Tab::Monitors;
@@ -1445,7 +1445,7 @@ mod tests {
         assert_eq!(buffer.get(tx - 2, ty).symbol(), "❯");
         let (ex, ey, _) = find_in_buffer(&buffer, "Effects").unwrap();
         assert_ne!(buffer.get(ex - 2, ey).symbol(), "❯");
-        let (_, _, theme_value) = find_in_buffer(&buffer, model.config.tui.theme.name()).unwrap();
+        let (_, _, theme_value) = find_in_buffer(&buffer, &model.config.tui.theme.name()).unwrap();
         assert_eq!(theme_value.bg, palette.accent);
 
         // 2. Animation rate focused.
@@ -1483,7 +1483,7 @@ mod tests {
         let buf = terminal.backend().buffer().clone();
 
         // Find the focused Theme value.
-        let (vx, vy, _) = find_in_buffer(&buf, model.config.tui.theme.name()).unwrap();
+        let (vx, vy, _) = find_in_buffer(&buf, &model.config.tui.theme.name()).unwrap();
         let cell_focused = buf.get(vx, vy);
         // Focused cell must have background color set to accent
         let palette = model.config.tui.theme.palette();

@@ -4,6 +4,7 @@
     clippy::missing_errors_doc
 )]
 
+use std::path::PathBuf;
 use std::{env, process};
 
 use sunreactor::{
@@ -19,6 +20,17 @@ enum OverrideTarget {
     Monitor(String),
     Global,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ThemeCommand {
+    List { json: bool },
+    Show { id: String, json: bool },
+    Set { id: String },
+    Validate { file: Option<PathBuf> },
+    Export { id: String },
+}
+
+const THEME_USAGE: &str = "usage: sunreactorctl theme <list [--json] | show <id> [--json] | set <id> | validate [file] | export <id>>";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CliCommand {
@@ -53,6 +65,7 @@ enum CliCommand {
     },
     ConfigInit,
     ConfigValidate,
+    Theme(ThemeCommand),
     #[cfg(target_os = "linux")]
     Doctor {
         json: bool,
@@ -113,12 +126,46 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
             Some("validate") => Ok(CliCommand::ConfigValidate),
             _ => anyhow::bail!("usage: sunreactorctl config <init|validate>"),
         },
+        Some("theme" | "themes") => parse_theme_command(&args[1..]),
         #[cfg(target_os = "linux")]
         Some("doctor") => parse_doctor_command(&args[1..]),
         #[cfg(feature = "tui")]
         Some("tui") => Ok(CliCommand::Tui),
         Some(other) => anyhow::bail!("unknown command: {other}"),
     }
+}
+
+fn parse_theme_command(args: &[String]) -> anyhow::Result<CliCommand> {
+    let json = args
+        .iter()
+        .skip(1)
+        .any(|arg| arg == "--json" || arg == "-j");
+    let positional: Vec<&str> = args
+        .iter()
+        .skip(1)
+        .map(String::as_str)
+        .filter(|arg| *arg != "--json" && *arg != "-j")
+        .collect();
+    let command = match (args.first().map(String::as_str), positional.as_slice()) {
+        (None, []) => ThemeCommand::List { json: false },
+        (Some("list" | "ls"), []) => ThemeCommand::List { json },
+        (Some("show"), [id]) => ThemeCommand::Show {
+            id: (*id).to_owned(),
+            json,
+        },
+        (Some("set"), [id]) if !json => ThemeCommand::Set {
+            id: (*id).to_owned(),
+        },
+        (Some("validate"), []) if !json => ThemeCommand::Validate { file: None },
+        (Some("validate"), [file]) if !json => ThemeCommand::Validate {
+            file: Some(PathBuf::from(file)),
+        },
+        (Some("export"), [id]) if !json => ThemeCommand::Export {
+            id: (*id).to_owned(),
+        },
+        _ => anyhow::bail!("{THEME_USAGE}"),
+    };
+    Ok(CliCommand::Theme(command))
 }
 
 fn parse_suspend_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -429,6 +476,7 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
             Ok(format!("wrote default config to {}", path.display()))
         }
         CliCommand::ConfigValidate => validate_config(),
+        CliCommand::Theme(command) => run_theme_command(command),
         #[cfg(target_os = "linux")]
         CliCommand::Doctor { json } => {
             let report = sunreactor::doctor::run_diagnostics();
@@ -459,6 +507,223 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
         #[cfg(feature = "tui")]
         CliCommand::Tui => sunreactor::tui::run().map_err(|e| anyhow::anyhow!("{e}")),
     }
+}
+
+fn run_theme_command(command: ThemeCommand) -> anyhow::Result<String> {
+    use sunreactor::theme;
+
+    // The CLI is a fresh process: this reads the user theme directory once.
+    let registry = theme::registry();
+    match command {
+        ThemeCommand::List { json } => {
+            if json {
+                let themes: Vec<ipc::ThemeSummary> = registry
+                    .themes()
+                    .iter()
+                    .map(|theme| ipc::ThemeSummary::from_theme(theme))
+                    .collect();
+                return Ok(serde_json::to_string_pretty(&themes)?);
+            }
+            let current = config::load()
+                .ok()
+                .map(|report| report.config.tui.theme.as_str().to_owned());
+            Ok(render_theme_list(&registry, current.as_deref()))
+        }
+        ThemeCommand::Show { id, json } => {
+            let theme = registry.resolve(&id)?;
+            if json {
+                Ok(serde_json::to_string_pretty(
+                    &ipc::ThemeStatus::from_theme(theme),
+                )?)
+            } else {
+                Ok(render_theme(theme))
+            }
+        }
+        ThemeCommand::Export { id } => {
+            let theme = registry.resolve(&id)?;
+            Ok(format!(
+                "# Exported from sunreactor theme `{id}` ({source}).\n\
+                 # Save as {dir}<new_id>.toml, set id = \"<new_id>\", drop `aliases`, then edit.\n\
+                 # Tip: `extends = \"{id}\"` lets a file keep only the keys it changes.\n{body}",
+                id = theme.id,
+                source = theme.source.label(),
+                dir = paths::THEMES_DIR,
+                body = theme.to_toml(),
+            ))
+        }
+        ThemeCommand::Validate { file } => validate_themes(file.as_deref()),
+        ThemeCommand::Set { id } => set_theme(&registry, &id),
+    }
+}
+
+fn render_theme_list(registry: &sunreactor::theme::Registry, current: Option<&str>) -> String {
+    let mut lines = vec![format!(
+        "  {:<18} {:<11} {:<8} {}",
+        "ID", "FAMILY", "SOURCE", "NAME"
+    )];
+    for theme in registry.themes() {
+        let marker = if Some(theme.id.as_str()) == current {
+            '*'
+        } else {
+            ' '
+        };
+        let aliases = if theme.aliases.is_empty() {
+            String::new()
+        } else {
+            format!("  (aliases: {})", theme.aliases.join(", "))
+        };
+        lines.push(format!(
+            "{marker} {:<18} {:<11} {:<8} {}{aliases}",
+            theme.id,
+            theme.family.as_str(),
+            theme.source.label(),
+            theme.name,
+        ));
+    }
+    let invalid = registry.diagnostics().len();
+    if invalid > 0 {
+        lines.push(format!(
+            "\n{invalid} invalid user theme file(s) skipped; run `sunreactorctl theme validate` for details"
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_theme(theme: &sunreactor::theme::Theme) -> String {
+    let source = match &theme.source {
+        sunreactor::theme::ThemeSource::Builtin => String::from("builtin"),
+        sunreactor::theme::ThemeSource::User(path) => format!("user ({})", path.display()),
+    };
+    let widget = &theme.widget;
+    let mut lines = vec![
+        format!("id: {}", theme.id),
+        format!("name: {}", theme.name),
+        format!("family: {}", theme.family),
+        format!("source: {source}"),
+        format!(
+            "aliases: {}",
+            if theme.aliases.is_empty() {
+                String::from("none")
+            } else {
+                theme.aliases.join(", ")
+            }
+        ),
+    ];
+    if let Some(extends) = &theme.extends {
+        lines.push(format!("extends: {extends}"));
+    }
+    lines.push(String::from("palette:"));
+    for (key, colour) in theme.palette.entries() {
+        lines.push(format!("  {key}: {colour}"));
+    }
+    lines.push(format!("tui.glyph_style: {}", theme.tui.glyph_style));
+    lines.push(String::from("widget:"));
+    lines.push(format!("  renderer: {}", widget.renderer));
+    lines.push(format!("  font: {}", widget.font));
+    lines.push(format!("  pixel_scale: {}", widget.pixel_scale));
+    lines.push(format!(
+        "  shades: {}",
+        widget
+            .shades
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
+    lines.push(format!("  density: {}", widget.density));
+    lines.push(format!("  border: {}", widget.border));
+    lines.push(format!("  radius: {}", widget.radius));
+    lines.push(format!("  dither: {}", widget.dither));
+    lines.push(format!("  glow: {}", widget.glow));
+    lines.push(format!(
+        "  modules: {}",
+        widget
+            .modules
+            .iter()
+            .map(|module| module.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    lines.join("\n")
+}
+
+fn validate_themes(file: Option<&std::path::Path>) -> anyhow::Result<String> {
+    use sunreactor::theme;
+
+    let dir = paths::themes_dir()?;
+    if let Some(file) = file {
+        let theme = theme::validate_file(file, Some(&dir))?;
+        return Ok(format!(
+            "theme valid: {} ({}, family {})",
+            theme.id, theme.name, theme.family
+        ));
+    }
+
+    let registry = theme::reload_registry();
+    let user: Vec<_> = registry
+        .themes()
+        .iter()
+        .filter(|theme| matches!(theme.source, theme::ThemeSource::User(_)))
+        .collect();
+    let mut lines = vec![format!("user theme dir: {}", dir.display())];
+    for theme in &user {
+        lines.push(format!("ok: {} ({})", theme.id, theme.name));
+    }
+    if registry.diagnostics().is_empty() {
+        lines.push(format!(
+            "{} user theme(s) valid, {} built-in",
+            user.len(),
+            registry.themes().len() - user.len()
+        ));
+        return Ok(lines.join("\n"));
+    }
+    for diagnostic in registry.diagnostics() {
+        lines.push(diagnostic.to_string());
+    }
+    anyhow::bail!(lines.join("\n"))
+}
+
+fn set_theme(registry: &sunreactor::theme::Registry, name: &str) -> anyhow::Result<String> {
+    let path = paths::config_file()?;
+    set_theme_at(registry, name, &path, || {
+        ipc::ControlSocket::from_runtime()?
+            .send_request(&RequestEnvelope::new(Request::ReloadConfig))
+    })
+}
+
+/// Same write path as the TUI theme modal: load, edit, validate, save the
+/// whole config, then ask a running daemon to reload.
+fn set_theme_at(
+    registry: &sunreactor::theme::Registry,
+    name: &str,
+    path: &std::path::Path,
+    reload: impl FnOnce() -> Result<ipc::ResponseEnvelope, ipc::IpcError>,
+) -> anyhow::Result<String> {
+    let theme = registry.resolve(name)?;
+    let mut config = if path.exists() {
+        config::parse_text(&std::fs::read_to_string(path)?, path)?
+    } else {
+        config::Config::default()
+    };
+    let previous = config.tui.theme.clone();
+    config.tui.theme = config::ThemeId::new(theme.id.clone());
+    let path = config::save_to_path(&config, path)?;
+
+    let mut lines = vec![
+        format!("theme: {previous} -> {} ({})", theme.id, theme.name),
+        format!("config: {}", path.display()),
+    ];
+    match reload() {
+        Ok(response) => match render_ipc_response(response) {
+            Ok(_) => lines.push(String::from("daemon: reloaded")),
+            Err(error) => lines.push(format!("daemon: reload failed: {error}")),
+        },
+        Err(ipc::IpcError::Unavailable { .. }) => {
+            lines.push(String::from("daemon: not running (applies on next start)"));
+        }
+        Err(error) => lines.push(format!("daemon: reload failed: {error}")),
+    }
+    Ok(lines.join("\n"))
 }
 
 fn verify_reloaded_config() -> anyhow::Result<()> {
@@ -498,6 +763,9 @@ fn render_ipc_response(response: ipc::ResponseEnvelope) -> anyhow::Result<String
             format!("writes_failed: {}", run_once.writes_failed),
         ]
         .join("\n")),
+        Response::Themes { themes } => Ok(serde_json::to_string_pretty(&themes)?),
+        Response::Theme { theme } => Ok(serde_json::to_string_pretty(&theme)?),
+        Response::DayCurve { day_curve } => Ok(serde_json::to_string_pretty(&day_curve)?),
         Response::Error { message, .. } => anyhow::bail!(message),
     }
 }
@@ -534,6 +802,9 @@ fn render_status(status: &StatusResponse) -> String {
 
     if let Some(theme) = &status.theme {
         lines.push(format!("theme: {}", theme.name));
+        if let Some(id) = &theme.id {
+            lines.push(format!("theme_id: {id}"));
+        }
         lines.push(format!("theme_accent: {}", theme.accent));
     }
 
@@ -720,7 +991,114 @@ mod tests {
         ipc::{MonitorStatus, StatusResponse, WeatherStatus},
     };
 
-    use super::{parse_command, render_status, CliCommand, OverrideTarget};
+    use super::{
+        parse_command, render_status, render_theme, set_theme_at, CliCommand, OverrideTarget,
+        ThemeCommand,
+    };
+
+    fn parse(args: &[&str]) -> anyhow::Result<CliCommand> {
+        parse_command(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn parses_theme_subcommands() {
+        let theme = |command| CliCommand::Theme(command);
+        assert_eq!(
+            parse(&["theme"]).unwrap(),
+            theme(ThemeCommand::List { json: false })
+        );
+        assert_eq!(
+            parse(&["theme", "list", "--json"]).unwrap(),
+            theme(ThemeCommand::List { json: true })
+        );
+        assert_eq!(
+            parse(&["theme", "show", "nord", "-j"]).unwrap(),
+            theme(ThemeCommand::Show {
+                id: String::from("nord"),
+                json: true
+            })
+        );
+        assert_eq!(
+            parse(&["themes", "set", "gameboy"]).unwrap(),
+            theme(ThemeCommand::Set {
+                id: String::from("gameboy")
+            })
+        );
+        assert_eq!(
+            parse(&["theme", "validate"]).unwrap(),
+            theme(ThemeCommand::Validate { file: None })
+        );
+        assert_eq!(
+            parse(&["theme", "validate", "/tmp/x.toml"]).unwrap(),
+            theme(ThemeCommand::Validate {
+                file: Some(std::path::PathBuf::from("/tmp/x.toml"))
+            })
+        );
+        assert_eq!(
+            parse(&["theme", "export", "amber"]).unwrap(),
+            theme(ThemeCommand::Export {
+                id: String::from("amber")
+            })
+        );
+        for bad in [
+            &["theme", "set"][..],
+            &["theme", "set", "a", "b"],
+            &["theme", "show"],
+            &["theme", "frobnicate"],
+            &["theme", "export", "amber", "--json"],
+        ] {
+            let error = parse(bad).unwrap_err().to_string();
+            assert!(
+                error.starts_with("usage: sunreactorctl theme"),
+                "{bad:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn theme_set_writes_canonical_id_and_tolerates_offline_daemon() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[tui]\nfps = 4\ntheme = \"nord\"\n").unwrap();
+        let registry = sunreactor::theme::Registry::builtin();
+        let out = set_theme_at(&registry, "workbench", &path, || {
+            Err(sunreactor::ipc::IpcError::Unavailable {
+                target: String::from("test"),
+                message: String::from("offline"),
+            })
+        })
+        .unwrap();
+        assert!(out.contains("theme: nord -> amiga (Amiga)"), "{out}");
+        assert!(out.contains("daemon: not running"), "{out}");
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("theme = \"amiga\""), "{saved}");
+        assert!(saved.contains("fps = 4"), "{saved}");
+
+        let out = set_theme_at(&registry, "dracula", &path, || {
+            Ok(sunreactor::ipc::ResponseEnvelope::ack("reloaded"))
+        })
+        .unwrap();
+        assert!(out.contains("daemon: reloaded"), "{out}");
+
+        let error = set_theme_at(&registry, "dracla", &path, || unreachable!())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("did you mean `dracula`"), "{error}");
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("theme = \"dracula\""));
+    }
+
+    #[test]
+    fn renders_theme_details() {
+        let registry = sunreactor::theme::Registry::builtin();
+        let text = render_theme(registry.get("handheld").unwrap());
+        assert!(text.contains("id: handheld"));
+        assert!(text.contains("family: pixel"));
+        assert!(text.contains("aliases: gameboy, dmg, dmg01"));
+        assert!(text.contains("  bg: #141c12"));
+        assert!(text.contains("  renderer: pixel"));
+    }
 
     #[test]
     fn parses_suspend_command() {

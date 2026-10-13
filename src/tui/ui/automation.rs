@@ -738,10 +738,10 @@ fn render_target_instrument(
                 styles.text_muted
             };
             let rows = match app.config.tui.theme.glyph_style() {
-                crate::tui::theme::GlyphStyle::Pixel => {
+                crate::theme::GlyphStyle::Pixel => {
                     super::fonts::weather_pixel_font_rows(&shown.to_string())
                 }
-                crate::tui::theme::GlyphStyle::Rounded => {
+                crate::theme::GlyphStyle::Rounded => {
                     super::fonts::rounded_number_rows(&shown.to_string())
                 }
             };
@@ -1542,7 +1542,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut model = Model::new();
-        model.config.tui.theme = crate::config::Theme::Nord;
+        model.config.tui.theme = crate::config::ThemeId::new("nord");
         model.status = Some(dummy_status(1));
         model.daemon_connection = DaemonConnection::Connected;
         model.active_tab = Tab::Limits;
@@ -1555,7 +1555,7 @@ mod tests {
     fn test_automation_instrument_smoke_across_all_themes() {
         use ratatui::style::Color;
 
-        for theme in crate::tui::theme::Theme::ALL {
+        for theme in crate::config::ThemeId::all() {
             let mut model = Model::with_environment(ModelEnvironment::isolated());
             configure_monitor_fixture(
                 &mut model,
@@ -1565,7 +1565,7 @@ mod tests {
             model.config.location.latitude = 41.0082;
             model.config.location.longitude = 28.9784;
             model.config.location.timezone = String::from("Europe/Istanbul");
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.status = Some(dummy_status(1));
             model.daemon_connection = DaemonConnection::Connected;
             model.active_tab = Tab::Limits;
@@ -1682,7 +1682,7 @@ mod tests {
             &mut model,
             vec![named_monitor_config("mon-0", "Mi Monitor", 5, 60)],
         );
-        model.config.tui.theme = crate::config::Theme::Amiga;
+        model.config.tui.theme = crate::config::ThemeId::new("amiga");
         let mut status = dummy_status(1);
         status.monitors[0].last_applied_percent = Some(44);
         model.status = Some(status);

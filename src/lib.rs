@@ -112,6 +112,11 @@ Commands:
                             Execute a controlled, reversible hardware brightness test
   config init               Write the default config template
   config validate           Parse and validate the config file
+  theme list [--json]       List built-in and user themes (* = configured)
+  theme show <id> [--json]  Show a resolved theme (palette, widget tokens)
+  theme set <id>            Set tui.theme in the config and reload the daemon
+  theme validate [file]     Validate user theme files (or one file)
+  theme export <id>         Print a theme as a complete TOML file
   tui                       Launch the interactive terminal interface
 
 Options:
@@ -125,9 +130,13 @@ IPC:
 Discovery:
   {bin} discover          Human-readable device table
   {bin} discover --json   Machine-readable JSON
+
+Themes:
+  User themes: {themes}<id>.toml (shadow built-ins with the same id)
 ",
         name = PRODUCT_NAME,
         bin = CLI_BINARY,
         socket = paths::SOCKET_PATH_TEMPLATE,
+        themes = paths::THEMES_DIR,
     )
 }

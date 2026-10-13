@@ -1851,8 +1851,9 @@ mod tests {
         assert_eq!(model.motion.active_activity, None);
 
         // 6. Geometric invariance: shimmer_style_for_column preserves cell layout
-        let styles =
-            crate::tui::theme::SemanticStyles::from_palette(&crate::config::Theme::Amber.palette());
+        let styles = crate::tui::theme::SemanticStyles::from_palette(
+            &crate::config::ThemeId::new("amber").palette(),
+        );
         let style_col0 = crate::tui::motion::shimmer_style_for_column(
             0,
             20,
@@ -1928,17 +1929,17 @@ mod tests {
     #[test]
     fn test_phase8_weather_themes_visual_hierarchy() {
         for theme in [
-            crate::config::Theme::Amber,
-            crate::config::Theme::Nord,
-            crate::config::Theme::HackerGreen,
-            crate::config::Theme::Grayscale,
-            crate::config::Theme::Commodore64,
+            crate::config::ThemeId::new("amber"),
+            crate::config::ThemeId::new("nord"),
+            crate::config::ThemeId::new("hackergreen"),
+            crate::config::ThemeId::new("grayscale"),
+            crate::config::ThemeId::new("commodore64"),
         ] {
             let backend = TestBackend::new(120, 30);
             let mut terminal = Terminal::new(backend).unwrap();
 
             let mut model = Model::new();
-            model.config.tui.theme = theme;
+            model.config.tui.theme = theme.clone();
             model.config.weather.enabled = true;
             model.active_tab = Tab::Weather;
             model.daemon_connection = DaemonConnection::Connected;

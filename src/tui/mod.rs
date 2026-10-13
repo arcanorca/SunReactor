@@ -27,4 +27,4 @@ pub use geometry::{
 pub use model::{ActiveInputKind, DaemonConnection, InputMode, Model, MonitorPaneFocus, Tab};
 pub use motion::{ActiveActivity, MotionLevel, TransientKind, UiMotionState};
 pub use runtime::run;
-pub use theme::{Palette, SemanticStyles, Theme};
+pub use theme::{Palette, SemanticStyles};

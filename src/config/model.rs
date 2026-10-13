@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::backends::BackendKind;
@@ -205,56 +207,69 @@ pub enum TemperatureUnit {
     Fahrenheit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Theme {
-    #[default]
-    Amber,
-    #[serde(alias = "workbench")]
-    Amiga,
-    AyuDark,
-    AyuMirage,
-    #[serde(alias = "din")]
-    Braun,
-    #[serde(alias = "casio", alias = "digitalwatch", alias = "digital_watch")]
-    CasioDigital,
-    CatppuccinMocha,
-    #[serde(alias = "macintosh128k", alias = "mac128k")]
-    ClassicMacintosh,
-    #[serde(alias = "c64")]
-    Commodore64,
-    Cyberpunk,
-    Dracula,
-    Everforest,
-    Grayscale,
-    Gruvbox,
-    HackerGreen,
-    #[serde(alias = "gameboy", alias = "dmg", alias = "dmg01")]
-    Handheld,
-    Kanagawa,
-    MaterialOcean,
-    Monokai,
-    NightOwl,
-    #[serde(alias = "tubes", alias = "nixie_tubes")]
-    Nixie,
-    Nord,
-    #[serde(alias = "glyph")]
-    Nothing,
-    OneDark,
-    #[serde(alias = "scope", alias = "crt")]
-    Oscilloscope,
-    PhosphorBlue,
-    RosePine,
-    SolarizedDark,
-    Synthwave84,
-    Terminal,
-    ThinkPad,
-    TokyoNight,
-    #[serde(alias = "unix", alias = "workstation", alias = "motif", alias = "irix")]
-    UnixWorkstation,
-    #[serde(alias = "vfd_hifi", alias = "vfd", alias = "hifi")]
-    VfdHiFi,
-    Zenburn,
+/// `tui.theme`: the id of a theme in the [theme registry](crate::theme).
+///
+/// Deserialisation accepts any id or alias the registry knows (built-ins,
+/// user themes, legacy names such as `workbench` or `vfdhifi`) and stores
+/// the canonical id, so re-saving a config writes the canonical spelling.
+/// Unknown names are kept verbatim and rejected by [`Config::validate`]
+/// with nearest-match suggestions.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct ThemeId(String);
+
+impl ThemeId {
+    /// Wraps a raw name without consulting the registry.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Resolves against the process-wide registry.
+    pub fn resolve(&self) -> Result<Arc<crate::theme::Theme>, crate::theme::UnknownTheme> {
+        crate::theme::registry().resolve(&self.0).map(Arc::clone)
+    }
+
+    /// Resolves against the process-wide registry, falling back to the
+    /// default theme for names that no longer resolve (e.g. a user theme
+    /// file deleted while a client is running).
+    #[must_use]
+    pub fn resolve_or_default(&self) -> Arc<crate::theme::Theme> {
+        let registry = crate::theme::registry();
+        registry
+            .resolve(&self.0)
+            .or_else(|_| registry.resolve(crate::theme::DEFAULT_THEME_ID))
+            .map(Arc::clone)
+            .expect("the default built-in theme always exists")
+    }
+}
+
+impl Default for ThemeId {
+    fn default() -> Self {
+        Self::new(crate::theme::DEFAULT_THEME_ID)
+    }
+}
+
+impl std::fmt::Display for ThemeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ThemeId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        let registry = crate::theme::registry();
+        Ok(Self(
+            registry
+                .canonical_id(&raw)
+                .map_or_else(|| raw.trim().to_owned(), str::to_owned),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -309,7 +324,7 @@ pub struct TuiConfig {
     pub fps: u32,
     pub use_12h_time: bool,
     pub temperature_unit: TemperatureUnit,
-    pub theme: Theme,
+    pub theme: ThemeId,
     pub effects: MotionLevel,
     /// Keep the original SunReactor masthead visible on terminals with room for it.
     pub show_logo: bool,
@@ -321,7 +336,7 @@ impl Default for TuiConfig {
             fps: 1,
             use_12h_time: false,
             temperature_unit: TemperatureUnit::Celsius,
-            theme: Theme::default(),
+            theme: ThemeId::default(),
             effects: MotionLevel::default(),
             show_logo: true,
         }
