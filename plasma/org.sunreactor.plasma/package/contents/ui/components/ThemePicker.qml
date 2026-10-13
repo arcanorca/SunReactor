@@ -1,11 +1,18 @@
 /*
- * The theme picker: the popover under ThemeButton. Its first row is always
- * "Follow SunReactor", with the terminal app's theme named under it and a check
- * while following. Below it, one row per daemon theme, grouped by family under
- * small-caps captions: a four-colour strip, the name, and a check on the pinned
- * one. Choosing a row asks for follow or pin; the widget stores the choice.
- * Keyboard: Up and Down move, Return / Enter / Space choose, Escape closes.
- * All text is small, in the theme's body face.
+ * The theme picker: a compact popover under ThemeButton, right-aligned to it.
+ * Its first row is "Follow SunReactor", with the terminal app's theme named
+ * under it and a check while following. Below it, one row per daemon theme,
+ * grouped by family under small captions: a four-chip palette strip, the name,
+ * and a check on the applied one.
+ *
+ * It is a toggle that stays open. The button's click opens and closes it; a
+ * press outside the popover closes it (CloseOnPressOutsideParent leaves the
+ * button out, so the button's own click is the only toggle and cannot close
+ * and reopen the list in one go); Escape closes it. Choosing a row or Follow
+ * applies the choice at once and keeps the list open, so themes can be flipped
+ * through while the widget updates behind it.
+ * Keyboard: Up and Down move the cursor (Up from the first theme reaches Follow),
+ * Return, Enter or Space apply the cursor row, Escape closes.
  */
 
 pragma ComponentBehavior: Bound
@@ -22,6 +29,8 @@ import "../engine"
 QQC2.Popup {
     id: root
 
+    objectName: "themePicker"
+
     /*! The button the popover hangs from (its Popup parent). */
     required property Item anchorItem
     required property Theme theme
@@ -31,27 +40,35 @@ QQC2.Popup {
     required property string followedName
     required property bool pinned
     required property string pinnedId
+    /*! The daemon's list_themes entries. */
+    required property var themes
 
     signal followRequested()
     signal pinRequested(string id)
 
     readonly property bool listSupported: client.themeRegistry !== SunReactorClient.CapabilityUnsupported
-    /*! Small text: the theme's body face (its bitmap face is for the tab bar), at most 11 px. */
+    /*! Small text: the theme's body face (its bitmap face is for the tab bar). */
     readonly property string textFamily: theme.available && theme.bodyFont.length > 0
         ? theme.bodyFont : Kirigami.Theme.defaultFont.family
     readonly property int textPx: 11
-    readonly property int captionPx: 10
-    /*! Largest popover height: 60% of the popup, and never past the window's bottom edge. */
+    readonly property int captionPx: 9
+    /*! One row: 1.6 grid units. */
+    readonly property real rowHeight: Kirigami.Units.gridUnit * 1.6
+    /*! The popover's width: 11.5 grid units, and never wider than the window allows. */
+    readonly property real widthCap: Kirigami.Units.gridUnit * 11.5
+    /*! Largest popover height: 60% of the window, and never past its bottom edge. */
     property real maxHeight: 0
     /*! The height the content wants, unclipped (the list's full length included). */
     readonly property real naturalHeight: contentLayout.implicitHeight + topPadding + bottomPadding
+    /*! The rows last built; they are rebuilt only when a row's content changes. */
+    property string choicesKey: ""
 
     width: 0
     height: Math.min(naturalHeight, maxHeight)
     // The content fills the capped popover, so the list gets the rest and scrolls.
     contentWidth: width - leftPadding - rightPadding
     contentHeight: height - topPadding - bottomPadding
-    padding: Kirigami.Units.smallSpacing
+    padding: Kirigami.Units.smallSpacing / 2
     modal: false
     focus: true
     closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
@@ -68,9 +85,9 @@ QQC2.Popup {
     }
 
     /*! Hangs the popover under the anchor, its right edge on the anchor's, and
-        keeps it inside the popup window. The anchor's window position is read
-        afresh on every call, so the popover is right after any change: on open,
-        and whenever the anchor, its parents or the window move or resize. */
+        keeps it inside the window. The anchor's window position is read afresh
+        on every call, so the popover is right after any change: on open, and
+        whenever the anchor, its parents or the window move or resize. */
     function place() {
         const win = anchorItem.Window;
         if (!win) {
@@ -78,9 +95,9 @@ QQC2.Popup {
         }
         const origin = anchorItem.mapToItem(null, 0, 0);
         const edge = Kirigami.Units.smallSpacing;
-        const top = origin.y + anchorItem.height + edge;
-        const wide = Math.max(0, Math.min(Kirigami.Units.gridUnit * 18, win.width - 2 * edge));
+        const wide = Math.max(0, Math.min(root.widthCap, win.width - 2 * edge));
         const left = Math.max(edge, Math.min(origin.x + anchorItem.width - wide, win.width - edge - wide));
+        const top = origin.y + anchorItem.height + edge;
         root.width = wide;
         root.x = left - origin.x;
         root.y = anchorItem.height + edge;
@@ -94,56 +111,88 @@ QQC2.Popup {
         }
     }
 
+    /*! The rows, in family order. A list that has not changed keeps its rows, so
+        a row under the pointer is never replaced by a refresh. */
     function rebuild() {
-        choices.clear();
         const order = ["pixel", "instrument", "terminal"];
-        const sorted = client.themeList.slice().sort((a, b) =>
+        const sorted = root.themes.slice().sort((a, b) =>
             (order.indexOf(a.family) - order.indexOf(b.family)) || String(a.name).localeCompare(String(b.name)));
+        const key = sorted.map(t => [t.id, t.name, t.family, t.bg, t.fg, t.accent, t.secondaryAccent].join("\n")).join("\n\n");
+        if (key === root.choicesKey) {
+            return;
+        }
+        root.choicesKey = key;
+        choices.clear();
         for (const t of sorted) {
             choices.append({ themeId: t.id, name: t.name, family: t.family,
                              bg: t.bg, fg: t.fg, accent: t.accent, secondary: t.secondaryAccent });
         }
+    }
+
+    /*! The keyboard cursor starts on the applied theme, or the first one. */
+    function resetCursor() {
         let current = 0;
         for (let i = 0; i < choices.count; ++i) {
             if (root.pinned && choices.get(i).themeId === root.pinnedId) {
                 current = i;
+                break;
             }
         }
-        list.currentIndex = current;
-        scrollToCurrent();
+        list.currentIndex = choices.count > 0 ? current : -1;
     }
 
-    /*! Brings the current row into view once the list has laid out its rows. */
+    /*! Brings the cursor row into view once the list has its final height. */
     function scrollToCurrent() {
-        Qt.callLater(() => list.positionViewAtIndex(list.currentIndex, ListView.Contain));
+        Qt.callLater(() => {
+            if (list.currentIndex >= 0) {
+                list.positionViewAtIndex(list.currentIndex, ListView.Contain);
+            }
+        });
     }
 
+    /*! The button's click: open when closed, close when open. */
+    function toggle() {
+        if (root.opened) {
+            root.close();
+        } else {
+            root.open();
+        }
+    }
+
+    /*! Applies Follow. The list stays open. */
     function chooseFollow() {
         root.followRequested();
-        root.close();
     }
 
+    /*! Applies one theme. The list stays open, and the cursor moves to the row. */
     function choose(index) {
-        const entry = choices.get(index);
-        if (!entry) {
+        if (index < 0 || index >= choices.count) {
             return;
         }
-        root.pinRequested(entry.themeId);
-        root.close();
+        list.currentIndex = index;
+        root.pinRequested(choices.get(index).themeId);
     }
 
     onAboutToShow: {
         client.refreshThemeList();
         place();
         rebuild();
+        resetCursor();
     }
     onOpened: {
         place();
-        root.scrollToCurrent();
+        scrollToCurrent();
         if (root.pinned) {
             list.forceActiveFocus();
         } else {
             followRow.forceActiveFocus();
+        }
+    }
+    // A theme list that changes while the popover is open updates in place.
+    onThemesChanged: {
+        if (root.opened) {
+            root.rebuild();
+            list.currentIndex = Math.min(list.currentIndex, choices.count - 1);
         }
     }
 
@@ -165,14 +214,6 @@ QQC2.Popup {
         function onWidthChanged() { root.relayoutIfOpen(); }
         function onHeightChanged() { root.relayoutIfOpen(); }
     }
-    Connections {
-        target: root.client
-        function onThemeListChanged() {
-            if (root.opened) {
-                root.rebuild();
-            }
-        }
-    }
 
     ListModel {
         id: choices
@@ -193,14 +234,16 @@ QQC2.Popup {
         // The daemon fell back to another theme: say why, once, at the top.
         RowLayout {
             Layout.fillWidth: true
-            Layout.bottomMargin: Kirigami.Units.smallSpacing
+            Layout.leftMargin: Kirigami.Units.smallSpacing
+            Layout.rightMargin: Kirigami.Units.smallSpacing
+            Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
             visible: root.client.themeWarning.length > 0
             spacing: Kirigami.Units.smallSpacing
 
             Kirigami.Icon {
                 Layout.alignment: Qt.AlignTop
                 implicitWidth: Kirigami.Units.iconSizes.small
-                implicitHeight: implicitWidth
+                implicitHeight: Kirigami.Units.iconSizes.small
                 source: "dialog-warning"
                 isMask: true
                 color: root.theme.warning
@@ -221,7 +264,13 @@ QQC2.Popup {
         QQC2.ItemDelegate {
             id: followRow
 
+            objectName: "followRow"
             Layout.fillWidth: true
+            implicitHeight: root.rowHeight
+            topPadding: 0
+            bottomPadding: 0
+            leftPadding: Kirigami.Units.smallSpacing
+            rightPadding: Kirigami.Units.smallSpacing
             focusPolicy: Qt.StrongFocus
             hoverEnabled: true
             Accessible.role: Accessible.RadioButton
@@ -232,15 +281,15 @@ QQC2.Popup {
             Keys.onDownPressed: list.forceActiveFocus()
             Keys.onReturnPressed: root.chooseFollow()
             Keys.onEnterPressed: root.chooseFollow()
+            Keys.onSpacePressed: root.chooseFollow()
             onClicked: root.chooseFollow()
 
             background: Rectangle {
                 radius: root.theme.radius
-                color: followRow.activeFocus || followRow.hovered
-                    ? root.theme.alpha(root.theme.accent, 0.22)
-                    : root.theme.alpha(root.theme.accent, root.pinned ? 0.06 : 0.14)
-                border.width: root.theme.lineWidth
-                border.color: root.theme.alpha(root.theme.accent, root.pinned ? 0 : 0.5)
+                color: !root.pinned ? root.theme.alpha(root.theme.accent, 0.14)
+                    : followRow.hovered ? root.theme.alpha(root.theme.fg, 0.07) : "transparent"
+                border.width: followRow.visualFocus ? root.theme.lineWidth : 0
+                border.color: root.theme.accent
             }
 
             contentItem: RowLayout {
@@ -248,7 +297,7 @@ QQC2.Popup {
 
                 Kirigami.Icon {
                     implicitWidth: Kirigami.Units.iconSizes.small
-                    implicitHeight: implicitWidth
+                    implicitHeight: Kirigami.Units.iconSizes.small
                     source: root.pinned ? "" : "checkmark"
                     isMask: true
                     color: root.theme.accent
@@ -283,7 +332,7 @@ QQC2.Popup {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.topMargin: Kirigami.Units.smallSpacing / 2
             Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
             implicitHeight: root.theme.lineWidth
             color: root.theme.line
@@ -292,6 +341,7 @@ QQC2.Popup {
         ListView {
             id: list
 
+            objectName: "themeList"
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 0
@@ -307,9 +357,9 @@ QQC2.Popup {
                 required property string section
 
                 width: ListView.view.width
-                topPadding: Kirigami.Units.smallSpacing
+                topPadding: Kirigami.Units.smallSpacing / 2
+                bottomPadding: 0
                 leftPadding: Kirigami.Units.smallSpacing
-                bottomPadding: Kirigami.Units.smallSpacing / 2
                 text: root.familyLabel(section)
                 textFormat: Text.PlainText
                 font.family: root.textFamily
@@ -320,10 +370,10 @@ QQC2.Popup {
                 Accessible.role: Accessible.Heading
             }
 
-            // The popover's height settles after the rows are in (the layout caps
-            // it), so the current row is brought into view again whenever it changes.
+            // The height settles when the popover opens and when it is placed:
+            // the cursor row is brought back into view whenever it does.
             onHeightChanged: {
-                if (root.opened) {
+                if (root.opened && currentIndex >= 0) {
                     positionViewAtIndex(currentIndex, ListView.Contain);
                 }
             }
@@ -331,11 +381,18 @@ QQC2.Popup {
             Keys.onReturnPressed: root.choose(currentIndex)
             Keys.onEnterPressed: root.choose(currentIndex)
             Keys.onSpacePressed: root.choose(currentIndex)
+            // Explicit steps: a handled key does not reach the view's own navigation.
             Keys.onUpPressed: event => {
                 if (currentIndex <= 0) {
                     followRow.forceActiveFocus();
-                    event.accepted = true;
+                } else {
+                    decrementCurrentIndex();
                 }
+                event.accepted = true;
+            }
+            Keys.onDownPressed: event => {
+                incrementCurrentIndex();
+                event.accepted = true;
             }
 
             PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {}
@@ -352,11 +409,17 @@ QQC2.Popup {
                 required property string accent
                 required property string secondary
 
+                /*! The applied theme: the pinned one. */
                 readonly property bool active: root.pinned && themeId === root.pinnedId
+                /*! The keyboard cursor, while the list has the focus. */
+                readonly property bool cursor: ListView.isCurrentItem && list.activeFocus
 
                 width: ListView.view.width
-                // The keyboard cursor shows only while the list has the focus.
-                highlighted: ListView.isCurrentItem && list.activeFocus
+                implicitHeight: root.rowHeight
+                topPadding: 0
+                bottomPadding: 0
+                leftPadding: Kirigami.Units.smallSpacing
+                rightPadding: Kirigami.Units.smallSpacing
                 hoverEnabled: true
                 focusPolicy: Qt.NoFocus
                 Accessible.role: Accessible.RadioButton
@@ -369,8 +432,10 @@ QQC2.Popup {
 
                 background: Rectangle {
                     radius: root.theme.radius
-                    color: row.highlighted ? root.theme.alpha(root.theme.accent, 0.22)
+                    color: row.active ? root.theme.alpha(root.theme.accent, 0.14)
                         : row.hovered ? root.theme.alpha(root.theme.fg, 0.07) : "transparent"
+                    border.width: row.cursor ? root.theme.lineWidth : 0
+                    border.color: root.theme.accent
                 }
 
                 contentItem: RowLayout {
@@ -378,15 +443,28 @@ QQC2.Popup {
 
                     Kirigami.Icon {
                         implicitWidth: Kirigami.Units.iconSizes.small
-                        implicitHeight: implicitWidth
+                        implicitHeight: Kirigami.Units.iconSizes.small
                         source: row.active ? "checkmark" : ""
                         isMask: true
                         color: root.theme.accent
                     }
-                    ThemeSwatches {
-                        colors: [row.bg, row.fg, row.accent, row.secondary]
-                        outline: root.theme.line
-                        size: Kirigami.Units.smallSpacing * 2
+                    // The palette: four chips, 4 x 8 px each.
+                    Row {
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 0
+
+                        Repeater {
+                            model: [row.bg, row.fg, row.accent, row.secondary]
+                            delegate: Rectangle {
+                                required property string modelData
+
+                                width: 4
+                                height: 8
+                                color: modelData
+                                border.width: root.theme.hairline
+                                border.color: root.theme.line
+                            }
+                        }
                     }
                     PlasmaComponents3.Label {
                         Layout.fillWidth: true
@@ -404,7 +482,7 @@ QQC2.Popup {
 
         PlasmaComponents3.Label {
             Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.margins: Kirigami.Units.smallSpacing
             visible: !root.listSupported
             text: i18nd(root.domain, "The background service is too old to offer other themes.")
             wrapMode: Text.Wrap

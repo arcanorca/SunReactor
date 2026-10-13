@@ -27,6 +27,8 @@ QQC2.AbstractButton {
     /*! Plasmoid config: "follow" or "pinned", and the pinned theme id. */
     property string themeMode: "follow"
     property string pinnedId: ""
+    /*! The daemon's list_themes entries; a host may supply its own list (the tests do). */
+    property var themeList: client.themeList
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     /*! The Nothing flagship draws a 24 px round hairline with a dot matrix (skins/nothing/ThemeGlyph.qml). */
@@ -81,7 +83,8 @@ QQC2.AbstractButton {
     QQC2.ToolTip.text: root.warned ? root.stateText + "\n" + root.client.themeWarning : root.stateText
     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
 
-    onClicked: picker.opened ? picker.close() : picker.open()
+    // The one toggle: a press outside the picker never closes it on the button.
+    onClicked: picker.toggle()
 
     background: Rectangle {
         x: root.inset
@@ -244,6 +247,7 @@ QQC2.AbstractButton {
         followedName: root.followedName
         pinned: root.pinned
         pinnedId: root.pinnedId
+        themes: root.themeList
 
         onFollowRequested: root.followRequested()
         onPinRequested: id => root.pinRequested(id)
