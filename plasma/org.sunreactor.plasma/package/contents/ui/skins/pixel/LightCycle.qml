@@ -192,7 +192,7 @@ Item {
                 id: plot
                 y: readout.y + readout.height + 3
                 width: panel.contentWidth
-                height: 36
+                height: 28
                 artScale: 1
 
                 samples: root.showAll ? [] : (root.current ? root.current.samples : [])

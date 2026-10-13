@@ -64,7 +64,7 @@ Item {
             Column {
                 id: column
                 width: panel.contentWidth
-                spacing: 5
+                spacing: 3
 
                 Repeater {
                     model: root.rows
@@ -93,7 +93,7 @@ Item {
                         }
 
                         width: panel.contentWidth
-                        height: 13 + 2 + slider.height + (expanded && !master ? limits.height : 0)
+                        height: 13 + slider.height + (expanded && !master ? limits.height : 0)
 
                         PixelLabel {
                             id: name
@@ -154,7 +154,7 @@ Item {
                             theme: root.theme
                             style: pstyle
                             x: 2
-                            y: 15
+                            y: 13
                             width: row.width - 4
                             value: row.percent
                             enabled: row.controllable
