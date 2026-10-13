@@ -6,6 +6,7 @@
 #                 [--scenario default|manual|paused|single|triple|longnames|offline|unknown|noweather]
 #                 [--old] [--scheme dark|light] [--theme-warning TEXT]
 #                 [--config "panelMode=ring showTemperature=false"]
+#                 [--font-dpi N] [--units N] [--audit]
 #                 [--package DIR] [--qml DIR]
 #
 # Output: DIR/<tag>_<theme>_<view>_<scale>.png plus a .log with the viewer's QML
@@ -21,6 +22,12 @@
 # 2400x2400: the popup's maximum height is 75% of the screen, so a smaller one
 # makes a page scroll), SHOT_SETTLE (s), SHOT_SERVERNUM (Xvfb display
 # number; default: pick a free one), SHOT_KEEP=1 keeps the work dir.
+# --font-dpi N sets QT_FONT_DPI as given; in this Qt that also scales the device
+# pixel ratio by N/96 (see tools/overflow_audit.sh). --units N sets the popup's
+# width in grid units (popupGridUnits,
+# popup view only). --audit runs the layout audit (tools/harness/Audit.qml): the
+# screenshot is taken once SUNREACTOR_AUDIT_END is in the viewer's log, and the
+# audit's marker lines stay in DIR/<tag>_<theme>_<view>_<scale>.log.
 #
 # Isolation (nothing reaches the user's session):
 #   - env -i: no WAYLAND_DISPLAY / DISPLAY of the desktop, no user QML paths;
@@ -46,6 +53,9 @@ VIEWS="popup panel-h panel-v"
 SCENARIO="default"
 OLD=""
 CONFIG=""
+FONT_DPI=""
+UNITS=""
+AUDIT=""
 WARNING=""
 SCHEME="dark"
 SETTLE="${SHOT_SETTLE:-2.5}"
@@ -60,6 +70,9 @@ while [[ $# -gt 0 ]]; do
         --scenario) SCENARIO="$2"; shift 2 ;;
         --old) OLD="--old"; shift ;;
         --config) CONFIG="$2"; shift 2 ;;
+        --font-dpi) FONT_DPI="$2"; shift 2 ;;
+        --units) UNITS="$2"; shift 2 ;;
+        --audit) AUDIT=1; shift ;;
         --theme-warning) WARNING="$2"; shift 2 ;;
         --scheme) SCHEME="$2"; shift 2 ;;
         --package) PACKAGE="$(cd "$2" && pwd)"; shift 2 ;;
@@ -70,6 +83,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$OUT" ]] || { echo "--out DIR (or SHOT_OUT) is required; keep screenshots out of the repo" >&2; exit 2; }
+# Harness config keys this run adds to --config (read by the containment and the widget).
+HARNESS_CONFIG="$CONFIG"
+[[ -n "$UNITS" ]] && HARNESS_CONFIG="$HARNESS_CONFIG popupGridUnits=$UNITS"
+[[ -n "$AUDIT" ]] && HARNESS_CONFIG="$HARNESS_CONFIG audit=1"
+# QT_FONT_DPI is passed as given. In this Qt it also multiplies the window's
+# device pixel ratio: scale x FONT_DPI/96 (1.35 at 144 is 2.025). The crops below
+# use that effective ratio; the popup line and the audit's META record it.
+extra_env=()
+[[ -n "$FONT_DPI" ]] && extra_env+=("QT_FONT_DPI=$FONT_DPI")
 [[ -f "$QMLDIR/org/sunreactor/plasma/qmldir" ]] || { echo "no plugin under $QMLDIR (build first)" >&2; exit 2; }
 for tool in xvfb-run plasmoidviewer import magick dbus-run-session python3; do
     command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 2; }
@@ -112,6 +134,8 @@ if [[ -d "$SHELL_SRC" ]]; then
 fi
 mkdir -p "$WORK/data/plasma/plasmoids"
 cp -r "$HERE/harness/containment" "$WORK/data/plasma/plasmoids/org.sunreactor.harness"
+# The layout audit is loaded by the containment only under --audit; it lives next to main.qml.
+cp "$HERE/harness/Audit.qml" "$WORK/data/plasma/plasmoids/org.sunreactor.harness/contents/ui/Audit.qml"
 
 POPUP_W="${SHOT_POPUP_W:-460}"
 POPUP_H="${SHOT_POPUP_H:-1000}"
@@ -149,9 +173,10 @@ shoot() {
     [[ -S "$SOCK" ]] || { echo "fake daemon did not start: $(cat "$WORK/fake.out")" >&2; exit 1; }
 
     read -r lw lh < <(view_size "$view")
-    local w h
-    w=$(python3 -c "print(round($lw*$scale))")
-    h=$(python3 -c "print(round($lh*$scale))")
+    local w h eff
+    eff=$(python3 -c "print(round($scale*${FONT_DPI:-96}/96, 6))")
+    w=$(python3 -c "print(round($lw*$eff))")
+    h=$(python3 -c "print(round($lh*$eff))")
     cat > "$WORK/inner.sh" <<EOF
 plasmoidviewer -a "$PACKAGE" $(view_args "$view") -x 0 -y 0 > "$OUT/$name.log" 2>&1 &
 VP=\$!
@@ -160,7 +185,13 @@ for i in \$(seq 150); do
     [ "\$(grep -c '"status"' "$log" 2>/dev/null || echo 0)" -ge 2 ] && break
     sleep 0.1
 done
-sleep $SETTLE
+if [ -n "$AUDIT" ]; then
+    # The audit has measured the settled popup; wait for its end marker.
+    for i in \$(seq 300); do grep -q -e SUNREACTOR_AUDIT_END -e SUNREACTOR_AUDIT_ERROR "$OUT/$name.log" 2>/dev/null && break; sleep 0.1; done
+    sleep 0.2
+else
+    sleep $SETTLE
+fi
 import -window root -crop ${w}x${h}+0+0 +repage "$WORK/$name.png"
 kill \$VP 2>/dev/null
 wait \$VP 2>/dev/null
@@ -169,7 +200,8 @@ EOF
         TZ="Europe/Istanbul" \
         XDG_RUNTIME_DIR="$WORK/run" XDG_CONFIG_HOME="$WORK/config" XDG_DATA_HOME="$WORK/data" \
         XDG_CACHE_HOME="$WORK/cache" QML_IMPORT_PATH="$QMLDIR" QT_SCALE_FACTOR="$scale" \
-        SUNREACTOR_HARNESS=1 SUNREACTOR_HARNESS_CONFIG="$CONFIG" QT_FORCE_STDERR_LOGGING=1 \
+        SUNREACTOR_HARNESS=1 SUNREACTOR_HARNESS_CONFIG="$HARNESS_CONFIG" QT_FORCE_STDERR_LOGGING=1 \
+        ${extra_env[@]+"${extra_env[@]}"} \
         dbus-run-session -- xvfb-run $XVFB_NUM -s "-screen 0 ${SHOT_SCREEN:-2400x2400}x24" sh "$WORK/inner.sh" \
         > "$WORK/xvfb.out" 2>&1 || true
     kill "$FAKE_PID" 2>/dev/null || true
@@ -190,7 +222,7 @@ PY
     # The popup's extent (window px) comes from the containment's log line; a
     # view without one (the panels) keeps the whole window.
     local cw ch lw lh
-    read -r cw ch lw lh < <(python3 - "$OUT/$name.log" "$scale" "$w" "$h" <<'PY'
+    read -r cw ch lw lh < <(python3 - "$OUT/$name.log" "$eff" "$w" "$h" <<'PY'
 import json, sys
 log, scale, win_w, win_h = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 popup = None

@@ -11,6 +11,7 @@
 
 import QtQuick
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasmoid
 import org.kde.ksvg as KSvg
 
@@ -22,10 +23,27 @@ ContainmentItem {
     /*! The popup's full representation. Typed, so its attached Layout hints resolve. */
     property Item full: null
 
+    /*! Screenshot harness only (tools/shot.sh --units N): the popup's width in
+        grid units, to test narrower popups than the preferred 19. 0 keeps the
+        widget's own preferred width. */
+    readonly property real gridUnits: root.full && root.full.harness
+        ? Number(root.full.harness.popupGridUnits || 0) : 0
+    /*! Screenshot harness only (tools/shot.sh --audit): run the layout audit
+        (tools/harness/Audit.qml) once the popup has data. */
+    readonly property bool auditWanted: root.full !== null && root.full.harness
+        ? root.full.harness.audit === true || root.full.harness.audit === 1 : false
+
     Binding {
         target: root
         property: "full"
         value: root.popup ? root.popup.fullRepresentationItem : null
+    }
+
+    function popupWidth(): real {
+        if (root.gridUnits > 0) {
+            return root.gridUnits * Kirigami.Units.gridUnit;
+        }
+        return root.full ? root.full.Layout.preferredWidth : host.width;
     }
 
     function adopt(applet) {
@@ -38,9 +56,18 @@ ContainmentItem {
         item.anchors.left = host.left;
         item.anchors.top = host.top;
         // Until the full representation exists, the window's size.
-        item.width = Qt.binding(() => root.full ? root.full.Layout.preferredWidth : host.width);
+        item.width = Qt.binding(() => root.popupWidth());
         item.height = Qt.binding(() => root.full ? root.full.Layout.preferredHeight : host.height);
         root.popup = item;
+    }
+
+    /*! The layout audit, loaded only under the harness (tools/harness/Audit.qml). */
+    Loader {
+        id: audit
+
+        active: root.auditWanted
+        source: "Audit.qml"
+        onLoaded: item.representation = Qt.binding(() => root.full)
     }
 
     /*! The popup's extent in window pixels: x, y, then its size (logical px). */
@@ -54,6 +81,7 @@ ContainmentItem {
             y: at.y,
             width: root.popup.width,
             height: root.popup.height,
+            dpr: Window.window ? Window.window.devicePixelRatio : 1,
         }));
     }
 

@@ -48,8 +48,8 @@ def main() -> None:
             tid = summary["id"]
             themes[tid] = json.loads(run(ctl, ["theme", "show", tid, "--json"], env))
 
-    if len(themes) != 35:
-        raise SystemExit(f"expected 35 built-in themes, the CLI listed {len(themes)}")
+    if not themes:
+        raise SystemExit("the CLI listed no built-in themes")
 
     c64 = json.loads(json.dumps(themes["commodore64"]))
     c64["id"], c64["name"] = "edge_noshades", "Edge: no shades"
@@ -61,9 +61,9 @@ def main() -> None:
                       "modules": ["telemetry", "displays", "curve", "automation", "suntimes"]}
 
     doc = {
-        "_comment": "status.theme objects exported by `sunreactorctl theme show <id> --json` for all 35 "
-                    "built-ins (regenerate with tools/gen_fixtures.py; do not edit by hand). The two "
-                    "edge_* entries are synthetic and exercise widget-side derivation.",
+        "_comment": f"status.theme objects exported by `sunreactorctl theme show <id> --json` for all "
+                    f"{len(themes)} built-ins (regenerate with tools/gen_fixtures.py; do not edit by hand). "
+                    "The two edge_* entries are synthetic and exercise widget-side derivation.",
         **themes,
         "edge_noshades": c64,
         "edge_partial": nord,
