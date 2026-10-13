@@ -94,6 +94,9 @@ int PixelGlyphs::capHeight() const
     if (m_face == QLatin1String("seg")) {
         return 2 * m_segLength + 3 * m_segWidth;
     }
+    if (m_face == QLatin1String("petscii")) {
+        return 8 * m_pitch;
+    }
     return (m_face == QLatin1String("tiny") ? 5 : 7) * m_pitch;
 }
 
@@ -101,6 +104,9 @@ int PixelGlyphs::cellHeight() const
 {
     if (m_face == QLatin1String("seg")) {
         return capHeight();
+    }
+    if (m_face == QLatin1String("petscii")) {
+        return 8 * m_pitch;
     }
     return (m_face == QLatin1String("tiny") ? 5 : 9) * m_pitch;
 }
@@ -119,7 +125,7 @@ bool PixelGlyphs::covers(const QString &text, const QString &face) const
             if (!segFace().contains(c) && !isSegNarrow(c)) {
                 return false;
             }
-        } else if (!(f == QLatin1String("tiny") ? tinyFace() : smallFace()).contains(c)) {
+        } else if (!(f == QLatin1String("tiny") ? tinyFace() : f == QLatin1String("petscii") ? petsciiFace() : smallFace()).contains(c)) {
             return false;
         }
     }
@@ -132,7 +138,8 @@ int PixelGlyphs::advance(char32_t c) const
         const int w = isSegNarrow(c) ? m_segWidth : m_segLength + 2 * m_segWidth;
         return w + m_letterSpacing * m_segWidth + 1;
     }
-    const Face &face = m_face == QLatin1String("tiny") ? tinyFace() : smallFace();
+    const Face &face = m_face == QLatin1String("tiny") ? tinyFace()
+        : m_face == QLatin1String("petscii") ? petsciiFace() : smallFace();
     const auto it = face.constFind(c);
     const int w = it == face.constEnd() ? 3 : it->width;
     return (w + m_letterSpacing) * m_pitch;
@@ -265,7 +272,8 @@ void PixelGlyphs::drawGlyph(QImage &img, char32_t c, int x, int y, QRgb lit, QRg
         return;
     }
 
-    const Face &face = m_face == QLatin1String("tiny") ? tinyFace() : smallFace();
+    const Face &face = m_face == QLatin1String("tiny") ? tinyFace()
+        : m_face == QLatin1String("petscii") ? petsciiFace() : smallFace();
     const auto it = face.constFind(c);
     if (it == face.constEnd()) {
         return;

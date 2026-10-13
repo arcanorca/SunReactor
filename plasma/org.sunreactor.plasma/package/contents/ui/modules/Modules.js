@@ -154,6 +154,15 @@ var SKINS = {
         forecast: "skins/wii/Forecast.qml",
         suntimes: "skins/wii/SunTimes.qml"
     },
+    "id:commodore64": {
+        telemetry: "skins/commodore64/Telemetry.qml",
+        curve: "skins/commodore64/LightCycle.qml",
+        displays: "skins/commodore64/Displays.qml",
+        automation: "skins/commodore64/Automation.qml",
+        weather: "skins/commodore64/Weather.qml",
+        forecast: "skins/commodore64/Forecast.qml",
+        suntimes: "skins/commodore64/SunTimes.qml"
+    },
     "id:nds": {
         telemetry: "skins/nds/Telemetry.qml",
         curve: "skins/nds/LightCycle.qml",
@@ -239,6 +248,7 @@ var TABBAR = {
     "id:ps3": "skins/ps3/Tabs.qml",
     "id:macos": "skins/macos/Tabs.qml",
     "id:wii": "skins/wii/Tabs.qml",
+    "id:commodore64": "skins/commodore64/Tabs.qml",
     "id:nds": "skins/nds/Tabs.qml"
 };
 
@@ -264,7 +274,8 @@ function backdropSource(themeId) {
  * Static art only; keys are "id:<theme id>" as for BACKDROP.
  */
 var OVERLAY = {
-    "id:ps3": "skins/ps3/Waves.qml"
+    "id:ps3": "skins/ps3/Waves.qml",
+    "id:commodore64": "skins/commodore64/C64Frame.qml"
 };
 
 /*! Path (relative to ui/) of a theme's popup overlay, or "" for none. */

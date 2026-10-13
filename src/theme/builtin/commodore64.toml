@@ -4,16 +4,16 @@ aliases = ["c64"]
 family = "pixel"
 
 [palette]
-bg = "#101225"
-fg = "#a7b7ff"
+bg = "#3a3a9a"
+fg = "#a0a0ff"
 accent = "#ffffff"
-secondary_accent = "#7fe5e5"
-border_active = "#ffffff"
-border_inactive = "#3b3f78"
-text_muted = "#6672a8"
+secondary_accent = "#70a4b2"
+border_active = "#a0a0ff"
+border_inactive = "#6c5eb5"
+text_muted = "#959595"
 success = "#ffffff"
 warning = "#ffffff"
-error = "#ff0000"
+error = "#9a6759"
 
 [tui]
 glyph_style = "pixel"

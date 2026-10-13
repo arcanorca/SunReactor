@@ -27,6 +27,12 @@ using Face = QHash<char32_t, Glyph>;
 const Face &smallFace();
 /*! 3x5 capitals, digits and the few symbols axis labels need. */
 const Face &tinyFace();
+/*! PETSCII-style 4x8 text-mode face (Commodore 64 screen, the C64 skin): one
+ *  4-column cell per character so 36+ cells fit a 19 gu popup at integer art
+ *  pixels; cap rows 0..6, row 7 blank except descenders and graphics; the
+ *  box-drawing, half/eighth/full blocks, shade blocks, the bullets, the
+ *  triangles, sun/cloud symbols and the ellipsis / middle dot / degree sign. */
+const Face &petsciiFace();
 /*! Seven-segment cells: bit 0 a (top) .. bit 6 g (middle). */
 const QHash<char32_t, quint8> &segFace();
 /*! Narrow seven-segment cells (colon and full stop). */
