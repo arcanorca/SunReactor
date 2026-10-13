@@ -90,11 +90,30 @@ PlasmaExtras.Representation {
     leftPadding: 0
     rightPadding: 0
 
+    /*! A skin's popup backdrop (Modules.BACKDROP): a Gradient the Frame fills with, or nothing. */
+    Loader {
+        id: backdropSlot
+
+        readonly property string wanted: Modules.backdropSource(root.theme.available ? root.theme.themeId : "")
+
+        function load() {
+            if (wanted.length > 0) {
+                setSource(Qt.resolvedUrl(wanted), { theme: root.theme });
+            } else {
+                source = "";
+            }
+        }
+
+        onWantedChanged: load()
+        Component.onCompleted: load()
+    }
+
     background: Frame {
         theme: root.theme
         visible: root.theme.available
         pixel: false
         fillColor: root.theme.bg
+        fillGradient: backdropSlot.item
         color: root.theme.line
         style: root.theme.border === "none" ? "none" : "line"
     }

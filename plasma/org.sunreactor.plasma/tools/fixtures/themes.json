@@ -1352,7 +1352,7 @@
   "fg": "#ffffff",
   "text_muted": "#848bbd",
   "id": "synthwave84",
-  "family": "pixel",
+  "family": "instrument",
   "glyph_style": "pixel",
   "palette": {
    "bg": "#262335",
@@ -1367,20 +1367,14 @@
    "error": "#fe4450"
   },
   "widget": {
-   "renderer": "pixel",
-   "font": "bitmap8",
+   "renderer": "vector",
+   "font": "display",
    "pixel_scale": 0,
-   "shades": [
-    "#262335",
-    "#614d85",
-    "#848bbd",
-    "#ffffff"
-   ],
-   "density": "compact",
+   "density": "comfortable",
    "border": "line",
-   "radius": 0,
-   "dither": "bayer4",
-   "glow": 0.0,
+   "radius": 6,
+   "dither": "none",
+   "glow": 0.7,
    "modules": [
     "telemetry",
     "curve",

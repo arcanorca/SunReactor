@@ -29,6 +29,8 @@ Item {
     property color darkColor: theme.shades.length ? theme.shades[0] : theme.bg
     property color fillColor: "transparent"
     property real radius: pixel ? 0 : theme.radius
+    /*! A gradient for the fill, a skin's backdrop (Modules.BACKDROP); null keeps fillColor. */
+    property var fillGradient: null
 
     /*! Distance from the outer edge to where content may start. */
     readonly property real inset: {
@@ -56,6 +58,7 @@ Item {
         visible: !root.squareEdges && root.style !== "none"
         radius: root.radius
         color: root.fillColor
+        gradient: root.fillGradient
         border.width: root.lineWidth
         border.color: root.color
         antialiasing: true
@@ -66,6 +69,7 @@ Item {
         anchors.fill: parent
         visible: root.squareEdges || root.style === "none"
         color: root.fillColor
+        gradient: root.fillGradient
         antialiasing: false
     }
 

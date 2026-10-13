@@ -91,6 +91,15 @@ var SKINS = {
         forecast: "skins/hackergreen/Forecast.qml",
         suntimes: "skins/hackergreen/SunTimes.qml"
     },
+    "id:synthwave84": {
+        telemetry: "skins/synthwave84/Telemetry.qml",
+        curve: "skins/synthwave84/LightCycle.qml",
+        displays: "skins/synthwave84/Displays.qml",
+        automation: "skins/synthwave84/Automation.qml",
+        weather: "skins/synthwave84/Weather.qml",
+        forecast: "skins/synthwave84/Forecast.qml",
+        suntimes: "skins/synthwave84/SunTimes.qml"
+    },
     "id:nothing": {
         telemetry: "skins/nothing/Telemetry.qml",
         curve: "skins/nothing/LightCycle.qml",
@@ -169,8 +178,23 @@ var TABBAR = {
     "pixel": "components/tabs/PixelTabs.qml",
     "terminal": "components/tabs/TerminalTabs.qml",
     "vector": "components/tabs/InstrumentTabs.qml",
+    "id:synthwave84": "skins/synthwave84/Tabs.qml",
     "id:nothing": "skins/nothing/Tabs.qml"
 };
+
+/*
+ * Popup backdrops: a skin may paint the popup's own fill (a Gradient, loaded by
+ * FullRepresentation and handed to the popup Frame) instead of the flat theme
+ * background. Keys are "id:<theme id>"; a theme without one keeps the flat fill.
+ */
+var BACKDROP = {
+    "id:synthwave84": "skins/synthwave84/Backdrop.qml"
+};
+
+/*! Path (relative to ui/) of a theme's popup backdrop, or "" for the flat fill. */
+function backdropSource(themeId) {
+    return BACKDROP["id:" + themeId] || "";
+}
 
 /*! Path (relative to ui/) of the tab bar. Pass themeId "" and renderer "" for no theme. */
 function tabBarSource(themeId, renderer) {
