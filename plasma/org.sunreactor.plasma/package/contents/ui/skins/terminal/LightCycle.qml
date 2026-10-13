@@ -84,7 +84,9 @@ Item {
         return Math.round(Math.max(0, Math.min(1, (t - t0) / Math.max(1, t1 - t0))) * (plotCols - 1));
     }
     function rowOf(pct) {
-        return Math.round((chartRows - 1) * (1 - Math.max(0, Math.min(100, pct)) / 100));
+        // The cell the value falls in, on the same scale as fillDev (the whole plot
+        // height is 0..100), so 75% and 25% sit on even rows.
+        return Math.min(chartRows - 1, Math.floor(chartRows * (1 - Math.max(0, Math.min(100, pct)) / 100)));
     }
     /*! Height of a fill in device px, in eighths of a cell (▁..█), at least ▁. */
     function fillDev(pct) {
