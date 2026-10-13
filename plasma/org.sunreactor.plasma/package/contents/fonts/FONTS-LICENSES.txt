@@ -32,6 +32,11 @@ JetBrainsMono-Regular.ttf   JetBrains Mono       OFL 1.1        (c) 2020 The Jet
 JetBrainsMono-Bold.ttf      JetBrains Mono       OFL 1.1        (https://github.com/JetBrains/JetBrainsMono),
                                                                 v2.304, static instances; full licence
                                                                 text in OFL-JetBrainsMono.txt
+Nunito-Regular.ttf          Nunito               OFL 1.1        (c) 2014 The Nunito Project Authors
+                                                                (https://github.com/googlefonts/nunito),
+                                                                static instance wght 400 of Nunito[wght].ttf (Google Fonts); OFL-Nunito.txt
+Nunito-Bold.ttf             Nunito               OFL 1.1        static instance wght 700 of Nunito[wght].ttf
+                                                                (same source and copyright)
 
 Font roles (Theme.qml) and native pixel grids
 ---------------------------------------------
@@ -55,3 +60,7 @@ DESIGN.md section 4.
 Instrument skins (skins/instrument/InstrumentStyle.qml) use Geist Light /
 Medium / Regular / Mono and IBM Plex Sans Light / Condensed Medium / Mono for
 their legend, body, data and readout roles.
+
+Wii skin (skins/wii/) uses Nunito Regular and Bold for its rounded type: the
+channel labels, numerals and sentences. Nunito is Latin-only; the skin never
+asks it for other scripts.

@@ -1722,6 +1722,54 @@
    ]
   }
  },
+ "wii": {
+  "name": "Nintendo Wii",
+  "accent": "#00a9e0",
+  "secondary_accent": "#8bd1ec",
+  "bg": "#f3f6f9",
+  "fg": "#3b4752",
+  "text_muted": "#8794a0",
+  "id": "wii",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#f3f6f9",
+   "fg": "#3b4752",
+   "accent": "#00a9e0",
+   "secondary_accent": "#8bd1ec",
+   "border_active": "#00a9e0",
+   "border_inactive": "#cfd8df",
+   "text_muted": "#8794a0",
+   "success": "#5bc236",
+   "warning": "#f7b500",
+   "error": "#e5484d"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#3b4752",
+    "#8794a0",
+    "#cfd8df",
+    "#f3f6f9"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 18,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
  "winxp": {
   "name": "Windows XP",
   "accent": "#245edb",

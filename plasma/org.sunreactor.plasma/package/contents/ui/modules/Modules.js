@@ -144,6 +144,15 @@ var SKINS = {
         weather: "skins/ps3/Weather.qml",
         forecast: "skins/ps3/Forecast.qml",
         suntimes: "skins/ps3/SunTimes.qml"
+    },
+    "id:wii": {
+        telemetry: "skins/wii/Telemetry.qml",
+        curve: "skins/wii/LightCycle.qml",
+        displays: "skins/wii/Displays.qml",
+        automation: "skins/wii/Automation.qml",
+        weather: "skins/wii/Weather.qml",
+        forecast: "skins/wii/Forecast.qml",
+        suntimes: "skins/wii/SunTimes.qml"
     }
 };
 
@@ -219,7 +228,8 @@ var TABBAR = {
     "id:nothing": "skins/nothing/Tabs.qml",
     "id:winxp": "skins/winxp/Tabs.qml",
     "id:ps3": "skins/ps3/Tabs.qml",
-    "id:macos": "skins/macos/Tabs.qml"
+    "id:macos": "skins/macos/Tabs.qml",
+    "id:wii": "skins/wii/Tabs.qml"
 };
 
 /*
@@ -229,7 +239,8 @@ var TABBAR = {
  */
 var BACKDROP = {
     "id:synthwave84": "skins/synthwave84/Backdrop.qml",
-    "id:ps3": "skins/ps3/Backdrop.qml"
+    "id:ps3": "skins/ps3/Backdrop.qml",
+    "id:wii": "skins/wii/Backdrop.qml"
 };
 
 /*! Path (relative to ui/) of a theme's popup backdrop, or "" for the flat fill. */
