@@ -3,7 +3,7 @@
 #
 #   tools/shot.sh --out DIR [--tag NAME] [--themes "handheld braun dracula"]
 #                 [--scales "1.0 1.35 2.0"] [--views "popup panel-h panel-v"]
-#                 [--scenario default|manual|paused|single|unknown|noweather]
+#                 [--scenario default|manual|paused|single|triple|unknown|noweather]
 #                 [--old] [--scheme dark|light]
 #                 [--package DIR] [--qml DIR]
 #

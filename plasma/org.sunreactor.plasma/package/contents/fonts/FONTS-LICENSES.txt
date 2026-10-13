@@ -17,6 +17,11 @@ VT323.ttf                   VT323                OFL 1.1        (c) 2011 The VT3
                                                                 (peter.hull@oikoi.com)
 Geist-Regular.ttf           Geist                OFL 1.1        (c) 2024 The Geist Project Authors
 GeistMono-Regular.ttf       Geist Mono           OFL 1.1        (c) 2024 The Geist Project Authors
+Geist-Light.ttf             Geist Light          OFL 1.1        (c) 2024 The Geist Project Authors (v1.800)
+Geist-Medium.ttf            Geist Medium         OFL 1.1        (c) 2024 The Geist Project Authors (v1.800)
+IBMPlexSans-Light.ttf       IBM Plex Sans Light  OFL 1.1        (c) 2018 IBM Corp. (v3.005)
+IBMPlexSansCondensed-       IBM Plex Sans Cond   OFL 1.1        (c) 2019 IBM Corp., Reserved Font Name "Plex"
+  Medium.ttf                Medium                              (v3.000)
 IBMPlexSans-Regular.ttf     IBM Plex Sans        OFL 1.1        (c) 2018 IBM Corp.
 IBMPlexSans-SemiBold.ttf    IBM Plex Sans        OFL 1.1        (c) 2018 IBM Corp.
 IBMPlexMono-Regular.ttf     IBM Plex Mono        OFL 1.1        (c) 2017 IBM Corp.
@@ -46,3 +51,7 @@ VT323, Geist and Sysfont are kept for skins; VT323 and Sysfont are not
 grid-aligned outlines, so they are never used as bitmap fonts. Bitmap fonts are
 only ever drawn through engine/BitmapText.qml (CPU rasterised 1:1); see
 DESIGN.md section 4.
+
+Instrument skins (skins/instrument/InstrumentStyle.qml) use Geist Light /
+Medium / Regular / Mono and IBM Plex Sans Light / Condensed Medium / Mono for
+their legend, body, data and readout roles.

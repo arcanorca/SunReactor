@@ -17,3 +17,8 @@ error = "#ff4433"
 
 [tui]
 glyph_style = "rounded"
+
+# Instrument identity for the Plasma widget (DESIGN.md section 2).
+[widget]
+radius = 6
+glow = 0.7
