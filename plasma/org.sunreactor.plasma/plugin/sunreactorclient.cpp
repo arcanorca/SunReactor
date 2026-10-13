@@ -1,5 +1,6 @@
 #include "sunreactorclient.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -12,6 +13,8 @@
 #include <utility>
 
 #include <unistd.h>
+
+#include "themenormalize.h"
 
 using SunReactor::UNKNOWN_PERCENT;
 
@@ -40,6 +43,11 @@ int optionalPercent(const QJsonObject &object, const char *key)
     return qBound(0, value.toInt(), 100);
 }
 
+const QString kStatus = QStringLiteral("status");
+const QString kDayCurve = QStringLiteral("day_curve");
+const QString kListThemes = QStringLiteral("list_themes");
+const QString kGetTheme = QStringLiteral("get_theme");
+
 } // namespace
 
 SunReactorClient::SunReactorClient(QObject *parent)
@@ -52,6 +60,7 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_socket(new QLocalSocket(this))
     , m_pollTimer(new QTimer(this))
     , m_watchdogTimer(new QTimer(this))
+    , m_slowTimer(new QTimer(this))
     , m_customSocketPath(customSocketPath)
 {
     connect(m_socket, &QLocalSocket::connected, this, &SunReactorClient::onSocketConnected);
@@ -67,6 +76,10 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     connect(m_pollTimer, &QTimer::timeout, this, &SunReactorClient::onPollTimerTriggered);
     m_pollTimer->start();
 
+    m_slowTimer->setInterval(SunReactor::SLOW_REFRESH_INTERVAL_MS);
+    connect(m_slowTimer, &QTimer::timeout, this, &SunReactorClient::onSlowTimerTriggered);
+    m_slowTimer->start();
+
     // Defer the first query so QML can still assign socketPath this tick.
     QTimer::singleShot(0, this, &SunReactorClient::queryStatus);
 }
@@ -75,6 +88,7 @@ SunReactorClient::~SunReactorClient()
 {
     m_pollTimer->stop();
     m_watchdogTimer->stop();
+    m_slowTimer->stop();
     if (m_socket->isOpen()) {
         m_socket->abort();
     }
@@ -166,7 +180,130 @@ void SunReactorClient::setPopupOpen(bool open)
                                   : SunReactor::DEFAULT_IDLE_POLL_INTERVAL_MS);
     if (open) {
         queryStatus();
+        // The popup is where the curve is read: make sure it is today's.
+        if (m_isConnected) {
+            refreshDayCurve();
+            requestPinnedTheme();
+        }
     }
+}
+
+void SunReactorClient::setPinnedThemeId(const QString &id)
+{
+    const QString trimmed = id.trimmed();
+    if (m_pinnedThemeId == trimmed) {
+        return;
+    }
+    m_pinnedThemeId = trimmed;
+    Q_EMIT pinnedThemeIdChanged();
+    setPinned({}, trimmed.isEmpty() ? QString() : QStringLiteral("pending"));
+    requestPinnedTheme();
+}
+
+void SunReactorClient::setPinned(const QVariantMap &theme, const QString &error)
+{
+    if (m_pinnedTheme == theme && m_pinnedThemeError == error) {
+        return;
+    }
+    m_pinnedTheme = theme;
+    m_pinnedThemeError = error;
+    Q_EMIT pinnedThemeChanged();
+}
+
+void SunReactorClient::setThemeRegistry(Capability capability)
+{
+    if (m_themeRegistry == capability) {
+        return;
+    }
+    m_themeRegistry = capability;
+    Q_EMIT capabilitiesChanged();
+}
+
+void SunReactorClient::setDayCurveSupport(Capability capability)
+{
+    if (m_dayCurveSupport == capability) {
+        return;
+    }
+    m_dayCurveSupport = capability;
+    Q_EMIT capabilitiesChanged();
+}
+
+bool SunReactorClient::isQueued(const QString &name, const QString &id) const
+{
+    const auto matches = [&name, &id](const QJsonObject &request) {
+        return request.value(QStringLiteral("request")).toString() == name
+            && (id.isNull() || request.value(QStringLiteral("id")).toString() == id);
+    };
+    if (m_isBusy && matches(m_inFlightRequest)) {
+        return true;
+    }
+    for (const QJsonObject &queued : std::as_const(m_requestQueue)) {
+        if (matches(queued)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SunReactorClient::refreshThemeList()
+{
+    if (m_themeRegistry == CapabilityUnsupported || isQueued(kListThemes)) {
+        return;
+    }
+    enqueueRequest(request(kListThemes));
+}
+
+void SunReactorClient::fetchTheme(const QString &id)
+{
+    const QString trimmed = id.trimmed();
+    if (trimmed.isEmpty()) {
+        Q_EMIT themeFetchFailed(trimmed, QStringLiteral("not_found"));
+        return;
+    }
+    if (m_themeRegistry == CapabilityUnsupported) {
+        Q_EMIT themeFetchFailed(trimmed, QStringLiteral("unsupported"));
+        return;
+    }
+    if (isQueued(kGetTheme, trimmed)) {
+        return;
+    }
+    QJsonObject req = request(kGetTheme);
+    req[QStringLiteral("id")] = trimmed;
+    enqueueRequest(req);
+}
+
+void SunReactorClient::requestPinnedTheme()
+{
+    if (m_pinnedThemeId.isEmpty()) {
+        return;
+    }
+    if (m_themeRegistry == CapabilityUnsupported) {
+        setPinned({}, QStringLiteral("unsupported"));
+        return;
+    }
+    fetchTheme(m_pinnedThemeId);
+}
+
+void SunReactorClient::refreshDayCurve()
+{
+    if (m_dayCurveSupport == CapabilityUnsupported || isQueued(kDayCurve)) {
+        return;
+    }
+    if (m_nowEpochS > 0) {
+        m_dayCurveDate = QDateTime::fromSecsSinceEpoch(m_nowEpochS).date().toString(Qt::ISODate);
+    }
+    QJsonObject req = request(kDayCurve);
+    req[QStringLiteral("monitor_id")] = QJsonValue(QJsonValue::Null);
+    enqueueRequest(req);
+}
+
+void SunReactorClient::onSlowTimerTriggered()
+{
+    if (!m_isConnected) {
+        return;
+    }
+    refreshDayCurve();
+    requestPinnedTheme();
 }
 
 QString SunReactorClient::defaultSocketPath() const
@@ -200,6 +337,14 @@ void SunReactorClient::setConnected(bool connected)
     m_isConnected = connected;
     Q_EMIT connectionChanged(connected);
     if (!connected) {
+        // Whatever answers next may be a different (newer or older) daemon.
+        setThemeRegistry(CapabilityUnknown);
+        setDayCurveSupport(CapabilityUnknown);
+        m_dayCurveDate.clear();
+        if (!m_dayCurve.isEmpty()) {
+            m_dayCurve.clear();
+            Q_EMIT dayCurveChanged();
+        }
         clearStatus();
     }
 }
@@ -520,6 +665,8 @@ void SunReactorClient::handleResponse(const QJsonObject &responseObj)
 
     const QString type = responseObj.value(QStringLiteral("response")).toString();
 
+    const QString sent = m_inFlightRequest.value(QStringLiteral("request")).toString();
+
     if (type == QStringLiteral("status")) {
         setConnected(true);
         parseStatus(responseObj.value(QStringLiteral("status")).toObject());
@@ -527,18 +674,110 @@ void SunReactorClient::handleResponse(const QJsonObject &responseObj)
         setConnected(true);
         // A mutating command was accepted; read back the authoritative state
         // before anything else in the queue. A peer that answers a status read
-        // with an acknowledgement must not send us round that loop forever.
-        const QString sent = m_inFlightRequest.value(QStringLiteral("request")).toString();
-        if (sent != QStringLiteral("status")) {
-            m_requestQueue.prepend(request(QStringLiteral("status")));
+        // (or any read) with an acknowledgement must not send us round that
+        // loop forever.
+        const bool wasRead = sent == kStatus || sent == kDayCurve || sent == kListThemes || sent == kGetTheme;
+        if (!wasRead) {
+            // Commands that move the policy also move today's curve.
+            const bool curveMoves = sent == QLatin1String("reload_config")
+                || sent == QLatin1String("set_monitor_limits") || sent == QLatin1String("refresh_weather")
+                || sent == QLatin1String("run_once");
+            if (curveMoves && m_dayCurveSupport != CapabilityUnsupported && !isQueued(kDayCurve)) {
+                QJsonObject curve = request(kDayCurve);
+                curve[QStringLiteral("monitor_id")] = QJsonValue(QJsonValue::Null);
+                m_requestQueue.prepend(curve);
+            }
+            if (sent == QLatin1String("reload_config")) {
+                // Theme files may have been edited along with the config.
+                if (!m_pinnedThemeId.isEmpty() && m_themeRegistry != CapabilityUnsupported) {
+                    QJsonObject pinned = request(kGetTheme);
+                    pinned[QStringLiteral("id")] = m_pinnedThemeId;
+                    m_requestQueue.prepend(pinned);
+                }
+            }
+            m_requestQueue.prepend(request(kStatus));
         }
     } else if (type == QStringLiteral("pong")) {
         setConnected(true);
+    } else if (type == QStringLiteral("themes")) {
+        setConnected(true);
+        setThemeRegistry(CapabilitySupported);
+        parseThemeList(responseObj.value(QStringLiteral("themes")).toArray());
+    } else if (type == QStringLiteral("theme")) {
+        setConnected(true);
+        setThemeRegistry(CapabilitySupported);
+        const QString id = m_inFlightRequest.value(QStringLiteral("id")).toString();
+        const QVariantMap theme = SunReactor::ThemeData::normalizeTheme(
+            responseObj.value(QStringLiteral("theme")).toObject());
+        if (theme.isEmpty()) {
+            if (id == m_pinnedThemeId) {
+                setPinned({}, QStringLiteral("not_found"));
+            }
+            Q_EMIT themeFetchFailed(id, QStringLiteral("not_found"));
+        } else {
+            if (!m_pinnedThemeId.isEmpty() && id == m_pinnedThemeId) {
+                setPinned(theme, QString());
+            }
+            Q_EMIT themeFetched(id, theme);
+        }
+    } else if (type == QStringLiteral("day_curve")) {
+        setConnected(true);
+        setDayCurveSupport(CapabilitySupported);
+        parseDayCurve(responseObj.value(QStringLiteral("day_curve")).toObject());
     } else if (type == QStringLiteral("error")) {
-        fail(QStringLiteral("%1: %2")
-                 .arg(responseObj.value(QStringLiteral("code")).toString(),
-                      responseObj.value(QStringLiteral("message")).toString()));
+        handleError(responseObj);
     }
+}
+
+void SunReactorClient::handleError(const QJsonObject &responseObj)
+{
+    const QString sent = m_inFlightRequest.value(QStringLiteral("request")).toString();
+    const QString code = responseObj.value(QStringLiteral("code")).toString();
+    // An older daemon cannot even decode the newer requests and answers
+    // `invalid_request`. That says "not supported", not "offline" and not
+    // "broken": nothing else about the client's state changes.
+    const bool rejected = code == QLatin1String("invalid_request");
+
+    if (sent == kDayCurve) {
+        if (rejected) {
+            setDayCurveSupport(CapabilityUnsupported);
+        }
+        // Either way there is no curve for today: unknown stays unknown.
+        if (!m_dayCurve.isEmpty()) {
+            m_dayCurve.clear();
+            Q_EMIT dayCurveChanged();
+        }
+        return;
+    }
+    if (sent == kListThemes) {
+        if (rejected) {
+            setThemeRegistry(CapabilityUnsupported);
+            if (!m_themeList.isEmpty()) {
+                m_themeList.clear();
+                Q_EMIT themeListChanged();
+            }
+        }
+        return;
+    }
+    if (sent == kGetTheme) {
+        const QString id = m_inFlightRequest.value(QStringLiteral("id")).toString();
+        QString reason = QStringLiteral("not_found");
+        if (rejected && m_themeRegistry != CapabilitySupported) {
+            // Without evidence of a registry, a rejected get_theme means the
+            // daemon does not know the request at all.
+            setThemeRegistry(CapabilityUnsupported);
+            reason = QStringLiteral("unsupported");
+        } else if (!rejected) {
+            reason = QStringLiteral("offline");
+        }
+        if (!m_pinnedThemeId.isEmpty() && id == m_pinnedThemeId) {
+            setPinned({}, reason);
+        }
+        Q_EMIT themeFetchFailed(id, reason);
+        return;
+    }
+
+    fail(QStringLiteral("%1: %2").arg(code, responseObj.value(QStringLiteral("message")).toString()));
 }
 
 void SunReactorClient::parseStatus(const QJsonObject &statusObj)
@@ -570,6 +809,146 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     parseMonitors(statusObj);
 
     Q_EMIT statusChanged();
+
+    parseTheme(statusObj);
+
+    // Slow data: once per local day (and on the triggers documented at
+    // refreshDayCurve), not once per poll.
+    if (m_nowEpochS > 0 && m_dayCurveSupport != CapabilityUnsupported) {
+        const QString today = QDateTime::fromSecsSinceEpoch(m_nowEpochS).date().toString(Qt::ISODate);
+        if (today != m_dayCurveDate) {
+            refreshDayCurve();
+        }
+    }
+    if (!m_pinnedThemeId.isEmpty() && m_pinnedTheme.isEmpty()
+        && (m_pinnedThemeError.isEmpty() || m_pinnedThemeError == QLatin1String("pending")
+            || m_pinnedThemeError == QLatin1String("offline"))
+        && !isQueued(kGetTheme, m_pinnedThemeId)) {
+        requestPinnedTheme();
+    }
+}
+
+void SunReactorClient::parseTheme(const QJsonObject &statusObj)
+{
+    const QJsonValue themeValue = statusObj.value(QStringLiteral("theme"));
+    if (!themeValue.isObject()) {
+        // A daemon without a theme block tells us nothing either way.
+        return;
+    }
+    const QJsonObject themeObj = themeValue.toObject();
+    const bool hasRegistry = themeObj.value(QStringLiteral("palette")).isObject();
+    if (hasRegistry && m_themeRegistry == CapabilityUnsupported) {
+        // The daemon was upgraded underneath us: ask again for everything new.
+        setDayCurveSupport(CapabilityUnknown);
+    }
+    setThemeRegistry(hasRegistry ? CapabilitySupported : CapabilityUnsupported);
+    if (!hasRegistry && !m_pinnedThemeId.isEmpty()) {
+        setPinned({}, QStringLiteral("unsupported"));
+    }
+
+    const QVariantMap theme = SunReactor::ThemeData::normalizeTheme(themeObj);
+    if (theme.isEmpty() || theme == m_theme) {
+        return;
+    }
+    const bool switched = !m_theme.isEmpty()
+        && m_theme.value(QStringLiteral("id")) != theme.value(QStringLiteral("id"));
+    m_theme = theme;
+    Q_EMIT themeChanged();
+    if (switched) {
+        // A newly saved TUI theme comes with a config reload on the daemon.
+        refreshDayCurve();
+    }
+}
+
+void SunReactorClient::parseThemeList(const QJsonArray &entries)
+{
+    QVariantList list;
+    for (const QJsonValue &entry : entries) {
+        const QVariantMap summary = SunReactor::ThemeData::normalizeSummary(entry.toObject());
+        if (!summary.isEmpty()) {
+            list.append(summary);
+        }
+    }
+    if (list != m_themeList) {
+        m_themeList = list;
+        Q_EMIT themeListChanged();
+    }
+}
+
+void SunReactorClient::parseDayCurve(const QJsonObject &curve)
+{
+    QVariantMap out;
+    const QJsonArray monitors = curve.value(QStringLiteral("monitors")).toArray();
+    QVariantList monitorList;
+    for (const QJsonValue &entry : monitors) {
+        const QJsonObject monitor = entry.toObject();
+        const QString id = monitor.value(QStringLiteral("monitor_id")).toString();
+        if (id.isEmpty()) {
+            continue;
+        }
+        QVariantList samples;
+        qint64 lastT = 0;
+        for (const QJsonValue &s : monitor.value(QStringLiteral("samples")).toArray()) {
+            const QJsonObject sample = s.toObject();
+            const qint64 t = optionalEpoch(sample, "t");
+            const int pct = optionalPercent(sample, "pct");
+            // A curve must move forward in time and carry a value at every step.
+            if (t <= lastT || pct == UNKNOWN_PERCENT) {
+                continue;
+            }
+            const int noWeather = optionalPercent(sample, "pct_no_weather");
+            lastT = t;
+            samples.append(QVariantMap{
+                {QStringLiteral("t"), t},
+                {QStringLiteral("pct"), pct},
+                {QStringLiteral("pctNoWeather"), noWeather == UNKNOWN_PERCENT ? pct : noWeather},
+            });
+        }
+        QVariantList milestones;
+        for (const QJsonValue &m : monitor.value(QStringLiteral("milestones")).toArray()) {
+            const QJsonObject milestone = m.toObject();
+            const qint64 t = optionalEpoch(milestone, "t");
+            if (t <= 0) {
+                continue;
+            }
+            milestones.append(QVariantMap{
+                {QStringLiteral("label"), milestone.value(QStringLiteral("label")).toString()},
+                {QStringLiteral("t"), t},
+                {QStringLiteral("pct"), optionalPercent(milestone, "pct")},
+            });
+        }
+        const int minPct = optionalPercent(monitor, "min_pct");
+        const int maxPct = optionalPercent(monitor, "max_pct");
+        monitorList.append(QVariantMap{
+            {QStringLiteral("monitorId"), id},
+            {QStringLiteral("minPct"), minPct},
+            {QStringLiteral("maxPct"), maxPct},
+            {QStringLiteral("samples"), samples},
+            {QStringLiteral("milestones"), milestones},
+        });
+    }
+
+    if (!monitorList.isEmpty()) {
+        const QJsonObject sun = curve.value(QStringLiteral("sun")).toObject();
+        const QJsonValue multiplier = curve.value(QStringLiteral("weather_multiplier"));
+        out[QStringLiteral("date")] = curve.value(QStringLiteral("date")).toString();
+        out[QStringLiteral("stepMinutes")] = curve.value(QStringLiteral("step_minutes")).toInt(0);
+        out[QStringLiteral("generatedAtEpochS")] = optionalEpoch(curve, "generated_at_epoch_s");
+        out[QStringLiteral("weatherMultiplier")] = multiplier.isDouble() ? multiplier.toDouble() : 1.0;
+        out[QStringLiteral("sun")] = QVariantMap{
+            {QStringLiteral("dawn"), optionalEpoch(sun, "dawn")},
+            {QStringLiteral("sunrise"), optionalEpoch(sun, "sunrise")},
+            {QStringLiteral("solarNoon"), optionalEpoch(sun, "solar_noon")},
+            {QStringLiteral("sunset"), optionalEpoch(sun, "sunset")},
+            {QStringLiteral("dusk"), optionalEpoch(sun, "dusk")},
+        };
+        out[QStringLiteral("monitors")] = monitorList;
+    }
+
+    if (out != m_dayCurve) {
+        m_dayCurve = out;
+        Q_EMIT dayCurveChanged();
+    }
 }
 
 void SunReactorClient::parseWeather(const QJsonObject &statusObj)

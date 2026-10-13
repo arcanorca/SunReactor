@@ -14,13 +14,19 @@ include(KDEInstallDirs6)
 include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Qml Quick Network Test)
-find_package(Plasma CONFIG REQUIRED)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Network Test)
+# Plasma is only needed to install the package; the plugin, its tests and the
+# screenshot harness build without it (e.g. while KDE Frameworks are mid-update).
+find_package(Plasma CONFIG QUIET)
 
 qt_policy(SET QTP0001 NEW)
 
 # Plasma 6 package
-plasma_install_package(package org.sunreactor.plasma)
+if (Plasma_FOUND)
+    plasma_install_package(package org.sunreactor.plasma)
+else()
+    message(WARNING "Plasma not found: the plasmoid package will not be installed")
+endif()
 
 # Fonts and vector asset packages
 install(
@@ -37,6 +43,10 @@ target_sources(sunreactorplugin PRIVATE
     plugin/sunreactorclient.cpp
     plugin/sunreactorclient.h
     plugin/sunreactortypes.h
+    plugin/themenormalize.cpp
+    plugin/themenormalize.h
+    plugin/pixelitems.cpp
+    plugin/pixelitems.h
 )
 
 target_include_directories(sunreactorplugin PUBLIC
@@ -46,6 +56,7 @@ target_include_directories(sunreactorplugin PUBLIC
 target_link_libraries(sunreactorplugin
     PRIVATE
         Qt6::Core
+        Qt6::Gui
         Qt6::Qml
         Qt6::Quick
         Qt6::Network
@@ -96,6 +107,7 @@ enable_testing()
 add_executable(test_sunreactorclient
     tests/test_sunreactorclient.cpp
     plugin/sunreactorclient.cpp
+    plugin/themenormalize.cpp
 )
 
 target_include_directories(test_sunreactorclient PRIVATE
@@ -104,6 +116,7 @@ target_include_directories(test_sunreactorclient PRIVATE
 
 target_link_libraries(test_sunreactorclient PRIVATE
     Qt6::Core
+    Qt6::Gui
     Qt6::Network
     Qt6::Test
 )
