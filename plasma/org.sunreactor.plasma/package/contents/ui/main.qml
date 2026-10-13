@@ -33,20 +33,21 @@ PlasmoidItem {
         id: weatherText
     }
 
-    // The panel shows the sky itself: the weather the policy is reacting to,
-    // as pixel art. Only a paused daemon replaces it, because then the sky is
-    // not driving anything.
+    // The generic icon of the widget (explorer, tray fallback): the Breeze
+    // symbol for the weather the policy is reacting to. The panel draws the
+    // sky itself (panel/Sky.qml). Only a paused daemon replaces it, because
+    // then the sky is not driving anything.
     Plasmoid.icon: {
         if (!daemon.isConnected) {
-            return Icons.art("unknown");
+            return Icons.themeIcon("", false);
         }
         if (daemon.isSuspended) {
             return "media-playback-pause";
         }
         if (daemon.hasWeatherReading) {
-            return Icons.conditionArt(daemon.weatherCondition, daemon.weatherIsNight);
+            return Icons.themeIcon(daemon.weatherCondition, daemon.weatherIsNight);
         }
-        return Icons.skyArt(!daemon.isDaylight);
+        return Icons.themeIcon("clear", !daemon.isDaylight);
     }
 
     // Passive when there is nothing to control: a missing daemon is not an

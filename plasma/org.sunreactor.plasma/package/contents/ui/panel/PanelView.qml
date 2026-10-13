@@ -4,8 +4,9 @@
  * to unsaved values for the live preview.
  *
  * Modes:
- *   sky        the weather the policy reacts to, as a pixel sprite drawn at a
- *              whole number of device pixels per art pixel;
+ *   sky        the weather the policy reacts to, as a vector glyph in the
+ *              theme's weather icon style (or a pixel sprite at a whole number
+ *              of device pixels per art pixel, when that style is "pixel");
  *   readout    the brightness of one display (or the mean) in the theme's
  *              digits: bitmap font on a small "screen" for pixel themes,
  *              tabular mono with a level bar otherwise;
@@ -49,7 +50,7 @@ Item {
     /*! The panel's fixed dimension in logical px (height of a horizontal
         panel, width of a vertical one, side of a tray cell). */
     property real thickness: Kirigami.Units.iconSizes.medium
-    /*! Sprite url (Icons.js) or a theme icon name (paused, ...). */
+    /*! The widget's icon name (Plasmoid.icon): the pause symbol while paused. */
     property string skySource: ""
     property bool hovered: false
 

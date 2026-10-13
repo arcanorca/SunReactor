@@ -234,8 +234,7 @@ KCM.SimpleKCM {
                                                                  : (preview.isConnected ? "clear" : "")
                             night: preview.hasWeatherReading ? preview.weatherIsNight : !preview.isDaylight
                             glyphStyle: previewTheme.glyphStyle
-                            palette: previewTheme.glyphColours(Kirigami.Theme.backgroundColor,
-                                                               Kirigami.Theme.textColor)
+                            palette: previewTheme.glyphColours(Kirigami.Theme.backgroundColor, previewTheme.fg)
                         }
                     }
 
