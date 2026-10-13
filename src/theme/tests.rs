@@ -791,7 +791,7 @@ fn builtin_families_follow_design_classification() {
             .iter()
             .filter(|t| t.family == Family::Terminal)
             .count(),
-        17
+        18
     );
 }
 
