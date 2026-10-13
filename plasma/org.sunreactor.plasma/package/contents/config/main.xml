@@ -47,5 +47,28 @@
         <entry name="pixelScale" type="Int">
             <default>0</default>
         </entry>
+        <!-- "pixel", "vector" or "terminal"; empty keeps the theme's renderer. -->
+        <entry name="rendererOverride" type="String">
+            <default></default>
+        </entry>
+        <!-- Popup module ids in display order; empty keeps the theme's order. -->
+        <entry name="moduleOrder" type="StringList">
+            <default></default>
+        </entry>
+        <!-- Popup module ids not to show, whatever the order. -->
+        <entry name="hiddenModules" type="StringList">
+            <default></default>
+        </entry>
+    </group>
+    <group name="Panel">
+        <!-- What the panel item draws: "sky" (weather sprite), "readout"
+             (brightness number), "sparkline" (today's curve), "ring" (gauge). -->
+        <entry name="panelMode" type="String">
+            <default>sky</default>
+        </entry>
+        <!-- Display the readout, sparkline and ring describe; empty = average of all. -->
+        <entry name="panelDisplay" type="String">
+            <default></default>
+        </entry>
     </group>
 </kcfg>

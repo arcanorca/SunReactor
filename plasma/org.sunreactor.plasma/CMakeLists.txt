@@ -49,6 +49,8 @@ target_sources(sunreactorplugin PRIVATE
     plugin/pixelitems.h
     plugin/pixelart.cpp
     plugin/pixelart.h
+    plugin/pixelsprite.cpp
+    plugin/pixelsprite.h
 )
 
 target_include_directories(sunreactorplugin PUBLIC

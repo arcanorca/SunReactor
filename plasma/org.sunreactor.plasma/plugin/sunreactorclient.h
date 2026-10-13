@@ -101,6 +101,11 @@ private:
     Q_PROPERTY(QString themeBg READ themeBg NOTIFY statusChanged)
     Q_PROPERTY(QString themeFg READ themeFg NOTIFY statusChanged)
     Q_PROPERTY(QString themeTextMuted READ themeTextMuted NOTIFY statusChanged)
+    /*! `status.theme_warning`: why the daemon fell back to another theme than
+        the configured one (e.g. a broken user theme file). Empty when there is
+        nothing to report or the daemon predates the field. Cosmetic only: it
+        never means brightness automation is affected. */
+    Q_PROPERTY(QString themeWarning READ themeWarning NOTIFY statusChanged)
 
     /*! The followed theme, normalised (see themenormalize.h): id, name, family,
         glyphStyle, legacy, palette{...}, widget{...}. Empty until a status with
@@ -169,6 +174,7 @@ public:
     [[nodiscard]] QString themeBg() const { return m_themeBg; }
     [[nodiscard]] QString themeFg() const { return m_themeFg; }
     [[nodiscard]] QString themeTextMuted() const { return m_themeTextMuted; }
+    [[nodiscard]] QString themeWarning() const { return m_themeWarning; }
 
     [[nodiscard]] QVariantMap theme() const { return m_theme; }
     [[nodiscard]] QVariantList themeList() const { return m_themeList; }
@@ -199,6 +205,19 @@ public Q_SLOTS:
     void ping();
     /*! Opens `sunreactorctl tui` in the session's terminal emulator. */
     void openTerminal();
+
+    /*! The user theme directory (`$XDG_CONFIG_HOME/sunreactor/themes`, i.e.
+        the daemon's `paths::config_dir()` + `themes`), created if missing.
+        Returns the absolute path, or "" when it cannot be created. */
+    QString ensureThemesFolder() const;
+    /*! ensureThemesFolder(), then shows it in the desktop's file manager. */
+    bool openThemesFolder() const;
+    /*! Path of the user theme directory, without creating it. */
+    QString themesFolder() const;
+    /*! Screenshot harness only: plasmoid config overrides from
+        SUNREACTOR_HARNESS_CONFIG ("key=value key=value", values JSON when they
+        parse, else strings). Always empty unless SUNREACTOR_HARNESS is set. */
+    QVariantMap harnessConfig() const;
 
     /*! Asks for `list_themes`; result in themeList. No-op on an older daemon. */
     void refreshThemeList();
@@ -315,6 +334,7 @@ private:
     QString m_themeBg;
     QString m_themeFg;
     QString m_themeTextMuted;
+    QString m_themeWarning;
 
     QVariantMap m_theme;
     QVariantList m_themeList;

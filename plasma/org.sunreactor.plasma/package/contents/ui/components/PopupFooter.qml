@@ -1,147 +1,102 @@
 /*
- * The two things worth a button: stop reacting for a while, and re-evaluate
- * now. Everything else lives in the widget's context menu.
+ * The popup footer: a thin container. Its parts - Pause, the theme chip,
+ * Update now - are loaded through footer/Parts.js, the same skin lookup the
+ * modules use, so a family skin can replace any one of them.
+ *
+ * Chrome comes from the theme: the theme background a step lighter, a hairline
+ * in the theme's line colour on top. Without a daemon theme it is Plasma's own
+ * footer heading.
+ *
+ * The footer never writes settings itself: it asks with followRequested() /
+ * pinRequested(id) and FullRepresentation stores the choice in the plasmoid
+ * config (per instance; the daemon config is never touched).
  */
+
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
-import org.kde.plasma.components as PlasmaComponents3
 import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"
+import "footer/Parts.js" as Parts
 
-PlasmaExtras.PlasmoidHeading {
+Item {
     id: root
 
     required property SunReactorClient client
     required property Theme theme
     /*! Duration of the plain "Pause" click, from the widget's settings. */
     property int defaultPauseMinutes: 60
+    /*! Plasmoid config: "follow" or "pinned", and the pinned id. */
+    property string themeMode: "follow"
+    property string pinnedId: ""
+    /*! Why a pin is not in effect (ThemeEngine.notice). */
+    property string pinNotice: ""
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+    readonly property bool pinned: themeMode === "pinned" && pinnedId.length > 0
+    /*! Name of the theme the daemon is on (what "follow" means right now). */
+    readonly property string followedName: client.theme && client.theme.name ? client.theme.name : client.themeName
 
-    function minutesUntil(epochSeconds) {
-        return Math.max(5, Math.round((epochSeconds - client.nowEpochS) / 60));
+    signal followRequested()
+    signal pinRequested(string id)
+
+    implicitHeight: row.implicitHeight + 2 * Kirigami.Units.smallSpacing
+    implicitWidth: row.implicitWidth + 2 * Kirigami.Units.smallSpacing
+
+    PlasmaExtras.PlasmoidHeading {
+        anchors.fill: parent
+        visible: !root.theme.available
+        position: QQC2.ToolBar.Footer
     }
 
-    position: QQC2.ToolBar.Footer
-    // PlasmoidHeading pulls its insets out to the popup edge; the buttons
-    // still need room to breathe.
-    leftPadding: Kirigami.Units.smallSpacing
-    rightPadding: Kirigami.Units.smallSpacing
+    Rectangle {
+        anchors.fill: parent
+        visible: root.theme.available
+        color: root.theme.isPixel ? root.theme.bg : root.theme.raised
 
-    contentItem: RowLayout {
+        Rectangle {
+            width: parent.width
+            height: root.theme.isPixel ? root.theme.grid.unit : root.theme.lineWidth
+            color: root.theme.line
+        }
+    }
+
+    RowLayout {
+        id: row
+
+        anchors.fill: parent
+        anchors.margins: Kirigami.Units.smallSpacing
         spacing: Kirigami.Units.smallSpacing
 
-        PlasmaComponents3.Button {
-            id: pauseButton
+        Repeater {
+            model: Parts.ORDER
 
-            icon.name: root.client.isSuspended ? "media-playback-start" : "media-playback-pause"
-            text: root.client.isSuspended
-                ? i18ndc(root.domain, "@action:button", "Resume")
-                : i18ndc(root.domain, "@action:button", "Pause")
-            highlighted: root.client.isSuspended
-            down: pauseMenu.visible
+            delegate: Loader {
+                id: part
 
-            onClicked: {
-                if (root.client.isSuspended) {
-                    root.client.resume();
-                } else {
-                    pauseMenu.visible ? pauseMenu.close() : pauseMenu.open();
+                required property var modelData
+
+                readonly property string path: modelData ? Parts.source(modelData, root.theme.themeId,
+                                                                        root.theme.renderer) : ""
+
+                function load() {
+                    if (path.length > 0) {
+                        setSource(Qt.resolvedUrl("../" + path), { footer: root });
+                    } else {
+                        source = "";
+                    }
                 }
+
+                Layout.fillWidth: !modelData
+                Layout.alignment: Qt.AlignVCenter
+                onPathChanged: load()
+                Component.onCompleted: load()
             }
-
-            QQC2.ToolTip.visible: hovered && !pauseMenu.visible
-            QQC2.ToolTip.text: root.client.isSuspended
-                ? i18nd(root.domain, "Go back to adjusting brightness automatically")
-                : i18nd(root.domain, "Stop adjusting brightness for a while")
-
-            PlasmaComponents3.Menu {
-                id: pauseMenu
-
-                // Opens upwards: the footer sits at the bottom of the popup.
-                y: -height
-
-                PlasmaComponents3.MenuItem {
-                    text: i18ndc(root.domain, "@action:inmenu Pause for a duration", "For 30 Minutes")
-                    onTriggered: root.client.suspend(30)
-                }
-                PlasmaComponents3.MenuItem {
-                    text: i18ndc(root.domain, "@action:inmenu Pause for a duration", "For 1 Hour")
-                    onTriggered: root.client.suspend(60)
-                }
-                PlasmaComponents3.MenuItem {
-                    text: i18ndc(root.domain, "@action:inmenu Pause for a duration", "For 2 Hours")
-                    onTriggered: root.client.suspend(120)
-                }
-                PlasmaComponents3.MenuSeparator {}
-                PlasmaComponents3.MenuItem {
-                    text: i18ndc(root.domain, "@action:inmenu", "Until Sunset")
-                    visible: root.client.sunsetEpochS > root.client.nowEpochS
-                    height: visible ? implicitHeight : 0
-                    onTriggered: root.client.suspend(root.minutesUntil(root.client.sunsetEpochS))
-                }
-                PlasmaComponents3.MenuItem {
-                    text: i18ndc(root.domain, "@action:inmenu", "Until Sunrise")
-                    visible: root.client.sunriseEpochS > root.client.nowEpochS
-                    height: visible ? implicitHeight : 0
-                    onTriggered: root.client.suspend(root.minutesUntil(root.client.sunriseEpochS))
-                }
-                PlasmaComponents3.MenuItem {
-                    text: i18ndc(root.domain, "@action:inmenu", "Until I Resume")
-                    onTriggered: root.client.suspend(0)
-                }
-            }
-        }
-
-        Item {
-            Layout.fillWidth: true
-        }
-
-        // Which theme is showing, and whether this widget pinned it. The
-        // swatch picker that opens from here belongs to the redesign; for now
-        // the settings page chooses.
-        RowLayout {
-            visible: root.theme.available
-            spacing: Kirigami.Units.smallSpacing
-
-            Rectangle {
-                implicitWidth: Kirigami.Units.iconSizes.small
-                implicitHeight: implicitWidth
-                radius: root.theme.isVector ? width / 2 : 0
-                color: root.theme.bg
-                border.width: root.theme.lineWidth
-                border.color: root.theme.accent
-            }
-
-            PlasmaComponents3.Label {
-                text: root.theme.name
-                textFormat: Text.PlainText
-                font: Kirigami.Theme.smallFont
-                opacity: 0.75
-            }
-
-            Kirigami.Icon {
-                visible: root.theme.source === "pinned"
-                implicitWidth: Kirigami.Units.iconSizes.small
-                implicitHeight: implicitWidth
-                source: "object-locked"
-            }
-        }
-
-        PlasmaComponents3.ToolButton {
-            icon.name: "view-refresh"
-            text: i18ndc(root.domain, "@action:button", "Update Now")
-            display: PlasmaComponents3.AbstractButton.IconOnly
-            enabled: root.client.isConnected
-
-            onClicked: root.client.runOnce(true)
-
-            QQC2.ToolTip.visible: hovered
-            QQC2.ToolTip.text: i18nd(root.domain, "Re-read the sun position and weather, then apply the result")
         }
     }
 }

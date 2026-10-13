@@ -1,8 +1,8 @@
 /*
- * The panel item: the current sky as pixel art, with the temperature and -
- * when asked for - the sun's height beside it. Labels use the theme's digit
- * font (pixel themes: the bitmap font via BitmapText, crisp at any scale) in
- * the panel's own text colour, because the panel is not themed.
+ * The panel item: one of the panel modes (panel/PanelView.qml - sky sprite,
+ * brightness readout, today's sparkline, ring gauge) with the temperature
+ * beside it, in horizontal and vertical panels and the system tray.
+ * Click opens the popup, middle-click pauses or resumes.
  *
  * Scrolling deliberately does nothing. A wheel event over a panel icon is far
  * too easy to trigger by accident, and the accident here is every monitor
@@ -12,12 +12,12 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
-import org.kde.plasma.components as PlasmaComponents3
 import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "engine"
+import "panel"
 
 MouseArea {
     id: root
@@ -25,27 +25,18 @@ MouseArea {
     required property PlasmoidItem plasmoidItem
     required property SunReactorClient client
 
-    ThemeEngine {
+    PlasmoidEngine {
         id: engine
-
         client: root.client
-        mode: Plasmoid.configuration.themeMode
-        pinnedId: Plasmoid.configuration.pinnedTheme
-        accentOverride: Plasmoid.configuration.accentOverride
-        densityOverride: Plasmoid.configuration.densityOverride
-        pixelScaleOverride: Plasmoid.configuration.pixelScale
     }
 
     readonly property Theme theme: engine.theme
-
-    readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
-    readonly property bool horizontal: Plasmoid.formFactor === PlasmaCore.Types.Horizontal
-    readonly property bool showTemperature: Plasmoid.configuration.showTemperature
-        && client.isConnected && client.hasTemperature
-    readonly property bool showElevation: Plasmoid.configuration.showSolarElevation
-        && client.isConnected && client.hasSolarElevation
-    readonly property bool showLabels: showTemperature || showElevation
+    /*! System tray (and any containment that wants square items). */
+    readonly property bool square: (Plasmoid.containmentDisplayHints & PlasmaCore.Types.ContainmentForcesSquarePlasmoids)
+        || Plasmoid.formFactor === PlasmaCore.Types.Planar
+    readonly property real thickness: square ? Math.min(width, height)
+        : (vertical ? width : (height > 0 ? height : Kirigami.Units.iconSizes.medium))
 
     /*! Guards the click that follows the popup closing on press. */
     property bool wasExpanded: false
@@ -59,13 +50,14 @@ MouseArea {
         }
     }
 
-    // The panel fixes one axis and lets the content decide the other.
-    Layout.minimumWidth: root.vertical ? 0 : content.implicitWidth
-    Layout.preferredWidth: root.vertical ? Kirigami.Units.iconSizes.medium : content.implicitWidth
-    Layout.maximumWidth: root.vertical ? Number.POSITIVE_INFINITY : content.implicitWidth
-    Layout.minimumHeight: root.vertical ? content.implicitHeight : 0
-    Layout.preferredHeight: root.vertical ? content.implicitHeight : Kirigami.Units.iconSizes.medium
-    Layout.maximumHeight: root.vertical ? content.implicitHeight : Number.POSITIVE_INFINITY
+    // The panel fixes one axis and the content decides the other; a tray
+    // cell is square and decided by the tray.
+    Layout.minimumWidth: square || vertical ? 0 : view.implicitWidth
+    Layout.preferredWidth: square ? -1 : (vertical ? Kirigami.Units.iconSizes.medium : view.implicitWidth)
+    Layout.maximumWidth: square || vertical ? Number.POSITIVE_INFINITY : view.implicitWidth
+    Layout.minimumHeight: square || !vertical ? 0 : view.implicitHeight
+    Layout.preferredHeight: square ? -1 : (vertical ? view.implicitHeight : Kirigami.Units.iconSizes.medium)
+    Layout.maximumHeight: square || !vertical ? Number.POSITIVE_INFINITY : view.implicitHeight
 
     activeFocusOnTab: true
     hoverEnabled: true
@@ -73,7 +65,8 @@ MouseArea {
 
     Accessible.role: Accessible.Button
     Accessible.name: Plasmoid.title
-    Accessible.description: plasmoidItem.toolTipSubText
+    Accessible.description: plasmoidItem.toolTipMainText + "\n" + plasmoidItem.toolTipSubText
+    Accessible.onPressAction: plasmoidItem.expanded = !plasmoidItem.expanded
 
     Keys.onPressed: event => {
         if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -82,93 +75,21 @@ MouseArea {
         }
     }
 
-    GridLayout {
-        id: content
+    PanelView {
+        id: view
 
         anchors.centerIn: parent
-        rows: root.vertical ? 2 : 1
-        columns: root.vertical ? 1 : 2
-        rowSpacing: 0
-        columnSpacing: Kirigami.Units.smallSpacing
-
-        Kirigami.Icon {
-            id: sky
-
-            readonly property int available: root.vertical
-                ? Math.min(root.width, Math.max(Kirigami.Units.iconSizes.small,
-                                                root.height - (root.showLabels ? labels.implicitHeight : 0)))
-                : (root.horizontal ? root.height : Kirigami.Units.iconSizes.medium)
-
-            /*! The sprites are drawn on a 16px grid; anything other than a
-                whole multiple of it turns the pixels into mush. */
-            readonly property int crisp: 16 * Math.max(1, Math.floor(available / 16))
-
-            Layout.alignment: Qt.AlignCenter
-            implicitWidth: crisp
-            implicitHeight: crisp
-            source: Plasmoid.icon
-            roundToIconSize: false
-            active: root.containsMouse
-        }
-
-        ColumnLayout {
-            id: labels
-
-            Layout.alignment: Qt.AlignCenter
-            spacing: 0
-            visible: root.showLabels
-
-            readonly property string temperatureText: i18ndc(root.domain, "Temperature in degrees, panel-sized",
-                                                              "%1°", Math.round(root.client.temperatureC))
-            readonly property string elevationText: i18ndc(root.domain, "Sun height above the horizon, panel-sized",
-                                                            "%1°", root.client.solarElevation.toFixed(1))
-            /*! Bitmap labels only where they fit: a vertical panel may be
-                narrower than whole-art-pixel glyphs; vector text there. */
-            readonly property bool bitmap: root.theme.isPixel
-                && (!root.vertical || Math.max(bitmapTemperature.implicitWidth,
-                                               root.showElevation ? bitmapElevation.implicitWidth : 0) <= root.width)
-
-            BitmapText {
-                id: bitmapTemperature
-                Layout.alignment: Qt.AlignCenter
-                visible: labels.bitmap && root.showTemperature
-                theme: root.theme
-                text: labels.temperatureText
-                color: Kirigami.Theme.textColor
-            }
-
-            BitmapText {
-                id: bitmapElevation
-                Layout.alignment: Qt.AlignCenter
-                visible: labels.bitmap && root.showElevation
-                theme: root.theme
-                text: labels.elevationText
-                color: Kirigami.Theme.textColor
-            }
-
-            PlasmaComponents3.Label {
-                Layout.alignment: Qt.AlignCenter
-                visible: !labels.bitmap && root.showTemperature
-                text: labels.temperatureText
-                textFormat: Text.PlainText
-                font.features: ({ "tnum": 1 })
-                font.family: root.theme.digitsFont
-                font.pixelSize: root.vertical || root.showElevation
-                    ? Kirigami.Theme.smallFont.pixelSize
-                    : Kirigami.Theme.defaultFont.pixelSize
-            }
-
-            PlasmaComponents3.Label {
-                Layout.alignment: Qt.AlignCenter
-                visible: !labels.bitmap && root.showElevation
-                text: labels.elevationText
-                textFormat: Text.PlainText
-                font.features: ({ "tnum": 1 })
-                font.family: root.theme.digitsFont
-                font.pixelSize: Kirigami.Theme.smallFont.pixelSize
-                opacity: 0.75
-            }
-        }
+        theme: root.theme
+        client: root.client
+        mode: Plasmoid.configuration.panelMode
+        displayId: Plasmoid.configuration.panelDisplay
+        showTemperature: Plasmoid.configuration.showTemperature
+        showElevation: Plasmoid.configuration.showSolarElevation
+        vertical: root.vertical
+        square: root.square
+        thickness: root.thickness
+        skySource: Plasmoid.icon
+        hovered: root.containsMouse
     }
 
     onPressed: wasExpanded = plasmoidItem.expanded

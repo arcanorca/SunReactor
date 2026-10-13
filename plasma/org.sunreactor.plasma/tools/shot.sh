@@ -3,12 +3,19 @@
 #
 #   tools/shot.sh --out DIR [--tag NAME] [--themes "handheld braun dracula"]
 #                 [--scales "1.0 1.35 2.0"] [--views "popup panel-h panel-v"]
-#                 [--scenario default|manual|paused|single|triple|unknown|noweather]
-#                 [--old] [--scheme dark|light]
+#                 [--scenario default|manual|paused|single|triple|longnames|offline|unknown|noweather]
+#                 [--old] [--scheme dark|light] [--theme-warning TEXT]
+#                 [--config "panelMode=ring showTemperature=false"]
 #                 [--package DIR] [--qml DIR]
 #
 # Output: DIR/<tag>_<theme>_<view>_<scale>.png, cropped to the viewer window in
 # device pixels, plus a .log with the viewer's QML warnings next to each PNG.
+# --config sets plasmoid config keys (main.xml names; values are JSON when they
+# parse, else strings) through SUNREACTOR_HARNESS_CONFIG, which the widget
+# only reads under SUNREACTOR_HARNESS (plasmoidviewer recreates its layout
+# file on every start, so it cannot be seeded). Env: SHOT_PANEL_THICK / SHOT_PANEL_LEN / SHOT_POPUP_W /
+# SHOT_POPUP_H (logical px), SHOT_SETTLE (s), SHOT_SERVERNUM (Xvfb display
+# number; default: pick a free one), SHOT_KEEP=1 keeps the work dir.
 #
 # Isolation (nothing reaches the user's session):
 #   - env -i: no WAYLAND_DISPLAY / DISPLAY of the desktop, no user QML paths;
@@ -33,6 +40,8 @@ SCALES="1.0 1.35 2.0"
 VIEWS="popup panel-h panel-v"
 SCENARIO="default"
 OLD=""
+CONFIG=""
+WARNING=""
 SCHEME="dark"
 SETTLE="${SHOT_SETTLE:-2.5}"
 
@@ -45,10 +54,12 @@ while [[ $# -gt 0 ]]; do
         --views) VIEWS="$2"; shift 2 ;;
         --scenario) SCENARIO="$2"; shift 2 ;;
         --old) OLD="--old"; shift ;;
+        --config) CONFIG="$2"; shift 2 ;;
+        --theme-warning) WARNING="$2"; shift 2 ;;
         --scheme) SCHEME="$2"; shift 2 ;;
         --package) PACKAGE="$(cd "$2" && pwd)"; shift 2 ;;
         --qml) QMLDIR="$(cd "$2" && pwd)"; shift 2 ;;
-        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -67,6 +78,7 @@ WORK="$(mktemp -d "$RUNPARENT/srshot.XXXXXX")"
 cleanup() {
     [[ -n "${FAKE_PID:-}" ]] && kill "$FAKE_PID" 2>/dev/null || true
     # Only ever remove the directory this script created.
+    [[ -n "${SHOT_KEEP:-}" ]] && { echo "kept $WORK" >&2; return; }
     [[ -n "$WORK" && -d "$WORK" && "$(basename "$WORK")" == srshot.* ]] && rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -116,13 +128,17 @@ view_size() {
     esac
 }
 
+XVFB_NUM="-a"
+[[ -n "${SHOT_SERVERNUM:-}" ]] && XVFB_NUM="-n ${SHOT_SERVERNUM}"
+
+
 shoot() {
     local theme="$1" view="$2" scale="$3"
     local name="${TAG}_${theme}_${view}_${scale}"
     local log="$WORK/requests.log"
     : > "$log"
     python3 "$HERE/fake_daemon.py" --socket "$SOCK" --theme "$theme" --scenario "$SCENARIO" $OLD \
-        --log "$log" > "$WORK/fake.out" 2>&1 &
+        --theme-warning "$WARNING" --log "$log" > "$WORK/fake.out" 2>&1 &
     FAKE_PID=$!
     for _ in $(seq 50); do [[ -S "$SOCK" ]] && break; sleep 0.1; done
     [[ -S "$SOCK" ]] || { echo "fake daemon did not start: $(cat "$WORK/fake.out")" >&2; exit 1; }
@@ -148,8 +164,8 @@ EOF
         TZ="Europe/Istanbul" \
         XDG_RUNTIME_DIR="$WORK/run" XDG_CONFIG_HOME="$WORK/config" XDG_DATA_HOME="$WORK/data" \
         XDG_CACHE_HOME="$WORK/cache" QML_IMPORT_PATH="$QMLDIR" QT_SCALE_FACTOR="$scale" \
-        SUNREACTOR_HARNESS=1 QT_FORCE_STDERR_LOGGING=1 \
-        dbus-run-session -- xvfb-run -a -s "-screen 0 2400x2000x24" sh "$WORK/inner.sh" \
+        SUNREACTOR_HARNESS=1 SUNREACTOR_HARNESS_CONFIG="$CONFIG" QT_FORCE_STDERR_LOGGING=1 \
+        dbus-run-session -- xvfb-run $XVFB_NUM -s "-screen 0 2400x2000x24" sh "$WORK/inner.sh" \
         > "$WORK/xvfb.out" 2>&1 || true
     kill "$FAKE_PID" 2>/dev/null || true
     wait "$FAKE_PID" 2>/dev/null || true

@@ -1,763 +1,1749 @@
 {
-  "_comment": "status.theme objects as the theme-registry daemon emits them (DESIGN.md section 3). Palettes are copied from src/tui/theme.rs. The widget block is what the daemon sends after applying family defaults; 'commodore64' deliberately omits shades and modules to exercise the widget-side derivation, 'nord' carries an extends-style partial widget block.",
-  "handheld": {
-    "name": "Handheld",
-    "id": "handheld",
-    "family": "pixel",
-    "glyph_style": "pixel",
-    "palette": {
-      "bg": "#141c12",
-      "fg": "#9bbc0f",
-      "accent": "#8b1d42",
-      "secondary_accent": "#8bac0f",
-      "border_active": "#9bbc0f",
-      "border_inactive": "#283824",
-      "text_muted": "#567648",
-      "success": "#8bac0f",
-      "warning": "#c8a646",
-      "error": "#9a2257"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#141c12",
-        "#283824",
-        "#567648",
-        "#9bbc0f"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+ "_comment": "status.theme objects exported by `sunreactorctl theme show <id> --json` for all 35 built-ins (regenerate with tools/gen_fixtures.py; do not edit by hand). The two edge_* entries are synthetic and exercise widget-side derivation.",
+ "amber": {
+  "name": "Amber",
+  "accent": "#ffb000",
+  "secondary_accent": "#dc8c00",
+  "bg": "#0f0a05",
+  "fg": "#ffd296",
+  "text_muted": "#b47832",
+  "id": "amber",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#0f0a05",
+   "fg": "#ffd296",
+   "accent": "#ffb000",
+   "secondary_accent": "#dc8c00",
+   "border_active": "#ffb000",
+   "border_inactive": "#785014",
+   "text_muted": "#b47832",
+   "success": "#aadc64",
+   "warning": "#ffb000",
+   "error": "#ff3c3c"
   },
-  "commodore64": {
-    "name": "Commodore 64",
-    "id": "commodore64",
-    "family": "pixel",
-    "glyph_style": "pixel",
-    "palette": {
-      "bg": "#101225",
-      "fg": "#a7b7ff",
-      "accent": "#ffffff",
-      "secondary_accent": "#7fe5e5",
-      "border_active": "#ffffff",
-      "border_inactive": "#3b3f78",
-      "text_muted": "#6672a8",
-      "success": "#ffffff",
-      "warning": "#ffffff",
-      "error": "#ff0000"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#101225",
-        "#3b3f78",
-        "#6672a8",
-        "#a7b7ff"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#0f0a05",
+    "#785014",
+    "#b47832",
+    "#ffd296"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "amiga": {
+  "name": "Amiga",
+  "accent": "#ee2233",
+  "secondary_accent": "#5588bb",
+  "bg": "#141820",
+  "fg": "#f0f4fa",
+  "text_muted": "#72869e",
+  "id": "amiga",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#141820",
+   "fg": "#f0f4fa",
+   "accent": "#ee2233",
+   "secondary_accent": "#5588bb",
+   "border_active": "#ff8800",
+   "border_inactive": "#283244",
+   "text_muted": "#72869e",
+   "success": "#3fbf5f",
+   "warning": "#ff8800",
+   "error": "#dd3322"
   },
-  "braun": {
-    "name": "Braun",
-    "id": "braun",
-    "family": "instrument",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#161616",
-      "fg": "#f2f2f0",
-      "accent": "#ff5500",
-      "secondary_accent": "#f0b01e",
-      "border_active": "#ff5500",
-      "border_inactive": "#404040",
-      "text_muted": "#8a8781",
-      "success": "#248a3d",
-      "warning": "#d97706",
-      "error": "#dc2626"
-    },
-    "widget": {
-      "renderer": "vector",
-      "font": "sans",
-      "pixel_scale": 0,
-      "shades": [],
-      "density": "comfortable",
-      "border": "line",
-      "radius": 4,
-      "dither": "none",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#141820",
+    "#283244",
+    "#72869e",
+    "#f0f4fa"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "ayudark": {
+  "name": "Ayu Dark",
+  "accent": "#ffb454",
+  "secondary_accent": "#36a3d9",
+  "bg": "#0f1419",
+  "fg": "#e6e1cf",
+  "text_muted": "#5c6773",
+  "id": "ayudark",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#0f1419",
+   "fg": "#e6e1cf",
+   "accent": "#ffb454",
+   "secondary_accent": "#36a3d9",
+   "border_active": "#ffb454",
+   "border_inactive": "#3e4b59",
+   "text_muted": "#5c6773",
+   "success": "#91b55c",
+   "warning": "#ffb454",
+   "error": "#f07178"
   },
-  "amber": {
-    "name": "Amber",
-    "id": "amber",
-    "family": "instrument",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#0f0a05",
-      "fg": "#ffd296",
-      "accent": "#ffb000",
-      "secondary_accent": "#dc8c00",
-      "border_active": "#ffb000",
-      "border_inactive": "#785014",
-      "text_muted": "#b47832",
-      "success": "#aadc64",
-      "warning": "#ffb000",
-      "error": "#ff3c3c"
-    },
-    "widget": {
-      "renderer": "vector",
-      "font": "mono",
-      "pixel_scale": 0,
-      "shades": [],
-      "density": "comfortable",
-      "border": "line",
-      "radius": 4,
-      "dither": "none",
-      "glow": 0.3,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#0f1419",
+    "#3e4b59",
+    "#5c6773",
+    "#e6e1cf"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "ayumirage": {
+  "name": "Ayu Mirage",
+  "accent": "#ffcc66",
+  "secondary_accent": "#5ccfe6",
+  "bg": "#212733",
+  "fg": "#d9d7ce",
+  "text_muted": "#70748f",
+  "id": "ayumirage",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#212733",
+   "fg": "#d9d7ce",
+   "accent": "#ffcc66",
+   "secondary_accent": "#5ccfe6",
+   "border_active": "#ffcc66",
+   "border_inactive": "#5c6773",
+   "text_muted": "#70748f",
+   "success": "#bae67e",
+   "warning": "#ffcc66",
+   "error": "#f28779"
   },
-  "dracula": {
-    "name": "Dracula",
-    "id": "dracula",
-    "family": "terminal",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#282a36",
-      "fg": "#f8f8f2",
-      "accent": "#ff79c6",
-      "secondary_accent": "#bd93f9",
-      "border_active": "#ff79c6",
-      "border_inactive": "#6272a4",
-      "text_muted": "#bfbfbf",
-      "success": "#50fa7b",
-      "warning": "#f1fa8c",
-      "error": "#ff5555"
-    },
-    "widget": {
-      "renderer": "terminal",
-      "font": "mono",
-      "pixel_scale": 0,
-      "shades": [],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "none",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#212733",
+    "#5c6773",
+    "#70748f",
+    "#d9d7ce"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "braun": {
+  "name": "Braun",
+  "accent": "#ff5500",
+  "secondary_accent": "#f0b01e",
+  "bg": "#161616",
+  "fg": "#f2f2f0",
+  "text_muted": "#8a8781",
+  "id": "braun",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#161616",
+   "fg": "#f2f2f0",
+   "accent": "#ff5500",
+   "secondary_accent": "#f0b01e",
+   "border_active": "#ff5500",
+   "border_inactive": "#404040",
+   "text_muted": "#8a8781",
+   "success": "#248a3d",
+   "warning": "#d97706",
+   "error": "#dc2626"
   },
-  "nord": {
-    "name": "Nord",
-    "id": "nord",
-    "family": "terminal",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#2e3440",
-      "fg": "#d8dee9",
-      "accent": "#88c0d0",
-      "secondary_accent": "#81a1c1",
-      "border_active": "#88c0d0",
-      "border_inactive": "#647387",
-      "text_muted": "#8fbcbb",
-      "success": "#a3be8c",
-      "warning": "#ebcb8b",
-      "error": "#bf616a"
-    },
-    "widget": {
-      "density": "comfortable",
-      "modules": [
-        "telemetry",
-        "displays",
-        "curve",
-        "automation",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#161616",
+    "#404040",
+    "#8a8781",
+    "#f2f2f0"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "casiodigital": {
+  "name": "Casio Digital",
+  "accent": "#0088ff",
+  "secondary_accent": "#88a684",
+  "bg": "#121814",
+  "fg": "#e0f8dc",
+  "text_muted": "#607a5e",
+  "id": "casiodigital",
+  "family": "pixel",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#121814",
+   "fg": "#e0f8dc",
+   "accent": "#0088ff",
+   "secondary_accent": "#88a684",
+   "border_active": "#9df09a",
+   "border_inactive": "#2a382e",
+   "text_muted": "#607a5e",
+   "success": "#9df09a",
+   "warning": "#f2d06b",
+   "error": "#ff5252"
   },
-  "nothing": {
-    "name": "Nothing",
-    "id": "nothing",
-    "family": "pixel",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#000000",
-      "fg": "#ffffff",
-      "accent": "#d71921",
-      "secondary_accent": "#b3b3b3",
-      "border_active": "#ffffff",
-      "border_inactive": "#3a3a3a",
-      "text_muted": "#8a8a8a",
-      "success": "#e6e6e6",
-      "warning": "#f5c400",
-      "error": "#d71921"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#000000",
-        "#3a3a3a",
-        "#8a8a8a",
-        "#ffffff"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#121814",
+    "#2a382e",
+    "#607a5e",
+    "#e0f8dc"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "catppuccinmocha": {
+  "name": "Catppuccin Mocha",
+  "accent": "#89b4fa",
+  "secondary_accent": "#cba6f7",
+  "bg": "#1e1e2e",
+  "fg": "#cdd6f4",
+  "text_muted": "#a6adc8",
+  "id": "catppuccinmocha",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#1e1e2e",
+   "fg": "#cdd6f4",
+   "accent": "#89b4fa",
+   "secondary_accent": "#cba6f7",
+   "border_active": "#89b4fa",
+   "border_inactive": "#64697d",
+   "text_muted": "#a6adc8",
+   "success": "#a6e3a1",
+   "warning": "#f9e2af",
+   "error": "#f38ba8"
   },
-  "amiga": {
-    "name": "Amiga",
-    "id": "amiga",
-    "family": "pixel",
-    "glyph_style": "pixel",
-    "palette": {
-      "bg": "#141820",
-      "fg": "#f0f4fa",
-      "accent": "#ee2233",
-      "secondary_accent": "#5588bb",
-      "border_active": "#ff8800",
-      "border_inactive": "#283244",
-      "text_muted": "#72869e",
-      "success": "#3fbf5f",
-      "warning": "#ff8800",
-      "error": "#dd3322"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#141820",
-        "#283244",
-        "#72869e",
-        "#f0f4fa"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#1e1e2e",
+    "#64697d",
+    "#a6adc8",
+    "#cdd6f4"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "classicmacintosh": {
+  "name": "Classic Macintosh",
+  "accent": "#009ddc",
+  "secondary_accent": "#963d97",
+  "bg": "#121212",
+  "fg": "#f2f2ec",
+  "text_muted": "#888882",
+  "id": "classicmacintosh",
+  "family": "pixel",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#121212",
+   "fg": "#f2f2ec",
+   "accent": "#009ddc",
+   "secondary_accent": "#963d97",
+   "border_active": "#f2f2ec",
+   "border_inactive": "#3e3e3e",
+   "text_muted": "#888882",
+   "success": "#61bb46",
+   "warning": "#fdb827",
+   "error": "#e03a3e"
   },
-  "classicmacintosh": {
-    "name": "Classic Macintosh",
-    "id": "classicmacintosh",
-    "family": "pixel",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#121212",
-      "fg": "#f2f2ec",
-      "accent": "#009ddc",
-      "secondary_accent": "#963d97",
-      "border_active": "#f2f2ec",
-      "border_inactive": "#3e3e3e",
-      "text_muted": "#888882",
-      "success": "#61bb46",
-      "warning": "#fdb827",
-      "error": "#e03a3e"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#121212",
-        "#3e3e3e",
-        "#888882",
-        "#f2f2ec"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#121212",
+    "#3e3e3e",
+    "#888882",
+    "#f2f2ec"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "commodore64": {
+  "name": "Commodore 64",
+  "accent": "#ffffff",
+  "secondary_accent": "#7fe5e5",
+  "bg": "#101225",
+  "fg": "#a7b7ff",
+  "text_muted": "#6672a8",
+  "id": "commodore64",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#101225",
+   "fg": "#a7b7ff",
+   "accent": "#ffffff",
+   "secondary_accent": "#7fe5e5",
+   "border_active": "#ffffff",
+   "border_inactive": "#3b3f78",
+   "text_muted": "#6672a8",
+   "success": "#ffffff",
+   "warning": "#ffffff",
+   "error": "#ff0000"
   },
-  "casiodigital": {
-    "name": "Casio Digital",
-    "id": "casiodigital",
-    "family": "pixel",
-    "glyph_style": "rounded",
-    "palette": {
-      "bg": "#121814",
-      "fg": "#e0f8dc",
-      "accent": "#0088ff",
-      "secondary_accent": "#88a684",
-      "border_active": "#9df09a",
-      "border_inactive": "#2a382e",
-      "text_muted": "#607a5e",
-      "success": "#9df09a",
-      "warning": "#f2d06b",
-      "error": "#ff5252"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#121814",
-        "#2a382e",
-        "#607a5e",
-        "#e0f8dc"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#101225",
+    "#3b3f78",
+    "#6672a8",
+    "#a7b7ff"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "cyberpunk": {
+  "name": "Cyberpunk",
+  "accent": "#fcee0a",
+  "secondary_accent": "#00ffff",
+  "bg": "#090622",
+  "fg": "#f9f1a5",
+  "text_muted": "#b4a0dc",
+  "id": "cyberpunk",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#090622",
+   "fg": "#f9f1a5",
+   "accent": "#fcee0a",
+   "secondary_accent": "#00ffff",
+   "border_active": "#fcee0a",
+   "border_inactive": "#ff003c",
+   "text_muted": "#b4a0dc",
+   "success": "#00ff99",
+   "warning": "#ffcc00",
+   "error": "#ff003c"
   },
-  "cyberpunk": {
-    "name": "Cyberpunk",
-    "id": "cyberpunk",
-    "family": "pixel",
-    "glyph_style": "pixel",
-    "palette": {
-      "bg": "#090622",
-      "fg": "#f9f1a5",
-      "accent": "#fcee0a",
-      "secondary_accent": "#00ffff",
-      "border_active": "#fcee0a",
-      "border_inactive": "#ff003c",
-      "text_muted": "#b4a0dc",
-      "success": "#00ff99",
-      "warning": "#ffcc00",
-      "error": "#ff003c"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#090622",
-        "#ff003c",
-        "#b4a0dc",
-        "#f9f1a5"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#090622",
+    "#ff003c",
+    "#b4a0dc",
+    "#f9f1a5"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "dracula": {
+  "name": "Dracula",
+  "accent": "#ff79c6",
+  "secondary_accent": "#bd93f9",
+  "bg": "#282a36",
+  "fg": "#f8f8f2",
+  "text_muted": "#bfbfbf",
+  "id": "dracula",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#282a36",
+   "fg": "#f8f8f2",
+   "accent": "#ff79c6",
+   "secondary_accent": "#bd93f9",
+   "border_active": "#ff79c6",
+   "border_inactive": "#6272a4",
+   "text_muted": "#bfbfbf",
+   "success": "#50fa7b",
+   "warning": "#f1fa8c",
+   "error": "#ff5555"
   },
-  "synthwave84": {
-    "name": "Synthwave '84",
-    "id": "synthwave84",
-    "family": "pixel",
-    "glyph_style": "pixel",
-    "palette": {
-      "bg": "#262335",
-      "fg": "#ffffff",
-      "accent": "#ff7edb",
-      "secondary_accent": "#36f9f6",
-      "border_active": "#ff7edb",
-      "border_inactive": "#614d85",
-      "text_muted": "#848bbd",
-      "success": "#72f1b8",
-      "warning": "#feda33",
-      "error": "#fe4450"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#262335",
-        "#614d85",
-        "#848bbd",
-        "#ffffff"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#282a36",
+    "#6272a4",
+    "#bfbfbf",
+    "#f8f8f2"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "everforest": {
+  "name": "Everforest",
+  "accent": "#a7c080",
+  "secondary_accent": "#7fbba1",
+  "bg": "#2d353b",
+  "fg": "#d3c6aa",
+  "text_muted": "#a0afa5",
+  "id": "everforest",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#2d353b",
+   "fg": "#d3c6aa",
+   "accent": "#a7c080",
+   "secondary_accent": "#7fbba1",
+   "border_active": "#a7c080",
+   "border_inactive": "#647378",
+   "text_muted": "#a0afa5",
+   "success": "#a7c080",
+   "warning": "#dbbc7f",
+   "error": "#e67e80"
   },
-  "hackergreen": {
-    "name": "Hacker Green",
-    "id": "hackergreen",
-    "family": "pixel",
-    "glyph_style": "pixel",
-    "palette": {
-      "bg": "#000000",
-      "fg": "#33ff00",
-      "accent": "#00ff00",
-      "secondary_accent": "#00c800",
-      "border_active": "#33ff00",
-      "border_inactive": "#006400",
-      "text_muted": "#009600",
-      "success": "#33ff00",
-      "warning": "#c8ff00",
-      "error": "#ff3232"
-    },
-    "widget": {
-      "renderer": "pixel",
-      "font": "bitmap8",
-      "pixel_scale": 0,
-      "shades": [
-        "#000000",
-        "#006400",
-        "#009600",
-        "#33ff00"
-      ],
-      "density": "compact",
-      "border": "line",
-      "radius": 0,
-      "dither": "bayer4",
-      "glow": 0.0,
-      "modules": [
-        "telemetry",
-        "curve",
-        "displays",
-        "automation",
-        "weather",
-        "forecast",
-        "suntimes"
-      ]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#2d353b",
+    "#647378",
+    "#a0afa5",
+    "#d3c6aa"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "grayscale": {
+  "name": "Grayscale",
+  "accent": "#ffffff",
+  "secondary_accent": "#b4b4b4",
+  "bg": "#141414",
+  "fg": "#e6e6e6",
+  "text_muted": "#828282",
+  "id": "grayscale",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#141414",
+   "fg": "#e6e6e6",
+   "accent": "#ffffff",
+   "secondary_accent": "#b4b4b4",
+   "border_active": "#ffffff",
+   "border_inactive": "#646464",
+   "text_muted": "#828282",
+   "success": "#ffffff",
+   "warning": "#c8c8c8",
+   "error": "#646464"
   },
-  "ayudark": {
-    "name": "Ayu Dark", "id": "ayudark", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#0f1419", "fg": "#e6e1cf", "accent": "#ffb454", "secondary_accent": "#36a3d9",
-      "border_active": "#ffb454", "border_inactive": "#3e4b59", "text_muted": "#5c6773",
-      "success": "#91b55c", "warning": "#ffb454", "error": "#f07178"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#141414",
+    "#646464",
+    "#828282",
+    "#e6e6e6"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "gruvbox": {
+  "name": "Gruvbox",
+  "accent": "#d79921",
+  "secondary_accent": "#cc241d",
+  "bg": "#282828",
+  "fg": "#ebdbb2",
+  "text_muted": "#a89984",
+  "id": "gruvbox",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#282828",
+   "fg": "#ebdbb2",
+   "accent": "#d79921",
+   "secondary_accent": "#cc241d",
+   "border_active": "#d79921",
+   "border_inactive": "#665c54",
+   "text_muted": "#a89984",
+   "success": "#98971a",
+   "warning": "#d79921",
+   "error": "#cc241d"
   },
-  "ayumirage": {
-    "name": "Ayu Mirage", "id": "ayumirage", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#212733", "fg": "#d9d7ce", "accent": "#ffcc66", "secondary_accent": "#5ccfe6",
-      "border_active": "#ffcc66", "border_inactive": "#5c6773", "text_muted": "#70748f",
-      "success": "#bae67e", "warning": "#ffcc66", "error": "#f28779"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#282828",
+    "#665c54",
+    "#a89984",
+    "#ebdbb2"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "hackergreen": {
+  "name": "Hacker Green",
+  "accent": "#00ff00",
+  "secondary_accent": "#00c800",
+  "bg": "#000000",
+  "fg": "#33ff00",
+  "text_muted": "#009600",
+  "id": "hackergreen",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#000000",
+   "fg": "#33ff00",
+   "accent": "#00ff00",
+   "secondary_accent": "#00c800",
+   "border_active": "#33ff00",
+   "border_inactive": "#006400",
+   "text_muted": "#009600",
+   "success": "#33ff00",
+   "warning": "#c8ff00",
+   "error": "#ff3232"
   },
-  "catppuccinmocha": {
-    "name": "Catppuccin Mocha", "id": "catppuccinmocha", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#1e1e2e", "fg": "#cdd6f4", "accent": "#89b4fa", "secondary_accent": "#cba6f7",
-      "border_active": "#89b4fa", "border_inactive": "#64697d", "text_muted": "#a6adc8",
-      "success": "#a6e3a1", "warning": "#f9e2af", "error": "#f38ba8"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#000000",
+    "#006400",
+    "#009600",
+    "#33ff00"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "handheld": {
+  "name": "Handheld",
+  "accent": "#8b1d42",
+  "secondary_accent": "#8bac0f",
+  "bg": "#141c12",
+  "fg": "#9bbc0f",
+  "text_muted": "#567648",
+  "id": "handheld",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#141c12",
+   "fg": "#9bbc0f",
+   "accent": "#8b1d42",
+   "secondary_accent": "#8bac0f",
+   "border_active": "#9bbc0f",
+   "border_inactive": "#283824",
+   "text_muted": "#567648",
+   "success": "#8bac0f",
+   "warning": "#c8a646",
+   "error": "#9a2257"
   },
-  "everforest": {
-    "name": "Everforest", "id": "everforest", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#2d353b", "fg": "#d3c6aa", "accent": "#a7c080", "secondary_accent": "#7fbba1",
-      "border_active": "#a7c080", "border_inactive": "#647378", "text_muted": "#a0afa5",
-      "success": "#a7c080", "warning": "#dbbc7f", "error": "#e67e80"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#141c12",
+    "#283824",
+    "#567648",
+    "#9bbc0f"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "kanagawa": {
+  "name": "Kanagawa",
+  "accent": "#7e9cd8",
+  "secondary_accent": "#957fb2",
+  "bg": "#1f1f28",
+  "fg": "#dcd7ba",
+  "text_muted": "#727169",
+  "id": "kanagawa",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#1f1f28",
+   "fg": "#dcd7ba",
+   "accent": "#7e9cd8",
+   "secondary_accent": "#957fb2",
+   "border_active": "#7e9cd8",
+   "border_inactive": "#54546d",
+   "text_muted": "#727169",
+   "success": "#76946a",
+   "warning": "#c0a36e",
+   "error": "#c34043"
   },
-  "gruvbox": {
-    "name": "Gruvbox", "id": "gruvbox", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#282828", "fg": "#ebdbb2", "accent": "#d79921", "secondary_accent": "#cc241d",
-      "border_active": "#d79921", "border_inactive": "#665c54", "text_muted": "#a89984",
-      "success": "#98971a", "warning": "#d79921", "error": "#cc241d"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#1f1f28",
+    "#54546d",
+    "#727169",
+    "#dcd7ba"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "materialocean": {
+  "name": "Material Ocean",
+  "accent": "#82aaff",
+  "secondary_accent": "#c792ea",
+  "bg": "#0f111a",
+  "fg": "#8f93a2",
+  "text_muted": "#788296",
+  "id": "materialocean",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#0f111a",
+   "fg": "#8f93a2",
+   "accent": "#82aaff",
+   "secondary_accent": "#c792ea",
+   "border_active": "#82aaff",
+   "border_inactive": "#465564",
+   "text_muted": "#788296",
+   "success": "#c3e88d",
+   "warning": "#ffcb6b",
+   "error": "#f07178"
   },
-  "kanagawa": {
-    "name": "Kanagawa", "id": "kanagawa", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#1f1f28", "fg": "#dcd7ba", "accent": "#7e9cd8", "secondary_accent": "#957fb2",
-      "border_active": "#7e9cd8", "border_inactive": "#54546d", "text_muted": "#727169",
-      "success": "#76946a", "warning": "#c0a36e", "error": "#c34043"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#0f111a",
+    "#465564",
+    "#788296",
+    "#8f93a2"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "monokai": {
+  "name": "Monokai",
+  "accent": "#a6e22e",
+  "secondary_accent": "#66d9ef",
+  "bg": "#272822",
+  "fg": "#f8f8f2",
+  "text_muted": "#75715e",
+  "id": "monokai",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#272822",
+   "fg": "#f8f8f2",
+   "accent": "#a6e22e",
+   "secondary_accent": "#66d9ef",
+   "border_active": "#a6e22e",
+   "border_inactive": "#75715e",
+   "text_muted": "#75715e",
+   "success": "#a6e22e",
+   "warning": "#fd971f",
+   "error": "#f92672"
   },
-  "materialocean": {
-    "name": "Material Ocean", "id": "materialocean", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#0f111a", "fg": "#8f93a2", "accent": "#82aaff", "secondary_accent": "#c792ea",
-      "border_active": "#82aaff", "border_inactive": "#465564", "text_muted": "#788296",
-      "success": "#c3e88d", "warning": "#ffcb6b", "error": "#f07178"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#272822",
+    "#75715e",
+    "#75715e",
+    "#f8f8f2"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "nightowl": {
+  "name": "Night Owl",
+  "accent": "#82aaff",
+  "secondary_accent": "#c792ea",
+  "bg": "#011627",
+  "fg": "#d6deeb",
+  "text_muted": "#82a0be",
+  "id": "nightowl",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#011627",
+   "fg": "#d6deeb",
+   "accent": "#82aaff",
+   "secondary_accent": "#c792ea",
+   "border_active": "#82aaff",
+   "border_inactive": "#2d5078",
+   "text_muted": "#82a0be",
+   "success": "#22da6e",
+   "warning": "#ffcb8b",
+   "error": "#ef5350"
   },
-  "monokai": {
-    "name": "Monokai", "id": "monokai", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#272822", "fg": "#f8f8f2", "accent": "#a6e22e", "secondary_accent": "#66d9ef",
-      "border_active": "#a6e22e", "border_inactive": "#75715e", "text_muted": "#75715e",
-      "success": "#a6e22e", "warning": "#fd971f", "error": "#f92672"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#011627",
+    "#2d5078",
+    "#82a0be",
+    "#d6deeb"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "nixie": {
+  "name": "Nixie",
+  "accent": "#ff7a18",
+  "secondary_accent": "#e24e05",
+  "bg": "#0b0a09",
+  "fg": "#ffb765",
+  "text_muted": "#8c857a",
+  "id": "nixie",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#0b0a09",
+   "fg": "#ffb765",
+   "accent": "#ff7a18",
+   "secondary_accent": "#e24e05",
+   "border_active": "#ff7a18",
+   "border_inactive": "#39332c",
+   "text_muted": "#8c857a",
+   "success": "#49d17a",
+   "warning": "#ffb020",
+   "error": "#ff4433"
   },
-  "nightowl": {
-    "name": "Night Owl", "id": "nightowl", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#011627", "fg": "#d6deeb", "accent": "#82aaff", "secondary_accent": "#c792ea",
-      "border_active": "#82aaff", "border_inactive": "#2d5078", "text_muted": "#82a0be",
-      "success": "#22da6e", "warning": "#ffcb8b", "error": "#ef5350"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#0b0a09",
+    "#39332c",
+    "#8c857a",
+    "#ffb765"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "nord": {
+  "name": "Nord",
+  "accent": "#88c0d0",
+  "secondary_accent": "#81a1c1",
+  "bg": "#2e3440",
+  "fg": "#d8dee9",
+  "text_muted": "#8fbcbb",
+  "id": "nord",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#2e3440",
+   "fg": "#d8dee9",
+   "accent": "#88c0d0",
+   "secondary_accent": "#81a1c1",
+   "border_active": "#88c0d0",
+   "border_inactive": "#647387",
+   "text_muted": "#8fbcbb",
+   "success": "#a3be8c",
+   "warning": "#ebcb8b",
+   "error": "#bf616a"
   },
-  "onedark": {
-    "name": "One Dark", "id": "onedark", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#282c34", "fg": "#abb2bf", "accent": "#61afef", "secondary_accent": "#c678dd",
-      "border_active": "#61afef", "border_inactive": "#697387", "text_muted": "#707887",
-      "success": "#98c379", "warning": "#e5c07b", "error": "#e06c75"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#2e3440",
+    "#647387",
+    "#8fbcbb",
+    "#d8dee9"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "nothing": {
+  "name": "Nothing",
+  "accent": "#d71921",
+  "secondary_accent": "#b3b3b3",
+  "bg": "#000000",
+  "fg": "#ffffff",
+  "text_muted": "#8a8a8a",
+  "id": "nothing",
+  "family": "pixel",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#000000",
+   "fg": "#ffffff",
+   "accent": "#d71921",
+   "secondary_accent": "#b3b3b3",
+   "border_active": "#ffffff",
+   "border_inactive": "#3a3a3a",
+   "text_muted": "#8a8a8a",
+   "success": "#e6e6e6",
+   "warning": "#f5c400",
+   "error": "#d71921"
   },
-  "rosepine": {
-    "name": "Rosé Pine", "id": "rosepine", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#191724", "fg": "#e0def4", "accent": "#ebbcba", "secondary_accent": "#c4a7e7",
-      "border_active": "#ebbcba", "border_inactive": "#524f67", "text_muted": "#908caa",
-      "success": "#9ccfd8", "warning": "#f6c177", "error": "#eb6f92"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#000000",
+    "#3a3a3a",
+    "#8a8a8a",
+    "#ffffff"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "onedark": {
+  "name": "One Dark",
+  "accent": "#61afef",
+  "secondary_accent": "#c678dd",
+  "bg": "#282c34",
+  "fg": "#abb2bf",
+  "text_muted": "#707887",
+  "id": "onedark",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#282c34",
+   "fg": "#abb2bf",
+   "accent": "#61afef",
+   "secondary_accent": "#c678dd",
+   "border_active": "#61afef",
+   "border_inactive": "#697387",
+   "text_muted": "#707887",
+   "success": "#98c379",
+   "warning": "#e5c07b",
+   "error": "#e06c75"
   },
-  "solarizeddark": {
-    "name": "Solarized Dark", "id": "solarizeddark", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#002b36", "fg": "#839496", "accent": "#268bd2", "secondary_accent": "#2aa198",
-      "border_active": "#268bd2", "border_inactive": "#586e75", "text_muted": "#586e75",
-      "success": "#859900", "warning": "#b58900", "error": "#dc322f"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#282c34",
+    "#697387",
+    "#707887",
+    "#abb2bf"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "oscilloscope": {
+  "name": "Oscilloscope",
+  "accent": "#39ff14",
+  "secondary_accent": "#00dd55",
+  "bg": "#050906",
+  "fg": "#78ff78",
+  "text_muted": "#2e8b3e",
+  "id": "oscilloscope",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#050906",
+   "fg": "#78ff78",
+   "accent": "#39ff14",
+   "secondary_accent": "#00dd55",
+   "border_active": "#39ff14",
+   "border_inactive": "#14351b",
+   "text_muted": "#2e8b3e",
+   "success": "#78ff78",
+   "warning": "#f6a354",
+   "error": "#ff615e"
   },
-  "terminal": {
-    "name": "Terminal", "id": "terminal", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#1a1a1a", "fg": "#50c878", "accent": "#8cffaa", "secondary_accent": "#3cb464",
-      "border_active": "#50c878", "border_inactive": "#28643c", "text_muted": "#3c965a",
-      "success": "#50c878", "warning": "#c8c800", "error": "#ff5050"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#050906",
+    "#14351b",
+    "#2e8b3e",
+    "#78ff78"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "phosphorblue": {
+  "name": "Phosphor Blue",
+  "accent": "#00ffff",
+  "secondary_accent": "#00c8ff",
+  "bg": "#000000",
+  "fg": "#00ffff",
+  "text_muted": "#0096c8",
+  "id": "phosphorblue",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#000000",
+   "fg": "#00ffff",
+   "accent": "#00ffff",
+   "secondary_accent": "#00c8ff",
+   "border_active": "#00ffff",
+   "border_inactive": "#006496",
+   "text_muted": "#0096c8",
+   "success": "#00ff96",
+   "warning": "#c8ff00",
+   "error": "#ff3232"
   },
-  "tokyonight": {
-    "name": "Tokyo Night", "id": "tokyonight", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#1a1b26", "fg": "#c0caf5", "accent": "#7aa2f7", "secondary_accent": "#bb9af7",
-      "border_active": "#7aa2f7", "border_inactive": "#414868", "text_muted": "#565f89",
-      "success": "#9ece6a", "warning": "#e0af68", "error": "#f7768e"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#000000",
+    "#006496",
+    "#0096c8",
+    "#00ffff"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "rosepine": {
+  "name": "Ros\u00e9 Pine",
+  "accent": "#ebbcba",
+  "secondary_accent": "#c4a7e7",
+  "bg": "#191724",
+  "fg": "#e0def4",
+  "text_muted": "#908caa",
+  "id": "rosepine",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#191724",
+   "fg": "#e0def4",
+   "accent": "#ebbcba",
+   "secondary_accent": "#c4a7e7",
+   "border_active": "#ebbcba",
+   "border_inactive": "#524f67",
+   "text_muted": "#908caa",
+   "success": "#9ccfd8",
+   "warning": "#f6c177",
+   "error": "#eb6f92"
   },
-  "zenburn": {
-    "name": "Zenburn", "id": "zenburn", "family": "terminal", "glyph_style": "rounded",
-    "palette": {
-      "bg": "#3f3f3f", "fg": "#dcdccc", "accent": "#8cd0d3", "secondary_accent": "#c0bed0",
-      "border_active": "#8cd0d3", "border_inactive": "#5f7f5f", "text_muted": "#7f9f7f",
-      "success": "#7f9f7f", "warning": "#f0dfaf", "error": "#cc9393"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "line", "radius": 0, "dither": "none", "glow": 0.0,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#191724",
+    "#524f67",
+    "#908caa",
+    "#e0def4"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "solarizeddark": {
+  "name": "Solarized Dark",
+  "accent": "#268bd2",
+  "secondary_accent": "#2aa198",
+  "bg": "#002b36",
+  "fg": "#839496",
+  "text_muted": "#586e75",
+  "id": "solarizeddark",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#002b36",
+   "fg": "#839496",
+   "accent": "#268bd2",
+   "secondary_accent": "#2aa198",
+   "border_active": "#268bd2",
+   "border_inactive": "#586e75",
+   "text_muted": "#586e75",
+   "success": "#859900",
+   "warning": "#b58900",
+   "error": "#dc322f"
   },
-  "terminal_square": {
-    "name": "Terminal (square, double, glow)", "id": "terminal_square", "family": "terminal", "glyph_style": "pixel",
-    "palette": {
-      "bg": "#1a1a1a", "fg": "#50c878", "accent": "#8cffaa", "secondary_accent": "#3cb464",
-      "border_active": "#50c878", "border_inactive": "#28643c", "text_muted": "#3c965a",
-      "success": "#50c878", "warning": "#c8c800", "error": "#ff5050"
-    },
-    "widget": {
-      "renderer": "terminal", "font": "mono", "pixel_scale": 0,
-      "shades": [],
-      "density": "compact", "border": "double", "radius": 0, "dither": "none", "glow": 0.5,
-      "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]
-    }
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#002b36",
+    "#586e75",
+    "#586e75",
+    "#839496"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "synthwave84": {
+  "name": "Synthwave '84",
+  "accent": "#ff7edb",
+  "secondary_accent": "#36f9f6",
+  "bg": "#262335",
+  "fg": "#ffffff",
+  "text_muted": "#848bbd",
+  "id": "synthwave84",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#262335",
+   "fg": "#ffffff",
+   "accent": "#ff7edb",
+   "secondary_accent": "#36f9f6",
+   "border_active": "#ff7edb",
+   "border_inactive": "#614d85",
+   "text_muted": "#848bbd",
+   "success": "#72f1b8",
+   "warning": "#feda33",
+   "error": "#fe4450"
   },
-  "vfd_hifi": {"name": "VFD Hi-Fi", "id": "vfd_hifi", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#0b0e11", "fg": "#00f0a8", "accent": "#66ffd4", "secondary_accent": "#1bb289", "border_active": "#00f0a8", "border_inactive": "#182824", "text_muted": "#527a70", "success": "#00f0a8", "warning": "#ffb000", "error": "#ff3b30"}, "widget": {"renderer": "vector", "font": "display", "pixel_scale": 0, "shades": ["#0b0e11", "#182824", "#527a70", "#00f0a8"], "density": "comfortable", "border": "line", "radius": 2, "dither": "none", "glow": 0.6, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}},
-  "nixie": {"name": "Nixie", "id": "nixie", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#0b0a09", "fg": "#ffb765", "accent": "#ff7a18", "secondary_accent": "#e24e05", "border_active": "#ff7a18", "border_inactive": "#39332c", "text_muted": "#8c857a", "success": "#49d17a", "warning": "#ffb020", "error": "#ff4433"}, "widget": {"renderer": "vector", "font": "sans", "pixel_scale": 0, "shades": ["#0b0a09", "#39332c", "#8c857a", "#ffb765"], "density": "comfortable", "border": "line", "radius": 6, "dither": "none", "glow": 0.7, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}},
-  "oscilloscope": {"name": "Oscilloscope", "id": "oscilloscope", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#050906", "fg": "#78ff78", "accent": "#39ff14", "secondary_accent": "#00dd55", "border_active": "#39ff14", "border_inactive": "#14351b", "text_muted": "#2e8b3e", "success": "#78ff78", "warning": "#f6a354", "error": "#ff615e"}, "widget": {"renderer": "vector", "font": "mono", "pixel_scale": 0, "shades": ["#050906", "#14351b", "#2e8b3e", "#78ff78"], "density": "compact", "border": "line", "radius": 6, "dither": "none", "glow": 0.5, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}},
-  "thinkpad": {"name": "ThinkPad", "id": "thinkpad", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#121212", "fg": "#e6e6e6", "accent": "#e42022", "secondary_accent": "#4589ff", "border_active": "#e42022", "border_inactive": "#3d3d3d", "text_muted": "#8d8d8d", "success": "#42be65", "warning": "#f1c21b", "error": "#fa4d56"}, "widget": {"renderer": "vector", "font": "sans", "pixel_scale": 0, "shades": ["#121212", "#3d3d3d", "#8d8d8d", "#e6e6e6"], "density": "comfortable", "border": "line", "radius": 0, "dither": "none", "glow": 0.0, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}},
-  "grayscale": {"name": "Grayscale", "id": "grayscale", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#141414", "fg": "#e6e6e6", "accent": "#ffffff", "secondary_accent": "#b4b4b4", "border_active": "#ffffff", "border_inactive": "#646464", "text_muted": "#828282", "success": "#ffffff", "warning": "#c8c8c8", "error": "#646464"}, "widget": {"renderer": "vector", "font": "mono", "pixel_scale": 0, "shades": ["#141414", "#646464", "#828282", "#e6e6e6"], "density": "comfortable", "border": "line", "radius": 2, "dither": "none", "glow": 0.15, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}},
-  "phosphorblue": {"name": "Phosphor Blue", "id": "phosphorblue", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#000000", "fg": "#00ffff", "accent": "#00ffff", "secondary_accent": "#00c8ff", "border_active": "#00ffff", "border_inactive": "#006496", "text_muted": "#0096c8", "success": "#00ff96", "warning": "#c8ff00", "error": "#ff3232"}, "widget": {"renderer": "vector", "font": "mono", "pixel_scale": 0, "shades": ["#000000", "#006496", "#0096c8", "#00ffff"], "density": "comfortable", "border": "line", "radius": 2, "dither": "none", "glow": 0.45, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}},
-  "unixworkstation": {"name": "UNIX Workstation", "id": "unixworkstation", "family": "instrument", "glyph_style": "rounded", "palette": {"bg": "#181d26", "fg": "#f1f5f9", "accent": "#00f0ff", "secondary_accent": "#38e8ff", "border_active": "#00f0ff", "border_inactive": "#4a566e", "text_muted": "#64748b", "success": "#00e676", "warning": "#ffb020", "error": "#ff3344"}, "widget": {"renderer": "vector", "font": "sans", "pixel_scale": 0, "shades": ["#181d26", "#4a566e", "#64748b", "#f1f5f9"], "density": "comfortable", "border": "line", "radius": 4, "dither": "none", "glow": 0.0, "modules": ["telemetry", "curve", "displays", "automation", "weather", "forecast", "suntimes"]}}
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "shades": [
+    "#262335",
+    "#614d85",
+    "#848bbd",
+    "#ffffff"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "terminal": {
+  "name": "Terminal",
+  "accent": "#8cffaa",
+  "secondary_accent": "#3cb464",
+  "bg": "#1a1a1a",
+  "fg": "#50c878",
+  "text_muted": "#3c965a",
+  "id": "terminal",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#1a1a1a",
+   "fg": "#50c878",
+   "accent": "#8cffaa",
+   "secondary_accent": "#3cb464",
+   "border_active": "#50c878",
+   "border_inactive": "#28643c",
+   "text_muted": "#3c965a",
+   "success": "#50c878",
+   "warning": "#c8c800",
+   "error": "#ff5050"
+  },
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#1a1a1a",
+    "#28643c",
+    "#3c965a",
+    "#50c878"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "thinkpad": {
+  "name": "ThinkPad",
+  "accent": "#e42022",
+  "secondary_accent": "#4589ff",
+  "bg": "#121212",
+  "fg": "#e6e6e6",
+  "text_muted": "#8d8d8d",
+  "id": "thinkpad",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#121212",
+   "fg": "#e6e6e6",
+   "accent": "#e42022",
+   "secondary_accent": "#4589ff",
+   "border_active": "#e42022",
+   "border_inactive": "#3d3d3d",
+   "text_muted": "#8d8d8d",
+   "success": "#42be65",
+   "warning": "#f1c21b",
+   "error": "#fa4d56"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#121212",
+    "#3d3d3d",
+    "#8d8d8d",
+    "#e6e6e6"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "tokyonight": {
+  "name": "Tokyo Night",
+  "accent": "#7aa2f7",
+  "secondary_accent": "#bb9af7",
+  "bg": "#1a1b26",
+  "fg": "#c0caf5",
+  "text_muted": "#565f89",
+  "id": "tokyonight",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#1a1b26",
+   "fg": "#c0caf5",
+   "accent": "#7aa2f7",
+   "secondary_accent": "#bb9af7",
+   "border_active": "#7aa2f7",
+   "border_inactive": "#414868",
+   "text_muted": "#565f89",
+   "success": "#9ece6a",
+   "warning": "#e0af68",
+   "error": "#f7768e"
+  },
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#1a1b26",
+    "#414868",
+    "#565f89",
+    "#c0caf5"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "unixworkstation": {
+  "name": "UNIX Workstation",
+  "accent": "#00f0ff",
+  "secondary_accent": "#38e8ff",
+  "bg": "#181d26",
+  "fg": "#f1f5f9",
+  "text_muted": "#64748b",
+  "id": "unixworkstation",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#181d26",
+   "fg": "#f1f5f9",
+   "accent": "#00f0ff",
+   "secondary_accent": "#38e8ff",
+   "border_active": "#00f0ff",
+   "border_inactive": "#4a566e",
+   "text_muted": "#64748b",
+   "success": "#00e676",
+   "warning": "#ffb020",
+   "error": "#ff3344"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#181d26",
+    "#4a566e",
+    "#64748b",
+    "#f1f5f9"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "vfd_hifi": {
+  "name": "VFD Hi-Fi",
+  "accent": "#66ffd4",
+  "secondary_accent": "#1bb289",
+  "bg": "#0b0e11",
+  "fg": "#00f0a8",
+  "text_muted": "#527a70",
+  "id": "vfd_hifi",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#0b0e11",
+   "fg": "#00f0a8",
+   "accent": "#66ffd4",
+   "secondary_accent": "#1bb289",
+   "border_active": "#00f0a8",
+   "border_inactive": "#182824",
+   "text_muted": "#527a70",
+   "success": "#00f0a8",
+   "warning": "#ffb000",
+   "error": "#ff3b30"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#0b0e11",
+    "#182824",
+    "#527a70",
+    "#00f0a8"
+   ],
+   "density": "comfortable",
+   "border": "line",
+   "radius": 4,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "zenburn": {
+  "name": "Zenburn",
+  "accent": "#8cd0d3",
+  "secondary_accent": "#c0bed0",
+  "bg": "#3f3f3f",
+  "fg": "#dcdccc",
+  "text_muted": "#7f9f7f",
+  "id": "zenburn",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#3f3f3f",
+   "fg": "#dcdccc",
+   "accent": "#8cd0d3",
+   "secondary_accent": "#c0bed0",
+   "border_active": "#8cd0d3",
+   "border_inactive": "#5f7f5f",
+   "text_muted": "#7f9f7f",
+   "success": "#7f9f7f",
+   "warning": "#f0dfaf",
+   "error": "#cc9393"
+  },
+  "widget": {
+   "renderer": "terminal",
+   "font": "mono",
+   "pixel_scale": 0,
+   "shades": [
+    "#3f3f3f",
+    "#5f7f5f",
+    "#7f9f7f",
+    "#dcdccc"
+   ],
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "none",
+   "glow": 0.0,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
+ "edge_noshades": {
+  "name": "Edge: no shades",
+  "accent": "#ffffff",
+  "secondary_accent": "#7fe5e5",
+  "bg": "#101225",
+  "fg": "#a7b7ff",
+  "text_muted": "#6672a8",
+  "id": "edge_noshades",
+  "family": "pixel",
+  "glyph_style": "pixel",
+  "palette": {
+   "bg": "#101225",
+   "fg": "#a7b7ff",
+   "accent": "#ffffff",
+   "secondary_accent": "#7fe5e5",
+   "border_active": "#ffffff",
+   "border_inactive": "#3b3f78",
+   "text_muted": "#6672a8",
+   "success": "#ffffff",
+   "warning": "#ffffff",
+   "error": "#ff0000"
+  },
+  "widget": {
+   "renderer": "pixel",
+   "font": "bitmap8",
+   "pixel_scale": 0,
+   "density": "compact",
+   "border": "line",
+   "radius": 0,
+   "dither": "bayer4",
+   "glow": 0.0
+  }
+ },
+ "edge_partial": {
+  "name": "Edge: partial widget",
+  "accent": "#88c0d0",
+  "secondary_accent": "#81a1c1",
+  "bg": "#2e3440",
+  "fg": "#d8dee9",
+  "text_muted": "#8fbcbb",
+  "id": "edge_partial",
+  "family": "terminal",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#2e3440",
+   "fg": "#d8dee9",
+   "accent": "#88c0d0",
+   "secondary_accent": "#81a1c1",
+   "border_active": "#88c0d0",
+   "border_inactive": "#647387",
+   "text_muted": "#8fbcbb",
+   "success": "#a3be8c",
+   "warning": "#ebcb8b",
+   "error": "#bf616a"
+  },
+  "widget": {
+   "density": "comfortable",
+   "modules": [
+    "telemetry",
+    "displays",
+    "curve",
+    "automation",
+    "suntimes"
+   ]
+  }
+ }
 }
