@@ -1180,6 +1180,46 @@ fn load_dir_skips_bad_files_and_tolerates_missing_dir() {
 }
 
 #[test]
+fn fallback_resolution_never_fails_and_explains_why() {
+    let registry = Registry::with_user_sources(vec![
+        user(
+            "nord",
+            "id = \"nord\"\nname = \"Broken Nord\"\nfamily = \"terminal\"\n",
+        ),
+        user("mine", "id = \"mine\"\n[palette]\nbg = \"nope\"\n"),
+        user("good", &MINIMAL.replace("\"mine\"", "\"good\"")),
+    ]);
+
+    // Valid user theme next to the broken ones loads normally.
+    let (theme, warning) = registry.resolve_or_fallback("good");
+    assert_eq!(theme.id, "good");
+    assert!(warning.is_none());
+
+    // Broken file shadowing a built-in: the built-in is used, file named.
+    let (theme, warning) = registry.resolve_or_fallback("nord");
+    assert_eq!(theme.id, "nord");
+    assert_eq!(theme.source, ThemeSource::Builtin);
+    let warning = warning.expect("broken nord.toml is reported");
+    assert!(warning.contains("/virtual/themes/nord.toml"), "{warning}");
+    assert!(
+        warning.contains("using the built-in `nord` theme"),
+        "{warning}"
+    );
+
+    // Broken user-only theme: default theme, file and reason named.
+    let (theme, warning) = registry.resolve_or_fallback("mine");
+    assert_eq!(theme.id, DEFAULT_THEME_ID);
+    let warning = warning.expect("broken mine.toml is reported");
+    assert!(warning.contains("/virtual/themes/mine.toml"), "{warning}");
+    assert!(warning.contains("palette.bg"), "{warning}");
+
+    // Typo: default theme with a suggestion.
+    let (theme, warning) = registry.resolve_or_fallback("draculla");
+    assert_eq!(theme.id, DEFAULT_THEME_ID);
+    assert!(warning.unwrap().contains("did you mean `dracula`"));
+}
+
+#[test]
 fn levenshtein_basics() {
     use super::registry::levenshtein_for_tests as lev;
     assert_eq!(lev("nord", "nord"), 0);

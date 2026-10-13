@@ -291,6 +291,10 @@ pub struct StatusResponse {
     /// Active TUI theme and palette hex codes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<ThemeStatus>,
+    /// Set when the configured `tui.theme` could not be used as-is (unknown
+    /// id, or its user theme file is invalid) and `theme` is a fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_warning: Option<String>,
 }
 
 /// A resolved theme as sent in `status.theme` and the `theme` response.

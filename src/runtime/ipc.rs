@@ -508,8 +508,29 @@ impl DaemonRuntime {
         self.reload_config_with(config::load)
     }
 
+    /// Test hook: reload with an explicit theme registry instead of the
+    /// process-wide one.
+    #[cfg(test)]
+    pub(super) fn reload_config_with_themes<F>(
+        &mut self,
+        loader: F,
+        registry: &crate::theme::Registry,
+    ) -> Result<(), RuntimeError>
+    where
+        F: FnOnce() -> Result<ConfigReport, ConfigError>,
+    {
+        let next = loader()?;
+        self.apply_reloaded_runtime_config(RuntimeConfig::from_report_with_themes(next, registry)?)
+    }
+
     fn apply_reloaded_config(&mut self, next: ConfigReport) -> Result<(), RuntimeError> {
-        let new_config = RuntimeConfig::from_report(next)?;
+        self.apply_reloaded_runtime_config(RuntimeConfig::from_report(next)?)
+    }
+
+    fn apply_reloaded_runtime_config(
+        &mut self,
+        new_config: RuntimeConfig,
+    ) -> Result<(), RuntimeError> {
         let location_changed = self.config.location != new_config.location;
 
         let previous_config = std::mem::replace(&mut self.config, new_config);

@@ -1522,6 +1522,90 @@ mod tests {
     }
 
     #[test]
+    fn reload_with_broken_user_theme_keeps_daemon_running_and_warns_in_status() {
+        let temp = TempDir::new();
+        let themes = temp.path().join("themes");
+        fs::create_dir_all(&themes).unwrap();
+        fs::write(themes.join("broken.toml"), "id = \"broken\"\nname = [\n").unwrap();
+        fs::write(
+            themes.join("nord.toml"),
+            "id = \"nord\"\nname = \"Nord\"\nfamily = \"retro\"\n",
+        )
+        .unwrap();
+        fs::write(
+            themes.join("good.toml"),
+            "id = \"good\"\nname = \"Good\"\nextends = \"dracula\"\n",
+        )
+        .unwrap();
+        let registry = crate::theme::Registry::load_dir(&themes);
+        assert_eq!(registry.diagnostics().len(), 2);
+
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        let now = Utc.timestamp_opt(1_800_000_000, 0).single().unwrap();
+        let status_theme = |runtime: &mut DaemonRuntime| {
+            let (response, _) =
+                runtime.handle_ipc_request_with_runner(Request::Status, &FakeRunner::new(), now);
+            let Response::Status { status } = response.response else {
+                panic!("daemon must keep answering status");
+            };
+            (status.theme.unwrap().id.unwrap(), status.theme_warning)
+        };
+        let with_theme = |id: &str| {
+            let mut report = test_config_report();
+            report.config.tui.theme = crate::config::ThemeId::new(id);
+            move || Ok(report)
+        };
+
+        // Broken user-only theme: reload succeeds, default theme + warning.
+        runtime
+            .reload_config_with_themes(with_theme("broken"), &registry)
+            .expect("a broken theme file must not fail reload");
+        let (id, warning) = status_theme(&mut runtime);
+        assert_eq!(id, "amber");
+        let warning = warning.expect("status carries the theme warning");
+        assert!(warning.contains("broken.toml"), "{warning}");
+
+        // Broken file shadowing a built-in: the built-in, plus warning.
+        runtime
+            .reload_config_with_themes(with_theme("nord"), &registry)
+            .unwrap();
+        let (id, warning) = status_theme(&mut runtime);
+        assert_eq!(id, "nord");
+        assert!(warning.unwrap().contains("unknown family `retro`"));
+
+        // Typo in tui.theme: also non-fatal.
+        runtime
+            .reload_config_with_themes(with_theme("noord"), &registry)
+            .unwrap();
+        let (id, warning) = status_theme(&mut runtime);
+        assert_eq!(id, "amber");
+        assert!(warning.unwrap().contains("did you mean `nord`"));
+
+        // The valid theme next to the broken ones loads, warning clears.
+        runtime
+            .reload_config_with_themes(with_theme("good"), &registry)
+            .unwrap();
+        assert_eq!(status_theme(&mut runtime), (String::from("good"), None));
+
+        // And start-up with a broken theme in the config is fine too.
+        let mut report = test_config_report();
+        report.config.tui.theme = crate::config::ThemeId::new("broken");
+        let started = DaemonRuntime::bootstrap_with_paths(
+            report,
+            temp.path().join("state2/runtime-state.json"),
+            temp.path().join("run2/control.sock"),
+        )
+        .expect("an unresolvable theme must not stop the daemon from starting");
+        assert_eq!(started.config.tui_theme.id, "amber");
+        assert!(started.config.tui_theme_warning.is_some());
+    }
+
+    #[test]
     fn ipc_day_curve_is_bounded_monotone_and_cached() {
         let temp = TempDir::new();
         let mut runtime = DaemonRuntime::bootstrap_with_paths(

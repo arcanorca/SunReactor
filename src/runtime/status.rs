@@ -78,6 +78,7 @@ impl DaemonRuntime {
             sunset_epoch_s: events.as_ref().map(|event| event.sunset.timestamp() as u64),
             lunar_phase: Some(crate::solar::calculate_lunar_phase(now_utc)),
             theme: Some(ipc::ThemeStatus::from_theme(&self.config.tui_theme)),
+            theme_warning: self.config.tui_theme_warning.clone(),
         }
     }
 

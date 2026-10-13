@@ -263,6 +263,46 @@ impl Registry {
         })
     }
 
+    /// Resolves `name` for a consumer that must keep running (the daemon,
+    /// renderers): never fails. Returns the theme to use plus a warning when
+    /// the configured theme could not be used as-is:
+    /// - a user theme file with that id is invalid: the built-in with the same
+    ///   id is used if there is one (the registry already skipped the file),
+    ///   otherwise the default theme;
+    /// - the name is unknown (typo, deleted file): the default theme.
+    #[must_use]
+    pub fn resolve_or_fallback(&self, name: &str) -> (Arc<Theme>, Option<String>) {
+        match self.resolve(name) {
+            Ok(theme) => {
+                let warning = (theme.source == ThemeSource::Builtin)
+                    .then(|| {
+                        self.diagnostics
+                            .iter()
+                            .find(|diagnostic| diagnostic.stem == theme.id)
+                    })
+                    .flatten()
+                    .map(|diagnostic| {
+                        format!(
+                            "{diagnostic}\nusing the built-in `{}` theme instead",
+                            theme.id
+                        )
+                    });
+                (Arc::clone(theme), warning)
+            }
+            Err(unknown) => {
+                let fallback = self
+                    .get(super::DEFAULT_THEME_ID)
+                    .map(Arc::clone)
+                    .expect("the default built-in theme always exists");
+                let warning = format!(
+                    "{unknown}; using the default `{}` theme instead",
+                    super::DEFAULT_THEME_ID
+                );
+                (fallback, Some(warning))
+            }
+        }
+    }
+
     /// Canonical id for `name`, if it resolves.
     #[must_use]
     pub fn canonical_id(&self, name: &str) -> Option<&str> {

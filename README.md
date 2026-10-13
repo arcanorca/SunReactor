@@ -263,6 +263,12 @@ embedded in the binaries; user themes live in `~/.config/sunreactor/themes/<id>.
 `tui.theme` accepts any theme id or alias, including legacy names such as
 `workbench` or `vfdhifi`; an unknown name fails `config validate` with the nearest matches.
 
+A broken theme never stops automatic brightness: the daemon logs and skips
+invalid theme files, falls back to the built-in theme of the same id (or
+`amber`) and reports the reason as `theme_warning` in `sunreactorctl status`.
+`sunreactorctl config validate`, `theme validate` and `doctor` report the same
+problems as errors with the file name and exit non-zero.
+
 ```toml
 # ~/.config/sunreactor/themes/pocket_night.toml
 id = "pocket_night"

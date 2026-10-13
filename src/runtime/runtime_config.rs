@@ -15,8 +15,11 @@ pub(super) struct RuntimeConfig {
     pub location: Location,
     pub monitors: Vec<MonitorConfig>,
     pub weather: WeatherConfig,
-    /// The saved `tui.theme`, resolved against the theme registry.
+    /// The saved `tui.theme`, resolved against the theme registry (with
+    /// fallback; a theme problem never stops the daemon).
     pub tui_theme: std::sync::Arc<crate::theme::Theme>,
+    /// Why `tui_theme` is a fallback, surfaced as `status.theme_warning`.
+    pub tui_theme_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,12 +37,41 @@ pub(super) struct RuntimeDaemonConfig {
 
 impl RuntimeConfig {
     pub(super) fn from_report(report: ConfigReport) -> Result<Self, RuntimeError> {
+        Self::from_report_with_themes(report, &crate::theme::registry())
+    }
+
+    /// Resolves `report` with an explicit theme registry. Theme problems are
+    /// logged and turned into a fallback + warning, never an error.
+    pub(super) fn from_report_with_themes(
+        report: ConfigReport,
+        registry: &crate::theme::Registry,
+    ) -> Result<Self, RuntimeError> {
         let location = Location::from_timezone_name(
             report.config.location.latitude,
             report.config.location.longitude,
             &report.config.location.timezone,
         )?;
         let apply = ApplySettings::from_config(&report.config);
+        for diagnostic in registry.diagnostics() {
+            tracing::warn!(
+                file = %diagnostic
+                    .path
+                    .as_ref()
+                    .map_or_else(|| diagnostic.stem.clone(), |path| path.display().to_string()),
+                error = %diagnostic,
+                "theme_file_skipped"
+            );
+        }
+        let (tui_theme, tui_theme_warning) =
+            registry.resolve_or_fallback(report.config.tui.theme.as_str());
+        if let Some(warning) = &tui_theme_warning {
+            tracing::warn!(
+                configured = %report.config.tui.theme,
+                using = %tui_theme.id,
+                warning = %warning,
+                "tui_theme_fallback"
+            );
+        }
         Ok(Self {
             path: report.path,
             source: report.source,
@@ -58,7 +90,8 @@ impl RuntimeConfig {
             apply,
             monitors: report.config.monitors,
             weather: report.config.weather,
-            tui_theme: report.config.tui.theme.resolve_or_default(),
+            tui_theme,
+            tui_theme_warning,
             location,
         })
     }

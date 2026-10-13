@@ -53,6 +53,7 @@ pub(crate) fn dummy_status(monitor_count: usize) -> StatusResponse {
         sunset_epoch_s: None,
         lunar_phase: None,
         theme: None,
+        theme_warning: None,
     }
 }
 

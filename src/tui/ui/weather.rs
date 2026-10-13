@@ -1244,6 +1244,7 @@ mod tests {
             sunset_epoch_s: None,
             lunar_phase: None,
             theme: None,
+            theme_warning: None,
         });
         model
     }

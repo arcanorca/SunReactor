@@ -480,8 +480,8 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
         #[cfg(target_os = "linux")]
         CliCommand::Doctor { json } => {
             let report = sunreactor::doctor::run_diagnostics();
-            if json {
-                Ok(serde_json::to_string_pretty(&report)?)
+            let rendered = if json {
+                serde_json::to_string_pretty(&report)?
             } else {
                 let mut lines = Vec::new();
                 lines.push(
@@ -501,7 +501,13 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
                     };
                     lines.push(format!("{} {}: {}", status, check.code, check.message));
                 }
-                Ok(lines.join("\n"))
+                lines.join("\n")
+            };
+            if report.overall_healthy {
+                Ok(rendered)
+            } else {
+                println!("{rendered}");
+                anyhow::bail!("doctor found {} blocking error(s)", report.blocking_errors)
             }
         }
         #[cfg(feature = "tui")]
@@ -805,6 +811,9 @@ fn render_status(status: &StatusResponse) -> String {
         if let Some(id) = &theme.id {
             lines.push(format!("theme_id: {id}"));
         }
+        if let Some(warning) = &status.theme_warning {
+            lines.push(format!("theme_warning: {}", warning.replace('\n', " ")));
+        }
         lines.push(format!("theme_accent: {}", theme.accent));
     }
 
@@ -941,17 +950,40 @@ fn validate_config() -> anyhow::Result<String> {
         );
     }
 
-    let report = config::load()?;
+    render_config_validation(config::load()?, &sunreactor::theme::registry())
+}
+
+/// `config validate` output. The daemon tolerates theme problems (fallback +
+/// `status.theme_warning`); this command is where they are errors.
+fn render_config_validation(
+    report: config::ConfigReport,
+    registry: &sunreactor::theme::Registry,
+) -> anyhow::Result<String> {
     let source = match report.source {
         ConfigSource::Defaults => "defaults",
         ConfigSource::FilePresent => "file",
     };
+
+    if let Err(error) = report.config.validate_theme_with(registry) {
+        anyhow::bail!(
+            "config validation failed for {}\n- {error}",
+            report.path.display()
+        );
+    }
 
     let mut lines = vec![
         format!("config valid: {}", report.path.display()),
         format!("source: {source}"),
         format!("monitors: {}", report.config.monitors.len()),
     ];
+    if !registry.diagnostics().is_empty() {
+        lines.push(String::from(
+            "theme warnings (skipped user theme files; not used by this config):",
+        ));
+        for diagnostic in registry.diagnostics() {
+            lines.push(format!("- {diagnostic}"));
+        }
+    }
 
     if !report.warnings.is_empty() {
         lines.push(String::from("warnings:"));
@@ -1087,6 +1119,49 @@ mod tests {
         assert!(std::fs::read_to_string(&path)
             .unwrap()
             .contains("theme = \"dracula\""));
+    }
+
+    #[test]
+    fn config_validate_rejects_unusable_theme_but_only_warns_for_unrelated_files() {
+        use sunreactor::config::{Config, ConfigReport, ConfigSource, ThemeId};
+        use sunreactor::theme::{Registry, UserThemeSource};
+
+        let source = |stem: &str, text: &str| UserThemeSource {
+            stem: stem.to_owned(),
+            path: std::path::PathBuf::from(format!("/virtual/{stem}.toml")),
+            text: Ok(text.to_owned()),
+        };
+        let registry = Registry::with_user_sources(vec![source("broken", "id = \"broken\"\n")]);
+        let report = |theme: &str| ConfigReport {
+            path: std::path::PathBuf::from("/virtual/config.toml"),
+            source: ConfigSource::FilePresent,
+            config: Config {
+                tui: sunreactor::config::TuiConfig {
+                    theme: ThemeId::new(theme),
+                    ..Default::default()
+                },
+                ..Config::default()
+            },
+            warnings: Vec::new(),
+        };
+
+        // Err => main() exits non-zero.
+        let error = super::render_config_validation(report("broken"), &registry)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("tui.theme"), "{error}");
+        assert!(error.contains("/virtual/broken.toml"), "{error}");
+        assert!(error.contains("name: required key is missing"), "{error}");
+
+        let error = super::render_config_validation(report("draculla"), &registry)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("did you mean `dracula`"), "{error}");
+
+        let ok = super::render_config_validation(report("dracula"), &registry).unwrap();
+        assert!(ok.contains("config valid"), "{ok}");
+        assert!(ok.contains("theme warnings"), "{ok}");
+        assert!(ok.contains("/virtual/broken.toml"), "{ok}");
     }
 
     #[test]
@@ -1266,6 +1341,7 @@ mod tests {
             solar_elevation: Some(15.0),
             lunar_phase: None,
             theme: None,
+            theme_warning: None,
         };
 
         let rendered = render_status(&status);

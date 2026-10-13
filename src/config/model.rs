@@ -234,17 +234,44 @@ impl ThemeId {
         crate::theme::registry().resolve(&self.0).map(Arc::clone)
     }
 
-    /// Resolves against the process-wide registry, falling back to the
-    /// default theme for names that no longer resolve (e.g. a user theme
-    /// file deleted while a client is running).
+    /// Resolves against the process-wide registry, never failing: see
+    /// [`crate::theme::Registry::resolve_or_fallback`].
     #[must_use]
     pub fn resolve_or_default(&self) -> Arc<crate::theme::Theme> {
-        let registry = crate::theme::registry();
-        registry
-            .resolve(&self.0)
-            .or_else(|_| registry.resolve(crate::theme::DEFAULT_THEME_ID))
-            .map(Arc::clone)
-            .expect("the default built-in theme always exists")
+        self.resolve_with_warning().0
+    }
+
+    /// Like [`Self::resolve_or_default`], plus a human-readable warning when
+    /// the configured theme could not be used as-is (unknown name, or its
+    /// user theme file is invalid).
+    #[must_use]
+    pub fn resolve_with_warning(&self) -> (Arc<crate::theme::Theme>, Option<String>) {
+        crate::theme::registry().resolve_or_fallback(&self.0)
+    }
+}
+
+impl Config {
+    /// Strict check of `tui.theme` for `sunreactorctl config validate` and
+    /// `doctor`. Deliberately not part of [`Config::validate`]: the theme is
+    /// cosmetic, so the daemon loads such configs, falls back to a built-in
+    /// theme and reports the problem in `status.theme_warning` instead of
+    /// refusing to run automatic brightness.
+    pub fn validate_theme(&self) -> Result<(), super::ValidationError> {
+        self.validate_theme_with(&crate::theme::registry())
+    }
+
+    /// [`Self::validate_theme`] against an explicit registry.
+    pub fn validate_theme_with(
+        &self,
+        registry: &crate::theme::Registry,
+    ) -> Result<(), super::ValidationError> {
+        match registry.resolve_or_fallback(self.tui.theme.as_str()).1 {
+            None => Ok(()),
+            Some(problem) => Err(super::ValidationError::new(
+                "tui.theme",
+                format!("{problem} (run `sunreactorctl theme list` / `theme validate`)"),
+            )),
+        }
     }
 }
 

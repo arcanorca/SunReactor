@@ -708,13 +708,16 @@ mod tests {
         let parsed: crate::config::TuiConfig = toml::from_str("theme = \"no_such\"\n").unwrap();
         assert_eq!(parsed.theme, ThemeId::new("no_such"));
         assert_eq!(parsed.theme.palette(), ThemeId::default().palette());
-        let error = crate::config::Config {
+        let config = crate::config::Config {
             tui: parsed,
             ..crate::config::Config::default()
-        }
-        .validate()
-        .unwrap_err()
-        .to_string();
+        };
+        // Cosmetic: the core validation (daemon load path) accepts it ...
+        config
+            .validate()
+            .expect("theme problems never fail core validation");
+        // ... while the strict check used by `config validate` / doctor rejects it.
+        let error = config.validate_theme().unwrap_err().to_string();
         assert!(
             error.contains("tui.theme: unknown theme `no_such`"),
             "{error}"

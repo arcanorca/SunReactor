@@ -94,6 +94,19 @@ Config: `tui.theme` becomes a string validated against the registry
 (built-ins + user dir + aliases). Old values keep working; unknown value is a
 validation error that lists nearest matches. `Default` stays `amber`.
 
+Theme problems are cosmetic and never stop automatic brightness:
+- Daemon start / `reload_config`: an invalid or unreadable user theme file is
+  logged (warning, `theme_file_skipped`) and skipped; all valid themes and
+  built-ins still load. If `tui.theme` cannot be used as-is (unknown id, or
+  its user file is broken) the daemon keeps running on the built-in with the
+  same id if one exists, else on `amber`, and reports why in
+  `status.theme_warning` (§3).
+- Strict reporting lives in the tools: `sunreactorctl config validate`
+  (unusable `tui.theme` → error, exit non-zero; unrelated broken files →
+  listed as warnings), `sunreactorctl theme validate` (any broken file →
+  exit non-zero) and `doctor` (`SR-THEME-UNRESOLVED` error → exit non-zero,
+  `SR-THEME-FILE-INVALID` warning per file). All name the file and reason.
+
 ## 3. IPC additions (backward compatible)
 
 Existing: one JSON request, one JSON response per connection, tag `request` /
@@ -162,6 +175,12 @@ Implementation notes (deviations from the first draft of this contract):
   the time it was computed.
 - `PROTOCOL_VERSION` stays 1: all additions are new request/response tags or
   optional keys.
+
+`status.theme_warning` (optional string, omitted when there is nothing to
+report): set when the configured `tui.theme` could not be used as-is and
+`status.theme` is a fallback, e.g. `"theme file …/mine.toml is invalid: …;
+using the default `amber` theme instead"`. Clients should show it next to
+the theme chip; it never means brightness automation is affected.
 
 Saved-only propagation: the TUI theme modal previews locally; only a saved
 theme reaches status.
