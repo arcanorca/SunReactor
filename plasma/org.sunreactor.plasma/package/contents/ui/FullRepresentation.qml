@@ -191,6 +191,8 @@ PlasmaExtras.Representation {
 
     /*! Screenshot harness only (tools/shot.sh --config "tab=weather"): empty otherwise. */
     readonly property string harnessPage: String(client.harnessConfig().tab || "")
+    /*! Nest harness only (tools/nest): the popup's own window, which main.qml logs. */
+    readonly property var harnessWindow: root.Window.window
     /*! The page the popup starts on each time it opens. */
     readonly property string startPage: Modules.PAGES.indexOf(harnessPage) >= 0 ? harnessPage : Modules.PAGES[0]
     /*! The page the user picked. Kept while the popup is open; in memory only. */

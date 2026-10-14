@@ -173,6 +173,74 @@ PlasmoidItem {
         }
     }
 
+    // Nest harness only (tools/nest/run.sh): empty unless SUNREACTOR_HARNESS is
+    // set, and then only the steps the config asks for. The script starts at
+    // load: open=1 expands the popup openDelay ms after load (default 1200);
+    // tabs=weather,brightness switches its page every 1500 ms after that;
+    // reopen=1 then collapses and expands it again, 1500 ms apart.
+    readonly property var harness: daemon.harnessConfig()
+    readonly property var harnessScript: {
+        const steps = [];
+        if (!root.harness.open) {
+            return steps;
+        }
+        steps.push({ delay: Number(root.harness.openDelay || 1200), run: () => { root.expanded = true; } });
+        const tabs = String(root.harness.tabs || "").split(",").filter(page => page.length > 0);
+        for (const page of tabs) {
+            steps.push({ delay: 1500, run: () => { root.harnessShowPage(page); } });
+        }
+        if (root.harness.reopen) {
+            steps.push({ delay: 1500, run: () => { root.expanded = false; } });
+            steps.push({ delay: 1500, run: () => { root.expanded = true; } });
+        }
+        return steps;
+    }
+
+    // The popup's window geometry, logged on every change. KWin does not list a
+    // Plasma popup (it is a Wayland popup surface), so the nest reads it here.
+    property string harnessLast: ""
+
+    Timer {
+        id: harnessProbe
+
+        interval: 100
+        repeat: true
+        running: root.harnessScript.length > 0
+        onTriggered: {
+            const item = root.fullRepresentationItem;
+            const w = item ? item.harnessWindow : null; // qmllint disable missing-property
+            const text = w && w.visible ? [w.x, w.y, w.width, w.height].join(" ") : "hidden";
+            if (text !== root.harnessLast) {
+                root.harnessLast = text;
+                console.info("SRWINDOW " + Date.now() + " " + text);
+            }
+        }
+    }
+
+    function harnessShowPage(page: string): void {
+        const item = root.fullRepresentationItem;
+        if (item && typeof item.showPage === "function") {
+            item.showPage(page);
+        }
+    }
+
+    Timer {
+        id: harnessTimer
+
+        property int next: 0
+
+        interval: root.harnessScript.length > 0 ? root.harnessScript[0].delay : 1000
+        running: root.harnessScript.length > 0
+        onTriggered: {
+            root.harnessScript[next].run();
+            next += 1;
+            if (next < root.harnessScript.length) {
+                interval = root.harnessScript[next].delay;
+                restart();
+            }
+        }
+    }
+
     compactRepresentation: CompactRepresentation {
         plasmoidItem: root
         client: daemon
