@@ -143,6 +143,7 @@ SunReactor computes target brightness deterministically without requiring consta
 SunReactor includes an integrated KDE Plasma 6 panel widget and C++ IPC plugin located in [`plasma/`](plasma/):
 - View real-time solar elevation, current display outputs, and active weather status directly from the desktop taskbar.
 - Toggle automation modes, suspend daemon adjustments, or apply manual monitor overrides without opening a terminal.
+- Installation, settings and troubleshooting are in [Plasma widget](#-plasma-widget).
 
 ### 3. Scriptable Control CLI (`sunreactorctl`)
 ```bash
@@ -174,6 +175,8 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 ```
 
 *The installer verifies the release SHA-256 manifest and installs unprivileged binaries to `~/.local/bin`. When a systemd user manager is available, it also installs, enables, and starts `sunreactord.service`, then verifies that the daemon answers on IPC. Use `--no-service` to install without starting brightness automation.*
+
+*From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [Plasma widget](#-plasma-widget).*
 
 ### Building from Source (Optimized Native Profile)
 ```bash
@@ -263,6 +266,8 @@ embedded in the binaries; user themes live in `~/.config/sunreactor/themes/<id>.
 `tui.theme` accepts any theme id or alias, including legacy names such as
 `workbench` or `vfdhifi`; an unknown name fails `config validate` with the nearest matches.
 
+The full authoring guide (every key, the family defaults, the widget's follow and pin model, the flagship skins and a worked example) is in [docs/THEMES.md](docs/THEMES.md).
+
 A broken theme never stops automatic brightness: the daemon logs and skips
 invalid theme files, falls back to the built-in theme of the same id (or
 `amber`) and reports the reason as `theme_warning` in `sunreactorctl status`.
@@ -298,8 +303,83 @@ sunreactorctl theme validate ./mine.toml     # check one file (extends / aliases
 
 ---
 
+## // PLASMA WIDGET
+
+The Plasma widget is a KDE Plasma 6 panel item with a popup for `sunreactord`. The panel shows the sky, a brightness readout, a sparkline of today's curve or a ring gauge. The popup shows the terminal UI's light cycle, the per-display rows and overrides, the automation mode with what happens next, and the weather and sun times. It is a QML package (`plasma/org.sunreactor.plasma/package`) and a small C++ plugin (`plasma/org.sunreactor.plasma/plugin`) that speaks the daemon's control socket. The widget never touches hardware and does no brightness logic of its own.
+
+Inside, the popup is a set of modules (`contents/ui/modules`), a theme engine (`contents/ui/engine`) that turns the daemon's theme into colours, fonts and metrics, a pixel renderer for the pixel-art themes, and per-theme skins (`contents/ui/skins`). The design record is [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md).
+
+### Requirements
+- Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
+- CMake 3.22 or newer, `extra-cmake-modules` 6.0 or newer, and a C++20 compiler
+- `sunreactord` from this version for themes and the day curve (older daemons still work, see Troubleshooting)
+
+### Install
+From a clone of the repository, the installer builds and installs the widget:
+
+```bash
+./install.sh                    # installs the widget when plasmashell and kpackagetool6 exist
+./install.sh --with-plasma      # try even when those tools are not found
+./install.sh --no-plasma        # skip the widget
+./install.sh --dry-run          # print what the widget step would do; change nothing
+systemctl --user restart plasma-plasmashell.service   # the installer never restarts plasmashell
+```
+
+The step builds the plugin with CMake in a temporary directory, copies the plugin and the QML module under `~/.local`, replaces the widget package in one piece, and keeps the previous widget in `~/.local/share/sunreactor-backups/`. A failed widget step is reported and never fails the installation or rolls back the daemon.
+
+By hand, from the repository root:
+
+```bash
+cmake -S plasma/org.sunreactor.plasma -B build/plasma -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build build/plasma -j"$(nproc)"
+cmake --install build/plasma
+systemctl --user restart plasma-plasmashell.service
+```
+
+`cmake --install` places the files here:
+
+| Part | Location |
+|---|---|
+| C++ plugin | `~/.local/lib/libsunreactorplugin.so` |
+| QML module | `~/.local/lib/qml/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
+| Widget package | `~/.local/share/plasma/plasmoids/org.sunreactor.plasma/` |
+| Application icon | `~/.local/share/icons/hicolor/scalable/apps/` |
+
+The QML module goes wherever CMake's `KDE_INSTALL_QMLDIR` points: `lib/qml` on this system, and the Qt layout of other distributions elsewhere. Plasma must find that directory on its QML import path. On the systemd user environment used here, `QML2_IMPORT_PATH` already includes `~/.local/lib/qml`.
+
+**KF6 partial-upgrade caveat.** If CMake prints `Plasma not found: the plasmoid package will not be installed`, it could not load Plasma's CMake package. That usually means a half-finished upgrade of the KDE Frameworks and Plasma set. The plugin still builds and installs. Finish the upgrade and run CMake again, or install the package with `kpackagetool6 --type Plasma/Applet --install plasma/org.sunreactor.plasma/package`. The installer does not depend on Plasma's CMake package: it copies the package itself and validates it with `kpackagetool6` when that is present.
+
+### Settings
+The configure dialog of the widget holds these settings:
+
+| Section | Keys | Meaning |
+|---|---|---|
+| General | `showTemperature`, `showSolarElevation` | show the outside temperature and the sun's elevation |
+| General | `defaultSuspendMinutes`, `overrideDurationMinutes` | default pause length and how long a manual override lasts (0 = until resumed or never) |
+| General | `socketPath` | empty uses the daemon's default socket under `XDG_RUNTIME_DIR` |
+| Appearance | `themeMode`, `pinnedTheme` | follow the terminal UI's theme, or pin one (see [THEMES.md](docs/THEMES.md#5-how-the-plasma-widget-uses-themes)) |
+| Appearance | `accentOverride`, `densityOverride`, `pixelScale`, `rendererOverride` | override the theme's accent, density, art-pixel size and renderer |
+| Appearance | `weatherIconStyle` | `auto`, `modern`, `line`, `solid` or `pixel` weather icons |
+| Appearance | `moduleOrder`, `hiddenModules` | popup modules in order, and the ones to hide (`telemetry` starts hidden) |
+| Panel | `panelMode`, `panelDisplay` | `sky`, `readout`, `sparkline` or `ring`, and the display it describes (empty = average of all) |
+
+### Popup size
+Plasma stores a popup size for each applet as `popupWidth` and `popupHeight` in the applet's `[Configuration]` section of `~/.config/plasma-org.kde.plasma.desktop-appletsrc`. The widget fits its popup window to the page on screen itself, so a stored height no longer keeps the window too tall or too short when the page changes. Plasma still records the size when you resize the window.
+
+### Troubleshooting
+- **The popup does not fit, or keeps a wrong height.** Stop plasmashell (`systemctl --user stop plasma-plasmashell.service`). Delete the `popupHeight=` and `popupWidth=` lines in the `[Containments][N][Applets][M][Configuration]` section of the widget's applet (the one whose `plugin=org.sunreactor.plasma`). Start plasmashell again. Do not edit the file while plasmashell runs, because it rewrites the file.
+- **Text or art looks wrong after a scale change.** Text and pixel art follow Plasma's display scale and font DPI. Pixel themes size their art to the device pixel ratio while `pixelScale` is 0; set it to 1 to 6 to choose a size. If text clips at a fractional scale, check Plasma's display scale and font settings first.
+- **Plasma reports a QML import error for `org.sunreactor.plasma`.** Plasma cannot see the QML module directory. Check `systemctl --user show-environment | grep QML`. The directory from the table above must be on `QML2_IMPORT_PATH` or `QML_IMPORT_PATH`. Add it with a file in `~/.config/environment.d/` and log in again.
+- **The daemon is older than the widget.** The widget keeps running. It uses the theme in the daemon's flat fields, hides the light cycle because there is no day curve, and shows a pinned theme as followed, with a note in the settings. To get themes and the day curve, install `sunreactord` from this version and restart it with `systemctl --user restart sunreactord.service`.
+- **The widget shows offline.** Check `systemctl --user status sunreactord.service` and `sunreactorctl status`.
+
+Test and screenshot tooling is described in [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md) (section 7) and, when present, `plasma/org.sunreactor.plasma/tools/qa.sh`.
+
+---
+
 ## // DETAILS & LICENSING
 
+- **Documentation:** [docs/README.md](docs/README.md) indexes every document in the repository, including [THEMES.md](docs/THEMES.md).
 - **Author:** [arcanorca](https://github.com/arcanorca)
 - **License:** GPL-3.0-or-later
 - **Core Technologies:** Rust | Ratatui | DRM Sysfs | DDC/CI (`ddcutil`) | KDE Plasma 6 QML/C++
