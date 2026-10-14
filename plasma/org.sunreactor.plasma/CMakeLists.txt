@@ -28,11 +28,10 @@ else()
     message(WARNING "Plasma not found: the plasmoid package will not be installed")
 endif()
 
-# Fonts and vector asset packages
+# Bundled fonts (licences: package/contents/fonts/FONTS-LICENSES.txt)
 install(
     DIRECTORY
         package/contents/fonts
-        package/contents/images
     DESTINATION ${KDE_INSTALL_DATADIR}/plasma/plasmoids/org.sunreactor.plasma/contents
 )
 

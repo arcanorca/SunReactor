@@ -1,6 +1,8 @@
 # Build artifacts
 /target/
 /releases/
+# CMake and other out-of-tree build trees (any depth)
+build/
 
 # Cargo lock is committed for binary crates
 # Cargo.lock
@@ -18,10 +20,18 @@ Thumbs.db
 
 # Dev scratch files
 *.py
+# The screenshot harness scripts under plasma/**/tools are source, not scratch.
+!plasma/**/tools/*.py
 check_errors.txt
 test_tz.rs
 *.tar.gz
 *.zip
+scratch/
+.scratch/
+
+# Python caches
+__pycache__/
+*.pyc
 
 # Large data files (bundled at build or fetched)
 cities15000.txt
@@ -36,5 +46,3 @@ AGENTS.md
 OPTIMIZATIONS.md
 
 .claude/
-plasma/**/build/
-plasma/**/__pycache__/
