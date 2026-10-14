@@ -494,12 +494,15 @@ PlasmaExtras.Representation {
         }
 
         // The content column, inset by the same margin on both sides inside the
-        // viewport; the scrollbar keeps the viewport's edge.
+        // viewport. Its width never depends on the scrollbar: one grid unit is
+        // always kept for it, scrolling or not. A scrollbar that appears narrows
+        // availableWidth, which re-wraps the text, which changes the page height
+        // and so whether the page scrolls: a feedback loop (the handheld stall).
         ColumnLayout {
             id: pageColumn
 
             x: root.edgeInset
-            width: panel.availableWidth - 2 * root.edgeInset
+            width: panel.width - 2 * root.edgeInset - Kirigami.Units.gridUnit
             spacing: root.theme.sectionSpacing
 
             Repeater {
