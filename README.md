@@ -318,10 +318,10 @@ The widget follows the terminal UI's theme by default, or you can pin another th
 <div align="center">
   <img src="docs/images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
   <br/>
-  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Nintendo DS" width="95%" />
+  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Casio Digital" width="95%" />
 </div>
 
-Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Nintendo DS. The full theme list is in [THEMES.md](docs/THEMES.md).
+Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Casio Digital. The full theme list is in [THEMES.md](docs/THEMES.md).
 
 ### Requirements
 - Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
