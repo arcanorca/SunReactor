@@ -51,16 +51,24 @@ Rectangle {
         }
         return out;
     }
+    /*! One measuring item per choice. Repeater.itemAt() only returns Items, so the
+        TextMetrics lives inside an Item and its width is read through that item. */
     Repeater {
         id: sentenceWidths
 
         model: root.sentenceChoices
 
-        TextMetrics {
+        Item {
             required property string modelData
 
-            font: root.style.sentence
-            text: modelData
+            readonly property real advanceWidth: metrics.advanceWidth
+
+            TextMetrics {
+                id: metrics
+
+                font: root.style.sentence
+                text: modelData
+            }
         }
     }
     /*! The longest choice that fits `limit` px. */
@@ -69,7 +77,8 @@ Rectangle {
             return sentenceChoices[sentenceChoices.length - 1];
         }
         for (let i = 0; i < sentenceChoices.length; ++i) {
-            if (sentenceWidths.itemAt(i).advanceWidth <= limit) { // qmllint disable missing-property
+            const probe = sentenceWidths.itemAt(i);
+            if (probe && probe.advanceWidth <= limit) { // qmllint disable missing-property
                 return sentenceChoices[i];
             }
         }
