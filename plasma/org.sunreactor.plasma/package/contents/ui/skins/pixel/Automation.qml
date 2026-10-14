@@ -231,9 +231,7 @@ Item {
                 face: pstyle.bodyFace
                 color: root.control.hinting ? pstyle.hot : pstyle.ink
                 maximumArtWidth: panel.contentWidth
-                // Two lines at most: a third line re-entered a layout loop on the handheld
-                // theme (main thread at 100%, see tools/nest/last_sweep.md).
-                maximumLines: 2
+                maximumLines: 3
             }
         }
     }
