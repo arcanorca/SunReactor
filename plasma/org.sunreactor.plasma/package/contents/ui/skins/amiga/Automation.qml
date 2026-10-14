@@ -39,6 +39,18 @@ Item {
     Accessible.role: Accessible.Grouping
     Accessible.name: i18ndc(root.control.domain, "Accessible name of the automation mode switch", "Automation mode")
 
+    /*! The gadgets take their usual 2 px inside each outline when the three fit the window
+        with one px between them; the window can be a grid unit narrower than that (the page
+        keeps a grid unit for its scrollbar), and then the inner gap closes to 1 px. Reads
+        only label and caret widths, which do not depend on the gap. */
+    readonly property bool gadgetsTight: {
+        let need = Math.max(0, cells.count - 1);
+        for (let i = 0; i < cells.count; ++i) {
+            need += cells.itemAt(i).fixedArt + 2 * 2; // qmllint disable missing-property
+        }
+        return need > panel.contentWidth;
+    }
+
     function focusCell(index) {
         const count = root.control.order.length;
         const cell = cells.itemAt((index + count) % count);
@@ -106,6 +118,8 @@ Item {
 
                         readonly property string choiceId: modelData.id
                         readonly property bool caret: choiceId === "paused"
+                        /*! The label and the drop-down, in art px (the gadget adds its gap on each side). */
+                        readonly property int fixedArt: gadget.labelArt + gadget.caretArt
 
                         width: gadget.width
                         height: gadget.height
@@ -117,6 +131,7 @@ Item {
                             theme: root.theme
                             style: tokens
                             text: root.captions[cell.choiceId] || cell.modelData.label
+                            gap: root.gadgetsTight ? 1 : 2
                             lit: root.control.choice === cell.choiceId
                             caret: cell.caret
                             onActivated: root.control.pick(cell.choiceId, cell)

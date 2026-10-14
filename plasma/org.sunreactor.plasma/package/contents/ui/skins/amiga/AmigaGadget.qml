@@ -23,7 +23,8 @@ Item {
     readonly property bool pressed: area.pressed
     readonly property int labelArt: label.artWidth
     readonly property int caretArt: caret ? 6 : 0
-    readonly property int gap: 2
+    /*! Art px inside the outline on each side of the label (2; a row that is too narrow may use 1). */
+    property int gap: 2
 
     /*! Art px; the label's own width plus the outline, padding and the drop-down. */
     readonly property int artWidth: labelArt + 2 * gap + caretArt
