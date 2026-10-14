@@ -20,6 +20,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -173,10 +174,17 @@ class Nest:
     def start_plasma(self):
         self.spawn("activity", ["/usr/lib/kactivitymanagerd"],
                    self.env(QT_QPA_PLATFORM="offscreen"))
-        self.spawn("plasmashell", ["plasmashell", "--no-respawn"],
-                   self.env(WAYLAND_DISPLAY=self.display, QT_QPA_PLATFORM="wayland",
-                            QT_FORCE_STDERR_LOGGING="1", SUNREACTOR_HARNESS="1",
-                            SUNREACTOR_HARNESS_CONFIG=HARNESS_CONFIG))
+        shell = ["plasmashell", "--no-respawn"]
+        harness = (HARNESS_CONFIG + " " + self.args.config).strip()
+        if self.args.gdb:
+            # gdb is plasmashell's parent, so it may attach (ptrace_scope=1). SIGINT
+            # stops the process and the batch commands print the stacks.
+            shell = ["gdb", "-batch", "-ex", "set pagination off", "-ex", "run",
+                     "-ex", "thread apply all bt 30", "--args"] + shell
+        self.gdb_proc = self.spawn("plasmashell", shell,
+                                   self.env(WAYLAND_DISPLAY=self.display, QT_QPA_PLATFORM="wayland",
+                                            QT_FORCE_STDERR_LOGGING="1", SUNREACTOR_HARNESS="1",
+                                            SUNREACTOR_HARNESS_CONFIG=harness))
         self.wait(lambda: self.bus.name_has_owner("org.kde.plasmashell"), 120, "plasmashell")
         self.shell = dbus.Interface(self.bus.get_object("org.kde.plasmashell", "/PlasmaShell"),
                                     "org.kde.PlasmaShell")
@@ -240,6 +248,10 @@ class Nest:
         self.wait(lambda: any(rest != "hidden" for _, rest in windows()), 90,
                   "the widget's popup window")
         first = next(ms for ms, rest in windows() if rest != "hidden")
+        if self.args.gdb:
+            self.pump(15.0)
+            self.gdb_proc.send_signal(signal.SIGINT)
+            self.pump(10.0)
         self.pump(TIMELINE)
         panel = self.probe.current()[1]
         events = []
@@ -287,6 +299,10 @@ def main():
     ap.add_argument("--size", required=True, choices=["plain", "stored"])
     ap.add_argument("--panel", required=True, choices=["bottom", "top"])
     ap.add_argument("--out", required=True)
+    ap.add_argument("--config", default="",
+                    help="more harness config keys, 'key=value key=value', added to the widget's script")
+    ap.add_argument("--gdb", action="store_true",
+                    help="run plasmashell under gdb and print every thread's stack 15 s after the popup opens")
     args = ap.parse_args()
 
     DBusGMainLoop(set_as_default=True)

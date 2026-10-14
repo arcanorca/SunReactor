@@ -26,6 +26,9 @@ THEME=braun
 FONT=default
 SIZE=plain
 PANEL=bottom
+PACKAGE="$WIDGET/package"
+GDB=0
+EXTRA=""
 OUT=""
 KEEP=0
 
@@ -35,6 +38,9 @@ while [ $# -gt 0 ]; do
         --font) FONT="$2"; shift 2 ;;
         --size) SIZE="$2"; shift 2 ;;
         --panel) PANEL="$2"; shift 2 ;;
+        --package) PACKAGE="$2"; shift 2 ;;
+        --gdb) GDB=1; shift ;;
+        --config) EXTRA="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
         -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
@@ -85,12 +91,13 @@ NEST_ENV=(
 )
 
 # 1. The working-tree package, into the private data dir only.
-env -i "${NEST_ENV[@]}" kpackagetool6 --type Plasma/Applet --install "$WIDGET/package" \
+env -i "${NEST_ENV[@]}" kpackagetool6 --type Plasma/Applet --install "$PACKAGE" \
     > "$OUT/install.log" 2>&1 || { echo "run.sh: install failed, see $OUT/install.log" >&2; exit 1; }
 
 # 2. The scenario, on a private D-Bus session.
 env -i "${NEST_ENV[@]}" dbus-run-session -- python3 "$HERE/driver.py" \
-    --theme "$THEME" --font "$FONT" --size "$SIZE" --panel "$PANEL" --out "$OUT"
+    --theme "$THEME" --font "$FONT" --size "$SIZE" --panel "$PANEL" --out "$OUT" \
+    $([ "$GDB" = 1 ] && echo --gdb) ${EXTRA:+--config "$EXTRA"}
 status=$?
 echo "run.sh: theme=$THEME font=$FONT size=$SIZE panel=$PANEL exit=$status out=$OUT"
 exit $status
