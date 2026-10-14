@@ -388,6 +388,15 @@ folder", validation message for bad user themes.
 
 ## 7. Verification
 
+- Local QA, one command: `tools/qa.sh [--out DIR]` runs in order the cmake
+  build, `ctest`, `qmllint -I build/qml` over `package/contents/ui` (fails on
+  Error diagnostics only; the `[unqualified]` i18n notes and the other warnings
+  are counted), the quick overflow audit of every theme with `--jobs 2` (fails on
+  any OVERFLOW, CLIPPED or COLLISION, or a render that did not finish), and
+  `pixel_proof.sh` for the pixel themes. The audits run under
+  `flock /tmp/claude-1000/audit.lock` with `SHOT_SERVERNUM=63` by default. It
+  prints one line per stage and exits 0 only if all pass; the logs and the audit
+  report are kept in DIR.
 - Rust: unit tests for registry, alias compat, user theme load/extends,
   invalid files, palette parity with the legacy table, IPC round-trips and
   old-client compatibility; `cargo fmt/clippy/test` per `Makefile`.
