@@ -1,0 +1,24 @@
+id = "amber"
+name = "Amber"
+aliases = []
+family = "instrument"
+
+[palette]
+bg = "#0f0a05"
+fg = "#ffd296"
+accent = "#ffb000"
+secondary_accent = "#dc8c00"
+border_active = "#ffb000"
+border_inactive = "#785014"
+text_muted = "#b47832"
+success = "#aadc64"
+warning = "#ffb000"
+error = "#ff3c3c"
+
+[tui]
+glyph_style = "rounded"
+
+# Instrument identity for the Plasma widget (DESIGN.md section 2).
+[widget]
+font = "mono"
+glow = 0.3

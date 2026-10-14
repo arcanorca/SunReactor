@@ -1,0 +1,27 @@
+id = "cyberpunk"
+name = "Cyberpunk"
+aliases = []
+family = "instrument"
+
+[palette]
+bg = "#090622"
+fg = "#f9f1a5"
+accent = "#fcee0a"
+secondary_accent = "#00ffff"
+border_active = "#fcee0a"
+border_inactive = "#ff003c"
+text_muted = "#b4a0dc"
+success = "#00ff99"
+warning = "#ffcc00"
+error = "#ff003c"
+
+[tui]
+glyph_style = "pixel"
+
+[widget]
+renderer = "vector"
+font = "display"
+radius = 0
+glow = 0.5
+border = "line"
+density = "compact"

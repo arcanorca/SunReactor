@@ -1,0 +1,23 @@
+id = "thinkpad"
+name = "ThinkPad"
+aliases = []
+family = "instrument"
+
+[palette]
+bg = "#121212"
+fg = "#e6e6e6"
+accent = "#e42022"
+secondary_accent = "#4589ff"
+border_active = "#e42022"
+border_inactive = "#3d3d3d"
+text_muted = "#8d8d8d"
+success = "#42be65"
+warning = "#f1c21b"
+error = "#fa4d56"
+
+[tui]
+glyph_style = "rounded"
+
+# Instrument identity for the Plasma widget (DESIGN.md section 2).
+[widget]
+radius = 0

@@ -38,6 +38,9 @@ QUIET=0
 UNINSTALL=0
 PURGE=0
 NO_SERVICE=0
+PLASMA_MODE=auto    # auto | on (--with-plasma) | off (--no-plasma)
+DRY_RUN=0           # --dry-run: print the Plasma widget plan and exit
+PLASMA_DECISION=""
 INSTALL_MUTATED=0
 INSTALL_COMMITTED=0
 INSTALL_ROLLBACK_INCOMPLETE=0
@@ -71,6 +74,9 @@ parse_args() {
             --uninstall) UNINSTALL=1 ;;
             --purge) PURGE=1 ;;
             --no-service) NO_SERVICE=1 ;;
+            --with-plasma) PLASMA_MODE=on ;;
+            --no-plasma) PLASMA_MODE=off ;;
+            --dry-run) DRY_RUN=1 ;;
             *) ;;
         esac
     done
@@ -690,6 +696,166 @@ launch_dashboard() {
 }
 
 # ==========================================
+# 9. PLASMA WIDGET MODULE (optional)
+# ==========================================
+# Builds the KDE Plasma 6 widget (C++ plugin + QML package) from a source
+# checkout and installs it under the user's prefix. It never restarts
+# plasmashell, never runs for staged (DESTDIR) installs, and never fails the
+# installation: a skipped or failed widget is reported and the install goes on.
+readonly PLASMA_ID="org.sunreactor.plasma"
+readonly PLASMA_PREFIX="$HOME/.local"
+readonly PLASMA_SRC_DIR="$SCRIPT_DIR/plasma/$PLASMA_ID"
+readonly DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+readonly PLASMA_PKG_DIR="$DATA_HOME/plasma/plasmoids/$PLASMA_ID"
+readonly PLASMA_BACKUP_ROOT="$DATA_HOME/sunreactor-backups"
+readonly PLASMA_RESTART_CMD="systemctl --user restart plasma-plasmashell.service"
+
+# Sets PLASMA_DECISION to "install" or "skip: <reason>". Returns 0 to install.
+plasma_widget_decision() {
+    PLASMA_DECISION="install"
+    if [[ "$PLASMA_MODE" == off ]]; then
+        PLASMA_DECISION="skip: disabled by --no-plasma"
+    elif [[ ! -f "$PLASMA_SRC_DIR/CMakeLists.txt" || ! -f "$PLASMA_SRC_DIR/package/metadata.json" ]]; then
+        PLASMA_DECISION="skip: no plasma/$PLASMA_ID source tree next to install.sh"
+    elif ! command -v cmake >/dev/null 2>&1; then
+        PLASMA_DECISION="skip: cmake is needed to build the plugin"
+    elif [[ "$PLASMA_MODE" == auto ]] &&
+        ! { command -v plasmashell >/dev/null 2>&1 && command -v kpackagetool6 >/dev/null 2>&1; }; then
+        PLASMA_DECISION="skip: plasmashell or kpackagetool6 not found (--with-plasma tries anyway)"
+    fi
+    [[ "$PLASMA_DECISION" == install ]]
+}
+
+print_plasma_widget_plan() {
+    local tool state tools=""
+    plasma_widget_decision || true
+    for tool in cmake plasmashell kpackagetool6; do
+        if command -v "$tool" >/dev/null 2>&1; then state=found; else state=missing; fi
+        tools+="$tool=$state "
+    done
+    printf 'Plasma widget plan (dry run: nothing is built, copied or restarted)\n'
+    printf '  decision: %s\n' "$PLASMA_DECISION"
+    printf '  tools:    %s\n' "${tools% }"
+    printf '  source:   %s\n' "$PLASMA_SRC_DIR"
+    printf '  plugin:   CMake install layout under %s (lib/, lib/qt6/qml/org/sunreactor/plasma/)\n' "$PLASMA_PREFIX"
+    printf '  package:  %s\n' "$PLASMA_PKG_DIR"
+    printf '  backups:  %s/plasma-widget-<timestamp>-<pid>/\n' "$PLASMA_BACKUP_ROOT"
+    printf '  restart:  %s (never run by the installer)\n' "$PLASMA_RESTART_CMD"
+}
+
+plasma_widget_failure_tail() {
+    log_error "Plasma widget build or install failed. Last lines of $1:"
+    tail -n 15 "$1" >&2 || true
+}
+
+# Copies a file or directory into the backup tree; $2 is relative to it.
+plasma_widget_backup() {
+    mkdir -p "$backup_dir/$(dirname "$2")" && cp -a "$1" "$backup_dir/$2"
+}
+
+# Builds, stages and installs the widget. Every step before the first change
+# to the user's files is a check, so a failure leaves the previous widget alone.
+install_plasma_widget() {
+    local work="" build stage staged_root qmldir jobs log rel src dest pkg_new backup_dir
+
+    work=$(mktemp -d "$TMP_DIR/plasma.XXXXXX") || return 1
+    build="$work/build"
+    stage="$work/stage"
+    staged_root="$stage$PLASMA_PREFIX"
+    log="$work/build.log"
+    jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
+
+    log_info "Building the Plasma widget plugin (usually under a minute)..."
+    if ! cmake -S "$PLASMA_SRC_DIR" -B "$build" -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PLASMA_PREFIX" -DKDE_INSTALL_QMLDIR=lib/qt6/qml >"$log" 2>&1 ||
+        ! cmake --build "$build" --target sunreactorplugin sunreactorpluginplugin -j"$jobs" >>"$log" 2>&1 ||
+        ! DESTDIR="$stage" cmake --install "$build" >>"$log" 2>&1; then
+        plasma_widget_failure_tail "$log"
+        return 1
+    fi
+
+    qmldir=$(find "$staged_root" -path '*/org/sunreactor/plasma/qmldir' -print -quit 2>/dev/null)
+    if [[ -z "$qmldir" || -z "$(find "$staged_root" -name 'libsunreactorplugin.so*' -print -quit 2>/dev/null)" ]]; then
+        log_error "The build did not produce the plugin files (libsunreactorplugin.so, qmldir)."
+        return 1
+    fi
+
+    if command -v kpackagetool6 >/dev/null 2>&1; then
+        mkdir -p "$work/validate"
+        if ! kpackagetool6 --type Plasma/Applet --packageroot "$work/validate" \
+                --install "$PLASMA_SRC_DIR/package" >>"$log" 2>&1; then
+            plasma_widget_failure_tail "$log"
+            log_error "kpackagetool6 rejected the widget package."
+            return 1
+        fi
+    else
+        log_info "kpackagetool6 not found: the widget package was not validated."
+    fi
+
+    # The new package is copied next to the old one first, so a failed copy
+    # never leaves the widget half-written.
+    mkdir -p "$(dirname "$PLASMA_PKG_DIR")" || return 1
+    pkg_new="$PLASMA_PKG_DIR.new-$$"
+    if ! cp -a "$PLASMA_SRC_DIR/package" "$pkg_new"; then
+        rm -rf "$pkg_new"
+        return 1
+    fi
+
+    backup_dir="$PLASMA_BACKUP_ROOT/plasma-widget-$(date +%Y%m%d-%H%M%S)-$$"
+    mkdir -p "$backup_dir" || return 1
+    if [[ -e "$PLASMA_PKG_DIR" ]] && ! mv "$PLASMA_PKG_DIR" "$backup_dir/package"; then
+        rm -rf "$pkg_new"
+        return 1
+    fi
+    if ! mv "$pkg_new" "$PLASMA_PKG_DIR"; then
+        [[ -e "$backup_dir/package" ]] && mv "$backup_dir/package" "$PLASMA_PKG_DIR"
+        rm -rf "$pkg_new"
+        return 1
+    fi
+
+    # Plugin files: everything CMake put under the prefix except the plasmoid
+    # package (installed above). Each file is copied to a sibling and renamed
+    # over the old one; the old file goes to the backup tree first.
+    while IFS= read -r -d '' rel; do
+        rel=${rel#./}
+        src="$staged_root/$rel"
+        dest="$PLASMA_PREFIX/$rel"
+        mkdir -p "$(dirname "$dest")" || return 1
+        if [[ -e "$dest" ]] && ! plasma_widget_backup "$dest" "files/$rel"; then
+            return 1
+        fi
+        if ! cp -a "$src" "$dest.sunreactor-new" || ! mv -f "$dest.sunreactor-new" "$dest"; then
+            rm -f "$dest.sunreactor-new"
+            log_error "Could not install $dest. The previous widget files are in $backup_dir."
+            return 1
+        fi
+    done < <(cd "$staged_root" && find . -type f ! -path './share/plasma/*' -print0)
+
+    rmdir "$backup_dir" 2>/dev/null || true
+    log_success "Plasma widget installed: $PLASMA_PKG_DIR"
+    if [[ -d "$backup_dir" ]]; then
+        log_info "The previous widget files are kept in $backup_dir"
+    fi
+    log_info "Restart plasmashell to load the widget (the installer does not restart it):"
+    log_info "    $PLASMA_RESTART_CMD"
+    return 0
+}
+
+# Runs after the daemon is committed. A widget problem is reported and the
+# installation still succeeds, so it can never trigger the rollback.
+run_plasma_widget_step() {
+    [[ -z "${DESTDIR:-}" ]] || return 0
+    if plasma_widget_decision; then
+        if ! install_plasma_widget; then
+            log_error "Plasma widget not installed. The daemon and CLI are unaffected; fix the error above and rerun with --with-plasma."
+        fi
+    else
+        log_info "Plasma widget skipped: ${PLASMA_DECISION#skip: }."
+    fi
+    return 0
+}
+
+# ==========================================
 # 8. ORCHESTRATION MODULE
 # ==========================================
 uninstall_sunreactor() {
@@ -752,11 +918,19 @@ uninstall_sunreactor() {
         echo -e "\033[1;33mConfiguration ($CFG_DIR) and state ($STATE_DIR) have been preserved.\033[0m"
         echo -e "\033[1;30m(Pass --purge with --uninstall to remove all configuration and state.)\033[0m"
     fi
+    if [[ -e "$PLASMA_PKG_DIR" ]]; then
+        log_info "The Plasma widget was left in place. Remove it with: kpackagetool6 --type Plasma/Applet --remove $PLASMA_ID"
+    fi
     exit 0
 }
 
 main() {
     parse_args "$@"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        print_plasma_widget_plan
+        exit 0
+    fi
 
     if [[ $UNINSTALL -eq 1 ]]; then
         print_banner
@@ -807,6 +981,7 @@ main() {
         log_info "Run $BIN_DIR/sunreactord manually, or enable a compatible service manager."
     fi
     INSTALL_COMMITTED=1
+    run_plasma_widget_step
     launch_dashboard
 }
 

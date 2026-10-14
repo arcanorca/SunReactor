@@ -1,0 +1,66 @@
+Fonts bundled with the SunReactor widget
+=======================================
+
+Every font here is under the SIL Open Font License 1.1 (OFL) or in the public
+domain. Do not add a font without a licence that allows redistribution in this
+package, and record it below.
+
+File                        Family (as loaded)   Licence        Source / copyright
+--------------------------  -------------------  -------------  ------------------------------------------------
+PressStart2P.ttf            Press Start 2P       OFL 1.1        (c) 2012 The Press Start 2P Project Authors
+                                                                (cody@zone38.net), Reserved Font Name
+                                                                "Press Start 2P"
+unscii-16.ttf               unscii               Public domain  unscii by viznut, http://viznut.fi/unscii/
+                                                                (the plain 8x16 variant; NOT unscii-16-full,
+                                                                which is GPL because of Unifont glyphs)
+VT323.ttf                   VT323                OFL 1.1        (c) 2011 The VT323 Project Authors
+                                                                (peter.hull@oikoi.com)
+Geist-Regular.ttf           Geist                OFL 1.1        (c) 2024 The Geist Project Authors
+GeistMono-Regular.ttf       Geist Mono           OFL 1.1        (c) 2024 The Geist Project Authors
+Geist-Light.ttf             Geist Light          OFL 1.1        (c) 2024 The Geist Project Authors (v1.800)
+Geist-Medium.ttf            Geist Medium         OFL 1.1        (c) 2024 The Geist Project Authors (v1.800)
+IBMPlexSans-Light.ttf       IBM Plex Sans Light  OFL 1.1        (c) 2018 IBM Corp. (v3.005)
+IBMPlexSansCondensed-       IBM Plex Sans Cond   OFL 1.1        (c) 2019 IBM Corp., Reserved Font Name "Plex"
+  Medium.ttf                Medium                              (v3.000)
+IBMPlexSans-Regular.ttf     IBM Plex Sans        OFL 1.1        (c) 2018 IBM Corp.
+IBMPlexSans-SemiBold.ttf    IBM Plex Sans        OFL 1.1        (c) 2018 IBM Corp.
+IBMPlexMono-Regular.ttf     IBM Plex Mono        OFL 1.1        (c) 2017 IBM Corp.
+Orbitron-Variable.ttf       Orbitron             OFL 1.1        (c) 2018 The Orbitron Project Authors,
+                                                                Reserved Font Name "Orbitron"
+Sysfont.ttf                 Sysfont C            OFL 1.1        (c) 2021 Alina Sava
+JetBrainsMono-Regular.ttf   JetBrains Mono       OFL 1.1        (c) 2020 The JetBrains Mono Project Authors
+JetBrainsMono-Bold.ttf      JetBrains Mono       OFL 1.1        (https://github.com/JetBrains/JetBrainsMono),
+                                                                v2.304, static instances; full licence
+                                                                text in OFL-JetBrainsMono.txt
+Nunito-Regular.ttf          Nunito               OFL 1.1        (c) 2014 The Nunito Project Authors
+                                                                (https://github.com/googlefonts/nunito),
+                                                                static instance wght 400 of Nunito[wght].ttf (Google Fonts); OFL-Nunito.txt
+Nunito-Bold.ttf             Nunito               OFL 1.1        static instance wght 700 of Nunito[wght].ttf
+                                                                (same source and copyright)
+
+Font roles (Theme.qml) and native pixel grids
+---------------------------------------------
+
+bitmap8      Press Start 2P   grid-exact only at 8, 16, 24, 32 px
+bitmap_vga   unscii           grid-exact only at 16, 32 px (8x16 cells)
+mono         IBM Plex Mono    vector
+sans         IBM Plex Sans    vector (digits: IBM Plex Mono)
+display      Orbitron         vector (body text stays IBM Plex Sans)
+
+JetBrains Mono (regular + bold) is the terminal skins' cell font
+(skins/terminal/TermMetrics.qml): it covers the TUI's status glyphs
+(● ○ ▲ ❯ › ━ ┈ ▁..▇) so a text run never falls back to a font with another
+advance, and has a real bold for titles and values.
+
+VT323, Geist and Sysfont are kept for skins; VT323 and Sysfont are not
+grid-aligned outlines, so they are never used as bitmap fonts. Bitmap fonts are
+only ever drawn through engine/BitmapText.qml (CPU rasterised 1:1); see
+DESIGN.md section 4.
+
+Instrument skins (skins/instrument/InstrumentStyle.qml) use Geist Light /
+Medium / Regular / Mono and IBM Plex Sans Light / Condensed Medium / Mono for
+their legend, body, data and readout roles.
+
+Wii skin (skins/wii/) uses Nunito Regular and Bold for its rounded type: the
+channel labels, numerals and sentences. Nunito is Latin-only; the skin never
+asks it for other scripts.

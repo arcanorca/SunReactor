@@ -1,0 +1,165 @@
+.pragma library
+
+/*
+ * Text and symbol helpers for the Commodore 64 skin. The "petscii" face
+ * (plugin/glyphtables.cpp) draws exactly the characters in ALLOWED once they
+ * are upper-cased: the C64 screen capitals, digits, the symbols the skin uses
+ * and the graphics (box lines, half / eighth / full blocks, shade blocks,
+ * bullets and triangles). fold() maps anything else onto them, so every label
+ * has a glyph before layout and its width is known in cells.
+ */
+
+const ALLOWED = /[^A-Z0-9 !"#$%&'()*+,\-.\/:;<=>?@\[\\\]_°·…─│┌┐└┘▌▐▀▄█▒░▁▂▃▄▅▆▇●♥◤◥◢◣►◄╱✱◖]/g;
+
+/*! Upper case, accents folded away (Turkish, German), punctuation mapped, the
+ *  rest replaced by "?". One character is one cell, so the result is safe to measure. */
+function fold(text) {
+    let s = String(text === undefined || text === null ? "" : text).toUpperCase();
+    s = s.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+    s = s.replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, "\"");
+    s = s.replace(/\u2192/g, ">").replace(/\u2190/g, "<").replace(/\u2191/g, "^").replace(/\u2193/g, "v").replace(/[\u2022\u2219\u22C5]/g, "\u00B7");
+    s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return s.replace(ALLOWED, "?");
+}
+
+/*! Shortens to n cells with a visible "." when it does not fit. */
+function fit(text, n) {
+    const s = String(text);
+    if (n <= 0) {
+        return "";
+    }
+    if (s.length <= n) {
+        return s;
+    }
+    return s.slice(0, Math.max(0, n - 1)) + ".";
+}
+
+/*! Cells a label takes on the screen: one per character after folding. */
+function cells(text) {
+    return fold(text).length;
+}
+
+/*! Labels side by side with `gap` cells between them, folded, shortened to fit
+ *  `cols` cells. While the row is too wide the longest label loses one cell,
+ *  ending in a visible "."; ties go to the first label, so the result is the
+ *  same every time. */
+function fitRow(labels, cols, gap) {
+    const out = labels.map(fold);
+    const width = () => out.reduce((sum, s) => sum + s.length, 0) + gap * Math.max(0, out.length - 1);
+    while (width() > cols) {
+        let longest = -1;
+        for (let i = 0; i < out.length; ++i) {
+            if (out[i].length > 1 && (longest < 0 || out[i].length > out[longest].length)) {
+                longest = i;
+            }
+        }
+        if (longest < 0) {
+            break;
+        }
+        out[longest] = fit(out[longest], out[longest].length - 1);
+    }
+    return out;
+}
+
+/*! Eighths of a cell filled from the bottom: 0 blank .. 8 full block. */
+const BLOCKS = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+function blocks(eighths) {
+    return BLOCKS[Math.max(0, Math.min(8, Math.round(eighths)))];
+}
+
+/*! Linear interpolation of samples {t, pct, noWeather} at time t; key picks the field. */
+function valueAt(samples, t, key) {
+    const n = samples.length;
+    if (n === 0) {
+        return 0;
+    }
+    if (t <= samples[0].t) {
+        return samples[0][key];
+    }
+    for (let i = 1; i < n; ++i) {
+        const a = samples[i - 1];
+        const b = samples[i];
+        if (t <= b.t) {
+            const span = b.t - a.t;
+            return span > 0 ? a[key] + (b[key] - a[key]) * (t - a.t) / span : b[key];
+        }
+    }
+    return samples[n - 1][key];
+}
+
+/*! The weather pictures: three cells wide and two rows high (6 x 8 cells, so 18 x 16 art
+ *  px), drawn from the petscii face. The sun is a disc with rays, a cloud a block cluster
+ *  with a flat underside; rain, snow and the bolt fall from it, the night has a crescent
+ *  and stars. Every row is exactly three cells, so the picture centres in any column. */
+const SUN = ["\\│/", "─●─"];
+const MOON = ["· ·", " ◖ "];
+const SUN_CLOUD = ["\\│/", "▄█▄"];
+const NIGHT_CLOUD = ["◖ ·", "▄█▄"];
+const CLOUD = ["▄█▄", "▀▀▀"];
+const DRIZZLE = ["▄█▄", "░ ░"];
+const SHOWER = ["▄█▄", "╱ ╱"];
+const STORM = ["▄█▄", "╱╱╱"];
+const BOLT = ["▄█▄", " ◥◣"];
+const FLURRY = ["▄█▄", "✱ ✱"];
+const MIST = ["░░░", "░░░"];
+const FOG = ["▒▒▒", "▒▒▒"];
+const HAZE = ["\\│/", "▒●▒"];
+const UNKNOWN = ["▄█▄", " ? "];
+
+/*! The picture for a condition: the rows of a three-by-two block, one string per row. */
+function sprite(condition, night) {
+    switch (condition) {
+    case "clear":
+        return night ? MOON : SUN;
+    case "partly_cloudy":
+        return night ? NIGHT_CLOUD : SUN_CLOUD;
+    case "cloudy":
+        return CLOUD;
+    case "drizzle":
+        return DRIZZLE;
+    case "rain":
+        return SHOWER;
+    case "heavy_rain":
+        return STORM;
+    case "thunderstorm":
+        return BOLT;
+    case "snow":
+        return FLURRY;
+    case "mist":
+        return MIST;
+    case "fog":
+        return FOG;
+    case "atmospheric":
+        return HAZE;
+    default:
+        return UNKNOWN;
+    }
+}
+
+/*! One-cell icon for a forecast slot. */
+function icon(condition, night) {
+    switch (condition) {
+    case "clear":
+        return night ? "◖" : "●";
+    case "partly_cloudy":
+        return "◢";
+    case "cloudy":
+        return "▄";
+    case "drizzle":
+    case "rain":
+    case "heavy_rain":
+        return "╱";
+    case "thunderstorm":
+        return "!";
+    case "snow":
+        return "✱";
+    case "mist":
+        return "░";
+    case "fog":
+    case "atmospheric":
+        return "▒";
+    default:
+        return "?";
+    }
+}

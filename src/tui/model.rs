@@ -26,7 +26,7 @@ pub enum MonitorPaneFocus {
 pub enum ActiveModal {
     #[default]
     None,
-    ThemeSelect(ratatui::widgets::ListState, crate::tui::theme::Theme),
+    ThemeSelect(ratatui::widgets::ListState, crate::config::ThemeId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

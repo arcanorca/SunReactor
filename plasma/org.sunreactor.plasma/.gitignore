@@ -4,3 +4,7 @@ __pycache__/
 *.kdev4
 .idea/
 .vscode/
+
+# The repository ignores *.py; the screenshot harness scripts are source.
+!tools/*.py
+!tools/nest/*.py

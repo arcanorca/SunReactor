@@ -1,8 +1,8 @@
 use chrono::Utc;
 
 use crate::config::Config;
-use crate::policy::{self, MonitorMilestoneSchedule, PolicyContext};
-use crate::solar::Location;
+use crate::policy::preview::PreviewInputs;
+use crate::policy::MonitorMilestoneSchedule;
 use crate::tui::model::{Model, NextMilestoneInfo};
 
 impl Model {
@@ -134,25 +134,19 @@ impl Model {
     }
 }
 
+/// Milestone schedule for the TUI. Weather never moves milestones (the
+/// shared preview excludes it), so no multiplier is taken.
 pub(crate) fn build_monitor_milestones(
     config: &Config,
     now_utc: chrono::DateTime<Utc>,
-    weather_multiplier: Option<f64>,
 ) -> Result<Vec<MonitorMilestoneSchedule>, String> {
     config.validate().map_err(|error| error.to_string())?;
-    let location = Location::from_timezone_name(
-        config.location.latitude,
-        config.location.longitude,
-        &config.location.timezone,
-    )
-    .map_err(|error| error.to_string())?;
-
-    policy::compute_monitor_milestones(&PolicyContext {
-        now_utc,
+    let location = super::preview::resolve_location(config)?;
+    PreviewInputs {
         location: &location,
         config: &config.solar_policy,
-        weather_multiplier,
         monitors: &config.monitors,
-    })
+    }
+    .milestones(now_utc)
     .map_err(|error| error.to_string())
 }

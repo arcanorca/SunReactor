@@ -26,4 +26,55 @@
             <default>60</default>
         </entry>
     </group>
+    <group name="Appearance">
+        <!-- "follow": the theme the terminal app saved; "pinned": pinnedTheme. -->
+        <entry name="themeMode" type="String">
+            <default>follow</default>
+        </entry>
+        <!-- Theme id fetched with get_theme while themeMode is "pinned". -->
+        <entry name="pinnedTheme" type="String">
+            <default></default>
+        </entry>
+        <!-- "#rrggbb" replacing the theme accent; empty keeps the theme's. -->
+        <entry name="accentOverride" type="String">
+            <default></default>
+        </entry>
+        <!-- "compact" or "comfortable"; empty keeps the theme's density. -->
+        <entry name="densityOverride" type="String">
+            <default></default>
+        </entry>
+        <!-- Art-pixel size in logical px for pixel themes, 1..6; 0 = theme / automatic. -->
+        <entry name="pixelScale" type="Int">
+            <default>0</default>
+        </entry>
+        <!-- "pixel", "vector" or "terminal"; empty keeps the theme's renderer. -->
+        <entry name="rendererOverride" type="String">
+            <default></default>
+        </entry>
+        <!-- Weather icons: "auto" (the theme's own icon), "modern" (full colour, the same
+             in every theme), "line" (outline), "solid" (filled) or "pixel" (16 px sprites). -->
+        <entry name="weatherIconStyle" type="String">
+            <default>auto</default>
+        </entry>
+        <!-- Popup module ids in display order; empty keeps the theme's order. -->
+        <entry name="moduleOrder" type="StringList">
+            <default></default>
+        </entry>
+        <!-- Popup module ids not to show, whatever the order. The status line
+             ("telemetry") starts hidden: the status lamp in the tab row stands in. -->
+        <entry name="hiddenModules" type="StringList">
+            <default>telemetry</default>
+        </entry>
+    </group>
+    <group name="Panel">
+        <!-- What the panel item draws: "sky" (weather sprite), "readout"
+             (brightness number), "sparkline" (today's curve), "ring" (gauge). -->
+        <entry name="panelMode" type="String">
+            <default>sky</default>
+        </entry>
+        <!-- Display the readout, sparkline and ring describe; empty = average of all. -->
+        <entry name="panelDisplay" type="String">
+            <default></default>
+        </entry>
+    </group>
 </kcfg>

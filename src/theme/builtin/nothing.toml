@@ -1,0 +1,29 @@
+id = "nothing"
+name = "Nothing"
+aliases = ["glyph"]
+family = "instrument"
+
+[palette]
+bg = "#000000"
+fg = "#ffffff"
+accent = "#d71921"
+secondary_accent = "#b3b3b3"
+border_active = "#ffffff"
+border_inactive = "#3a3a3a"
+text_muted = "#8a8a8a"
+success = "#e6e6e6"
+warning = "#f5c400"
+error = "#d71921"
+
+[tui]
+glyph_style = "rounded"
+
+# Flagship dot-matrix skin for the Plasma widget (DESIGN.md section 2, BRAND.md):
+# an instrument family with its own skin, not pixel art.
+[widget]
+renderer = "vector"
+font = "mono"
+radius = 24
+border = "line"
+density = "compact"
+glow = 0.0

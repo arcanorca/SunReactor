@@ -824,7 +824,7 @@ mod tests {
             WeatherDayPhase::Day,
             None,
             0,
-            &crate::config::Theme::Amber.palette(),
+            &crate::config::ThemeId::new("amber").palette(),
         );
         assert_eq!(art.lines.len(), usize::from(ART_ROWS));
         for line in &art.lines {
@@ -845,7 +845,7 @@ mod tests {
             WeatherDayPhase::Day,
             None,
             0,
-            &crate::config::Theme::Amber.palette(),
+            &crate::config::ThemeId::new("amber").palette(),
         )
         .lines
         .iter()
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn art_leans_toward_each_theme_without_losing_its_own_colours() {
-        let sun = |theme: crate::config::Theme| {
+        let sun = |theme: crate::config::ThemeId| {
             let art = weather_art(
                 WeatherCondition::Clear,
                 Some(0),
@@ -869,8 +869,8 @@ mod tests {
                 .find_map(|span| span.style.fg)
                 .expect("the clear sky has a sun")
         };
-        let amber = sun(crate::config::Theme::Amber);
-        let green = sun(crate::config::Theme::HackerGreen);
+        let amber = sun(crate::config::ThemeId::new("amber"));
+        let green = sun(crate::config::ThemeId::new("hackergreen"));
         assert_ne!(amber, green, "the tint follows the theme");
         // The original warm sun still dominates the mix.
         if let Color::Rgb(red, _, blue) = green {
@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn every_condition_has_a_distinct_mini_icon() {
-        let palette = crate::config::Theme::Amber.palette();
+        let palette = crate::config::ThemeId::new("amber").palette();
         let mut seen = Vec::new();
         for condition in ALL {
             for phase in [WeatherDayPhase::Day, WeatherDayPhase::Night] {

@@ -77,17 +77,96 @@ impl DaemonRuntime {
                 .map(|event| event.sunrise.timestamp() as u64),
             sunset_epoch_s: events.as_ref().map(|event| event.sunset.timestamp() as u64),
             lunar_phase: Some(crate::solar::calculate_lunar_phase(now_utc)),
-            theme: {
-                let palette = self.config.tui_theme.palette();
-                Some(ipc::ThemeStatus {
-                    name: self.config.tui_theme.name().to_string(),
-                    accent: crate::tui::theme::Palette::to_hex(palette.accent),
-                    secondary_accent: crate::tui::theme::Palette::to_hex(palette.secondary_accent),
-                    bg: crate::tui::theme::Palette::to_hex(palette.bg),
-                    fg: crate::tui::theme::Palette::to_hex(palette.fg),
-                    text_muted: crate::tui::theme::Palette::to_hex(palette.text_muted),
-                })
+            theme: Some(ipc::ThemeStatus::from_theme(&self.config.tui_theme)),
+            theme_warning: self.config.tui_theme_warning.clone(),
+        }
+    }
+
+    /// `list_themes`: summaries of the daemon's theme registry.
+    pub(super) fn theme_list_response() -> ipc::ResponseEnvelope {
+        let registry = crate::theme::registry();
+        ipc::ResponseEnvelope::themes(
+            registry
+                .themes()
+                .iter()
+                .map(|theme| ipc::ThemeSummary::from_theme(theme))
+                .collect(),
+        )
+    }
+
+    /// `get_theme`: one resolved theme by id or alias.
+    pub(super) fn theme_response(id: &str) -> ipc::ResponseEnvelope {
+        match crate::theme::registry().resolve(id) {
+            Ok(theme) => ipc::ResponseEnvelope::theme(ipc::ThemeStatus::from_theme(theme)),
+            Err(unknown) => {
+                ipc::ResponseEnvelope::error(ipc::ErrorCode::InvalidRequest, unknown.to_string())
+            }
+        }
+    }
+
+    /// `day_curve`: today's policy curve for one or all monitors.
+    ///
+    /// Pure computation over the in-memory config (no hardware, no I/O);
+    /// bounded to one local day at [`DAY_CURVE_STEP_MINUTES`] resolution.
+    ///
+    /// [`DAY_CURVE_STEP_MINUTES`]: crate::policy::preview::DAY_CURVE_STEP_MINUTES
+    pub(super) fn day_curve_response(
+        &mut self,
+        monitor_id: Option<&str>,
+        now_utc: chrono::DateTime<chrono::Utc>,
+    ) -> ipc::ResponseEnvelope {
+        use crate::policy::preview::{day_curve, PreviewInputs, DAY_CURVE_STEP_MINUTES};
+
+        let selected: Vec<crate::config::MonitorConfig> = match monitor_id {
+            Some(id) => match self.config.monitors.iter().find(|m| m.logical_id == id) {
+                Some(monitor) => vec![monitor.clone()],
+                None => {
+                    return ipc::ResponseEnvelope::error(
+                        ipc::ErrorCode::InvalidRequest,
+                        format!("unknown monitor logical_id `{id}`"),
+                    )
+                }
             },
+            None => self.config.monitors.clone(),
+        };
+        let now_epoch_s = now_utc.timestamp().max(0) as u64;
+        let weather_multiplier = self
+            .weather_status(now_epoch_s)
+            .and_then(|weather| weather.multiplier);
+        let cache_key = crate::solar::local_datetime_at_utc(now_utc, &self.config.location)
+            .ok()
+            .and_then(|local| {
+                let policy = serde_json::to_string(&(&self.config.solar, &selected)).ok()?;
+                let location = &self.config.location;
+                Some(format!(
+                    "{}|{}|{}|{}|{:?}|{policy}",
+                    local.date_naive(),
+                    location.timezone_name,
+                    location.latitude.to_bits(),
+                    location.longitude.to_bits(),
+                    weather_multiplier.map(f64::to_bits),
+                ))
+            });
+        if let (Some(key), Some((cached_key, cached))) = (&cache_key, &self.day_curve_cache) {
+            if key == cached_key {
+                return ipc::ResponseEnvelope::day_curve(cached.clone());
+            }
+        }
+
+        let inputs = PreviewInputs {
+            location: &self.config.location,
+            config: &self.config.solar,
+            monitors: &selected,
+        };
+        match day_curve(&inputs, now_utc, DAY_CURVE_STEP_MINUTES, weather_multiplier) {
+            Ok(curve) => {
+                let response = ipc::DayCurveResponse::from_curve(&curve, now_epoch_s);
+                self.day_curve_cache = cache_key.map(|key| (key, response.clone()));
+                ipc::ResponseEnvelope::day_curve(response)
+            }
+            Err(error) => {
+                ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, error.to_string())
+            }
         }
     }
 

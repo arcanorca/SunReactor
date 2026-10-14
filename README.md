@@ -9,13 +9,13 @@
 
 <br/>
 
-**SunReactor** is an ultra-low overhead, deterministic hardware brightness automation engine written in pure Rust. Operating as an unprivileged background daemon, it continuously aligns display luminance with the astronomical solar elevation curve calculated for your exact geographic coordinates. The engine combines local astronomical ephemeris algorithms, bounded meteorological cloud-cover heuristics, and hardware-truth reconciliation loops to deliver jitter-free, failure-isolated backlight management across multi-display workspaces.
+**SunReactor** is a background daemon that sets display brightness from the sun's elevation at your location. It runs as an unprivileged user service, written in Rust. Weather is an optional, bounded correction on top of the solar curve. It drives external monitors over DDC/CI and laptop panels through backlight devices, and it ships with a terminal UI, a CLI and a KDE Plasma 6 widget.
 
 ---
 
 ## // PREVIEW (TUI WORKSPACES & THEMES)
 
-SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 28 built-in themes, orthographic daylight globes, and real-time hardware telemetry:
+SunReactor features an immediate-style, terminal UI built with `ratatui` with 40 built-in themes (and your own TOML themes), a daylight globe and live device status:
 
 <div align="center">
   <img src="docs/images/SunReactor_1.png" alt="Monitors Workspace (Amber Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
@@ -29,24 +29,30 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` featuri
 
 ---
 
-## // WHAT'S NEW (V0.12.0 CHANGELOG HIGHLIGHTS)
+## // RECENT CHANGES
 
-SunReactor **v0.12.0** introduces critical reliability, performance, and failure-isolation engineering across the entire runtime pipeline:
+Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
 
-- **DRM Kernel Power Gating:** Eliminates I2C driver lockouts and bus freezes. External monitor state is verified directly through kernel sysfs attributes (`/sys/class/drm/*/dpms` and `status`) before dispatching DDC commands, skipping unreachable or sleeping displays immediately.
-- **Fail-Closed Monitor Wake Loop:** Resolves desynchronization caused by dropped desktop wake signals (e.g., logind/compositor churn). A deterministic 15s hardware probe schedule paired with an aggressive 60s post-wake fast-recovery window (2s cadence) forcefully re-asserts astronomical brightness over compositor-level resets.
-- **Per-Device Fault Isolation & Exponential Backoff:** Isolates communication failures per physical display. Transient timeouts and missing-device faults back off independently (`5s, 10s, 20s, ... 300s`), ensuring a sluggish or disconnected monitor never stalls or delays updates on healthy displays.
-- **Starvation-Free IPC Quantum:** Restricts incoming Unix domain socket traffic to a cooperative budget (max 16 requests or 8ms per daemon loop tick). Heavy client polling cannot starve or jitter smooth brightness fade animations.
-- **Defended IPC Framing & Deadlines:** Strictly bounds socket communication with newline-delimited framing and a 64 KiB payload ceiling. Rigid read/write deadlines eliminate slow-read vulnerabilities and hanging socket descriptors.
-- **Atomic Configuration Reloads:** Pre-validates config schema and monitor selectors before applying in-memory updates. Malformed edits trigger automatic rollbacks, and orphan monitor states are cleanly pruned.
-- **Modular TUI with 28 Built-In Themes:** Re-architected into dedicated domain workspaces (`Monitors`, `Automation`, `Location`, `Weather`, `Settings`) featuring custom half-block fonts, 28 linear-blended retro color palettes, and real-time orthographic solar terminator globes.
-- **Native KDE Plasma 6 Desktop Integration:** First-party QML desktop panel widget powered by a non-blocking C++ Unix domain socket client (`SunReactorClient`), adhering to KDE Human Interface Guidelines with strict mode precedence.
+**Next release (0.13.0)**
+- Themes are TOML data shared by the terminal UI and the Plasma widget. 40 are built in; you can add your own in `~/.config/sunreactor/themes/` ([docs/THEMES.md](docs/THEMES.md)).
+- New `sunreactorctl theme` commands, and new IPC requests (`list_themes`, `get_theme`, `day_curve`) used by the widget.
+- The Plasma widget was rewritten around that theme data: see [Plasma widget](#-plasma-widget).
+
+**0.12.0**
+- Monitor power state is read from DRM sysfs before DDC commands are sent, so sleeping or disconnected displays are skipped.
+- A periodic hardware probe and a short fast-retry window after wake re-apply the target brightness when the compositor resets it.
+- Failures are tracked per display with exponential backoff (5 s up to 300 s), so one slow monitor does not delay the others.
+- Each daemon tick serves a limited number of IPC requests (16, or 8 ms), so a busy client cannot disturb fades.
+- IPC frames are newline-delimited with a 64 KiB limit and read/write deadlines.
+- Config reloads are validated before they are applied, and a bad edit is rolled back.
+- Terminal UI split into Monitors, Automation, Location, Weather and Settings workspaces.
+- First version of the Plasma widget.
 
 ---
 
-## // HARDENED SYSTEM ARCHITECTURE
+## // ARCHITECTURE
 
-SunReactor's runtime architecture is engineered around strict failure isolation, non-blocking hardware control, and zero runtime dependencies:
+The runtime is built around failure isolation and non-blocking hardware access, with few dependencies.
 
 ```text
  ┌────────────────────────────────────────────────────────────────────────┐
@@ -79,20 +85,20 @@ SunReactor's runtime architecture is engineered around strict failure isolation,
        └────────────────────────┘      └─────────────────────────┘
 ```
 
-### 1. Hardware Truth & Fail-Closed Monitor Wake
+### 1. Hardware state and monitor wake
 - **DRM Kernel State Gating:** Before dispatching DDC transactions over I2C, the daemon queries connector status directly from kernel DRM attributes (`/sys/class/drm/*/status` and `dpms`). If a display is in standby, suspend, or disconnected, hardware writes are skipped immediately—eliminating I2C bus locks and timeout penalties.
 - **Signal-Independent Probe Schedule:** Desktop wake notifications (e.g. logind, DRM uevents) can be dropped or skipped during compositor transitions. SunReactor implements a scheduled hardware probe loop (`runtime/wake.rs`). Every `probe_seconds` (default: 15s), the daemon directly verifies physical monitor registers.
 - **Fast-Recovery Windows:** When a monitor returns from an unreachable state, a 60-second fast-probe window (2-second pulses) activates. This immediately counteracts compositor state restores (such as KWin's internal saved DDC cache) and locks the display back to the active astronomical curve.
 
-### 2. Failure Classification & Resilient Backoff
+### 2. Failures and backoff
 - **Transient vs. Persistent Faults:** Hardware communication errors are isolated per monitor. Transient timeouts (busy DDC buses, hotplug debounce) and persistent device missing states are classified and tracked independently.
 - **Exponential Backoff:** If a monitor fails to acknowledge a write or read, it enters per-device exponential backoff (`5s, 10s, 20s, ... 300s`). Healthy displays continue applying curve updates smoothly without being blocked or delayed by an unresponsive display.
 - **Automatic Recovery:** When a degraded or disconnected monitor responds successfully, its backoff state is cleared immediately without requiring daemon restarts.
 
-### 3. IPC Hardening & Starvation Prevention
+### 3. IPC limits
 - **Bounded Main-Loop Quantum:** The daemon IPC subsystem accepts Unix domain socket connections through a cooperative drain quantum (maximum 16 accepted requests or 8ms wall-clock duration per loop tick). Incoming IPC traffic can never starve or desynchronize the core brightness fade ticks.
-- **Strict Payload Boundaries:** Every IPC message is framed with newline-delimited JSON and bounded to a strict 64 KiB payload limit. Absolute operation deadlines protect against lingering sockets and slow-read attacks.
-- **Non-Destructive Socket Cleanup:** Stale socket cleanup strictly validates file metadata and active listeners, preventing accidental unlinking of foreign runtime resources.
+- **Strict Payload Boundaries:** Every IPC message is framed with newline-delimited JSON and limited to 64 KiB payload limit. Operation deadlines guard against lingering sockets and slow-read attacks.
+- **Non-Destructive Socket Cleanup:** Stale socket cleanup validates file metadata and active listeners, preventing accidental unlinking of foreign runtime resources.
 
 ### 4. Fail-Safe Configuration & State Pruning
 - **Atomic Config Reloads:** Live configuration reloads (`sunreactorctl reload-config` or TUI writebacks) validate schema integrity, monitor IDs, and boundary constraints before updating runtime state. If validation fails, previous active configurations remain in memory.
@@ -137,12 +143,11 @@ SunReactor computes target brightness deterministically without requiring consta
 - Full keyboard-driven navigation with browser-style shortcuts (`1`-`5` tabs, `Tab`/`Shift+Tab`).
 - Real-time ASCII light cycle and 24-hour solar trajectory visualizer.
 - Interactive orthographic globe with real-time solar terminator rendering.
-- 28 built-in palettes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha.
+- 40 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
 
 ### 2. Native KDE Plasma 6 Desktop Integration
-SunReactor includes an integrated KDE Plasma 6 panel widget and C++ IPC plugin located in [`plasma/`](plasma/):
-- View real-time solar elevation, current display outputs, and active weather status directly from the desktop taskbar.
-- Toggle automation modes, suspend daemon adjustments, or apply manual monitor overrides without opening a terminal.
+A KDE Plasma 6 panel widget lives in [`plasma/`](plasma/). It shows the current brightness, the day curve and the weather, and lets you pause automation or set a manual brightness per display.
+- Installation, settings and troubleshooting are in [Plasma widget](#-plasma-widget).
 
 ### 3. Scriptable Control CLI (`sunreactorctl`)
 ```bash
@@ -153,6 +158,8 @@ sunreactorctl set --global 60      # Temporarily lock all displays to 60%
 sunreactorctl suspend --minutes 90 # Pause brightness updates for 90 minutes
 sunreactorctl resume               # Clear overrides and return to the active solar curve
 sunreactorctl reload-config        # Atomically validate and reload config.toml
+sunreactorctl theme list           # Built-in and user themes (* marks the configured one)
+sunreactorctl theme set nord       # Set tui.theme and reload the daemon
 ```
 
 ---
@@ -172,6 +179,8 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 ```
 
 *The installer verifies the release SHA-256 manifest and installs unprivileged binaries to `~/.local/bin`. When a systemd user manager is available, it also installs, enables, and starts `sunreactord.service`, then verifies that the daemon answers on IPC. Use `--no-service` to install without starting brightness automation.*
+
+*From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [Plasma widget](#-plasma-widget).*
 
 ### Building from Source (Optimized Native Profile)
 ```bash
@@ -248,15 +257,143 @@ min_multiplier = 0.75
 
 [tui]
 fps = 60
-theme = "amber"
+theme = "amber"        # any id or alias from `sunreactorctl theme list`
 effects = "instrument"
 show_logo = true
 ```
+
+### Themes
+
+Themes are data shared by the TUI and the Plasma widget. The 40 built-ins are
+embedded in the binaries; user themes live in `~/.config/sunreactor/themes/<id>.toml`
+(the file stem must equal `id`; a user file shadows a built-in with the same id).
+`tui.theme` accepts any theme id or alias, including legacy names such as
+`workbench` or `vfdhifi`; an unknown name fails `config validate` with the nearest matches.
+
+The full authoring guide (every key, the family defaults, the widget's follow and pin model, the flagship skins and a worked example) is in [docs/THEMES.md](docs/THEMES.md).
+
+A broken theme never stops automatic brightness: the daemon logs and skips
+invalid theme files, falls back to the built-in theme of the same id (or
+`amber`) and reports the reason as `theme_warning` in `sunreactorctl status`.
+`sunreactorctl config validate`, `theme validate` and `doctor` report the same
+problems as errors with the file name and exit non-zero.
+
+```toml
+# ~/.config/sunreactor/themes/pocket_night.toml
+id = "pocket_night"
+name = "Pocket Night"
+aliases = ["gbp_night"]
+extends = "handheld"      # inherit everything, override only what changes
+family = "pixel"          # pixel | instrument | terminal (widget defaults)
+
+[palette]                 # bg fg accent secondary_accent border_active border_inactive
+bg = "#0b120a"            # text_muted success warning error, all "#rrggbb"
+accent = "#c23b5f"
+
+[tui]
+glyph_style = "pixel"     # rounded | pixel
+
+[widget]                  # optional; family defaults fill every missing key
+glow = 0.25
+modules = ["telemetry", "curve", "displays", "automation"]
+```
+
+```bash
+sunreactorctl theme show handheld            # resolved palette and widget tokens
+sunreactorctl theme export dracula > ~/.config/sunreactor/themes/mine.toml
+sunreactorctl theme validate                 # check every user theme file
+sunreactorctl theme validate ./mine.toml     # check one file (extends / aliases included)
+```
+
+---
+
+## // PLASMA WIDGET
+
+The widget is a Plasma 6 panel item with a popup. It is a QML package plus a small C++ plugin that talks to the daemon's control socket. It does no brightness logic and never touches hardware: it shows what `sunreactord` is doing and sends the same commands as `sunreactorctl`.
+
+The popup has a Brightness page (day curve, one slider per display, automation mode with the next scheduled step) and a Weather page (conditions, forecast, sun times). The panel can show a weather icon, a brightness readout, a small curve or a ring gauge.
+
+The widget follows the terminal UI's theme by default, or you can pin another theme. Many themes have their own layout and weather icons; the rest use a layout chosen by theme family. The pictures below are a selection. Everything is drawn with QML shapes and a few C++ items, no bitmap assets for the vector themes. Internals and the design notes are in [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md).
+
+<div align="center">
+  <img src="docs/images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
+  <br/>
+  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Casio Digital" width="95%" />
+</div>
+
+Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Casio Digital. The full theme list is in [THEMES.md](docs/THEMES.md).
+
+### Requirements
+- Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
+- CMake 3.22 or newer, `extra-cmake-modules` 6.0 or newer, and a C++20 compiler
+- `sunreactord` from this version for themes and the day curve (older daemons still work, see Troubleshooting)
+
+### Install
+From a clone of the repository, the installer builds and installs the widget:
+
+```bash
+./install.sh                    # installs the widget when plasmashell and kpackagetool6 exist
+./install.sh --with-plasma      # try even when those tools are not found
+./install.sh --no-plasma        # skip the widget
+./install.sh --dry-run          # print what the widget step would do; change nothing
+systemctl --user restart plasma-plasmashell.service   # the installer never restarts plasmashell
+```
+
+The step builds the plugin with CMake in a temporary directory, copies the plugin and the QML module under `~/.local`, replaces the widget package in one piece, and keeps the previous widget in `~/.local/share/sunreactor-backups/`. A failed widget step is reported and never fails the installation or rolls back the daemon.
+
+By hand, from the repository root:
+
+```bash
+cmake -S plasma/org.sunreactor.plasma -B build/plasma -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build build/plasma -j"$(nproc)"
+cmake --install build/plasma
+systemctl --user restart plasma-plasmashell.service
+```
+
+`cmake --install` places the files here:
+
+| Part | Location |
+|---|---|
+| C++ plugin | `~/.local/lib/libsunreactorplugin.so` |
+| QML module | `~/.local/lib/qt6/qml/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
+| Widget package | `~/.local/share/plasma/plasmoids/org.sunreactor.plasma/` |
+| Application icon | `~/.local/share/icons/hicolor/scalable/apps/` |
+
+The installer passes `-DKDE_INSTALL_QMLDIR=lib/qt6/qml`, the Qt 6 layout; Plasma must find that directory on its QML import path (add `~/.local/lib/qt6/qml` to `QML2_IMPORT_PATH` in a `~/.config/plasma-workspace/env/*.sh` file if it is not there already).
+
+**KF6 partial-upgrade caveat.** If CMake prints `Plasma not found: the plasmoid package will not be installed`, it could not load Plasma's CMake package. That usually means a half-finished upgrade of the KDE Frameworks and Plasma set. The plugin still builds and installs. Finish the upgrade and run CMake again, or install the package with `kpackagetool6 --type Plasma/Applet --install plasma/org.sunreactor.plasma/package`. The installer does not depend on Plasma's CMake package: it copies the package itself and validates it with `kpackagetool6` when that is present.
+
+### Settings
+The configure dialog of the widget holds these settings:
+
+| Section | Keys | Meaning |
+|---|---|---|
+| General | `showTemperature`, `showSolarElevation` | show the outside temperature and the sun's elevation |
+| General | `defaultSuspendMinutes`, `overrideDurationMinutes` | default pause length and how long a manual override lasts (0 = until resumed or never) |
+| General | `socketPath` | empty uses the daemon's default socket under `XDG_RUNTIME_DIR` |
+| Appearance | `themeMode`, `pinnedTheme` | follow the terminal UI's theme, or pin one (see [THEMES.md](docs/THEMES.md#5-how-the-plasma-widget-uses-themes)) |
+| Appearance | `accentOverride`, `densityOverride`, `pixelScale`, `rendererOverride` | override the theme's accent, density, art-pixel size and renderer |
+| Appearance | `weatherIconStyle` | `auto`, `modern`, `line`, `solid` or `pixel` weather icons |
+| Appearance | `moduleOrder`, `hiddenModules` | popup modules in order, and the ones to hide (`telemetry` starts hidden) |
+| Panel | `panelMode`, `panelDisplay` | `sky`, `readout`, `sparkline` or `ring`, and the display it describes (empty = average of all) |
+
+### Popup size
+Plasma stores a popup size for each applet as `popupWidth` and `popupHeight` in the applet's `[Configuration]` section of `~/.config/plasma-org.kde.plasma.desktop-appletsrc`. The widget fits its popup window to the page on screen itself, so a stored height no longer keeps the window too tall or too short when the page changes. Plasma still records the size when you resize the window.
+
+### Troubleshooting
+- **The popup does not fit, or keeps a wrong height.** Stop plasmashell (`systemctl --user stop plasma-plasmashell.service`). Delete the `popupHeight=` and `popupWidth=` lines in the `[Containments][N][Applets][M][Configuration]` section of the widget's applet (the one whose `plugin=org.sunreactor.plasma`). Start plasmashell again. Do not edit the file while plasmashell runs, because it rewrites the file.
+- **Text or art looks wrong after a scale change.** Text and pixel art follow Plasma's display scale and font DPI. Pixel themes size their art to the device pixel ratio while `pixelScale` is 0; set it to 1 to 6 to choose a size. If text clips at a fractional scale, check Plasma's display scale and font settings first.
+- **Plasma reports a QML import error for `org.sunreactor.plasma`.** Plasma cannot see the QML module directory. Check `systemctl --user show-environment | grep QML`. The directory from the table above must be on `QML2_IMPORT_PATH` or `QML_IMPORT_PATH`. Add it with a file in `~/.config/environment.d/` and log in again.
+- **The daemon is older than the widget.** The widget keeps running. It uses the theme in the daemon's flat fields, hides the light cycle because there is no day curve, and shows a pinned theme as followed, with a note in the settings. To get themes and the day curve, install `sunreactord` from this version and restart it with `systemctl --user restart sunreactord.service`.
+- **The widget shows offline.** Check `systemctl --user status sunreactord.service` and `sunreactorctl status`.
+
+Test and screenshot tooling is described in [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md) (section 7) and, when present, `plasma/org.sunreactor.plasma/tools/qa.sh`.
 
 ---
 
 ## // DETAILS & LICENSING
 
+- **Documentation:** [docs/README.md](docs/README.md) indexes every document in the repository, including [THEMES.md](docs/THEMES.md).
 - **Author:** [arcanorca](https://github.com/arcanorca)
 - **License:** GPL-3.0-or-later
-- **Core Technologies:** Rust | Ratatui | DRM Sysfs | DDC/CI (`ddcutil`) | KDE Plasma 6 QML/C++
+- **Built with:** Rust, Ratatui, DRM sysfs, DDC/CI (`ddcutil`), Qt 6 QML and C++ for the Plasma widget

@@ -1,0 +1,27 @@
+id = "winxp"
+name = "Windows XP"
+aliases = ["xp", "luna", "windowsxp"]
+family = "instrument"
+
+[palette]
+bg = "#ece9d8"
+fg = "#000000"
+accent = "#245edb"
+secondary_accent = "#3c9a2c"
+border_active = "#0054e3"
+border_inactive = "#7f9db9"
+text_muted = "#6d6d6d"
+success = "#3c9a2c"
+warning = "#e8a317"
+error = "#cc2200"
+
+[tui]
+glyph_style = "rounded"
+
+[widget]
+renderer = "vector"
+font = "sans"
+radius = 6
+glow = 0.0
+border = "bevel"
+density = "comfortable"

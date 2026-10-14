@@ -77,4 +77,5 @@ min_multiplier = 0.75
 [tui]
 fps = 8
 show_logo = true
+# theme = "amber" # any id or alias from `sunreactorctl theme list`; user themes go in ~/.config/sunreactor/themes/<id>.toml
 # effects = "instrument" # "instrument", "reduced", or "off"

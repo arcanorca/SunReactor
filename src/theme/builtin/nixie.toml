@@ -1,0 +1,24 @@
+id = "nixie"
+name = "Nixie"
+aliases = ["tubes", "nixie_tubes"]
+family = "instrument"
+
+[palette]
+bg = "#0b0a09"
+fg = "#ffb765"
+accent = "#ff7a18"
+secondary_accent = "#e24e05"
+border_active = "#ff7a18"
+border_inactive = "#39332c"
+text_muted = "#8c857a"
+success = "#49d17a"
+warning = "#ffb020"
+error = "#ff4433"
+
+[tui]
+glyph_style = "rounded"
+
+# Instrument identity for the Plasma widget (DESIGN.md section 2).
+[widget]
+radius = 6
+glow = 0.7

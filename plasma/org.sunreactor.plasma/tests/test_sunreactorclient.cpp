@@ -6,6 +6,7 @@
  */
 
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QList>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -17,10 +18,14 @@
 #include <QTest>
 #include <QTimer>
 
+#include <memory>
+
+#include <functional>
 #include <utility>
 
 #include "sunreactorclient.h"
 #include "sunreactortypes.h"
+#include "themenormalize.h"
 
 class TestSunReactorClient : public QObject
 {
@@ -47,7 +52,34 @@ private Q_SLOTS:
     void testRequestTimeout();
     void testThemeHotSwapping();
 
+    void testNewThemeIsNormalized();
+    void testMalformedThemeFallsBackToDefaults();
+    void testLegacyThemeUsesExactTableOnly();
+    void testOldDaemonDegradesWithoutSideEffects();
+    void testDayCurveParsedAndNotPolled();
+    void testDayCurveFollowsLimitChanges();
+    void testThemeListAndFetch();
+    void testPinnedThemeIsKeptFetched();
+    void testThemeWarningIsOptional();
+    void testThemesFolderFollowsXdgConfigHome();
+    void testHarnessConfigNeedsHarness();
+    void testThemeListIsPrefetchedAndWaitsForSlowAnswer();
+    void testThemeListIsAskedAgainAfterFailureOrEmptyAnswer();
+    void testThemeListFollowsThemeWarningAndReconnect();
+    void testPopupOpenAsksForAnEmptyThemeList();
+
 private:
+    using Handler = std::function<QJsonObject(const QJsonObject &request)>;
+    /// Answers every request through `handler` and records what was asked for.
+    void serveWith(Handler handler);
+    /// Like serveWith, but the answer to `delayedRequest` comes `delayMs` later.
+    void serveWithDelay(Handler handler, const QString &delayedRequest, int delayMs);
+    [[nodiscard]] int countRequests(const QString &name) const;
+    static QJsonObject envelope(const QString &kind, const QJsonObject &fields = {});
+    static QJsonObject errorResponse(const QString &code, const QString &message);
+    static QJsonObject fullTheme(const QString &id);
+    static QJsonObject dayCurveBody();
+
     /// Answers every request with one status payload.
     void serveStatus(const QJsonObject &statusObj);
     /// Acknowledges every request and records what was asked for.
@@ -153,7 +185,8 @@ void TestSunReactorClient::testOverrideRequestsAreWellFormed()
     const auto commandsSoFar = [this]() {
         QList<QJsonObject> commands;
         for (const QJsonObject &request : std::as_const(m_received)) {
-            if (request.value(QStringLiteral("request")).toString() != QStringLiteral("status")) {
+            const QString name = request.value(QStringLiteral("request")).toString();
+            if (name != QStringLiteral("status") && name != QStringLiteral("list_themes")) {
                 commands.append(request);
             }
         }
@@ -193,10 +226,13 @@ void TestSunReactorClient::testMonitorLimitsRequestsAreWellFormed()
     SunReactorClient client(m_socketPath);
     client.setMonitorLimits(QStringLiteral("  desk  "), -5, 120);
 
+    // Reads (status, the day curve a limit change invalidates, the theme list) are not commands.
     const auto commandsSoFar = [this]() {
         QList<QJsonObject> commands;
         for (const QJsonObject &request : std::as_const(m_received)) {
-            if (request.value(QStringLiteral("request")).toString() != QStringLiteral("status")) {
+            const QString name = request.value(QStringLiteral("request")).toString();
+            if (name != QStringLiteral("status") && name != QStringLiteral("day_curve")
+                && name != QStringLiteral("list_themes")) {
                 commands.append(request);
             }
         }
@@ -762,6 +798,786 @@ void TestSunReactorClient::testThemeHotSwapping()
     QVERIFY(statusSpy.wait(2000));
     QCOMPARE(client.themeName(), QStringLiteral("modern"));
     QCOMPARE(client.themeAccent(), QStringLiteral(""));
+}
+
+
+// --- theme registry, day curve, old daemons --------------------------------
+
+void TestSunReactorClient::serveWith(Handler handler)
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this, handler]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        if (!socket) {
+            return;
+        }
+        auto buffer = std::make_shared<QByteArray>();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, handler, buffer]() {
+            buffer->append(socket->readAll());
+            if (!buffer->contains('\n')) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(buffer->indexOf('\n'))).object();
+            m_received.append(request);
+            socket->write(QJsonDocument(handler(request)).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+            socket->disconnectFromServer();
+        });
+    });
+}
+
+void TestSunReactorClient::serveWithDelay(Handler handler, const QString &delayedRequest, int delayMs)
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this, handler, delayedRequest, delayMs]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        if (!socket) {
+            return;
+        }
+        auto buffer = std::make_shared<QByteArray>();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, handler, delayedRequest, delayMs, buffer]() {
+            buffer->append(socket->readAll());
+            if (!buffer->contains('\n')) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(buffer->indexOf('\n'))).object();
+            m_received.append(request);
+            const QByteArray reply = QJsonDocument(handler(request)).toJson(QJsonDocument::Compact) + '\n';
+            const bool slow = request.value(QStringLiteral("request")).toString() == delayedRequest;
+            QTimer::singleShot(slow ? delayMs : 0, socket, [socket, reply]() {
+                socket->write(reply);
+                socket->flush();
+                socket->disconnectFromServer();
+            });
+        });
+    });
+}
+
+int TestSunReactorClient::countRequests(const QString &name) const
+{
+    int n = 0;
+    for (const QJsonObject &request : m_received) {
+        if (request.value(QStringLiteral("request")).toString() == name) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+QJsonObject TestSunReactorClient::envelope(const QString &kind, const QJsonObject &fields)
+{
+    QJsonObject response = fields;
+    response[QStringLiteral("version")] = static_cast<int>(SunReactor::PROTOCOL_VERSION);
+    response[QStringLiteral("response")] = kind;
+    return response;
+}
+
+QJsonObject TestSunReactorClient::errorResponse(const QString &code, const QString &message)
+{
+    return envelope(QStringLiteral("error"),
+                    {{QStringLiteral("code"), code}, {QStringLiteral("message"), message}});
+}
+
+QJsonObject TestSunReactorClient::fullTheme(const QString &id)
+{
+    QJsonObject palette{
+        {QStringLiteral("bg"), QStringLiteral("#2E3440")},
+        {QStringLiteral("fg"), QStringLiteral("#d8dee9")},
+        {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+        {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")},
+        {QStringLiteral("border_active"), QStringLiteral("#88c0d0")},
+        {QStringLiteral("border_inactive"), QStringLiteral("#647387")},
+        {QStringLiteral("text_muted"), QStringLiteral("#8fbcbb")},
+        {QStringLiteral("success"), QStringLiteral("#a3be8c")},
+        {QStringLiteral("warning"), QStringLiteral("#ebcb8b")},
+        {QStringLiteral("error"), QStringLiteral("#bf616a")},
+    };
+    QJsonObject widget{
+        {QStringLiteral("renderer"), QStringLiteral("terminal")},
+        {QStringLiteral("density"), QStringLiteral("comfortable")},
+        {QStringLiteral("modules"), QJsonArray{QStringLiteral("displays"), QStringLiteral("curve"),
+                                               QStringLiteral("bogus"), QStringLiteral("displays")}},
+    };
+    return {
+        {QStringLiteral("name"), id == QStringLiteral("nord") ? QStringLiteral("Nord") : id},
+        {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+        {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")},
+        {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+        {QStringLiteral("fg"), QStringLiteral("#d8dee9")},
+        {QStringLiteral("text_muted"), QStringLiteral("#8fbcbb")},
+        {QStringLiteral("id"), id},
+        {QStringLiteral("family"), QStringLiteral("terminal")},
+        {QStringLiteral("glyph_style"), QStringLiteral("rounded")},
+        {QStringLiteral("palette"), palette},
+        {QStringLiteral("widget"), widget},
+    };
+}
+
+QJsonObject TestSunReactorClient::dayCurveBody()
+{
+    QJsonArray samples{
+        QJsonObject{{QStringLiteral("t"), 1773961200}, {QStringLiteral("pct"), 3}, {QStringLiteral("pct_no_weather"), 3}},
+        QJsonObject{{QStringLiteral("t"), 1773961800}, {QStringLiteral("pct"), 140}}, // clamped, no-weather = pct
+        QJsonObject{{QStringLiteral("t"), 1773961800}, {QStringLiteral("pct"), 9}},   // not moving forward: dropped
+        QJsonObject{{QStringLiteral("t"), 1773962400}, {QStringLiteral("pct"), QJsonValue::Null}}, // no value: dropped
+        QJsonObject{{QStringLiteral("t"), 1773963000}, {QStringLiteral("pct"), 30}, {QStringLiteral("pct_no_weather"), 34}},
+    };
+    QJsonObject monitor{
+        {QStringLiteral("monitor_id"), QStringLiteral("mi-monitor")},
+        {QStringLiteral("min_pct"), 1},
+        {QStringLiteral("max_pct"), 50},
+        {QStringLiteral("samples"), samples},
+        {QStringLiteral("milestones"), QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("rise_50")},
+                                                               {QStringLiteral("label"), QStringLiteral("Rise 50%")},
+                                                               {QStringLiteral("t"), 1773963000},
+                                                               {QStringLiteral("pct"), 34}}}},
+    };
+    QJsonObject sun{
+        {QStringLiteral("dawn"), 1773958000},
+        {QStringLiteral("sunrise"), 1773960000},
+        {QStringLiteral("solar_noon"), 1773980000},
+        {QStringLiteral("sunset"), 1774000000},
+        {QStringLiteral("dusk"), QJsonValue::Null}, // polar edge: structured, not invented
+    };
+    return {
+        {QStringLiteral("date"), QStringLiteral("2026-03-20")},
+        {QStringLiteral("step_minutes"), 10},
+        {QStringLiteral("generated_at_epoch_s"), 1773998400},
+        {QStringLiteral("weather_multiplier"), 0.88},
+        {QStringLiteral("sun"), sun},
+        {QStringLiteral("monitors"), QJsonArray{monitor, QJsonObject{{QStringLiteral("min_pct"), 3}}}},
+    };
+}
+
+void TestSunReactorClient::testNewThemeIsNormalized()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    serveStatus(status);
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy themeSpy(&client, &SunReactorClient::themeChanged);
+    QVERIFY(themeSpy.wait(2000));
+
+    const QVariantMap theme = client.theme();
+    QCOMPARE(theme.value(QStringLiteral("id")).toString(), QStringLiteral("nord"));
+    QCOMPARE(theme.value(QStringLiteral("family")).toString(), QStringLiteral("terminal"));
+    QCOMPARE(theme.value(QStringLiteral("legacy")).toBool(), false);
+    const QVariantMap palette = theme.value(QStringLiteral("palette")).toMap();
+    // Colours are lower-cased; keys are camelCase for QML.
+    QCOMPARE(palette.value(QStringLiteral("bg")).toString(), QStringLiteral("#2e3440"));
+    QCOMPARE(palette.value(QStringLiteral("secondaryAccent")).toString(), QStringLiteral("#81a1c1"));
+    QCOMPARE(palette.value(QStringLiteral("borderInactive")).toString(), QStringLiteral("#647387"));
+    QCOMPARE(palette.value(QStringLiteral("error")).toString(), QStringLiteral("#bf616a"));
+
+    const QVariantMap widget = theme.value(QStringLiteral("widget")).toMap();
+    QCOMPARE(widget.value(QStringLiteral("renderer")).toString(), QStringLiteral("terminal"));
+    QCOMPARE(widget.value(QStringLiteral("density")).toString(), QStringLiteral("comfortable"));
+    // Omitted keys come from the terminal family defaults.
+    QCOMPARE(widget.value(QStringLiteral("font")).toString(), QStringLiteral("mono"));
+    QCOMPARE(widget.value(QStringLiteral("radius")).toInt(), 0);
+    QCOMPARE(widget.value(QStringLiteral("dither")).toString(), QStringLiteral("none"));
+    QVERIFY(widget.value(QStringLiteral("shades")).toList().isEmpty());
+    // Unknown and duplicate module ids are dropped, order is kept.
+    QCOMPARE(widget.value(QStringLiteral("modules")).toStringList(),
+             (QStringList{QStringLiteral("displays"), QStringLiteral("curve")}));
+    QCOMPARE(client.themeRegistry(), SunReactorClient::CapabilitySupported);
+
+    // The same status again must not re-announce the theme.
+    themeSpy.clear();
+    client.queryStatus();
+    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(themeSpy.count(), 0);
+}
+
+void TestSunReactorClient::testMalformedThemeFallsBackToDefaults()
+{
+    using namespace SunReactor::ThemeData;
+    QJsonObject theme = fullTheme(QStringLiteral("odd"));
+    theme[QStringLiteral("family")] = QStringLiteral("pixel");
+    theme[QStringLiteral("widget")] = QJsonObject{
+        {QStringLiteral("renderer"), QStringLiteral("hologram")},
+        {QStringLiteral("radius"), 99},
+        {QStringLiteral("pixel_scale"), 9},
+        {QStringLiteral("glow"), 3.0},
+        {QStringLiteral("shades"), QJsonArray{QStringLiteral("#000000"), QStringLiteral("red")}},
+        {QStringLiteral("modules"), QJsonArray{QStringLiteral("nope")}},
+    };
+    const QVariantMap out = normalizeTheme(theme);
+    const QVariantMap widget = out.value(QStringLiteral("widget")).toMap();
+    QCOMPARE(widget.value(QStringLiteral("renderer")).toString(), QStringLiteral("pixel"));
+    QCOMPARE(widget.value(QStringLiteral("font")).toString(), QStringLiteral("bitmap8"));
+    QCOMPARE(widget.value(QStringLiteral("radius")).toInt(), 24);
+    QCOMPARE(widget.value(QStringLiteral("pixelScale")).toInt(), 0);
+    QCOMPARE(widget.value(QStringLiteral("glow")).toDouble(), 1.0);
+    // One bad colour voids the whole ramp: QML derives shades from the palette.
+    QVERIFY(widget.value(QStringLiteral("shades")).toList().isEmpty());
+    QCOMPARE(widget.value(QStringLiteral("modules")).toStringList(), moduleIds());
+
+    // Without a background or foreground there is no theme at all.
+    QJsonObject broken = fullTheme(QStringLiteral("broken"));
+    broken.remove(QStringLiteral("bg"));
+    QJsonObject palette = broken.value(QStringLiteral("palette")).toObject();
+    palette[QStringLiteral("bg")] = QStringLiteral("not a colour");
+    broken[QStringLiteral("palette")] = palette;
+    QVERIFY(normalizeTheme(broken).isEmpty());
+    QVERIFY(normalizeTheme(QJsonObject{}).isEmpty());
+}
+
+void TestSunReactorClient::testLegacyThemeUsesExactTableOnly()
+{
+    using namespace SunReactor::ThemeData;
+    const QJsonObject handheld{
+        {QStringLiteral("name"), QStringLiteral("Handheld")},
+        {QStringLiteral("accent"), QStringLiteral("#8b1d42")},
+        {QStringLiteral("secondary_accent"), QStringLiteral("#8bac0f")},
+        {QStringLiteral("bg"), QStringLiteral("#141c12")},
+        {QStringLiteral("fg"), QStringLiteral("#9bbc0f")},
+        {QStringLiteral("text_muted"), QStringLiteral("#567648")},
+    };
+    const QVariantMap out = normalizeTheme(handheld);
+    QCOMPARE(out.value(QStringLiteral("legacy")).toBool(), true);
+    QCOMPARE(out.value(QStringLiteral("id")).toString(), QStringLiteral("handheld"));
+    QCOMPARE(out.value(QStringLiteral("family")).toString(), QStringLiteral("pixel"));
+    QCOMPARE(out.value(QStringLiteral("widget")).toMap().value(QStringLiteral("renderer")).toString(),
+             QStringLiteral("pixel"));
+    const QVariantMap palette = out.value(QStringLiteral("palette")).toMap();
+    QCOMPARE(palette.value(QStringLiteral("borderActive")).toString(), QStringLiteral("#8b1d42"));
+    QCOMPARE(palette.value(QStringLiteral("success")).toString(), QStringLiteral("#8bac0f"));
+
+    // Display names fold to registry ids, accents and punctuation included.
+    QCOMPARE(legacyLookup(QStringLiteral("Rosé Pine")).value(QStringLiteral("id")).toString(), QStringLiteral("rosepine"));
+    QCOMPARE(legacyLookup(QStringLiteral("VFD Hi-Fi")).value(QStringLiteral("id")).toString(), QStringLiteral("vfd_hifi"));
+    QCOMPARE(legacyLookup(QStringLiteral("Synthwave '84")).value(QStringLiteral("family")).toString(), QStringLiteral("pixel"));
+    QCOMPARE(legacyLookup(QStringLiteral("UNIX Workstation")).value(QStringLiteral("family")).toString(),
+             QStringLiteral("instrument"));
+    // No substring guessing: the old heuristics turned these into skins.
+    QVERIFY(legacyLookup(QStringLiteral("my gameboy theme")).isEmpty());
+    QVERIFY(legacyLookup(QStringLiteral("workbench")).isEmpty());
+    QJsonObject unknown = handheld;
+    unknown[QStringLiteral("name")] = QStringLiteral("Handheld Deluxe");
+    QCOMPARE(normalizeTheme(unknown).value(QStringLiteral("family")).toString(), QStringLiteral("instrument"));
+}
+
+void TestSunReactorClient::testOldDaemonDegradesWithoutSideEffects()
+{
+    QJsonObject monitor;
+    monitor[QStringLiteral("logical_id")] = QStringLiteral("desk");
+    monitor[QStringLiteral("backend")] = QStringLiteral("ddc");
+    monitor[QStringLiteral("enabled")] = true;
+    monitor[QStringLiteral("last_applied_percent")] = 40;
+
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("manual_override_active")] = true;
+    status[QStringLiteral("monitors")] = QJsonArray{monitor};
+    status[QStringLiteral("theme")] = QJsonObject{
+        {QStringLiteral("name"), QStringLiteral("Dracula")},
+        {QStringLiteral("accent"), QStringLiteral("#ff79c6")},
+        {QStringLiteral("secondary_accent"), QStringLiteral("#bd93f9")},
+        {QStringLiteral("bg"), QStringLiteral("#282a36")},
+        {QStringLiteral("fg"), QStringLiteral("#f8f8f2")},
+        {QStringLiteral("text_muted"), QStringLiteral("#bfbfbf")},
+    };
+
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("status")) {
+            return statusResponse(status);
+        }
+        // What serde says about a variant it has never heard of.
+        return errorResponse(QStringLiteral("invalid_request"),
+                             QStringLiteral("failed to decode IPC request: unknown variant `%1`").arg(name));
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy errorSpy(&client, &SunReactorClient::errorOccurred);
+    QSignalSpy failedSpy(&client, &SunReactorClient::themeFetchFailed);
+    client.setPinnedThemeId(QStringLiteral("nord"));
+
+    QTRY_COMPARE_WITH_TIMEOUT(client.dayCurveSupport(), SunReactorClient::CapabilityUnsupported, 3000);
+    QVERIFY(client.isConnected());
+    QCOMPARE(client.themeRegistry(), SunReactorClient::CapabilityUnsupported);
+    QCOMPARE(client.pinnedThemeError(), QStringLiteral("unsupported"));
+    QVERIFY(client.pinnedTheme().isEmpty());
+    QVERIFY(client.dayCurve().isEmpty());
+
+    // The followed theme still comes from the legacy fields.
+    QCOMPARE(client.theme().value(QStringLiteral("family")).toString(), QStringLiteral("terminal"));
+    QCOMPARE(client.theme().value(QStringLiteral("legacy")).toBool(), true);
+
+    // Nothing else moved: still connected, same mode, same monitors, and the
+    // rejections are not reported as errors.
+    QCOMPARE(client.mode(), SunReactorClient::Manual);
+    QCOMPARE(client.monitors().size(), 1);
+    QCOMPARE(client.monitors().at(0).toMap().value(QStringLiteral("percent")).toInt(), 40);
+    QCOMPARE(errorSpy.count(), 0);
+
+    // Once known, the client stops asking: more polls, popup opening, a
+    // theme list request and a fetch do not reach the daemon.
+    const int curveRequests = countRequests(QStringLiteral("day_curve"));
+    QCOMPARE(curveRequests, 1);
+    // The pin was probed at most once (before the first status said "legacy").
+    const int themeRequests = countRequests(QStringLiteral("get_theme"));
+    QVERIFY(themeRequests <= 1);
+    client.refreshThemeList();
+    client.fetchTheme(QStringLiteral("braun"));
+    QCOMPARE(failedSpy.count() >= 1, true);
+    QCOMPARE(failedSpy.last().at(1).toString(), QStringLiteral("unsupported"));
+    client.setPopupOpen(true);
+    client.queryStatus();
+    QTest::qWait(600);
+    QCOMPARE(countRequests(QStringLiteral("day_curve")), curveRequests);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 0);
+    QCOMPARE(countRequests(QStringLiteral("get_theme")), themeRequests);
+    QVERIFY(client.isConnected());
+}
+
+void TestSunReactorClient::testDayCurveParsedAndNotPolled()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    serveWith([status](const QJsonObject &request) {
+        if (request.value(QStringLiteral("request")).toString() == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy curveSpy(&client, &SunReactorClient::dayCurveChanged);
+    QVERIFY(curveSpy.wait(3000));
+    QCOMPARE(client.dayCurveSupport(), SunReactorClient::CapabilitySupported);
+
+    const QVariantMap curve = client.dayCurve();
+    QCOMPARE(curve.value(QStringLiteral("date")).toString(), QStringLiteral("2026-03-20"));
+    QCOMPARE(curve.value(QStringLiteral("stepMinutes")).toInt(), 10);
+    QCOMPARE(curve.value(QStringLiteral("weatherMultiplier")).toDouble(), 0.88);
+    const QVariantMap sun = curve.value(QStringLiteral("sun")).toMap();
+    QCOMPARE(sun.value(QStringLiteral("solarNoon")).toLongLong(), 1773980000);
+    QCOMPARE(sun.value(QStringLiteral("dusk")).toLongLong(), 0); // null stays unknown
+
+    // The monitor without an id is dropped; bad samples are skipped.
+    const QVariantList monitors = curve.value(QStringLiteral("monitors")).toList();
+    QCOMPARE(monitors.size(), 1);
+    const QVariantMap first = monitors.at(0).toMap();
+    QCOMPARE(first.value(QStringLiteral("monitorId")).toString(), QStringLiteral("mi-monitor"));
+    QCOMPARE(first.value(QStringLiteral("maxPct")).toInt(), 50);
+    const QVariantList samples = first.value(QStringLiteral("samples")).toList();
+    QCOMPARE(samples.size(), 3);
+    QCOMPARE(samples.at(1).toMap().value(QStringLiteral("pct")).toInt(), 100);
+    QCOMPARE(samples.at(1).toMap().value(QStringLiteral("pctNoWeather")).toInt(), 100);
+    QCOMPARE(samples.at(2).toMap().value(QStringLiteral("pctNoWeather")).toInt(), 34);
+    QCOMPARE(first.value(QStringLiteral("milestones")).toList().size(), 1);
+    QCOMPARE(first.value(QStringLiteral("milestones")).toList().at(0).toMap().value(QStringLiteral("id")).toString(),
+             QStringLiteral("rise_50"));
+
+    // Status polls do not re-request the curve...
+    for (int i = 0; i < 4; ++i) {
+        client.queryStatus();
+        QTest::qWait(60);
+    }
+    QTest::qWait(200);
+    QCOMPARE(countRequests(QStringLiteral("day_curve")), 1);
+    QVERIFY(countRequests(QStringLiteral("status")) >= 3);
+
+    // ...but opening the popup does.
+    client.setPopupOpen(true);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("day_curve")), 2, 2000);
+}
+
+void TestSunReactorClient::testDayCurveFollowsLimitChanges()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        if (name == QStringLiteral("status")) {
+            return statusResponse(status);
+        }
+        return envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("day_curve")), 1, 3000);
+    client.setMonitorLimits(QStringLiteral("mi-monitor"), 5, 45);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("day_curve")), 2, 3000);
+    // A plain pause does not move the curve.
+    client.suspend(30);
+    QTest::qWait(500);
+    QCOMPARE(countRequests(QStringLiteral("day_curve")), 2);
+}
+
+void TestSunReactorClient::testThemeListAndFetch()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            QJsonArray themes{
+                QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")}, {QStringLiteral("name"), QStringLiteral("Nord")},
+                            {QStringLiteral("family"), QStringLiteral("terminal")}, {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                            {QStringLiteral("fg"), QStringLiteral("#d8dee9")}, {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                            {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}},
+                QJsonObject{{QStringLiteral("id"), QStringLiteral("broken")}}, // no colours: dropped
+            };
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), themes}});
+        }
+        if (name == QStringLiteral("get_theme")) {
+            const QString id = request.value(QStringLiteral("id")).toString();
+            if (id != QStringLiteral("nord")) {
+                return errorResponse(QStringLiteral("invalid_request"), QStringLiteral("unknown theme `%1`").arg(id));
+            }
+            return envelope(QStringLiteral("theme"), {{QStringLiteral("theme"), fullTheme(id)}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy themeSpy(&client, &SunReactorClient::themeChanged);
+    QVERIFY(themeSpy.wait(2000));
+
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    client.refreshThemeList();
+    QVERIFY(listSpy.wait(2000));
+    QCOMPARE(client.themeList().size(), 1);
+    QCOMPARE(client.themeList().at(0).toMap().value(QStringLiteral("secondaryAccent")).toString(),
+             QStringLiteral("#81a1c1"));
+
+    QSignalSpy fetchedSpy(&client, &SunReactorClient::themeFetched);
+    QSignalSpy failedSpy(&client, &SunReactorClient::themeFetchFailed);
+    client.fetchTheme(QStringLiteral("nord"));
+    QVERIFY(fetchedSpy.wait(2000));
+    QCOMPARE(fetchedSpy.at(0).at(0).toString(), QStringLiteral("nord"));
+    QCOMPARE(fetchedSpy.at(0).at(1).toMap().value(QStringLiteral("family")).toString(), QStringLiteral("terminal"));
+
+    // With a registry present, a rejected id is a missing theme, not an old daemon.
+    client.fetchTheme(QStringLiteral("nope"));
+    QVERIFY(failedSpy.wait(2000));
+    QCOMPARE(failedSpy.at(0).at(1).toString(), QStringLiteral("not_found"));
+    QCOMPARE(client.themeRegistry(), SunReactorClient::CapabilitySupported);
+    QVERIFY(client.isConnected());
+}
+
+void TestSunReactorClient::testPinnedThemeIsKeptFetched()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("dracula"));
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("get_theme")) {
+            const QString id = request.value(QStringLiteral("id")).toString();
+            if (id != QStringLiteral("nord")) {
+                return errorResponse(QStringLiteral("invalid_request"), QStringLiteral("unknown theme `%1`").arg(id));
+            }
+            return envelope(QStringLiteral("theme"), {{QStringLiteral("theme"), fullTheme(id)}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        if (name == QStringLiteral("status")) {
+            return statusResponse(status);
+        }
+        return envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+    });
+
+    SunReactorClient client(m_socketPath);
+    client.setPinnedThemeId(QStringLiteral("nord"));
+    QCOMPARE(client.pinnedThemeError(), QStringLiteral("pending"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nord"), 3000);
+    QCOMPARE(client.pinnedThemeError(), QString());
+    // Pinning never changes what is followed.
+    QCOMPARE(client.theme().value(QStringLiteral("id")).toString(), QStringLiteral("dracula"));
+
+    // A config reload re-fetches the pinned theme (its file may have changed).
+    const int before = countRequests(QStringLiteral("get_theme"));
+    client.reloadConfig();
+    QTRY_VERIFY_WITH_TIMEOUT(countRequests(QStringLiteral("get_theme")) > before, 3000);
+
+    client.setPinnedThemeId(QStringLiteral("gone"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedThemeError(), QStringLiteral("not_found"), 3000);
+    QVERIFY(client.pinnedTheme().isEmpty());
+    // A missing theme is not retried on every poll.
+    const int afterMissing = countRequests(QStringLiteral("get_theme"));
+    client.queryStatus();
+    client.queryStatus();
+    QTest::qWait(400);
+    QCOMPARE(countRequests(QStringLiteral("get_theme")), afterMissing);
+
+    client.setPinnedThemeId(QString());
+    QCOMPARE(client.pinnedThemeError(), QString());
+}
+
+void TestSunReactorClient::testThemeWarningIsOptional()
+{
+    // The daemon only sends theme_warning when tui.theme could not be used
+    // as-is (DESIGN.md section 3); older daemons never send it.
+    auto warning = std::make_shared<QJsonValue>(QJsonValue::Undefined);
+    serveWith([warning](const QJsonObject &request) {
+        if (request.value(QStringLiteral("request")).toString() != QStringLiteral("status")) {
+            return errorResponse(QStringLiteral("invalid_request"), QStringLiteral("unknown variant"));
+        }
+        QJsonObject status;
+        status[QStringLiteral("now_epoch_s")] = 1773998400;
+        status[QStringLiteral("theme")] = fullTheme(QStringLiteral("amber"));
+        if (!warning->isUndefined()) {
+            status[QStringLiteral("theme_warning")] = *warning;
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeWarning(), QString());
+
+    *warning = QStringLiteral("  theme file /home/u/.config/sunreactor/themes/mine.toml is invalid: palette.bg "
+                              "is missing; using the default `amber` theme instead\n");
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.themeWarning().isEmpty(), 2000);
+    QVERIFY(client.themeWarning().startsWith(QStringLiteral("theme file ")));
+    QVERIFY2(client.themeWarning().endsWith(QStringLiteral("instead")), "surrounding whitespace is trimmed");
+    // A warning is cosmetic: the theme it fell back to is still followed.
+    QCOMPARE(client.theme().value(QStringLiteral("id")).toString(), QStringLiteral("amber"));
+
+    // Omitted again (the user fixed the file) clears it.
+    *warning = QJsonValue(QJsonValue::Undefined);
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.themeWarning(), QString(), 2000);
+
+    // Anything but a string is treated as nothing to report.
+    *warning = QJsonValue(42);
+    statusSpy.clear();
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeWarning(), QString());
+    *warning = QJsonValue(QJsonValue::Null);
+    statusSpy.clear();
+    client.queryStatus();
+    QVERIFY(statusSpy.wait(2000));
+    QCOMPARE(client.themeWarning(), QString());
+
+    // Losing the daemon forgets it along with the rest of the status.
+    *warning = QStringLiteral("fallback");
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.themeWarning(), QStringLiteral("fallback"), 2000);
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected(), 4000);
+    QCOMPARE(client.themeWarning(), QString());
+}
+
+void TestSunReactorClient::testThemesFolderFollowsXdgConfigHome()
+{
+    const QByteArray savedXdg = qgetenv("XDG_CONFIG_HOME");
+    const bool hadXdg = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+    const QString base = m_tempDir.filePath(QStringLiteral("xdg-config"));
+
+    SunReactorClient client(m_socketPath);
+    qputenv("XDG_CONFIG_HOME", base.toUtf8());
+    const QString expected = base + QStringLiteral("/sunreactor/themes");
+    QCOMPARE(client.themesFolder(), expected);
+    QVERIFY2(!QFileInfo::exists(expected), "asking for the path creates nothing");
+    QCOMPARE(client.ensureThemesFolder(), expected);
+    QVERIFY(QFileInfo(expected).isDir());
+    QCOMPARE(client.ensureThemesFolder(), expected); // idempotent
+
+    // A relative XDG_CONFIG_HOME is invalid for the daemon too: no folder.
+    qputenv("XDG_CONFIG_HOME", "relative/config");
+    QCOMPARE(client.themesFolder(), QString());
+    QCOMPARE(client.ensureThemesFolder(), QString());
+
+    if (hadXdg) {
+        qputenv("XDG_CONFIG_HOME", savedXdg);
+    } else {
+        qunsetenv("XDG_CONFIG_HOME");
+    }
+}
+
+void TestSunReactorClient::testHarnessConfigNeedsHarness()
+{
+    SunReactorClient client(m_socketPath);
+    qputenv("SUNREACTOR_HARNESS_CONFIG", "panelMode=ring showTemperature=false pixelScale=3 "
+                                         "Appearance/moduleOrder=[\"curve\",\"displays\"] bogus =x");
+    qunsetenv("SUNREACTOR_HARNESS");
+    QVERIFY2(client.harnessConfig().isEmpty(), "never outside the screenshot harness");
+
+    qputenv("SUNREACTOR_HARNESS", "1");
+    const QVariantMap config = client.harnessConfig();
+    QCOMPARE(config.value(QStringLiteral("panelMode")).toString(), QStringLiteral("ring"));
+    QCOMPARE(config.value(QStringLiteral("showTemperature")).typeId(), QMetaType::Bool);
+    QCOMPARE(config.value(QStringLiteral("showTemperature")).toBool(), false);
+    QCOMPARE(config.value(QStringLiteral("pixelScale")).toInt(), 3);
+    QCOMPARE(config.value(QStringLiteral("moduleOrder")).toStringList(),
+             (QStringList{QStringLiteral("curve"), QStringLiteral("displays")}));
+    QCOMPARE(config.size(), 4);
+    qunsetenv("SUNREACTOR_HARNESS");
+    qunsetenv("SUNREACTOR_HARNESS_CONFIG");
+}
+
+void TestSunReactorClient::testThemeListIsPrefetchedAndWaitsForSlowAnswer()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    const QJsonArray themes{
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")}, {QStringLiteral("name"), QStringLiteral("Nord")},
+                    {QStringLiteral("family"), QStringLiteral("terminal")}, {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                    {QStringLiteral("fg"), QStringLiteral("#d8dee9")}, {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                    {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}},
+    };
+    serveWithDelay([status, themes](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), themes}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    }, QStringLiteral("list_themes"), 500);
+
+    // Nobody asks for the list: the first status that reports the registry does,
+    // and the slow answer is awaited, not asked again.
+    SunReactorClient client(m_socketPath);
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    QVERIFY(listSpy.wait(3000));
+    QCOMPARE(client.themeList().size(), 1);
+    QTest::qWait(900);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 1);
+    QCOMPARE(listSpy.count(), 1);
+}
+
+void TestSunReactorClient::testThemeListIsAskedAgainAfterFailureOrEmptyAnswer()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    auto answers = std::make_shared<int>(0);
+    serveWith([status, answers](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            // Busy once, empty once, then the registry.
+            ++*answers;
+            if (*answers == 1) {
+                return errorResponse(QStringLiteral("internal"), QStringLiteral("registry busy"));
+            }
+            QJsonArray themes;
+            if (*answers >= 3) {
+                themes.append(QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")},
+                                          {QStringLiteral("name"), QStringLiteral("Nord")},
+                                          {QStringLiteral("family"), QStringLiteral("terminal")},
+                                          {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                                          {QStringLiteral("fg"), QStringLiteral("#d8dee9")},
+                                          {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                                          {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}});
+            }
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), themes}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    // Two retries, two seconds apart while connected, then the list arrives.
+    QVERIFY(listSpy.wait(8000));
+    QCOMPARE(client.themeList().size(), 1);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 3);
+    // Answered: no more requests while the daemon keeps answering well.
+    QTest::qWait(2500);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 3);
+}
+
+void TestSunReactorClient::testThemeListFollowsThemeWarningAndReconnect()
+{
+    auto status = std::make_shared<QJsonObject>();
+    (*status)[QStringLiteral("now_epoch_s")] = 1773998400;
+    (*status)[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), QJsonArray{
+                QJsonObject{{QStringLiteral("id"), QStringLiteral("nord")}, {QStringLiteral("name"), QStringLiteral("Nord")},
+                            {QStringLiteral("family"), QStringLiteral("terminal")}, {QStringLiteral("bg"), QStringLiteral("#2e3440")},
+                            {QStringLiteral("fg"), QStringLiteral("#d8dee9")}, {QStringLiteral("accent"), QStringLiteral("#88c0d0")},
+                            {QStringLiteral("secondary_accent"), QStringLiteral("#81a1c1")}}}}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        if (name == QStringLiteral("status")) {
+            return statusResponse(*status);
+        }
+        return envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy listSpy(&client, &SunReactorClient::themeListChanged);
+    QVERIFY(listSpy.wait(3000));
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 1);
+
+    // The followed theme changes (a user theme was picked): read the list again.
+    (*status)[QStringLiteral("theme")] = fullTheme(QStringLiteral("dracula"));
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 2, 3000);
+
+    // A theme warning appears (a broken user file): read it again.
+    (*status)[QStringLiteral("theme_warning")] = QStringLiteral("theme file is invalid; using the default");
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 3, 3000);
+
+    // Unchanged status: no flood.
+    client.queryStatus();
+    QTest::qWait(500);
+    QCOMPARE(countRequests(QStringLiteral("list_themes")), 3);
+
+    // The daemon goes away and comes back (a restart, maybe a different build).
+    m_server->close();
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected(), 3000);
+    QVERIFY(m_server->listen(m_socketPath));
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 4, 3000);
+}
+
+void TestSunReactorClient::testPopupOpenAsksForAnEmptyThemeList()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nord"));
+    serveWith([status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("list_themes")) {
+            return envelope(QStringLiteral("themes"), {{QStringLiteral("themes"), QJsonArray{}}});
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        return statusResponse(status);
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 1, 3000);
+    QTest::qWait(300);
+    QVERIFY(client.themeList().isEmpty());
+
+    // Opening the popup asks again well before the two-second retry would.
+    client.setPopupOpen(true);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 2, 1500);
 }
 
 QTEST_MAIN(TestSunReactorClient)

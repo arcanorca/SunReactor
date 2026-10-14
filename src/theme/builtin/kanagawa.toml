@@ -1,0 +1,19 @@
+id = "kanagawa"
+name = "Kanagawa"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#1f1f28"
+fg = "#dcd7ba"
+accent = "#7e9cd8"
+secondary_accent = "#957fb2"
+border_active = "#7e9cd8"
+border_inactive = "#54546d"
+text_muted = "#727169"
+success = "#76946a"
+warning = "#c0a36e"
+error = "#c34043"
+
+[tui]
+glyph_style = "rounded"

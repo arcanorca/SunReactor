@@ -1,0 +1,19 @@
+id = "tokyonight"
+name = "Tokyo Night"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#1a1b26"
+fg = "#c0caf5"
+accent = "#7aa2f7"
+secondary_accent = "#bb9af7"
+border_active = "#7aa2f7"
+border_inactive = "#414868"
+text_muted = "#565f89"
+success = "#9ece6a"
+warning = "#e0af68"
+error = "#f7768e"
+
+[tui]
+glyph_style = "rounded"

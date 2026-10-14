@@ -40,6 +40,15 @@ public:
     };
     Q_ENUM(Mode)
 
+    /*! Whether the daemon answers a request family. Older daemons reject the
+        theme-registry and day-curve requests with `invalid_request`. */
+    enum Capability {
+        CapabilityUnknown,     //!< Not asked yet (or the daemon may have changed).
+        CapabilitySupported,   //!< Answered at least once.
+        CapabilityUnsupported, //!< Rejected as an unknown request: older daemon.
+    };
+    Q_ENUM(Capability)
+
 private:
     Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectionChanged)
     Q_PROPERTY(bool isBusy READ isBusy NOTIFY busyChanged)
@@ -92,6 +101,31 @@ private:
     Q_PROPERTY(QString themeBg READ themeBg NOTIFY statusChanged)
     Q_PROPERTY(QString themeFg READ themeFg NOTIFY statusChanged)
     Q_PROPERTY(QString themeTextMuted READ themeTextMuted NOTIFY statusChanged)
+    /*! `status.theme_warning`: why the daemon fell back to another theme than
+        the configured one (e.g. a broken user theme file). Empty when there is
+        nothing to report or the daemon predates the field. Cosmetic only: it
+        never means brightness automation is affected. */
+    Q_PROPERTY(QString themeWarning READ themeWarning NOTIFY statusChanged)
+
+    /*! The followed theme, normalised (see themenormalize.h): id, name, family,
+        glyphStyle, legacy, palette{...}, widget{...}. Empty until a status with
+        a usable theme arrives; kept across a disconnect (it is cosmetic). */
+    Q_PROPERTY(QVariantMap theme READ theme NOTIFY themeChanged)
+    /*! `list_themes`: [{ id, name, family, bg, fg, accent, secondaryAccent }]. */
+    Q_PROPERTY(QVariantList themeList READ themeList NOTIFY themeListChanged)
+    /*! Theme id to keep fetched with `get_theme`; empty = nothing pinned. */
+    Q_PROPERTY(QString pinnedThemeId READ pinnedThemeId WRITE setPinnedThemeId NOTIFY pinnedThemeIdChanged)
+    /*! Normalised pinned theme, empty until fetched or when the fetch failed. */
+    Q_PROPERTY(QVariantMap pinnedTheme READ pinnedTheme NOTIFY pinnedThemeChanged)
+    /*! "" (fine or nothing pinned), "pending", "unsupported" or "not_found". */
+    Q_PROPERTY(QString pinnedThemeError READ pinnedThemeError NOTIFY pinnedThemeChanged)
+    /*! `day_curve`: { date, stepMinutes, generatedAtEpochS, weatherMultiplier,
+        sun{dawn,sunrise,solarNoon,sunset,dusk}, monitors[{ monitorId, minPct,
+        maxPct, samples[{t,pct,pctNoWeather}], milestones[{id,label,t,pct}] }] }.
+        Sun epochs the daemon reports as null are 0. Empty when unknown. */
+    Q_PROPERTY(QVariantMap dayCurve READ dayCurve NOTIFY dayCurveChanged)
+    Q_PROPERTY(Capability themeRegistry READ themeRegistry NOTIFY capabilitiesChanged)
+    Q_PROPERTY(Capability dayCurveSupport READ dayCurveSupport NOTIFY capabilitiesChanged)
 
 public:
     explicit SunReactorClient(QObject *parent = nullptr);
@@ -140,9 +174,20 @@ public:
     [[nodiscard]] QString themeBg() const { return m_themeBg; }
     [[nodiscard]] QString themeFg() const { return m_themeFg; }
     [[nodiscard]] QString themeTextMuted() const { return m_themeTextMuted; }
+    [[nodiscard]] QString themeWarning() const { return m_themeWarning; }
+
+    [[nodiscard]] QVariantMap theme() const { return m_theme; }
+    [[nodiscard]] QVariantList themeList() const { return m_themeList; }
+    [[nodiscard]] QString pinnedThemeId() const { return m_pinnedThemeId; }
+    [[nodiscard]] QVariantMap pinnedTheme() const { return m_pinnedTheme; }
+    [[nodiscard]] QString pinnedThemeError() const { return m_pinnedThemeError; }
+    [[nodiscard]] QVariantMap dayCurve() const { return m_dayCurve; }
+    [[nodiscard]] Capability themeRegistry() const { return m_themeRegistry; }
+    [[nodiscard]] Capability dayCurveSupport() const { return m_dayCurveSupport; }
 
     void setSocketPath(const QString &path);
     void setPopupOpen(bool open);
+    void setPinnedThemeId(const QString &id);
 
 public Q_SLOTS:
     void queryStatus();
@@ -161,6 +206,35 @@ public Q_SLOTS:
     /*! Opens `sunreactorctl tui` in the session's terminal emulator. */
     void openTerminal();
 
+    /*! The user theme directory (`$XDG_CONFIG_HOME/sunreactor/themes`, i.e.
+        the daemon's `paths::config_dir()` + `themes`), created if missing.
+        Returns the absolute path, or "" when it cannot be created. */
+    QString ensureThemesFolder() const;
+    /*! ensureThemesFolder(), then shows it in the desktop's file manager. */
+    bool openThemesFolder() const;
+    /*! Path of the user theme directory, without creating it. */
+    QString themesFolder() const;
+    /*! Screenshot harness only: plasmoid config overrides from
+        SUNREACTOR_HARNESS_CONFIG ("key=value key=value", values JSON when they
+        parse, else strings). Always empty unless SUNREACTOR_HARNESS is set. */
+    QVariantMap harnessConfig() const;
+
+    /*! Asks for `list_themes`; result in themeList. No-op on an older daemon, and
+        never a second request while one is queued or in flight. The client asks by
+        itself: once the registry is known, after every (re)connect, when the followed
+        theme or its warning changes, after a config reload, when the popup opens with
+        no list, and again two seconds later while connected but the list failed or is
+        empty. Callers need not ask. */
+    void refreshThemeList();
+    /*! One-shot `get_theme` (e.g. for a preview); answers with themeFetched or
+        themeFetchFailed(id, "unsupported" | "not_found" | "offline"). */
+    void fetchTheme(const QString &id);
+    /*! Asks for `day_curve`. The client also refreshes it by itself: when the
+        popup opens, when the local date changes, after a config reload, limit
+        change or weather refresh, when the followed theme changes, and every
+        ten minutes - never on every status poll. */
+    void refreshDayCurve();
+
 Q_SIGNALS:
     void statusChanged();
     void connectionChanged(bool connected);
@@ -168,6 +242,14 @@ Q_SIGNALS:
     void socketPathChanged();
     void busyChanged();
     void popupOpenChanged();
+    void themeChanged();
+    void themeListChanged();
+    void pinnedThemeIdChanged();
+    void pinnedThemeChanged();
+    void dayCurveChanged();
+    void capabilitiesChanged();
+    void themeFetched(const QString &id, const QVariantMap &theme);
+    void themeFetchFailed(const QString &id, const QString &reason);
 
 private Q_SLOTS:
     void onSocketConnected();
@@ -176,6 +258,8 @@ private Q_SLOTS:
     void onSocketError(QLocalSocket::LocalSocketError socketError);
     void onRequestTimeout();
     void onPollTimerTriggered();
+    void onSlowTimerTriggered();
+    void onThemeListRetryTriggered();
 
 private:
     [[nodiscard]] QJsonObject request(const QString &name) const;
@@ -183,11 +267,25 @@ private:
     void processNextRequest();
     void sendInFlightRequest();
     void handleResponse(const QJsonObject &responseObj);
+    void dispatchResponse(const QJsonObject &responseObj);
+    /*! After an answer to list_themes: the list is no longer stale, and a failed or
+        empty answer schedules the retry while connected. */
+    void themeListAnswered(bool gotList);
+    [[nodiscard]] bool themeListWanted() const;
     void parseStatus(const QJsonObject &statusObj);
     void parseWeather(const QJsonObject &statusObj);
     void parseMonitors(const QJsonObject &statusObj);
     void parseForecast(const QJsonArray &entries);
     void parseDetails(const QJsonObject &details);
+    void parseTheme(const QJsonObject &statusObj);
+    void parseThemeList(const QJsonArray &entries);
+    void parseDayCurve(const QJsonObject &curve);
+    void handleError(const QJsonObject &responseObj);
+    void requestPinnedTheme();
+    void setThemeRegistry(Capability capability);
+    void setDayCurveSupport(Capability capability);
+    void setPinned(const QVariantMap &theme, const QString &error);
+    [[nodiscard]] bool isQueued(const QString &name, const QString &id = QString()) const;
     void clearStatus();
     void setConnected(bool connected);
     void setBusy(bool busy);
@@ -199,6 +297,8 @@ private:
     QLocalSocket *m_socket = nullptr;
     QTimer *m_pollTimer = nullptr;
     QTimer *m_watchdogTimer = nullptr;
+    QTimer *m_slowTimer = nullptr;
+    QTimer *m_themeListRetryTimer = nullptr;
 
     QQueue<QJsonObject> m_requestQueue;
     QJsonObject m_inFlightRequest;
@@ -246,4 +346,18 @@ private:
     QString m_themeBg;
     QString m_themeFg;
     QString m_themeTextMuted;
+    QString m_themeWarning;
+
+    QVariantMap m_theme;
+    QVariantList m_themeList;
+    /*! The list must be read again: connected anew, followed theme or warning changed. */
+    bool m_themeListStale = false;
+    QString m_pinnedThemeId;
+    QVariantMap m_pinnedTheme;
+    QString m_pinnedThemeError;
+    QVariantMap m_dayCurve;
+    /*! Local date the current day curve belongs to (or was last asked for). */
+    QString m_dayCurveDate;
+    Capability m_themeRegistry = CapabilityUnknown;
+    Capability m_dayCurveSupport = CapabilityUnknown;
 };

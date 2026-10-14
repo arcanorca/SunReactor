@@ -1,0 +1,26 @@
+id = "nds"
+name = "Nintendo DS"
+aliases = ["nintendods", "ds"]
+family = "instrument"
+
+[palette]
+bg = "#eef1f5"
+fg = "#1f2933"
+accent = "#2f6fdb"
+secondary_accent = "#f08a24"
+border_active = "#2f6fdb"
+border_inactive = "#b9c2cc"
+text_muted = "#7a8590"
+success = "#43b05c"
+warning = "#f2b01e"
+error = "#e04545"
+
+[tui]
+glyph_style = "rounded"
+
+[widget]
+renderer = "vector"
+font = "sans"
+radius = 14
+border = "line"
+density = "comfortable"

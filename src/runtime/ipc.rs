@@ -236,6 +236,12 @@ impl DaemonRuntime {
                     outcome,
                 )
             }
+            ipc::Request::ListThemes => (Self::theme_list_response(), IpcOutcome::default()),
+            ipc::Request::GetTheme { id } => (Self::theme_response(&id), IpcOutcome::default()),
+            ipc::Request::DayCurve { monitor_id } => (
+                self.day_curve_response(monitor_id.as_deref(), now_utc),
+                IpcOutcome::default(),
+            ),
             ipc::Request::ExternalBrightnessChange => {
                 tracing::info!(
                     "external_brightness_change_observed_without_identity; no blind reapply"
@@ -496,11 +502,35 @@ impl DaemonRuntime {
     }
 
     fn reload_config(&mut self) -> Result<(), RuntimeError> {
+        // Pick up added/edited user theme files before the config is
+        // validated against the registry.
+        crate::theme::reload_registry();
         self.reload_config_with(config::load)
     }
 
+    /// Test hook: reload with an explicit theme registry instead of the
+    /// process-wide one.
+    #[cfg(test)]
+    pub(super) fn reload_config_with_themes<F>(
+        &mut self,
+        loader: F,
+        registry: &crate::theme::Registry,
+    ) -> Result<(), RuntimeError>
+    where
+        F: FnOnce() -> Result<ConfigReport, ConfigError>,
+    {
+        let next = loader()?;
+        self.apply_reloaded_runtime_config(RuntimeConfig::from_report_with_themes(next, registry)?)
+    }
+
     fn apply_reloaded_config(&mut self, next: ConfigReport) -> Result<(), RuntimeError> {
-        let new_config = RuntimeConfig::from_report(next)?;
+        self.apply_reloaded_runtime_config(RuntimeConfig::from_report(next)?)
+    }
+
+    fn apply_reloaded_runtime_config(
+        &mut self,
+        new_config: RuntimeConfig,
+    ) -> Result<(), RuntimeError> {
         let location_changed = self.config.location != new_config.location;
 
         let previous_config = std::mem::replace(&mut self.config, new_config);
@@ -655,7 +685,10 @@ impl DaemonRuntime {
                 error = %error,
                 "ipc_request_failed"
             );
-        } else if response_kind != "status" && response_kind != "pong" {
+        } else if !matches!(
+            response_kind.as_str(),
+            "status" | "pong" | "themes" | "theme" | "day_curve"
+        ) {
             tracing::info!(
                 request = %request_name,
                 response = %response_kind,

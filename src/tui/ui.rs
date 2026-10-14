@@ -148,9 +148,10 @@ fn render_theme_modal(f: &mut Frame, palette: &Palette, state: &mut ratatui::wid
 
     f.render_widget(Clear, modal_area);
 
-    let items: Vec<ListItem> = crate::tui::theme::Theme::ALL
+    let items: Vec<ListItem> = crate::theme::registry()
+        .themes()
         .iter()
-        .map(|t| ListItem::new(format!(" {} ", t.name())))
+        .map(|t| ListItem::new(format!(" {} ", t.name)))
         .collect();
 
     let list = List::new(items)

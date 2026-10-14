@@ -105,7 +105,8 @@ fn run_diagnostics_with<R: ProcessRunner>(
         discovery.summary.ddc_monitors > 0,
     ));
 
-    checks.push(match crate::config::load() {
+    let config = crate::config::load();
+    checks.push(match &config {
         Ok(report) => CheckResult::pass(
             "SR-CONFIG-OK",
             format!(
@@ -116,6 +117,10 @@ fn run_diagnostics_with<R: ProcessRunner>(
         ),
         Err(error) => CheckResult::error("SR-CONFIG-ERR", error.to_string()),
     });
+    checks.extend(theme_checks(
+        &crate::theme::registry(),
+        config.as_ref().ok().map(|report| &report.config.tui.theme),
+    ));
 
     let daemon_program = daemon_executable();
     checks.push(
@@ -152,6 +157,40 @@ fn run_diagnostics_with<R: ProcessRunner>(
         i2c_access,
         backlight_access,
     }
+}
+
+/// Theme health: the configured theme must resolve as-is (error otherwise;
+/// the daemon keeps running on a fallback), and every skipped user theme
+/// file is reported with its path and reason.
+fn theme_checks(
+    registry: &crate::theme::Registry,
+    configured: Option<&crate::config::ThemeId>,
+) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
+    if let Some(configured) = configured {
+        let (theme, warning) = registry.resolve_or_fallback(configured.as_str());
+        checks.push(match warning {
+            None => CheckResult::pass(
+                "SR-THEME-OK",
+                format!("tui.theme `{}` resolves ({}).", theme.id, theme.name),
+            ),
+            Some(warning) => CheckResult::error(
+                "SR-THEME-UNRESOLVED",
+                format!(
+                    "tui.theme `{configured}`: {} (the daemon uses `{}` meanwhile).",
+                    warning.replace('\n', " "),
+                    theme.id
+                ),
+            ),
+        });
+    }
+    for diagnostic in registry.diagnostics() {
+        checks.push(CheckResult::warn(
+            "SR-THEME-FILE-INVALID",
+            diagnostic.to_string().replace('\n', " "),
+        ));
+    }
+    checks
 }
 
 fn daemon_executable() -> String {
@@ -433,7 +472,9 @@ fn group_name_for_gid(gid: u32) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{backlight_check, i2c_check, BacklightAccessState, CheckStatus, I2cAccessState};
+    use super::{
+        backlight_check, i2c_check, theme_checks, BacklightAccessState, CheckStatus, I2cAccessState,
+    };
 
     #[test]
     fn stale_i2c_session_is_blocking_and_explicit() {
@@ -453,5 +494,28 @@ mod tests {
     fn backlight_permission_denied_is_blocking() {
         let check = backlight_check(BacklightAccessState::PermissionDenied);
         assert_eq!(check.status, CheckStatus::Error);
+    }
+
+    #[test]
+    fn theme_checks_name_broken_files_and_fail_on_unusable_configured_theme() {
+        use crate::config::ThemeId;
+        use crate::theme::{Registry, UserThemeSource};
+
+        let registry = Registry::with_user_sources(vec![UserThemeSource {
+            stem: String::from("broken"),
+            path: std::path::PathBuf::from("/virtual/broken.toml"),
+            text: Ok(String::from("id = \"broken\"\n")),
+        }]);
+
+        let checks = theme_checks(&registry, Some(&ThemeId::new("broken")));
+        assert_eq!(checks[0].code, "SR-THEME-UNRESOLVED");
+        assert_eq!(checks[0].status, CheckStatus::Error);
+        assert!(checks[0].message.contains("/virtual/broken.toml"));
+        assert_eq!(checks[1].code, "SR-THEME-FILE-INVALID");
+        assert_eq!(checks[1].status, CheckStatus::Warn);
+
+        let checks = theme_checks(&registry, Some(&ThemeId::new("nord")));
+        assert_eq!(checks[0].status, CheckStatus::Pass);
+        assert_eq!(checks[1].status, CheckStatus::Warn);
     }
 }

@@ -1,0 +1,19 @@
+id = "monokai"
+name = "Monokai"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#272822"
+fg = "#f8f8f2"
+accent = "#a6e22e"
+secondary_accent = "#66d9ef"
+border_active = "#a6e22e"
+border_inactive = "#75715e"
+text_muted = "#75715e"
+success = "#a6e22e"
+warning = "#fd971f"
+error = "#f92672"
+
+[tui]
+glyph_style = "rounded"

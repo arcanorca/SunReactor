@@ -156,7 +156,7 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main >/dev/null 2>"$HOME/installer.log"
+            main --no-plasma >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
     status=$?
     set -e
@@ -217,7 +217,7 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main >/dev/null 2>"$HOME/installer.log"
+            main --no-plasma >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
     local status=$?
     set -e
@@ -268,7 +268,7 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main >/dev/null 2>"$HOME/installer.log"
+            main --no-plasma >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
     status=$?
     set -e
@@ -303,7 +303,7 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main --no-service >/dev/null
+            main --no-service --no-plasma >/dev/null
         ' _ "$ROOT_DIR/install.sh"
     [[ -x "$home/.local/bin/sunreactord" && -x "$home/.local/bin/sunreactorctl" ]]
     [[ ! -e "$marker" ]] || {
@@ -330,7 +330,7 @@ esac
 SHIM
     chmod +x "$fakebin/systemctl"
     set +e
-    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/custom-config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
+    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/custom-config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main --no-plasma >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
     local status=$?
     set -e
     [[ $status -ne 0 ]]
@@ -382,7 +382,7 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main >/dev/null 2>"$HOME/installer.log"
+            main --no-plasma >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
     [[ -f "$home/.config/systemd/user/sunreactord.service" ]]
     grep -Fx -- '--user cat sunreactord.service' "$marker" >/dev/null
@@ -421,7 +421,7 @@ SHIM
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
-            main >/dev/null
+            main --no-plasma >/dev/null
         ' _ "$ROOT_DIR/install.sh"
     [[ -f "$custom_config/systemd/user/sunreactord.service" ]]
     grep -Fx -- '--user cat sunreactord.service' "$marker" >/dev/null
@@ -473,7 +473,7 @@ SHIM
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
-            main >/dev/null 2>"$HOME/installer.log"
+            main --no-plasma >/dev/null 2>"$HOME/installer.log"
         ' _ "$ROOT_DIR/install.sh"
     status=$?
     set -e
@@ -502,7 +502,7 @@ esac
 SHIM
     chmod +x "$fakebin/systemctl"
     set +e
-    SYSTEMCTL_MARKER="$marker" TEST_SYSTEMD_DIR="$home/config/systemd/user" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
+    SYSTEMCTL_MARKER="$marker" TEST_SYSTEMD_DIR="$home/config/systemd/user" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main --no-plasma >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
     local status=$?
     set -e
     [[ $status -ne 0 ]]
@@ -589,7 +589,7 @@ SHIM
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
-            main >/dev/null
+            main --no-plasma >/dev/null
         ' _ "$ROOT_DIR/install.sh"
     [[ -x "$destdir/$home/.local/bin/sunreactord" && -x "$destdir/$home/.local/bin/sunreactorctl" ]]
     [[ -f "$destdir/$home/.config/systemd/user/sunreactord.service" ]]
@@ -600,6 +600,209 @@ SHIM
     rm -rf "$home" "$destdir" "$fakebin"
 }
 test_destdir_staging_installation
+
+# Plasma widget step, without KDE: shims on PATH stand in for cmake,
+# plasmashell and kpackagetool6. cmake logs its calls to $CMAKE_STUB_LOG and
+# fails when CMAKE_STUB_FAIL is set; its install writes fake plugin files.
+plasma_shims() {
+    local fakebin="$1"
+    cat >"$fakebin/cmake" <<'SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${CMAKE_STUB_LOG:-/dev/null}"
+[[ -z "${CMAKE_STUB_FAIL:-}" ]] || { printf 'cmake stub: configure failed\n' >&2; exit 1; }
+case "${1:-}" in
+    --build) exit 0 ;;
+    --install)
+        root="${DESTDIR:?}$HOME/.local"
+        mkdir -p "$root/lib/qml/org/sunreactor/plasma" \
+            "$root/share/plasma/plasmoids/org.sunreactor.plasma/contents/ui"
+        printf 'new plugin\n' >"$root/lib/libsunreactorplugin.so"
+        printf 'new qml plugin\n' >"$root/lib/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so"
+        printf 'module org.sunreactor.plasma\n' >"$root/lib/qml/org/sunreactor/plasma/qmldir"
+        printf 'staged package, never copied\n' \
+            >"$root/share/plasma/plasmoids/org.sunreactor.plasma/contents/ui/ignored.qml"
+        exit 0 ;;
+    *)
+        while [[ $# -gt 0 ]]; do
+            [[ "$1" == -B ]] && mkdir -p "$2"
+            shift
+        done
+        exit 0 ;;
+esac
+SHIM
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$fakebin/plasmashell"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$fakebin/kpackagetool6"
+    chmod +x "$fakebin/cmake" "$fakebin/plasmashell" "$fakebin/kpackagetool6"
+}
+
+# Hides one tool from `command -v` inside a test shell: merged-/usr systems
+# would otherwise still find a real plasmashell on /usr/bin.
+HIDE_TOOL_SNIPPET='command() { if [[ "$1" == -v && "$2" == "${HIDE_TOOL:-}" ]]; then return 1; fi; builtin command "$@"; }'
+
+test_plasma_flags_and_decision() {
+    local home fakebin
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    plasma_shims "$fakebin"
+    HOME="$home" SUNREACTOR_INSTALLER_LIBRARY=1 PATH="$fakebin:/usr/bin:/bin" bash -c '
+        source "$1"
+        parse_args --with-plasma --dry-run
+        [[ "$PLASMA_MODE" == on && "$DRY_RUN" == 1 ]]
+        parse_args --no-plasma
+        [[ "$PLASMA_MODE" == off ]]
+        ! plasma_widget_decision
+        [[ "$PLASMA_DECISION" == "skip: disabled by --no-plasma" ]]
+        PLASMA_MODE=auto
+        plasma_widget_decision
+        [[ "$PLASMA_DECISION" == install ]]
+    ' _ "$ROOT_DIR/install.sh"
+    rm -rf "$home" "$fakebin"
+}
+
+test_plasma_dry_run_changes_nothing() {
+    local home fakebin out
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    plasma_shims "$fakebin"
+    out=$(HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" PATH="$fakebin:/usr/bin:/bin" \
+        bash "$ROOT_DIR/install.sh" --dry-run --with-plasma)
+    assert_contains "$out" "decision: install"
+    assert_contains "$out" "$home/data/plasma/plasmoids/org.sunreactor.plasma"
+    assert_contains "$out" "systemctl --user restart plasma-plasmashell.service"
+    [[ ! -e "$home/.local" && ! -e "$home/data" && ! -e "$home/config" ]] || {
+        printf 'dry run created files under HOME\n' >&2
+        exit 1
+    }
+    rm -rf "$home" "$fakebin"
+}
+
+test_plasma_auto_skips_without_plasmashell() {
+    local home fakebin marker
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    marker="$home/cmake-calls"
+    plasma_shims "$fakebin"
+    HIDE_TOOL=plasmashell CMAKE_STUB_LOG="$marker" HOME="$home" \
+        XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
+        XDG_DATA_HOME="$home/data" PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 \
+        bash -c "$HIDE_TOOL_SNIPPET"'
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    grep -F 'Plasma widget skipped: plasmashell or kpackagetool6 not found' "$home/installer.log" >/dev/null
+    [[ ! -e "$marker" ]] || {
+        printf 'widget step ran cmake without plasmashell\n' >&2
+        exit 1
+    }
+    [[ ! -e "$home/data/plasma" ]]
+    rm -rf "$home" "$fakebin"
+}
+
+test_plasma_no_plasma_never_builds() {
+    local home fakebin marker
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    marker="$home/cmake-calls"
+    plasma_shims "$fakebin"
+    CMAKE_STUB_LOG="$marker" HOME="$home" XDG_CONFIG_HOME="$home/config" \
+        XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service --no-plasma >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    [[ ! -e "$marker" ]] || {
+        printf -- '--no-plasma invoked cmake\n' >&2
+        exit 1
+    }
+    [[ ! -e "$home/data/plasma" ]]
+    rm -rf "$home" "$fakebin"
+}
+
+test_plasma_widget_success_is_atomic_and_keeps_backup() {
+    local home fakebin data status
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    data="$home/data"
+    plasma_shims "$fakebin"
+    # A previous widget: its package and plugin are replaced and must be kept.
+    mkdir -p "$data/plasma/plasmoids/org.sunreactor.plasma" "$home/.local/lib"
+    printf 'old package\n' >"$data/plasma/plasmoids/org.sunreactor.plasma/metadata.json"
+    printf 'old plugin\n' >"$home/.local/lib/libsunreactorplugin.so"
+    set +e
+    HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$data" CMAKE_STUB_LOG="$home/cmake-calls" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    status=$?
+    set -e
+    [[ $status -eq 0 ]] || {
+        cat "$home/installer.log" >&2
+        exit 1
+    }
+    grep -F 'Plasma widget installed' "$home/installer.log" >/dev/null
+    grep -F 'systemctl --user restart plasma-plasmashell.service' "$home/installer.log" >/dev/null
+    cmp -s "$ROOT_DIR/plasma/org.sunreactor.plasma/package/metadata.json" \
+        "$data/plasma/plasmoids/org.sunreactor.plasma/metadata.json"
+    grep -Fx 'new plugin' "$home/.local/lib/libsunreactorplugin.so" >/dev/null
+    grep -Fx 'new qml plugin' "$home/.local/lib/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so" >/dev/null
+    grep -Fx 'module org.sunreactor.plasma' "$home/.local/lib/qml/org/sunreactor/plasma/qmldir" >/dev/null
+    [[ ! -e "$data/plasma/plasmoids/org.sunreactor.plasma/contents/ui/ignored.qml" ]]
+    grep -Fx 'old package' "$(find "$data/sunreactor-backups" -name metadata.json | head -n 1)" >/dev/null
+    grep -Fx 'old plugin' "$(find "$data/sunreactor-backups" -name libsunreactorplugin.so | head -n 1)" >/dev/null
+    [[ -z "$(find "$home" -name '*.sunreactor-new' -o -name '*.new-*' 2>/dev/null)" ]] || {
+        printf 'widget install left temporary files behind\n' >&2
+        exit 1
+    }
+    rm -rf "$home" "$fakebin"
+}
+
+test_plasma_failure_never_fails_install() {
+    local home fakebin status
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    plasma_shims "$fakebin"
+    set +e
+    CMAKE_STUB_FAIL=1 HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service --with-plasma >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    status=$?
+    set -e
+    [[ $status -eq 0 ]] || {
+        cat "$home/installer.log" >&2
+        printf 'a failing widget step failed the whole install\n' >&2
+        exit 1
+    }
+    grep -F 'Plasma widget not installed' "$home/installer.log" >/dev/null
+    [[ -x "$home/.local/bin/sunreactord" && -x "$home/.local/bin/sunreactorctl" ]]
+    [[ ! -e "$home/data/plasma/plasmoids/org.sunreactor.plasma" ]]
+    rm -rf "$home" "$fakebin"
+}
 
 test_checksum_helpers() {
     local file expected
@@ -633,6 +836,13 @@ PY
     ! (SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; extract_archive "$2"' _ "$ROOT_DIR/install.sh" "$archive")
     rm -rf "$home"
 }
+
+test_plasma_flags_and_decision
+test_plasma_dry_run_changes_nothing
+test_plasma_auto_skips_without_plasmashell
+test_plasma_no_plasma_never_builds
+test_plasma_widget_success_is_atomic_and_keeps_backup
+test_plasma_failure_never_fails_install
 
 test_checksum_helpers
 test_archive_member_rejection

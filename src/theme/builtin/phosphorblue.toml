@@ -1,0 +1,25 @@
+id = "phosphorblue"
+name = "Phosphor Blue"
+aliases = []
+family = "instrument"
+
+[palette]
+bg = "#000000"
+fg = "#00ffff"
+accent = "#00ffff"
+secondary_accent = "#00c8ff"
+border_active = "#00ffff"
+border_inactive = "#006496"
+text_muted = "#0096c8"
+success = "#00ff96"
+warning = "#c8ff00"
+error = "#ff3232"
+
+[tui]
+glyph_style = "rounded"
+
+# Instrument identity for the Plasma widget (DESIGN.md section 2).
+[widget]
+font = "mono"
+radius = 2
+glow = 0.45

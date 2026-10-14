@@ -1,0 +1,19 @@
+id = "nightowl"
+name = "Night Owl"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#011627"
+fg = "#d6deeb"
+accent = "#82aaff"
+secondary_accent = "#c792ea"
+border_active = "#82aaff"
+border_inactive = "#2d5078"
+text_muted = "#82a0be"
+success = "#22da6e"
+warning = "#ffcb8b"
+error = "#ef5350"
+
+[tui]
+glyph_style = "rounded"

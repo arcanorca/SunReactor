@@ -1,0 +1,19 @@
+id = "dracula"
+name = "Dracula"
+aliases = []
+family = "terminal"
+
+[palette]
+bg = "#282a36"
+fg = "#f8f8f2"
+accent = "#ff79c6"
+secondary_accent = "#bd93f9"
+border_active = "#ff79c6"
+border_inactive = "#6272a4"
+text_muted = "#bfbfbf"
+success = "#50fa7b"
+warning = "#f1fa8c"
+error = "#ff5555"
+
+[tui]
+glyph_style = "rounded"
