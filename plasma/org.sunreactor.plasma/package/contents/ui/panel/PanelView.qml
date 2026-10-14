@@ -30,6 +30,8 @@ import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../skins/pixel/Sprites.js" as Sprites
+
 import "../engine"
 import "PanelData.js" as PanelData
 
@@ -72,6 +74,8 @@ Item {
 
     readonly property color panelBackground: Kirigami.Theme.backgroundColor
     readonly property color panelText: Kirigami.Theme.textColor
+    /*! Labels (temperature, sun height): the Game Boy's lightest shade, so the DMG's text stays in its ramp. */
+    readonly property color labelInk: Sprites.isMonoRamp(theme) ? theme.shades[theme.shades.length - 1] : panelText
     /*! Data ink for vector/terminal marks on the panel. */
     readonly property color dataInk: PanelData.ink(theme.available ? theme.accent : Kirigami.Theme.highlightColor,
                                                    panelBackground, panelText, 3)
@@ -142,7 +146,7 @@ Item {
             vertical: root.vertical
             dotPitch: root.dotPitch
             available: root.vertical ? root.thickness : Number.POSITIVE_INFINITY
-            color: root.panelText
+            color: root.labelInk
         }
     }
 

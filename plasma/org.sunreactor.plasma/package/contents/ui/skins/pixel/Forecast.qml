@@ -74,6 +74,8 @@ Item {
                     required property var modelData
                     required property int index
                     readonly property int slotWidth: Math.floor(panel.contentWidth / root.slots)
+                    /*! The slot's sky frame; the sprite takes it from here (not from itself, which would loop its colours). */
+                    readonly property int skyFrame: Sprites.conditionFrame(modelData.condition, modelData.isNight)
 
                     x: index * slotWidth
                     width: slotWidth
@@ -93,15 +95,15 @@ Item {
                     PixelSprite {
                         x: Math.floor((slot.width - 16) / 2)
                         y: 6
-                        visible: root.theme.glyphStyle === "pixel"
+                        visible: pstyle.spriteWeather
                         source: Sprites.weatherAtlas()
-                        frame: Sprites.conditionFrame(slot.modelData.condition, slot.modelData.isNight)
-                        colors: pstyle.spriteColors
+                        frame: slot.skyFrame
+                        colors: pstyle.weatherColors(slot.skyFrame)
                     }
                     WeatherGlyph {
                         x: Math.floor((slot.width - 16) / 2)
                         y: 6
-                        visible: root.theme.glyphStyle !== "pixel"
+                        visible: !pstyle.spriteWeather
                         size: 16
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight

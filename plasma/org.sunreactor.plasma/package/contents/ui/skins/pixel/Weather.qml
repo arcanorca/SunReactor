@@ -24,6 +24,10 @@ Item {
 
     readonly property string domain: settings.domain
     readonly property bool available: client.isConnected && client.weatherEnabled
+    /*! The sky sprite's atlas frame (the unknown one without a reading). */
+    readonly property int skyFrame: client.hasWeatherReading
+        ? Sprites.conditionFrame(client.weatherCondition, client.weatherIsNight)
+        : Sprites.weatherFrame("unknown")
 
     readonly property string condition: {
         const text = weatherText.conditionLabel(client.weatherCondition);
@@ -93,19 +97,17 @@ Item {
             // The effect runs under the sky and the temperature, full width.
             contentHeight: effectText.y + effectText.height
 
-            // The 16 px sky sprite, or the vector glyph (solid, by default) on the
-            // same 16 px footprint when the weather icon style is not "pixel".
+            // The 16 px sky sprite, or the vector glyph (solid, by default) where the
+            // theme does not draw its weather as the sprite (PixelStyle.spriteWeather).
             PixelSprite {
                 id: sprite
-                visible: root.theme.glyphStyle === "pixel"
+                visible: pstyle.spriteWeather
                 source: Sprites.weatherAtlas()
-                frame: root.client.hasWeatherReading
-                    ? Sprites.conditionFrame(root.client.weatherCondition, root.client.weatherIsNight)
-                    : Sprites.weatherFrame("unknown")
-                colors: pstyle.spriteColors
+                frame: root.skyFrame
+                colors: pstyle.weatherColors(root.skyFrame)
             }
             WeatherGlyph {
-                visible: root.theme.glyphStyle !== "pixel"
+                visible: !pstyle.spriteWeather
                 size: 16
                 condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
                 night: root.client.hasWeatherReading && root.client.weatherIsNight

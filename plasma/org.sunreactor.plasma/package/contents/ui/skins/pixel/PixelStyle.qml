@@ -23,6 +23,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "../../engine"
+import "Sprites.js" as Sprites
 
 QtObject {
     id: root
@@ -262,5 +263,15 @@ QtObject {
     readonly property var symbolColors: {
         const c = spriteColors.slice();
         return c;
+    }
+    /*! The handheld's four-shade ramp (Sprites.isMonoRamp): weather art in those shades only. */
+    readonly property bool dmgRamp: Sprites.isMonoRamp(theme)
+    /*! Weather is the 16 px sprite on the handheld whatever the icon style: the vector
+        glyphs blend colours between their roles, so they cannot be shade-only. Other
+        pixel themes keep their own weather icon style. */
+    readonly property bool spriteWeather: dmgRamp || theme.glyphStyle === "pixel"
+    /*! PixelSprite colours for the weather frame `frame` (an index into Sprites.WEATHER). */
+    function weatherColors(frame) {
+        return dmgRamp ? Sprites.monoWeatherColors(frame, ramp) : spriteColors;
     }
 }

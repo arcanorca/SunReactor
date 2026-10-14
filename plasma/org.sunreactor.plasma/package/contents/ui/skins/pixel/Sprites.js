@@ -55,3 +55,40 @@ function conditionFrame(condition, isNight) {
         return weatherFrame("unknown");
     }
 }
+
+/*! The Game Boy DMG (theme `handheld`): the one theme whose palette is a
+    four-shade monochrome LCD ramp. Its weather art is drawn in those shades only. */
+function isMonoRamp(theme) {
+    return !!theme && theme.available === true && theme.themeId === "handheld"
+        && (theme.shades || []).length === 4;
+}
+
+/*! Atlas tone (tools/generate_weather_icons.py) -> shade step on the ramp, 0 darkest
+    .. 3 lightest, by luminance: highlight and warm core light, body mid, shade dark,
+    edges, water, outline and rays darkest. Tone 0 (transparent) is never looked up. */
+var MONO_TONE = [0, 3, 2, 1, 0, 3, 0, 0, 0, 0];
+/*! Where one tone stands for two things, the map differs per frame: the sun ring is
+    dark (tone 1), the snow flakes are dark (tone 1 is also the cloud's top), and the
+    thunderstorm bolt is dark where the sun's core is light (tone 5). */
+var MONO_OVERRIDE = {
+    "clear-day": { 1: 0 },
+    "snow": { 1: 0 },
+    "thunderstorm": { 5: 0 }
+};
+
+/*! PixelSprite colours for the atlas frame or symbol `name` on the ramp `shades`
+    (darkest first): index i is the colour of tone i. */
+function monoColors(name, shades) {
+    const over = MONO_OVERRIDE[name] || {};
+    const out = ["transparent"];
+    for (let tone = 1; tone < MONO_TONE.length; ++tone) {
+        const step = over[tone] !== undefined ? over[tone] : MONO_TONE[tone];
+        out.push(shades[step]);
+    }
+    return out;
+}
+
+/*! monoColors for the weather frame index `frame` (see WEATHER). */
+function monoWeatherColors(frame, shades) {
+    return monoColors(WEATHER[frame] || "unknown", shades);
+}
