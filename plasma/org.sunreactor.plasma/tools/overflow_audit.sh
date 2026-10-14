@@ -45,6 +45,7 @@
 # window's device pixel ratio (1.35 at 144 renders at 2.025), so a DPI row is
 # also a pixel-grid row. Each META line records the ratio that was in effect.
 #
+# AUDIT_EXTRA_CONFIG adds plasmoid config keys to every render ("weatherIconStyle=modern").
 # Environment: SHOT_POPUP_W / SHOT_POPUP_H (logical px, default 900 x 1000),
 # SHOT_SCREEN (default 3840x2160), SHOT_SERVERNUM (first display, default 80).
 set -euo pipefail
@@ -152,7 +153,7 @@ lane_run() {
             SHOT_SCREEN="${SHOT_SCREEN:-3840x2160}" \
                 "$HERE/shot.sh" --out "$OUT/raw" --tag "$tag" --themes "$theme" --views popup \
                     --scales "$dpr" --scenario "$scen" --audit --font-dpi "$dpi" --units "$units" \
-                    --config "tab=$page" > "$OUT/raw/$tag.stdout" 2>&1 || true
+                    --config "tab=$page ${AUDIT_EXTRA_CONFIG:-}" > "$OUT/raw/$tag.stdout" 2>&1 || true
             local base="$OUT/raw/${tag}_${theme}_popup_${dpr}"
             [[ -f "$base.png" ]] && mv "$base.png" "$OUT/shots/$name.png"
             [[ -f "$base.log" ]] && mv "$base.log" "$OUT/logs/$name.log"
