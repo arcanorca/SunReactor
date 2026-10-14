@@ -322,13 +322,8 @@ FocusScope {
                     strong: root.isCursor(-1, "value")
                 }
             }
-            Item {
-                visible: root.showAll
-                width: parent.width
-                height: term.ch
-            }
 
-            // --- one block per display ----------------------------------------------
+            // --- one block per display (no blank row between them: the Brightness page budget) ---
             Repeater {
                 model: root.monitors
 
@@ -349,13 +344,6 @@ FocusScope {
                     readonly property bool current: root.isCursor(block.index, "value")
 
                     width: column.width
-
-                    // A blank row between displays.
-                    Item {
-                        visible: block.index > 0
-                        width: parent.width
-                        height: term.ch
-                    }
 
                     // The display: label, gauge, value.
                     Item {

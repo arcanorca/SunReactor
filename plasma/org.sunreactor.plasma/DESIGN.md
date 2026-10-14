@@ -411,5 +411,11 @@ folder", validation message for bad user themes.
     (`--old` answers the new requests with `invalid_request`).
   - Remaining: the full 35-theme matrix needs the daemon branch's theme files
     as fixtures (the fake daemon has 7).
+- Popup budget: Brightness popup (2 displays) <= 34 grid units cap; Weather popup
+  <= 440 px; both at DPR 1.35. The audit's `popup.h` (AUDIT_META) is the measure.
+  The terminal family's Brightness page with two displays is held to <= 520 px
+  at DPR 1.35 as well (terminal 494, hackergreen 511 at 19 grid units): terminal
+  shows the "All displays" control from three displays only, hackergreen has no
+  blank row between display blocks.
 - No windows on the user's desktop; always headless. Qt logs to the journal
   when stderr is not a TTY: the scripts set `QT_FORCE_STDERR_LOGGING=1`.

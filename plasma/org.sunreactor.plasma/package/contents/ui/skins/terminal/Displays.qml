@@ -41,7 +41,8 @@ FocusScope {
 
     readonly property string domain: settings.domain
     readonly property var monitors: client.isConnected ? client.monitors : []
-    readonly property bool showAll: monitors.length > 1
+    /*! The master control only from three displays: with two it repeats the two rows. */
+    readonly property bool showAll: monitors.length > 2
     readonly property bool available: client.isConnected && monitors.length > 0
     /*! Rows per control: name and value, the bar (two rows), the state line. */
     readonly property int controlRows: 4
