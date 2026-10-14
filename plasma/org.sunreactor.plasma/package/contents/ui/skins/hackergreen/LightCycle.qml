@@ -363,12 +363,14 @@ Item {
                 }
             }
 
-            // The code texture: under the columns, so the area hides it.
+            // The code texture: under the columns, so the area hides it. The NOW label
+            // sits over it on purpose (an opaque capsule), so the texture is not audited.
             Repeater {
                 model: root.showAll ? 0 : root.chartRows
 
                 delegate: TermText {
                     required property int index
+                    property bool auditIgnore: true
 
                     tm: term
                     x: root.plotX

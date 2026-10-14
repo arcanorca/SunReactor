@@ -196,8 +196,10 @@ ColumnLayout {
             GridLayout {
                 id: secondary
 
+                // Bottom of the readouts, not of the primary column: when this grid is
+                // taller it must grow down into the glass, not above its top edge.
                 anchors.right: parent.right
-                anchors.bottom: primary.bottom
+                anchors.bottom: parent.bottom
                 columns: 2
                 columnSpacing: root.style.gap2
                 rowSpacing: root.style.snap(root.style.gap * 0.5)

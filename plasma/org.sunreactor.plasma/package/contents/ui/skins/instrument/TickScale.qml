@@ -38,8 +38,10 @@ Item {
     readonly property real labelHeight: labelEvery > 0 ? metrics.height : 0
 
     function xAt(v) {
-        // The last tick sits on the last device pixel column, not past it.
-        return style.snap((v - from) / span * (width - style.hairline));
+        // The last tick sits on the last device pixel column, not past it: rounding
+        // to the nearest device pixel can put it half a pixel beyond the ruler.
+        const x = style.snap((v - from) / span * (width - style.hairline));
+        return Math.min(x, style.floorSnap(width - style.hairline));
     }
 
     implicitHeight: style.snap(tickBand + (labelEvery > 0 ? style.hairline * 2 + labelHeight : 0))

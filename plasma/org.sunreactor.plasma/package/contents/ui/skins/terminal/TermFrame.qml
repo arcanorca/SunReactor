@@ -155,6 +155,9 @@ Item {
             id: corner
 
             required property int index
+            // The arc is a rounded rect twice the corner's size, cut to its quadrant
+            // by this clip on purpose: its bleed past the clip is the mechanism.
+            property bool auditIgnore: true
             readonly property bool atRight: index === 1 || index === 2
             readonly property bool atBottom: index >= 2
             readonly property int r: root.radiusDev

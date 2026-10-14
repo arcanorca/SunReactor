@@ -11,7 +11,8 @@
  * One focus stop: Left and Right move the cursor (❯), Enter or Space picks the
  * cell under it, Down opens the pause durations on Paused. Automatic is in the
  * accent colour while the daemon is not automatic: the way back. The rules are
- * in modules/ModeControl.qml.
+ * in modules/ModeControl.qml. On a narrow popup the row tightens (`forms`):
+ * the spacing goes, then the spaces inside the brackets.
  */
 
 pragma ComponentBehavior: Bound
@@ -40,18 +41,50 @@ FocusScope {
     /*! The cell the keys act on: 0 automatic, 1 manual, 2 paused. */
     property int cursor: 0
 
-    readonly property int gap: 2
-    readonly property var labels: control.choices.map(choice => "[ " + choice.label + " ]")
-    /*! Column of each cell's marker; the label follows one cell later. */
-    readonly property var starts: {
-        const out = [];
-        let at = 2;
-        for (let i = 0; i < labels.length; ++i) {
-            out.push(at);
-            at += 1 + term.len(labels[i]) + gap;
-        }
-        return out;
+    /*! The row's forms, richest first: cells inside the brackets, cells between
+        the choices, cells before the arrow. The first one that fits the frame is
+        used, so a narrow popup or a longer translation tightens the row instead
+        of running past the frame. */
+    readonly property var forms: [
+        { pad: 1, gap: 2, arrow: 1 },
+        { pad: 1, gap: 1, arrow: 0 },
+        { pad: 0, gap: 2, arrow: 1 },
+        { pad: 0, gap: 1, arrow: 0 },
+    ]
+
+    function labelIn(form, index): string {
+        const text = control.choices[index].label;
+        return form.pad > 0 ? "[ " + text + " ]" : "[" + text + "]";
     }
+
+    /*! Each cell's marker column and the row's width in cells, for one form. */
+    function arrange(form): var {
+        const starts = [];
+        let at = 2;
+        let end = 2;
+        for (let i = 0; i < control.choices.length; ++i) {
+            const arrow = control.choices[i].id === "paused" ? form.arrow + 1 : 0;
+            const width = 1 + term.len(labelIn(form, i)) + arrow;
+            starts.push(at);
+            end = at + width;
+            at += width + form.gap;
+        }
+        return { form: form, starts: starts, width: end };
+    }
+
+    /*! The first form that fits the frame's cells; the tightest when none does. */
+    readonly property var arrangement: {
+        for (const form of forms) {
+            const found = arrange(form);
+            if (found.width <= frame.innerCols) {
+                return found;
+            }
+        }
+        return arrange(forms[forms.length - 1]);
+    }
+    readonly property var labels: control.choices.map((choice, i) => labelIn(arrangement.form, i))
+    /*! Column of each cell's marker; the label follows one cell later. */
+    readonly property var starts: arrangement.starts
 
     activeFocusOnTab: true
     implicitHeight: frame.implicitHeight
@@ -147,7 +180,7 @@ FocusScope {
                             && root.control.choice !== "automatic"
                         readonly property bool here: root.activeFocus && root.cursor === index
                         readonly property color tone: choiceId === "automatic" ? root.theme.success : root.theme.warning
-                        readonly property int caretCells: choiceId === "paused" ? 2 : 0
+                        readonly property int caretCells: choiceId === "paused" ? root.arrangement.form.arrow + 1 : 0
 
                         x: term.cx(root.starts[index])
                         y: 0
@@ -182,7 +215,7 @@ FocusScope {
                         TermText {
                             visible: cell.choiceId === "paused"
                             tm: term
-                            x: term.cx(1 + term.len(root.labels[cell.index]) + 1)
+                            x: term.cx(1 + term.len(root.labels[cell.index]) + root.arrangement.form.arrow)
                             value: "▾"
                             color: cell.here ? root.theme.fg : root.theme.textMuted
                         }
@@ -200,7 +233,7 @@ FocusScope {
                         MouseArea {
                             visible: cell.choiceId === "paused"
                             x: term.cx(1 + term.len(root.labels[cell.index]))
-                            width: term.cx(2)
+                            width: term.cx(cell.caretCells)
                             height: term.ch
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {

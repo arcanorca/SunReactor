@@ -67,7 +67,8 @@ T.Slider {
 
             visible: control.showScale
             x: control.leftPadding
-            width: control.usable + control.style.hairline
+            // The scale spans the track: its last tick sits on the track's last device pixel.
+            width: control.usable
             style: control.style
             minor: 10
             major: 50
