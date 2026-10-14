@@ -23,6 +23,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import traceback
 
@@ -56,6 +57,28 @@ def panel_of(windows):
         if w["dock"]:
             return {k: w[k] for k in ("x", "y", "w", "h")}
     return None
+
+
+class CpuSampler(threading.Thread):
+    """CPU seconds of one thread (the main thread: tid == pid), every 0.5 s."""
+
+    def __init__(self, pid):
+        super().__init__(daemon=True)
+        self.pid = pid
+        self.samples = []  # [epoch seconds, CPU seconds]
+        self.done = threading.Event()
+
+    def run(self):
+        hz = os.sysconf("SC_CLK_TCK")
+        while not self.done.is_set():
+            try:
+                with open("/proc/%d/task/%d/stat" % (self.pid, self.pid)) as f:
+                    raw = f.read()
+            except OSError:
+                break
+            fields = raw[raw.rindex(")") + 2:].split()
+            self.samples.append([round(time.time(), 3), (int(fields[11]) + int(fields[12])) / hz])
+            self.done.wait(0.5)
 
 
 class Probe(dbus.service.Object):
@@ -94,6 +117,7 @@ class Nest:
         self.bus = dbus.SessionBus()
         self.probe = Probe(self.bus, (self.out / "windows.jsonl").open("w"))
         self.shell = None
+        self.sampler = None
         self.kwin = None
         self.applet = "panels()[0].widgets('%s')[0]" % WIDGET_PLUGIN
         self.log = (self.out / "steps.jsonl").open("w")
@@ -260,7 +284,7 @@ class Nest:
                 continue
             popup = None if rest == "hidden" else dict(zip(("x", "y", "w", "h"), map(int, rest.split())))
             events.append({"t": round((ms - first) / 1000, 3), "popup": popup, "panel": panel})
-        self.emit({"step": "session", "location": self.location, "events": events})
+        self.emit({"step": "session", "location": self.location, "first_ms": first, "events": events})
 
     def emit(self, record):
         record = dict(record, theme=self.args.theme, font=self.args.font,
@@ -275,6 +299,8 @@ class Nest:
         self.start_compositor()
         self.start_daemon()
         self.start_plasma()
+        self.sampler = CpuSampler(self.gdb_proc.pid)
+        self.sampler.start()
         self.add_widget()
         if self.args.size == "stored":
             self.store_size()
@@ -286,6 +312,9 @@ class Nest:
         self.observe()
 
     def finish(self):
+        if self.sampler is not None:
+            self.sampler.done.set()
+            self.emit({"step": "cpu", "samples": self.sampler.samples})
         self.log.close()
         src = self.config_dir / APPLETSRC
         if src.exists():
