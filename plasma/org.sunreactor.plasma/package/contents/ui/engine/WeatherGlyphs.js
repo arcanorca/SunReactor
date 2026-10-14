@@ -139,9 +139,30 @@ var FALLBACK = {
     warning: "#feca57"
 };
 
+/// Roles for a monochrome ramp (palette.ramp: four shades, dark to light, as the Game
+/// Boy DMG has them). Each role is one of the shades: nothing is blended or guarded,
+/// so the glyph stays on the ramp. The DMG screen is dark (bg is the darkest shade)
+/// and its ink the lightest; the sun, rain and mist take the middle tones.
+function rampRoles(ramp) {
+    var c = ramp.map(parseColor);
+    return {
+        bg: c[0],
+        fg: c[3],
+        muted: c[2],
+        sun: c[2],
+        rain: c[2],
+        bolt: c[3],
+        shade: c[2],
+        faint: c[1]
+    };
+}
+
 /// Colour roles for one glyph. Missing palette keys fall back to FALLBACK.
 function resolvePalette(palette) {
     var p = palette || {};
+    if (Array.isArray(p.ramp) && p.ramp.length === 4) {
+        return rampRoles(p.ramp);
+    }
     function pick(key) {
         return parseColor(p[key]) || parseColor(FALLBACK[key]);
     }

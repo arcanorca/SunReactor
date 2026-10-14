@@ -35,7 +35,9 @@ Item {
     property bool night: false
     /*! "line" (monoline stroke, no fills) or "solid" (flat two-tone fills, no outlines). */
     property string glyphStyle: "line"
-    /*! { fg, text_muted, accent, secondary_accent, warning, bg } as colour strings. */
+    /*! { fg, text_muted, accent, secondary_accent, warning, bg } as colour strings, or
+        { ramp: [dark, ..., light] } (four shades) when the glyph must stay on a
+        monochrome ramp: every role is then one of the shades (WeatherGlyphs.js). */
     override property var palette: ({})
     /*! Logical px. */
     property real size: 24
