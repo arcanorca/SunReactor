@@ -7,6 +7,7 @@
 #                 [--old] [--scheme dark|light] [--theme-warning TEXT]
 #                 [--config "panelMode=ring showTemperature=false"]
 #                 [--font-dpi N] [--units N] [--audit]
+#                 [--font "Inter:12"] [--fixed-font "Hack:12"] [--small-font "Inter Display:9"]
 #                 [--package DIR] [--qml DIR]
 #
 # Output: DIR/<tag>_<theme>_<view>_<scale>.png plus a .log with the viewer's QML
@@ -28,6 +29,15 @@
 # popup view only). --audit runs the layout audit (tools/harness/Audit.qml): the
 # screenshot is taken once SUNREACTOR_AUDIT_END is in the viewer's log, and the
 # audit's marker lines stay in DIR/<tag>_<theme>_<view>_<scale>.log.
+#
+# --font / --fixed-font / --small-font set the viewer's fonts (the general,
+# fixed and smallestReadable entries of kdeglobals) as "Family:pt" or
+# "Family,pt" (env SHOT_FONT, SHOT_FIXED_FONT, SHOT_SMALL_FONT). They reach
+# Kirigami.Theme (defaultFont, smallFont) through the KDE platform theme, which
+# the harness selects whenever a font is set (SHOT_QPA_THEME overrides). Unset =
+# the harness default, which has no kdeglobals fonts. Kirigami.Units.gridUnit
+# stays 18 px in this harness at any font size, so the popup stays 19 grid units
+# (342 px); the terminal skins' grid is fitted to that width, not to the font.
 #
 # Isolation (nothing reaches the user's session):
 #   - env -i: no WAYLAND_DISPLAY / DISPLAY of the desktop, no user QML paths;
@@ -59,6 +69,9 @@ AUDIT=""
 WARNING=""
 SCHEME="dark"
 SETTLE="${SHOT_SETTLE:-2.5}"
+FONT="${SHOT_FONT:-}"
+FIXED_FONT="${SHOT_FIXED_FONT:-}"
+SMALL_FONT="${SHOT_SMALL_FONT:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -75,6 +88,9 @@ while [[ $# -gt 0 ]]; do
         --audit) AUDIT=1; shift ;;
         --theme-warning) WARNING="$2"; shift 2 ;;
         --scheme) SCHEME="$2"; shift 2 ;;
+        --font) FONT="$2"; shift 2 ;;
+        --fixed-font) FIXED_FONT="$2"; shift 2 ;;
+        --small-font) SMALL_FONT="$2"; shift 2 ;;
         --package) PACKAGE="$(cd "$2" && pwd)"; shift 2 ;;
         --qml) QMLDIR="$(cd "$2" && pwd)"; shift 2 ;;
         -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
@@ -117,9 +133,32 @@ SOCK="$WORK/run/sunreactor/control.sock"
 # A fixed colour scheme makes runs comparable between machines and sessions.
 SCHEME_FILE="/usr/share/color-schemes/Breeze${SCHEME^}.colors"
 [[ "$SCHEME" == "light" ]] && SCHEME_FILE="/usr/share/color-schemes/BreezeLight.colors"
+# Fonts in Qt's QFont string form ("Family,pt,-1,5,400,0,0,0,0,0,0,0,0,0,0,1",
+# the shape of a real kdeglobals entry); the same form for all three slots.
+qt_font() {
+    python3 - "$1" <<'PY'
+import re, sys
+spec = sys.argv[1].strip()
+m = re.match(r"^(.*?)[:,]\s*(\d+(?:\.\d+)?)$", spec)
+family, size = (m.group(1).strip(), m.group(2)) if m else (spec, "10")
+print(f"{family},{size},-1,5,400,0,0,0,0,0,0,0,0,0,0,1")
+PY
+}
+FONT_LINES=""
+[[ -n "$FONT" ]] && FONT_LINES+="font=$(qt_font "$FONT")"$'\n'
+[[ -n "$FIXED_FONT" ]] && FONT_LINES+="fixed=$(qt_font "$FIXED_FONT")"$'\n'
+[[ -n "$SMALL_FONT" ]] && FONT_LINES+="smallestReadable=$(qt_font "$SMALL_FONT")"$'\n'
 if [[ -f "$SCHEME_FILE" ]]; then
-    { cat "$SCHEME_FILE"; printf '\n[General]\nColorScheme=Breeze%s\n' "${SCHEME^}"; } > "$WORK/config/kdeglobals"
+    { cat "$SCHEME_FILE"; printf '\n[General]\nColorScheme=Breeze%s\n' "${SCHEME^}"; printf '%s' "$FONT_LINES"; } > "$WORK/config/kdeglobals"
+elif [[ -n "$FONT_LINES" ]]; then
+    { printf '[General]\n'; printf '%s' "$FONT_LINES"; } > "$WORK/config/kdeglobals"
 fi
+# Fonts reach QGuiApplication (and Kirigami.Theme.defaultFont) only through the
+# KDE platform theme, which reads kdeglobals; the harness default leaves Qt's own
+# theme. SHOT_QPA_THEME overrides; any font setting selects "kde".
+QPA="${SHOT_QPA_THEME:-}"
+[[ -z "$QPA" && -n "$FONT_LINES" ]] && QPA=kde
+[[ -n "$QPA" ]] && extra_env+=("QT_QPA_PLATFORMTHEME=$QPA")
 
 # plasmoidviewer's own shell overlays an SDK toolbar and stretches the view to
 # the whole screen. A private copy of the shell with tools/harness/Desktop.qml

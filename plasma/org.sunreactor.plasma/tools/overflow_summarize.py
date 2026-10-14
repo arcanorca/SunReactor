@@ -176,6 +176,7 @@ def build(run: pathlib.Path, package: pathlib.Path, top: int) -> dict:
         combos.append({
             "name": name, "theme": row["theme"], "page": row["page"], "dpr": row["dpr"],
             "dpi": row["dpi"], "scenario": row["scen"], "units": row["units"],
+            "fontpt": row.get("fontpt", ""),
             "effective_dpr": meta.get("dpr"), "popup": meta.get("popup"),
             "popup_max_height": meta.get("popupMaxHeight"), "scroll": meta.get("scroll", []),
             "complete": complete, "findings": len(log["findings"]), "shot": f"shots/{name}.png",

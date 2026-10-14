@@ -217,6 +217,13 @@ Item {
 
     /*! The text problem of one text item (ELIDED or CLIPPED), or null. */
     function textProblem(item): var {
+        // Terminal skins (skins/terminal/TermText.qml) cut their own runs to a cell count.
+        if (typeof item.value === "string" && typeof item.cells === "number" && item.cells >= 0) {
+            if (item.text !== item.value) {
+                return { kind: "ELIDED", detail: { cells: item.cells, value: item.value.slice(0, 60) } };
+            }
+            return null;
+        }
         if (typeof item.truncated === "boolean" && typeof item.contentWidth === "number") {
             const detail = {
                 elide: item.elide, width: round2(item.width), contentWidth: round2(item.contentWidth),
@@ -299,6 +306,14 @@ Item {
                 if (audit.rowRe.test(base)) {
                     next.row = c;
                 }
+            }
+
+            // A TermRuns line cut or dropped to its cells: ELIDED, once for the line.
+            if (c.cut === true && typeof c.runs !== "undefined" && !ctx.reportedText && box) {
+                const whole = c.runs.map(run => String(run.t)).join("");
+                st.findings.push({ kind: "ELIDED", path: next.path, file: next.file, text: whole.slice(0, 80),
+                    box: audit.plainBox(box), detail: { cells: c.cells } });
+                next.reportedText = true;
             }
 
             if (typeof c.text === "string" && c.text.length > 0) {
