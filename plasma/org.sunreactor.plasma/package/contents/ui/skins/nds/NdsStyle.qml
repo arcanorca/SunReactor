@@ -63,7 +63,6 @@ QtObject {
     readonly property color danger: theme.error
 
     readonly property color white: "#ffffff"
-    readonly property color cream: "#fff8ea"
     readonly property color panelTop: "#ffffff"
     readonly property color panelBottom: "#e3eefc"
     readonly property color quietTop: "#f7f8fa"
@@ -80,21 +79,6 @@ QtObject {
     readonly property color hingeBottom: "#aab5c4"
     readonly property color hingeSlot: "#4b5563"
     readonly property color track: "#cfe0f7"
-    readonly property color cloudInk: "#4f6482"
-    readonly property color cloudMuted: "#9aabc2"
-
-    /*! WeatherGlyph roles for the solid style on a surface of `background`:
-        the sun is orange, the rain DS blue, the cloud slate. */
-    function glyphPalette(background) {
-        return {
-            bg: theme.hexOf(background),
-            fg: theme.hexOf(cloudInk),
-            text_muted: theme.hexOf(cloudMuted),
-            accent: theme.hexOf(orange),
-            secondary_accent: theme.hexOf(blue),
-            warning: theme.hexOf(theme.warning)
-        };
-    }
 
     /*! The same colour at a given opacity. */
     function alpha(c, a) {

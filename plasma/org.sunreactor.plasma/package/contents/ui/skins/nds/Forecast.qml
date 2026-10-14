@@ -1,6 +1,6 @@
 /*
  * Nintendo DS touch screen, forecast: the next intervals the daemon already
- * fetched as white rounded tiles - time, glossy sky glyph, temperature - up to
+ * fetched as white rounded tiles - time, DS cartoon sky icon, temperature - up to
  * five across, then a details list: what the weather does to the displays and
  * whether the reading is live. Module contract: modules/Modules.js.
  */
@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../components/weathericons"
 import "../../Format.js" as Format
 
 Item {
@@ -187,14 +188,13 @@ Item {
             font.pixelSize: Math.round(root.gu * 0.6)
             color: root.style.muted
         }
-        WeatherGlyph {
+        NdsWeatherIcon {
             anchors.horizontalCenter: parent.horizontalCenter
             y: Math.round(root.gu * 0.8)
             size: Math.round(Math.min(tile.width * 0.7, root.gu * 1.4))
+            theme: root.theme
             condition: tile.modelData.condition || ""
             night: tile.modelData.isNight === true
-            glyphStyle: "solid"
-            palette: root.style.glyphPalette(root.style.white)
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter

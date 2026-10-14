@@ -1,8 +1,9 @@
 /*
- * Nintendo DS top screen, weather page: the current sky as a large glossy glyph
- * on a cream badge, the temperature in big rounded digits, the condition and
- * what the daemon's weather does to the displays. The hinge sits under the
- * screen. Module contract: modules/Modules.js.
+ * Nintendo DS top screen, weather page: the current sky as the DS cartoon icon
+ * (components/weathericons/NdsWeatherIcon.qml) standing on the screen with no
+ * plate, the temperature in big rounded digits, the condition and what the
+ * daemon's weather does to the displays. The hinge sits under the screen.
+ * Module contract: modules/Modules.js.
  */
 
 pragma ComponentBehavior: Bound
@@ -13,6 +14,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
+import "../../components/weathericons"
 
 Item {
     id: root
@@ -66,30 +68,22 @@ Item {
             client: root.client
         }
 
-        // The sky on a cream badge, with the solid glyph.
-        Rectangle {
+        // The sky: the DS cartoon icon in the slot the badge used to fill.
+        Item {
             id: badgeBox
 
             x: root.pad
             y: Math.round(root.gu * 1.8)
             width: root.badge
             height: root.badge
-            radius: width / 2
-            border.width: 1
-            border.color: "#e7d3ac"
-            gradient: Gradient {
-                GradientStop { position: 0; color: "#fffdf6" }
-                GradientStop { position: 1; color: "#fbe6c2" }
-            }
         }
-        WeatherGlyph {
+        NdsWeatherIcon {
             x: badgeBox.x + Math.round((badgeBox.width - width) / 2)
             y: badgeBox.y + Math.round((badgeBox.height - height) / 2)
-            size: Math.round(root.gu * 2.6)
+            size: Math.round(root.gu * 2.9)
+            theme: root.theme
             condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
             night: root.client.weatherIsNight === true
-            glyphStyle: "solid"
-            palette: root.style.glyphPalette(root.style.cream)
         }
 
         // The temperature: big rounded digits, the unit beside them.
