@@ -20,6 +20,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
+import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.extras as PlasmaExtras
 import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
@@ -83,6 +84,37 @@ PlasmaExtras.Representation {
                                          + root.topPadding + root.bottomPadding
     readonly property real popupHeight: Math.min(root.popupMaxHeight,
         Math.max(root.popupMinHeight, root.headerHeight + root.pageHeight + root.chromeHeight))
+
+    /*! Plasma can keep a popup size stored for this applet and then ignore the
+        layout hints, so the window stays at the stored height while the page
+        changes. The window is fitted to the page here instead: the frame around
+        the content (the window's height minus the root's) is kept, and at the
+        bottom edge the window moves up so that its bottom stays on the panel.
+        Only a shown, laid-out window whose height differs is set, so nothing is
+        set twice. */
+    function fitWindow(): void {
+        const w = root.Window.window;
+        if (!w || !w.visible || root.height <= 0 || w.height < root.height) {
+            return;
+        }
+        const wanted = Math.round(root.popupHeight) + (w.height - Math.round(root.height));
+        if (wanted === w.height) {
+            return;
+        }
+        if (Plasmoid.location === PlasmaCore.Types.BottomEdge) {
+            w.y = w.y - (wanted - w.height);
+        }
+        w.height = wanted;
+    }
+    onPopupHeightChanged: Qt.callLater(root.fitWindow)
+    Connections {
+        target: root.Window.window
+        ignoreUnknownSignals: true
+
+        function onVisibleChanged(): void {
+            Qt.callLater(root.fitWindow);
+        }
+    }
 
     collapseMarginsHint: true
     // collapseMarginsHint would extend the content into the Plasma frame's
