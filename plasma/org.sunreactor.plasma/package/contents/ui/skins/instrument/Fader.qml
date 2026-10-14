@@ -38,6 +38,11 @@ T.Slider {
     function xAt(v) {
         return style.snap(leftPadding + (v - from) / Math.max(1, to - from) * usable);
     }
+    /*! A hairline tick at v, kept inside the track: the last tick (at `to`) would
+        otherwise hang one hairline past the fader's right edge. */
+    function xTick(v) {
+        return Math.min(xAt(v), width - style.hairline);
+    }
 
     from: 0
     to: 100
@@ -182,7 +187,7 @@ T.Slider {
                 model: control.hasRange ? [control.limitMin, control.limitMax] : []
                 delegate: Rectangle {
                     required property real modelData
-                    x: control.xAt(modelData)
+                    x: control.xTick(modelData)
                     y: control.style.snap(control.centreY + control.zone / 2 - control.style.line2 - height)
                     width: control.style.hairline
                     height: control.style.snap(3)
@@ -201,7 +206,7 @@ T.Slider {
             // Automatic target: a small notch above the groove.
             Rectangle {
                 visible: control.target >= 0
-                x: control.xAt(control.target)
+                x: control.xTick(control.target)
                 y: control.trackY
                 width: control.style.line
                 height: control.style.snap(control.zone / 2 - parent.thick)
@@ -327,7 +332,7 @@ T.Slider {
                 model: control.hasRange ? [control.limitMin, control.limitMax] : []
                 delegate: Rectangle {
                     required property real modelData
-                    x: control.xAt(modelData)
+                    x: control.xTick(modelData)
                     y: tube.tubeY + tube.tubeH + control.style.hairline * 2
                     width: control.style.hairline
                     height: control.style.snap(3)
@@ -336,7 +341,7 @@ T.Slider {
             }
             Rectangle {
                 visible: control.target >= 0
-                x: control.xAt(control.target)
+                x: control.xTick(control.target)
                 y: tube.tubeY - height - control.style.hairline * 2
                 width: control.style.line
                 height: control.style.snap(3)
@@ -374,7 +379,7 @@ T.Slider {
                 model: 51
                 delegate: Rectangle {
                     required property int index
-                    x: control.xAt(index * 2)
+                    x: control.xTick(index * 2)
                     y: control.centreY
                     width: control.style.hairline
                     height: control.style.hairline
@@ -383,7 +388,7 @@ T.Slider {
             }
             Rectangle {
                 visible: control.target >= 0
-                x: control.xAt(control.target)
+                x: control.xTick(control.target)
                 y: control.trackY
                 width: control.style.hairline
                 height: control.zone
