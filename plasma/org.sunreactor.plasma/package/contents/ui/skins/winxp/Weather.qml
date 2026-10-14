@@ -1,9 +1,10 @@
 /*
- * Weather, Windows XP: a welcome pane. The temperature in a large figure with the
- * sky beside it, the brightness effect of the weather as a short green progress
- * bar, and the readings in a details list under a blue Details band. When the
- * forecast and the sun times are listed, the window hosts their tables too, so
- * the whole weather page is one card. Shown only when weather is enabled.
+ * Weather, Windows XP: a welcome pane in the "Current conditions" group box. The sky
+ * icon at its left, the temperature in a large figure beside it, the brightness
+ * effect of the weather as a short green progress bar, and the readings in two
+ * columns of ruled cells under them. When the forecast and the sun times are
+ * listed, the window hosts their tables too, so the whole weather page is one
+ * card. Shown only when weather is enabled.
  */
 
 pragma ComponentBehavior: Bound
@@ -15,6 +16,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
+import "../../components/weathericons"
 
 WinWindow {
     id: root
@@ -83,189 +85,197 @@ WinWindow {
         return out;
     }
 
-    // The welcome pane: the reading and what it does to the targets.
-    RowLayout {
+    // The welcome pane: the sky icon at its left, the reading and what it does to the
+    // targets, in the "Current conditions" group box as the XP welcome pane does.
+    WinGroupBox {
         Layout.fillWidth: true
-        spacing: root.ui.gap
+        style: root.ui
+        caption: i18nd(root.domain, "Current conditions")
 
-        Text {
-            visible: root.client.hasTemperature
-            Layout.alignment: Qt.AlignVCenter
-            text: String(Math.round(root.client.temperatureC))
-            textFormat: Text.PlainText
-            font: root.ui.heroFont
-            color: root.ui.ink
-            lineHeight: root.ui.sizeHero
-            lineHeightMode: Text.FixedHeight
-        }
-        Text {
-            visible: root.client.hasTemperature
-            Layout.alignment: Qt.AlignTop
-            Layout.topMargin: root.ui.snap(root.ui.sizeHero * 0.14)
-            text: "°C"
-            textFormat: Text.PlainText
-            font: root.ui.boldFont
-            color: root.ui.inkMuted
-        }
-
-        ColumnLayout {
+        RowLayout {
             Layout.fillWidth: true
-            spacing: 0
+            spacing: root.ui.gap
 
-            Text {
-                Layout.fillWidth: true
-                text: root.client.hasWeatherReading
-                    ? (weatherText.conditionLabel(root.client.weatherCondition) || i18nd(root.domain, "No weather reading"))
-                    : root.stateNote
-                textFormat: Text.PlainText
-                font: root.ui.boldFont
-                color: root.client.hasWeatherReading ? root.ui.ink : root.ui.inkMuted
-                elide: Text.ElideRight
+            WinXpWeatherIcon {
+                Layout.alignment: Qt.AlignTop
+                theme: root.theme
+                condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                night: root.client.hasWeatherReading && root.client.weatherIsNight
+                size: 48
             }
 
-            Row {
-                visible: root.client.hasWeatherReading && !root.client.weatherStale
+            ColumnLayout {
+                Layout.fillWidth: true
                 spacing: root.ui.gap
 
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.change >= 2 ? i18ndc(root.domain, "Weather effect: the displays are dimmed", "Dimming")
-                        : (root.change <= -2 ? i18ndc(root.domain, "Weather effect: the displays are brightened", "Boosting")
-                                             : i18ndc(root.domain, "Weather effect: none", "No effect"))
-                    textFormat: Text.PlainText
-                    font: root.ui.smallFont
-                    color: root.ui.ink
-                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: root.ui.gap
 
-                // Ten green blocks: the weather multiplier, shown when it changes the targets.
-                Row {
-                    id: effect
+                    Text {
+                        visible: root.client.hasTemperature
+                        Layout.alignment: Qt.AlignVCenter
+                        text: String(Math.round(root.client.temperatureC))
+                        textFormat: Text.PlainText
+                        font: root.ui.heroFont
+                        color: root.ui.ink
+                        lineHeight: root.ui.sizeHero
+                        lineHeightMode: Text.FixedHeight
+                    }
+                    Text {
+                        visible: root.client.hasTemperature
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: root.ui.snap(root.ui.sizeHero * 0.14)
+                        text: "°C"
+                        textFormat: Text.PlainText
+                        font: root.ui.boldFont
+                        color: root.ui.inkMuted
+                    }
 
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: root.ui.snap(3)
-                    visible: Math.abs(root.change) >= 2
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
 
-                    readonly property int lit: Math.round(Math.max(0, Math.min(1, root.client.weatherMultiplier)) * 10)
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.client.hasWeatherReading
+                                ? (weatherText.conditionLabel(root.client.weatherCondition) || i18nd(root.domain, "No weather reading"))
+                                : root.stateNote
+                            textFormat: Text.PlainText
+                            font: root.ui.boldFont
+                            color: root.client.hasWeatherReading ? root.ui.ink : root.ui.inkMuted
+                            elide: Text.ElideRight
+                        }
 
-                    Repeater {
-                        model: 10
+                        Row {
+                            visible: root.client.hasWeatherReading && !root.client.weatherStale
+                            spacing: root.ui.gap
 
-                        delegate: Rectangle {
-                            required property int index
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.change >= 2 ? i18ndc(root.domain, "Weather effect: the displays are dimmed", "Dimming")
+                                    : (root.change <= -2 ? i18ndc(root.domain, "Weather effect: the displays are brightened", "Boosting")
+                                                         : i18ndc(root.domain, "Weather effect: none", "No effect"))
+                                textFormat: Text.PlainText
+                                font: root.ui.smallFont
+                                color: root.ui.ink
+                            }
 
-                            width: root.ui.snap(7)
-                            height: root.ui.snap(root.ui.sizeBody * 0.6)
-                            color: index < effect.lit ? root.ui.green : root.ui.trough
-                            border.width: root.ui.line
-                            border.color: root.ui.etchDark
+                            // Ten green blocks: the weather multiplier, shown when it changes the targets.
+                            Row {
+                                id: effect
+
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: root.ui.snap(3)
+                                visible: Math.abs(root.change) >= 2
+
+                                readonly property int lit: Math.round(Math.max(0, Math.min(1, root.client.weatherMultiplier)) * 10)
+
+                                Repeater {
+                                    model: 10
+
+                                    delegate: Rectangle {
+                                        required property int index
+
+                                        width: root.ui.snap(7)
+                                        height: root.ui.snap(root.ui.sizeBody * 0.6)
+                                        color: index < effect.lit ? root.ui.green : root.ui.trough
+                                        border.width: root.ui.line
+                                        border.color: root.ui.etchDark
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: Math.abs(root.change) >= 2
+                                text: root.change >= 2 ? i18ndc(root.domain, "Percent points removed", "−%1%", root.change)
+                                                       : i18ndc(root.domain, "Percent points added", "+%1%", -root.change)
+                                textFormat: Text.PlainText
+                                font: root.ui.figureFont
+                                color: root.ui.ink
+                            }
+                        }
+
+                        Text {
+                            visible: root.client.hasWeatherReading && root.client.weatherStale
+                            text: i18ndc(root.domain, "Weather reading is out of date", "Out of date")
+                            textFormat: Text.PlainText
+                            font: root.ui.smallFont
+                            color: root.ui.inkMuted
                         }
                     }
                 }
 
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: Math.abs(root.change) >= 2
-                    text: root.change >= 2 ? i18ndc(root.domain, "Percent points removed", "−%1%", root.change)
-                                           : i18ndc(root.domain, "Percent points added", "+%1%", -root.change)
-                    textFormat: Text.PlainText
-                    font: root.ui.figureFont
-                    color: root.ui.ink
-                }
-            }
+                // The readings in two columns of ruled cells, under the welcome row.
+                Rectangle {
+                    Layout.fillWidth: true
+                    visible: root.extras.length > 0 && root.client.hasWeatherReading
+                    implicitHeight: details.implicitHeight + 2 * root.ui.line
+                    color: root.ui.white
+                    border.width: root.ui.line
+                    border.color: root.ui.clientEdge
 
-            Text {
-                visible: root.client.hasWeatherReading && root.client.weatherStale
-                text: i18ndc(root.domain, "Weather reading is out of date", "Out of date")
-                textFormat: Text.PlainText
-                font: root.ui.smallFont
-                color: root.ui.inkMuted
-            }
-        }
-    }
+                    Grid {
+                        id: details
 
-    // Details: a list view with a blue band over the rows.
-    ColumnLayout {
-        Layout.fillWidth: true
-        visible: root.extras.length > 0 && root.client.hasWeatherReading
-        spacing: 0
+                        x: root.ui.line
+                        y: root.ui.line
+                        width: parent.width - 2 * root.ui.line
+                        columns: 2
 
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: root.ui.rowH
-            border.width: root.ui.line
-            border.color: root.ui.frameDeep
-            gradient: Gradient {
-                GradientStop { position: 0; color: root.ui.frameLight }
-                GradientStop { position: 1; color: root.ui.frame }
-            }
+                        Repeater {
+                            model: root.extras
 
-            Text {
-                x: root.ui.pad
-                anchors.verticalCenter: parent.verticalCenter
-                text: i18ndc(root.domain, "Weather details band caption", "Details")
-                textFormat: Text.PlainText
-                font: root.ui.smallBoldFont
-                color: root.ui.white
-            }
-        }
+                            delegate: Item {
+                                id: entry
 
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: list.implicitHeight + 2 * root.ui.line
-            color: root.ui.white
-            border.width: root.ui.line
-            border.color: root.ui.clientEdge
+                                required property var modelData
+                                required property int index
 
-            Column {
-                id: list
+                                width: details.width / 2
+                                height: root.ui.rowH
 
-                x: root.ui.line
-                y: root.ui.line
-                width: parent.width - 2 * root.ui.line
-
-                Repeater {
-                    model: root.extras
-
-                    delegate: Item {
-                        id: entry
-
-                        required property var modelData
-                        required property int index
-
-                        width: list.width
-                        height: root.ui.rowH
-
-                        Text {
-                            x: root.ui.pad
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: entry.width * 0.5 - root.ui.pad
-                            text: entry.modelData.k
-                            textFormat: Text.PlainText
-                            font: root.ui.bodyFont
-                            color: root.ui.ink
-                            elide: Text.ElideRight
-                        }
-                        Rectangle {
-                            x: entry.width * 0.5
-                            width: root.ui.hairline
-                            height: parent.height
-                            color: root.ui.gridline
-                        }
-                        Text {
-                            x: entry.width * 0.5 + root.ui.pad
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: entry.width * 0.5 - root.ui.pad * 2
-                            text: entry.modelData.v
-                            textFormat: Text.PlainText
-                            font: root.ui.figureFont
-                            color: root.ui.ink
-                            elide: Text.ElideRight
-                        }
-                        Rectangle {
-                            y: parent.height - root.ui.hairline
-                            width: entry.width
-                            height: root.ui.hairline
-                            color: root.ui.gridline
+                                Text {
+                                    x: root.ui.pad
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: entry.width - 2 * root.ui.pad - val.implicitWidth - root.ui.gap
+                                    text: entry.modelData.k
+                                    textFormat: Text.PlainText
+                                    font: root.ui.bodyFont
+                                    color: root.ui.ink
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    id: val
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: root.ui.pad
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.min(implicitWidth, entry.width * 0.5)
+                                    horizontalAlignment: Text.AlignRight
+                                    text: entry.modelData.v
+                                    textFormat: Text.PlainText
+                                    font: root.ui.figureFont
+                                    color: root.ui.ink
+                                    elide: Text.ElideRight
+                                }
+                                Rectangle {
+                                    // The rule between the two columns.
+                                    visible: entry.index % 2 === 0
+                                    x: entry.width - root.ui.hairline
+                                    width: root.ui.hairline
+                                    height: entry.height
+                                    color: root.ui.gridline
+                                }
+                                Rectangle {
+                                    // The rule under the first row.
+                                    visible: entry.index < 2
+                                    y: entry.height - root.ui.hairline
+                                    width: entry.width
+                                    height: root.ui.hairline
+                                    color: root.ui.gridline
+                                }
+                            }
                         }
                     }
                 }

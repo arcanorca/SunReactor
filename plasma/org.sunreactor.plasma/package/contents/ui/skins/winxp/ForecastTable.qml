@@ -14,6 +14,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
+import "../../components/weathericons"
 import "../../Format.js" as Format
 
 ColumnLayout {
@@ -47,10 +48,10 @@ ColumnLayout {
     }
 
     readonly property var columns: [
-        { head: i18ndc(domain, "Forecast column: time of the interval", "Time"), weight: 25 },
-        { head: i18ndc(domain, "Forecast column: sky condition", "Sky"), weight: 40 },
+        { head: i18ndc(domain, "Forecast column: time of the interval", "Time"), weight: 32 },
+        { head: i18ndc(domain, "Forecast column: sky condition", "Sky"), weight: 34 },
         { head: i18ndc(domain, "Forecast column: temperature", "Temp"), weight: 17 },
-        { head: i18ndc(domain, "Forecast column: cloud cover", "Cloud"), weight: 18 }
+        { head: i18ndc(domain, "Forecast column: cloud cover", "Cloud"), weight: 17 }
     ]
 
     function cellText(point, column) {
@@ -65,6 +66,9 @@ ColumnLayout {
             return i18ndc(domain, "Percentage", "%1%", Math.round(point.cloudCoverPercent));
         }
     }
+
+    /*! A row holds the 22 px sky icon of the time column. */
+    readonly property real rowHeight: Math.max(root.ui.rowH, root.ui.snap(22))
 
     spacing: 0
 
@@ -132,7 +136,7 @@ ColumnLayout {
                     required property var modelData
 
                     width: table.width
-                    height: root.ui.rowH
+                    height: root.rowHeight
 
                     Repeater {
                         model: root.columns
@@ -146,10 +150,20 @@ ColumnLayout {
                             width: interval.width * cell.modelData.weight / 100
                             height: interval.height
 
-                            Text {
+                            WinXpWeatherIcon {
+                                visible: cell.index === 0
                                 x: root.ui.pad
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: cell.width - root.ui.pad * 1.5
+                                theme: root.theme
+                                condition: interval.modelData.condition
+                                night: interval.modelData.isNight
+                                size: 22
+                            }
+
+                            Text {
+                                x: root.ui.pad + (cell.index === 0 ? 22 + root.ui.gap : 0)
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: cell.width - root.ui.pad * 1.5 - (cell.index === 0 ? 22 + root.ui.gap : 0)
                                 text: root.cellText(interval.modelData, cell.index)
                                 textFormat: Text.PlainText
                                 font: cell.index === 1 ? root.ui.bodyFont : root.ui.figureFont

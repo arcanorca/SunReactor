@@ -329,7 +329,7 @@ var WEATHERICON = {
     "id:ps3": WEATHERICON_DIR + "Ps3Icon.qml",
     "id:macos": WEATHERICON_DIR + "MacosIcon.qml",
     "id:wii": WEATHERICON_DIR + "WiiWeatherIcon.qml",
-    "id:winxp": WEATHERICON_DIR + "WinxpIcon.qml",
+    "id:winxp": WEATHERICON_DIR + "WinXpWeatherIcon.qml",
     "id:cyberpunk": WEATHERICON_DIR + "CyberpunkIcon.qml",
     "id:synthwave84": WEATHERICON_DIR + "SynthwaveIcon.qml",
     "id:hackergreen": WEATHERICON_DIR + "HackergreenIcon.qml",
