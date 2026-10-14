@@ -9,13 +9,13 @@
 
 <br/>
 
-**SunReactor** is an ultra-low overhead, deterministic hardware brightness automation engine written in pure Rust. Operating as an unprivileged background daemon, it continuously aligns display luminance with the astronomical solar elevation curve calculated for your exact geographic coordinates. The engine combines local astronomical ephemeris algorithms, bounded meteorological cloud-cover heuristics, and hardware-truth reconciliation loops to deliver jitter-free, failure-isolated backlight management across multi-display workspaces.
+**SunReactor** is a background daemon that sets display brightness from the sun's elevation at your location. It runs as an unprivileged user service, written in Rust. Weather is an optional, bounded correction on top of the solar curve. It drives external monitors over DDC/CI and laptop panels through backlight devices, and it ships with a terminal UI, a CLI and a KDE Plasma 6 widget.
 
 ---
 
 ## // PREVIEW (TUI WORKSPACES & THEMES)
 
-SunReactor features an immediate-style, terminal UI built with `ratatui` featuring 40 built-in themes (plus your own TOML themes), orthographic daylight globes, and real-time hardware telemetry:
+SunReactor features an immediate-style, terminal UI built with `ratatui` with 40 built-in themes (and your own TOML themes), a daylight globe and live device status:
 
 <div align="center">
   <img src="docs/images/SunReactor_1.png" alt="Monitors Workspace (Amber Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
@@ -29,24 +29,30 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` featuri
 
 ---
 
-## // WHAT'S NEW (V0.12.0 CHANGELOG HIGHLIGHTS)
+## // RECENT CHANGES
 
-SunReactor **v0.12.0** introduces critical reliability, performance, and failure-isolation engineering across the entire runtime pipeline:
+Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
 
-- **DRM Kernel Power Gating:** Eliminates I2C driver lockouts and bus freezes. External monitor state is verified directly through kernel sysfs attributes (`/sys/class/drm/*/dpms` and `status`) before dispatching DDC commands, skipping unreachable or sleeping displays immediately.
-- **Fail-Closed Monitor Wake Loop:** Resolves desynchronization caused by dropped desktop wake signals (e.g., logind/compositor churn). A deterministic 15s hardware probe schedule paired with an aggressive 60s post-wake fast-recovery window (2s cadence) forcefully re-asserts astronomical brightness over compositor-level resets.
-- **Per-Device Fault Isolation & Exponential Backoff:** Isolates communication failures per physical display. Transient timeouts and missing-device faults back off independently (`5s, 10s, 20s, ... 300s`), ensuring a sluggish or disconnected monitor never stalls or delays updates on healthy displays.
-- **Starvation-Free IPC Quantum:** Restricts incoming Unix domain socket traffic to a cooperative budget (max 16 requests or 8ms per daemon loop tick). Heavy client polling cannot starve or jitter smooth brightness fade animations.
-- **Defended IPC Framing & Deadlines:** Strictly bounds socket communication with newline-delimited framing and a 64 KiB payload ceiling. Rigid read/write deadlines eliminate slow-read vulnerabilities and hanging socket descriptors.
-- **Atomic Configuration Reloads:** Pre-validates config schema and monitor selectors before applying in-memory updates. Malformed edits trigger automatic rollbacks, and orphan monitor states are cleanly pruned.
-- **Modular TUI with 28 Built-In Themes:** Re-architected into dedicated domain workspaces (`Monitors`, `Automation`, `Location`, `Weather`, `Settings`) featuring custom half-block fonts, 28 linear-blended retro color palettes, and real-time orthographic solar terminator globes.
-- **Native KDE Plasma 6 Desktop Integration:** First-party QML desktop panel widget powered by a non-blocking C++ Unix domain socket client (`SunReactorClient`), adhering to KDE Human Interface Guidelines with strict mode precedence.
+**Next release (0.13.0)**
+- Themes are TOML data shared by the terminal UI and the Plasma widget. 40 are built in; you can add your own in `~/.config/sunreactor/themes/` ([docs/THEMES.md](docs/THEMES.md)).
+- New `sunreactorctl theme` commands, and new IPC requests (`list_themes`, `get_theme`, `day_curve`) used by the widget.
+- The Plasma widget was rewritten around that theme data: see [Plasma widget](#-plasma-widget).
+
+**0.12.0**
+- Monitor power state is read from DRM sysfs before DDC commands are sent, so sleeping or disconnected displays are skipped.
+- A periodic hardware probe and a short fast-retry window after wake re-apply the target brightness when the compositor resets it.
+- Failures are tracked per display with exponential backoff (5 s up to 300 s), so one slow monitor does not delay the others.
+- Each daemon tick serves a limited number of IPC requests (16, or 8 ms), so a busy client cannot disturb fades.
+- IPC frames are newline-delimited with a 64 KiB limit and read/write deadlines.
+- Config reloads are validated before they are applied, and a bad edit is rolled back.
+- Terminal UI split into Monitors, Automation, Location, Weather and Settings workspaces.
+- First version of the Plasma widget.
 
 ---
 
-## // HARDENED SYSTEM ARCHITECTURE
+## // ARCHITECTURE
 
-SunReactor's runtime architecture is engineered around strict failure isolation, non-blocking hardware control, and zero runtime dependencies:
+The runtime is built around failure isolation and non-blocking hardware access, with few dependencies.
 
 ```text
  ┌────────────────────────────────────────────────────────────────────────┐
@@ -79,20 +85,20 @@ SunReactor's runtime architecture is engineered around strict failure isolation,
        └────────────────────────┘      └─────────────────────────┘
 ```
 
-### 1. Hardware Truth & Fail-Closed Monitor Wake
+### 1. Hardware state and monitor wake
 - **DRM Kernel State Gating:** Before dispatching DDC transactions over I2C, the daemon queries connector status directly from kernel DRM attributes (`/sys/class/drm/*/status` and `dpms`). If a display is in standby, suspend, or disconnected, hardware writes are skipped immediately—eliminating I2C bus locks and timeout penalties.
 - **Signal-Independent Probe Schedule:** Desktop wake notifications (e.g. logind, DRM uevents) can be dropped or skipped during compositor transitions. SunReactor implements a scheduled hardware probe loop (`runtime/wake.rs`). Every `probe_seconds` (default: 15s), the daemon directly verifies physical monitor registers.
 - **Fast-Recovery Windows:** When a monitor returns from an unreachable state, a 60-second fast-probe window (2-second pulses) activates. This immediately counteracts compositor state restores (such as KWin's internal saved DDC cache) and locks the display back to the active astronomical curve.
 
-### 2. Failure Classification & Resilient Backoff
+### 2. Failures and backoff
 - **Transient vs. Persistent Faults:** Hardware communication errors are isolated per monitor. Transient timeouts (busy DDC buses, hotplug debounce) and persistent device missing states are classified and tracked independently.
 - **Exponential Backoff:** If a monitor fails to acknowledge a write or read, it enters per-device exponential backoff (`5s, 10s, 20s, ... 300s`). Healthy displays continue applying curve updates smoothly without being blocked or delayed by an unresponsive display.
 - **Automatic Recovery:** When a degraded or disconnected monitor responds successfully, its backoff state is cleared immediately without requiring daemon restarts.
 
-### 3. IPC Hardening & Starvation Prevention
+### 3. IPC limits
 - **Bounded Main-Loop Quantum:** The daemon IPC subsystem accepts Unix domain socket connections through a cooperative drain quantum (maximum 16 accepted requests or 8ms wall-clock duration per loop tick). Incoming IPC traffic can never starve or desynchronize the core brightness fade ticks.
-- **Strict Payload Boundaries:** Every IPC message is framed with newline-delimited JSON and bounded to a strict 64 KiB payload limit. Absolute operation deadlines protect against lingering sockets and slow-read attacks.
-- **Non-Destructive Socket Cleanup:** Stale socket cleanup strictly validates file metadata and active listeners, preventing accidental unlinking of foreign runtime resources.
+- **Strict Payload Boundaries:** Every IPC message is framed with newline-delimited JSON and limited to 64 KiB payload limit. Operation deadlines guard against lingering sockets and slow-read attacks.
+- **Non-Destructive Socket Cleanup:** Stale socket cleanup validates file metadata and active listeners, preventing accidental unlinking of foreign runtime resources.
 
 ### 4. Fail-Safe Configuration & State Pruning
 - **Atomic Config Reloads:** Live configuration reloads (`sunreactorctl reload-config` or TUI writebacks) validate schema integrity, monitor IDs, and boundary constraints before updating runtime state. If validation fails, previous active configurations remain in memory.
@@ -140,9 +146,7 @@ SunReactor computes target brightness deterministically without requiring consta
 - 40 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
 
 ### 2. Native KDE Plasma 6 Desktop Integration
-SunReactor includes an integrated KDE Plasma 6 panel widget and C++ IPC plugin located in [`plasma/`](plasma/):
-- View real-time solar elevation, current display outputs, and active weather status directly from the desktop taskbar.
-- Toggle automation modes, suspend daemon adjustments, or apply manual monitor overrides without opening a terminal.
+A KDE Plasma 6 panel widget lives in [`plasma/`](plasma/). It shows the current brightness, the day curve and the weather, and lets you pause automation or set a manual brightness per display.
 - Installation, settings and troubleshooting are in [Plasma widget](#-plasma-widget).
 
 ### 3. Scriptable Control CLI (`sunreactorctl`)
@@ -305,17 +309,19 @@ sunreactorctl theme validate ./mine.toml     # check one file (extends / aliases
 
 ## // PLASMA WIDGET
 
-The Plasma widget is a KDE Plasma 6 panel item with a popup for `sunreactord`. The panel shows the sky, a brightness readout, a sparkline of today's curve or a ring gauge. The popup shows the terminal UI's light cycle, the per-display rows and overrides, the automation mode with what happens next, and the weather and sun times. It is a QML package (`plasma/org.sunreactor.plasma/package`) and a small C++ plugin (`plasma/org.sunreactor.plasma/plugin`) that speaks the daemon's control socket. The widget never touches hardware and does no brightness logic of its own.
+The widget is a Plasma 6 panel item with a popup. It is a QML package plus a small C++ plugin that talks to the daemon's control socket. It does no brightness logic and never touches hardware: it shows what `sunreactord` is doing and sends the same commands as `sunreactorctl`.
 
-Inside, the popup is a set of modules (`contents/ui/modules`), a theme engine (`contents/ui/engine`) that turns the daemon's theme into colours, fonts and metrics, a pixel renderer for the pixel-art themes, and per-theme skins (`contents/ui/skins`). The design record is [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md).
+The popup has a Brightness page (day curve, one slider per display, automation mode with the next scheduled step) and a Weather page (conditions, forecast, sun times). The panel can show a weather icon, a brightness readout, a small curve or a ring gauge.
+
+The widget follows the terminal UI's theme by default, or you can pin another theme. Many themes have their own layout and weather icons; the rest use a layout chosen by theme family. The pictures below are a selection. Everything is drawn with QML shapes and a few C++ items, no bitmap assets for the vector themes. Internals and the design notes are in [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md).
 
 <div align="center">
-  <img src="docs/images/widget-themes.png" alt="Plasma widget popup, eight flagship themes, brightness page" width="95%" />
+  <img src="docs/images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
   <br/>
-  <img src="docs/images/widget-weather.png" alt="Plasma widget popup, the same themes on the weather page" width="95%" />
+  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Nintendo DS" width="95%" />
 </div>
 
-The first sheet shows the brightness page of eight flagship themes; the second shows their weather pages. The theme list is in [THEMES.md](docs/THEMES.md).
+Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Nintendo DS. The full theme list is in [THEMES.md](docs/THEMES.md).
 
 ### Requirements
 - Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
@@ -390,4 +396,4 @@ Test and screenshot tooling is described in [`DESIGN.md`](plasma/org.sunreactor.
 - **Documentation:** [docs/README.md](docs/README.md) indexes every document in the repository, including [THEMES.md](docs/THEMES.md).
 - **Author:** [arcanorca](https://github.com/arcanorca)
 - **License:** GPL-3.0-or-later
-- **Core Technologies:** Rust | Ratatui | DRM Sysfs | DDC/CI (`ddcutil`) | KDE Plasma 6 QML/C++
+- **Built with:** Rust, Ratatui, DRM sysfs, DDC/CI (`ddcutil`), Qt 6 QML and C++ for the Plasma widget
