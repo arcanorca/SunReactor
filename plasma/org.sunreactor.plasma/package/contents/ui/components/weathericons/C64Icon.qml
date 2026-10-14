@@ -1,9 +1,11 @@
 /*
- * Commodore 64: the PETSCII sun, moon, cloud or rain sprite of the popup (three
- * graphics-character rows), in the accent on the surface. Each row is its own
- * PixelGlyphs, as the popup draws them, so one art pixel is `artPx` device px and
- * the rows stay on the art grid. Below the size for three rows it draws the first
- * two; below that, the generic line glyph.
+ * Commodore 64: the PETSCII weather picture, a three-by-two block of graphics
+ * characters (Petscii.sprite), in the theme's light blue on a plate of the theme's
+ * blue, like the C64 screen. Each row is its own PixelGlyphs, as the popup draws them,
+ * so one art pixel is `artPx` device px and the rows stay on the art grid. The
+ * picture is drawn from 22 px; below that, and where its block does not fit the box,
+ * the generic line glyph. The plate and ink are the theme's own, so surface and ink
+ * are unused.
  */
 
 pragma ComponentBehavior: Bound
@@ -11,7 +13,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import org.sunreactor.plasma
 import "../../engine"
-import "../../panel/PanelData.js" as PanelData
 import "../../skins/commodore64/Petscii.js" as Petscii
 
 Item {
@@ -30,14 +31,13 @@ Item {
     implicitHeight: size
 
     readonly property real dpr: theme.grid.devicePixelRatio
-    /*! Three rows are 24 art px tall, two rows 16; a cell is 6 art px across and 8 down. */
-    readonly property int pxThree: Math.floor(size * dpr / 24 + 0.001)
-    readonly property int pxTwo: Math.floor(size * dpr / 16 + 0.001)
-    readonly property bool threeRows: pxThree >= 1
-    readonly property int artPx: threeRows ? pxThree : pxTwo
-    /*! The block must fit the box: a two-row sprite five cells wide does not fit a small panel. */
-    readonly property bool drawn: artPx >= 1 && artCols * 6 * artPx <= width * dpr
-    readonly property var rows: Petscii.sprite(condition, night).slice(0, threeRows ? 3 : 2)
+    /*! The picture is 18 art px across and 16 down (a cell is 6 x 8); the art px is the
+     *  largest whole device-pixel count that keeps the width inside the box. */
+    readonly property int artPx: Math.floor(size * dpr / 18 + 0.001)
+    /*! Crisp from 22 px: below that the line glyph stands in. The block must also fit the box. */
+    readonly property real minSize: 22
+    readonly property bool drawn: size >= minSize && artPx >= 1 && artCols * 6 * artPx <= width * dpr
+    readonly property var rows: Petscii.sprite(condition, night)
     readonly property int artCols: {
         let n = 1;
         for (let i = 0; i < rows.length; ++i) {
@@ -48,6 +48,14 @@ Item {
     /*! The block's left and top edge in device px, centred on the device grid. */
     readonly property int originX: Math.round((width * dpr - artCols * 6 * artPx) / 2)
     readonly property int originY: Math.round((height * dpr - rows.length * 8 * artPx) / 2)
+
+    /*! The C64 screen the picture sits on: the theme's blue, on whole device px. */
+    Rectangle {
+        visible: root.drawn
+        width: Math.round(root.width * root.dpr) / root.dpr
+        height: Math.round(root.height * root.dpr) / root.dpr
+        color: root.theme.bg
+    }
 
     Repeater {
         model: root.rows
@@ -64,7 +72,7 @@ Item {
             text: Petscii.fold(modelData)
             face: "petscii"
             capitals: true
-            color: PanelData.ink(root.theme.accent, root.surface, root.ink, 3)
+            color: root.theme.fg
             artScale: root.artPx / root.dpr
         }
     }

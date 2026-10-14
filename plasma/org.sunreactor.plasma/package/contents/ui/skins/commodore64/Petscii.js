@@ -9,7 +9,7 @@
  * has a glyph before layout and its width is known in cells.
  */
 
-const ALLOWED = /[^A-Z0-9 !"#$%&'()*+,\-.\/:;<=>?@\[\\\]_°·…─│┌┐└┘▌▐▀▄█▒░▁▂▃▄▅▆▇●♥◤◥◢◣►◄]/g;
+const ALLOWED = /[^A-Z0-9 !"#$%&'()*+,\-.\/:;<=>?@\[\\\]_°·…─│┌┐└┘▌▐▀▄█▒░▁▂▃▄▅▆▇●♥◤◥◢◣►◄╱✱◖]/g;
 
 /*! Upper case, accents folded away (Turkish, German), punctuation mapped, the
  *  rest replaced by "?". One character is one cell, so the result is safe to measure. */
@@ -88,33 +88,52 @@ function valueAt(samples, t, key) {
     return samples[n - 1][key];
 }
 
-/*! Sun, moon, cloud and rain sprites: rows of graphics characters, at most 5 cells wide, 3 rows. */
-const SUN = ["\\│/", "─●─", "/│\\"];
-const MOON = [" ▄▄", "▐█ ", " ▀▀"];
-const CLOUD = [" ▄▄▄ ", "▐███▌", "▀▀▀▀▀"];
+/*! The weather pictures: three cells wide and two rows high (6 x 8 cells, so 18 x 16 art
+ *  px), drawn from the petscii face. The sun is a disc with rays, a cloud a block cluster
+ *  with a flat underside; rain, snow and the bolt fall from it, the night has a crescent
+ *  and stars. Every row is exactly three cells, so the picture centres in any column. */
+const SUN = ["\\│/", "─●─"];
+const MOON = ["· ·", " ◖ "];
+const SUN_CLOUD = ["\\│/", "▄█▄"];
+const NIGHT_CLOUD = ["◖ ·", "▄█▄"];
+const CLOUD = ["▄█▄", "▀▀▀"];
+const DRIZZLE = ["▄█▄", "░ ░"];
+const SHOWER = ["▄█▄", "╱ ╱"];
+const STORM = ["▄█▄", "╱╱╱"];
+const BOLT = ["▄█▄", " ◥◣"];
+const FLURRY = ["▄█▄", "✱ ✱"];
+const MIST = ["░░░", "░░░"];
+const FOG = ["▒▒▒", "▒▒▒"];
+const HAZE = ["\\│/", "▒●▒"];
+const UNKNOWN = ["▄█▄", " ? "];
 
+/*! The picture for a condition: the rows of a three-by-two block, one string per row. */
 function sprite(condition, night) {
     switch (condition) {
     case "clear":
         return night ? MOON : SUN;
     case "partly_cloudy":
-        return night ? ["▄▄ ", "▐██▌", "▀▀▀▀"] : ["\\│  ", "─●▄▄", "/▐██▌"];
+        return night ? NIGHT_CLOUD : SUN_CLOUD;
     case "cloudy":
         return CLOUD;
     case "drizzle":
+        return DRIZZLE;
     case "rain":
+        return SHOWER;
     case "heavy_rain":
-        return ["▐███▌", "▀▀▀▀▀", "/ / /"];
+        return STORM;
     case "thunderstorm":
-        return ["▐███▌", "▀▀▀▀▀", " /!/ "];
+        return BOLT;
     case "snow":
-        return ["* * *", " *** ", "* * *"];
+        return FLURRY;
     case "mist":
+        return MIST;
     case "fog":
+        return FOG;
     case "atmospheric":
-        return ["=====", " === ", "====="];
+        return HAZE;
     default:
-        return ["  ?  ", "     ", "     "];
+        return UNKNOWN;
     }
 }
 
@@ -122,23 +141,24 @@ function sprite(condition, night) {
 function icon(condition, night) {
     switch (condition) {
     case "clear":
-        return night ? "·" : "●";
+        return night ? "◖" : "●";
     case "partly_cloudy":
         return "◢";
     case "cloudy":
-        return "▒";
+        return "▄";
     case "drizzle":
     case "rain":
     case "heavy_rain":
-        return "/";
+        return "╱";
     case "thunderstorm":
         return "!";
     case "snow":
-        return "*";
+        return "✱";
     case "mist":
+        return "░";
     case "fog":
     case "atmospheric":
-        return "=";
+        return "▒";
     default:
         return "?";
     }

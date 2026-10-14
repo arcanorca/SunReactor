@@ -127,11 +127,12 @@ Item {
                         model: Petscii.sprite(root.client.hasWeatherReading ? root.client.weatherCondition : "",
                                               root.client.weatherIsNight)
 
+                        // The three-cell picture centred in the five-cell column.
                         delegate: C64Text {
                             required property string modelData
 
                             ink: style.hot
-                            text: modelData
+                            text: " " + modelData + " "
                         }
                     }
                 }
