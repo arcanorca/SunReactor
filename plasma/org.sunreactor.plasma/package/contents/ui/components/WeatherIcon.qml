@@ -1,8 +1,9 @@
 /*
- * One weather condition as an icon for the popup modules: the vector glyph
- * (WeatherGlyph) in the theme's weather icon style, or the legacy 16 px sprite
- * when that style is "pixel". Modules size it; the glyph snaps to device pixels
- * itself, and the sprite is a Kirigami icon at whole-pixel size.
+ * One condition as an icon for the popup modules: the theme's own weather icon
+ * (components/weathericons, by theme id or renderer), or, when the user chose a
+ * weather icon style in settings, the vector glyph in that style or the legacy
+ * 16 px sprite for "pixel". Modules size it; the glyph and the themed icons snap
+ * to device pixels themselves, and the sprite is a Kirigami icon at whole-pixel size.
  *
  *   WeatherIcon { theme: root.theme; condition: "rain"; night: false; size: 22 }
  *
@@ -18,6 +19,7 @@ import org.sunreactor.plasma
 
 import "../engine"
 import "../Icons.js" as Icons
+import "weathericons"
 
 Item {
     id: root
@@ -31,12 +33,26 @@ Item {
     /*! WeatherGlyph colour roles; see Theme.glyphColours. */
     property var colours: theme.glyphPalette
 
-    readonly property bool pixelArt: theme.glyphStyle === "pixel"
+    /*! The user picked a weather icon style: the generic glyph or sprite. */
+    readonly property bool styleChosen: ["line", "solid", "pixel"].indexOf(theme.overrides.weatherIconStyle) >= 0
+    readonly property bool pixelArt: styleChosen && theme.glyphStyle === "pixel"
+    readonly property bool themed: theme.available && !styleChosen
 
     width: size
     height: size
     implicitWidth: size
     implicitHeight: size
+
+    ThemedWeatherIcon {
+        anchors.centerIn: parent
+        visible: root.themed
+        theme: root.theme
+        condition: root.condition
+        night: root.night
+        size: root.size
+        surface: root.colours.bg
+        ink: root.colours.fg
+    }
 
     Kirigami.Icon {
         anchors.fill: parent
@@ -47,7 +63,7 @@ Item {
 
     WeatherGlyph {
         anchors.centerIn: parent
-        visible: !root.pixelArt
+        visible: !root.pixelArt && !root.themed
         condition: root.condition
         night: root.night
         glyphStyle: root.theme.glyphStyle

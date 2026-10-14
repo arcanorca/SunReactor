@@ -4,9 +4,9 @@
  * to unsaved values for the live preview.
  *
  * Modes:
- *   sky        the weather the policy reacts to, as a vector glyph in the
- *              theme's weather icon style (or a pixel sprite at a whole number
- *              of device pixels per art pixel, when that style is "pixel");
+ *   sky        the weather the policy reacts to, as the theme's own weather icon
+ *              (components/weathericons, by theme id or renderer); the generic
+ *              glyph or pixel sprite when the user chose a weather icon style;
  *   readout    the brightness of one display (or the mean) in the theme's
  *              digits: bitmap font on a small "screen" for pixel themes,
  *              tabular mono with a level bar otherwise;
@@ -79,8 +79,7 @@ Item {
                                                                     : Kirigami.Theme.highlightColor,
                                                     panelBackground, panelText, 3)
     readonly property color trackInk: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.22)
-    /*! Nothing (skins/nothing/BRAND.md): the dot-matrix variants, and their unlit cells in the panel text. */
-    readonly property bool dotted: theme.themeId === "nothing"
+    /*! Nothing (skins/nothing/BRAND.md): the unlit dot cells in the panel text. */
     readonly property color dotGhost: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.12)
     readonly property color textGhost: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.055)
     /*! Nothing: the dot pitch of a panel graphic (twelve dots across the graphic box, a whole device pixel each). */

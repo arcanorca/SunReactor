@@ -304,3 +304,51 @@ function tabBarSource(themeId, renderer) {
     }
     return TABBAR_PLAIN;
 }
+
+/*
+ * Weather icons (components/weathericons/): the panel's sky and the popup's
+ * weather headers draw the icon of the theme's own weather style. Keys are
+ * "id:<theme id>" (wins) or the renderer name; values are paths relative to ui/.
+ * Every file takes the same contract:
+ *   required property string condition   daemon condition token ("" unknown)
+ *   required property bool night         night variants
+ *   required property var theme          resolved tokens (engine/Theme.qml)
+ *   property real size                   logical px, square; the file snaps
+ *                                        its own art to device pixels
+ *   property color surface, ink          what the icon sits on (default: theme bg, fg)
+ * A file below its own size threshold draws the generic line glyph and says so
+ * in its header. Themes without a key get GlyphIcon (the generic glyph).
+ */
+var WEATHERICON_DIR = "components/weathericons/";
+
+var WEATHERICON = {
+    "id:nothing": WEATHERICON_DIR + "NothingIcon.qml",
+    "id:casiodigital": WEATHERICON_DIR + "CasioIcon.qml",
+    "id:commodore64": WEATHERICON_DIR + "C64Icon.qml",
+    "id:amiga": WEATHERICON_DIR + "AmigaIcon.qml",
+    "id:ps3": WEATHERICON_DIR + "Ps3Icon.qml",
+    "id:macos": WEATHERICON_DIR + "MacosIcon.qml",
+    "id:wii": WEATHERICON_DIR + "WiiIcon.qml",
+    "id:winxp": WEATHERICON_DIR + "WinxpIcon.qml",
+    "id:cyberpunk": WEATHERICON_DIR + "CyberpunkIcon.qml",
+    "id:synthwave84": WEATHERICON_DIR + "SynthwaveIcon.qml",
+    "id:hackergreen": WEATHERICON_DIR + "HackergreenIcon.qml",
+    "id:nds": WEATHERICON_DIR + "NdsIcon.qml",
+    "pixel": WEATHERICON_DIR + "PixelIcon.qml",
+    "terminal": WEATHERICON_DIR + "TerminalIcon.qml",
+    "vector": WEATHERICON_DIR + "InstrumentIcon.qml"
+};
+
+var WEATHERICON_GENERIC = WEATHERICON_DIR + "GlyphIcon.qml";
+
+/*! Path (relative to ui/) of the weather icon for a theme id and renderer. */
+function weatherIcon(themeId, renderer) {
+    const keys = ["id:" + themeId, renderer];
+    for (let i = 0; i < keys.length; ++i) {
+        const icon = WEATHERICON[keys[i]];
+        if (icon) {
+            return icon;
+        }
+    }
+    return WEATHERICON_GENERIC;
+}

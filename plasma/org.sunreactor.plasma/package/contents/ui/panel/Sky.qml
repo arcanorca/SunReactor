@@ -1,14 +1,14 @@
 /*
- * Panel "sky" mode: the weather the policy reacts to. In the theme's weather
- * icon style it is a vector glyph (WeatherGlyph), in the panel's own colours
- * where the theme allows. With the "pixel" style it is the 16 px sprite at a
- * whole number of device pixels per art pixel (16, 32, 48 ... device px), so it
- * stays crisp at fractional scales. PixelSkySprite decodes the sprite at its art
- * size; a QML Image would render the SVG at the window ratio and resample it.
+ * Panel "sky" mode: the weather the policy reacts to, drawn in the theme's own
+ * weather style. The theme's icon is loaded from the registry (components/
+ * weathericons, Modules.weatherIcon) and sits in the panel's own colours. When
+ * the user picked a weather icon style in settings (line, solid or pixel), the
+ * generic glyph or sprite is drawn instead. The pixel sprite is drawn at a whole
+ * number of device pixels per art pixel, so it stays crisp at fractional scales.
+ * PixelSkySprite decodes the sprite at its art size; a QML Image would render the
+ * SVG at the window ratio and resample it.
  *
- * Pixel themes look for a family sprite first - skins/pixel/sky/<name>.png
- * (16x16, same names as icons/weather/*.svg) - and fall back to the shared
- * sprite when there is none. A paused daemon shows the pause symbol instead.
+ * A paused daemon shows the pause symbol instead.
  */
 
 pragma ComponentBehavior: Bound
@@ -17,6 +17,7 @@ import QtQuick
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../components/weathericons"
 import "../engine"
 import "../Icons.js" as Icons
 
@@ -33,7 +34,7 @@ Item {
                                         : (client.hasWeatherReading ? client.weatherCondition : "clear")
     readonly property bool night: client.hasWeatherReading ? client.weatherIsNight : !client.isDaylight
 
-    /*! The shared sprite (pixel style) and the family sprite it may be swapped for. */
+    /*! The shared sprite (generic pixel style) and the family sprite it may be swapped for. */
     readonly property url sharedSprite: Icons.conditionArt(condition, night)
     readonly property string spriteName: sharedSprite.toString().replace(/^.*\//, "").replace(/\.svg$/, "")
     readonly property url familySprite: view.theme.isPixel
@@ -44,17 +45,30 @@ Item {
 
     onFamilySpriteChanged: familyMissing = false
 
-    /*! The glyph's side: the panel's graphic box, in whole logical px. */
+    /*! The generic glyph's side: the panel's graphic box, in whole logical px. */
     readonly property int glyphSize: Math.round(view.graphicSize)
-    readonly property bool useSprite: view.theme.glyphStyle === "pixel" && !paused
-    /*! Nothing: the dot-matrix pictogram, a whole device pixel per dot, twelve dots across. */
-    readonly property bool useDots: view.dotted && !paused
-    readonly property bool useGlyph: !paused && !useSprite && !useDots
+    /*! The user picked a weather icon style: the generic glyph or sprite, not the theme's icon. */
+    readonly property bool styleChosen: ["line", "solid", "pixel"].indexOf(view.theme.overrides.weatherIconStyle) >= 0
+    readonly property bool themed: !paused && view.theme.available && !styleChosen
+    readonly property bool useSprite: !paused && !themed && view.theme.glyphStyle === "pixel"
+    readonly property bool useGlyph: !paused && !themed && !useSprite
 
     implicitWidth: paused ? icon.implicitWidth
-        : (useSprite ? sprite.implicitWidth : (useDots ? dots.implicitWidth : glyph.implicitWidth))
+        : (themed ? themedIcon.implicitWidth : (useSprite ? sprite.implicitWidth : glyph.implicitWidth))
     implicitHeight: paused ? icon.implicitHeight
-        : (useSprite ? sprite.implicitHeight : (useDots ? dots.implicitHeight : glyph.implicitHeight))
+        : (themed ? themedIcon.implicitHeight : (useSprite ? sprite.implicitHeight : glyph.implicitHeight))
+
+    ThemedWeatherIcon {
+        id: themedIcon
+
+        visible: root.themed
+        theme: root.view.theme
+        condition: root.condition
+        night: root.night
+        size: root.view.graphicSize
+        surface: root.view.panelBackground
+        ink: root.view.panelText
+    }
 
     PixelSkySprite {
         id: sprite
@@ -84,18 +98,6 @@ Item {
         // The theme's own colours, lifted to 3:1 against the panel where needed.
         palette: root.view.theme.glyphColours(root.view.panelBackground, root.view.theme.fg)
         size: root.glyphSize
-    }
-
-    DotIcon {
-        id: dots
-
-        visible: root.useDots
-        condition: root.condition
-        night: root.night
-        pitch: root.view.dotPitch
-        litColor: root.view.panelText
-        accentColor: root.view.dataInk
-        dimColor: root.view.dotGhost
     }
 
     Kirigami.Icon {
