@@ -762,7 +762,6 @@ fn builtin_families_follow_design_classification() {
         "commodore64",
         "amiga",
         "classicmacintosh",
-        "nds",
     ];
     let instrument = [
         "braun",
@@ -782,6 +781,7 @@ fn builtin_families_follow_design_classification() {
         "winxp",
         "macos",
         "wii",
+        "nds",
     ];
     let registry = Registry::builtin();
     for theme in registry.themes() {

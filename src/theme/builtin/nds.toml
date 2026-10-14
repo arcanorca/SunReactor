@@ -1,7 +1,7 @@
 id = "nds"
 name = "Nintendo DS"
 aliases = ["nintendods", "ds"]
-family = "pixel"
+family = "instrument"
 
 [palette]
 bg = "#eef1f5"
@@ -16,12 +16,11 @@ warning = "#f2b01e"
 error = "#e04545"
 
 [tui]
-glyph_style = "pixel"
+glyph_style = "rounded"
 
 [widget]
-renderer = "pixel"
-font = "bitmap8"
-radius = 0
-glow = 0.0
+renderer = "vector"
+font = "sans"
+radius = 14
 border = "line"
-density = "compact"
+density = "comfortable"

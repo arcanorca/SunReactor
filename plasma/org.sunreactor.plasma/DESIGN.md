@@ -79,15 +79,19 @@ Validation: `pixel_scale` 0..=6, `radius` 0..=24, `glow` 0.0..=1.0, modules
 unique; unknown keys anywhere are errors. Name/alias matching is
 case-insensitive and treats `-`/space as `_` (and `vfdhifi` == `vfd_hifi`).
 
-Classification of the 35 built-ins: **pixel** = handheld, commodore64, amiga,
-classicmacintosh, casiodigital, cyberpunk, synthwave84, hackergreen;
-**instrument** = braun, vfd_hifi, nixie, oscilloscope, thinkpad,
-unixworkstation, phosphorblue, amber, grayscale, and nothing (the flagship
-dot-matrix skin: round dots, not pixel art, so it takes the instrument defaults
-with `renderer = "vector"`, `font = "mono"`, `radius = 24`); **terminal** = all editor
-palettes (dracula, nord, gruvbox, catppuccinmocha, tokyonight, onedark,
-ayudark, ayumirage, solarizeddark, everforest, kanagawa, zenburn, monokai,
-nightowl, materialocean, rosepine, terminal). Built-in palettes must be
+Classification of the 40 built-ins (`builtin_families_follow_design_classification`):
+**pixel** = handheld, commodore64, amiga, classicmacintosh; **instrument** =
+braun, vfd_hifi, nixie, oscilloscope, thinkpad, unixworkstation, phosphorblue,
+amber, grayscale, and nothing (the flagship dot-matrix skin: round dots, not
+pixel art, so it takes the instrument defaults with `renderer = "vector"`,
+`font = "mono"`, `radius = 24`), plus the vector flagships casiodigital,
+cyberpunk, synthwave84, ps3, winxp, macos, wii and nds (the Nintendo DS: a
+pearl shell round two glossy screens, Nunito type, big rounded touch buttons,
+with `renderer = "vector"`, `font = "sans"`, `radius = 14`, `density =
+"comfortable"`); **terminal** = all editor palettes (dracula, nord, gruvbox,
+catppuccinmocha, tokyonight, onedark, ayudark, ayumirage, solarizeddark,
+everforest, kanagawa, zenburn, monokai, nightowl, materialocean, rosepine,
+terminal) and hackergreen. Built-in palettes must be
 byte-identical to today's `Theme::palette()` values (a test enforces it).
 
 User themes may set `extends = "dracula"` and override only what they change.

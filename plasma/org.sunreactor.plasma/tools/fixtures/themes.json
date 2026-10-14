@@ -968,8 +968,8 @@
   "fg": "#1f2933",
   "text_muted": "#7a8590",
   "id": "nds",
-  "family": "pixel",
-  "glyph_style": "pixel",
+  "family": "instrument",
+  "glyph_style": "rounded",
   "palette": {
    "bg": "#eef1f5",
    "fg": "#1f2933",
@@ -983,8 +983,8 @@
    "error": "#e04545"
   },
   "widget": {
-   "renderer": "pixel",
-   "font": "bitmap8",
+   "renderer": "vector",
+   "font": "sans",
    "pixel_scale": 0,
    "shades": [
     "#1f2933",
@@ -992,10 +992,10 @@
     "#b9c2cc",
     "#eef1f5"
    ],
-   "density": "compact",
+   "density": "comfortable",
    "border": "line",
-   "radius": 0,
-   "dither": "bayer4",
+   "radius": 14,
+   "dither": "none",
    "glow": 0.0,
    "modules": [
     "telemetry",

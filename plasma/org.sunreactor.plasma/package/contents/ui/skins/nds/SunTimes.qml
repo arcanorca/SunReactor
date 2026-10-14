@@ -1,7 +1,8 @@
 /*
- * Nintendo DS touch screen, sun times: rise, solar noon and set as three
- * columns - the sky symbol over the time - with the next one in the accent.
- * Module contract: modules/Modules.js.
+ * Nintendo DS touch screen, sun times: a white pill under the forecast with
+ * sunrise, solar noon and sunset - each a small orange sun and its time in the
+ * console's rounded digits - the next one in DS blue. Module contract:
+ * modules/Modules.js.
  */
 
 pragma ComponentBehavior: Bound
@@ -11,10 +12,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../pixel"
-import "../pixel/PixelFormat.js" as PixelFormat
-import "../pixel/Sprites.js" as Sprites
-import "Nds.js" as Nds
+import "../../Format.js" as Format
 
 Item {
     id: root
@@ -23,12 +21,15 @@ Item {
     required property SunReactorClient client
     required property ModuleSettings settings
 
+    readonly property NdsStyle style: NdsStyle {
+        theme: root.theme
+    }
     readonly property string domain: settings.domain
     readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
-        { label: i18ndc(domain, "Sunrise, compact", "Rise"), epoch: client.sunriseEpochS, symbol: "rise" },
-        { label: i18ndc(domain, "Solar noon, compact", "Noon"), epoch: client.solarNoonEpochS, symbol: "noon" },
-        { label: i18ndc(domain, "Sunset, compact", "Set"), epoch: client.sunsetEpochS, symbol: "set" },
+        { label: i18ndc(domain, "Sunrise, compact", "Rise"), epoch: client.sunriseEpochS },
+        { label: i18ndc(domain, "Solar noon, compact", "Noon"), epoch: client.solarNoonEpochS },
+        { label: i18ndc(domain, "Sunset, compact", "Set"), epoch: client.sunsetEpochS }
     ]
     readonly property real nextEpoch: {
         for (const entry of entries) {
@@ -39,76 +40,69 @@ Item {
         return 0;
     }
 
-    PixelStyle {
-        id: pstyle
-        theme: root.theme
-    }
+    readonly property real pillH: Math.round(style.gu * 1.75)
 
-    implicitHeight: surface.implicitHeight
+    implicitHeight: pill.height
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: entries.map(e => e.label + " " + PixelFormat.time(e.epoch)).join(", ")
+    Accessible.name: entries.map(e => e.label + " " + Format.timeText(e.epoch)).join(", ")
 
-    NdsLid {
-        id: surface
+    Rectangle {
+        id: pill
 
-        width: parent.width
-        theme: root.theme
-        grid: root.theme.grid
-        fillsWidth: true
-        lidHeight: 21
-        regionName: "suntimes"
+        width: root.width
+        height: root.pillH
+        radius: height / 2
+        color: root.style.white
+        border.width: 1
+        border.color: root.style.line
 
-        // The list card: the three times sit on white.
-        Repeater {
-            model: Nds.box([], 4, 2, surface.artWidth - 8, 17, root.theme.bg, root.theme.borderInactive)
-            delegate: Rectangle {
-                required property var modelData
+        Row {
+            anchors.fill: parent
 
-                x: modelData.x
-                y: modelData.y
-                width: modelData.w
-                height: modelData.h
-                color: modelData.c
-                antialiasing: false
-            }
-        }
+            Repeater {
+                model: root.entries
 
-        Repeater {
-            model: root.entries
+                delegate: Item {
+                    id: column
 
-            delegate: Item {
-                id: column
+                    required property var modelData
 
-                required property var modelData
-                required property int index
-                readonly property bool isNext: modelData.epoch === root.nextEpoch
-                readonly property int colWidth: Math.floor((surface.artWidth - 8) / 3)
+                    readonly property bool isNext: modelData.epoch === root.nextEpoch
 
-                x: 4 + index * colWidth
-                y: 0
-                width: colWidth
-                height: surface.lidHeight
+                    width: pill.width / root.entries.length
+                    height: pill.height
 
-                Accessible.role: Accessible.ListItem
-                Accessible.name: modelData.label + " " + PixelFormat.time(modelData.epoch)
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: modelData.label + " " + Format.timeText(modelData.epoch)
 
-                PixelSprite {
-                    x: Math.floor((column.width - 8) / 2)
-                    y: 3
-                    source: Sprites.symbolAtlas()
-                    frame: Sprites.symbol(column.modelData.symbol)
-                    frameWidth: 8
-                    frameHeight: 8
-                    colors: { const c = pstyle.spriteColors.slice(); c[8] = "transparent"; c[4] = root.theme.textMuted; return c; }
-                }
-                PixelLabel {
-                    theme: root.theme
-                    x: Math.floor((column.width - artWidth) / 2)
-                    y: 12
-                    face: pstyle.bodyFace
-                    color: column.isNext ? root.theme.accent : pstyle.ink
-                    text: PixelFormat.time(column.modelData.epoch)
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: Math.round(root.style.gu * 0.35)
+
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.round(root.style.gu * 0.5)
+                            height: width
+                            radius: width / 2
+                            color: root.style.orange
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: column.modelData.label
+                            font.family: root.style.family
+                            font.pixelSize: Math.round(root.style.gu * 0.62)
+                            color: root.style.muted
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Format.timeText(column.modelData.epoch)
+                            font.family: root.style.family
+                            font.weight: Font.Bold
+                            font.pixelSize: Math.round(root.style.gu * 0.86)
+                            color: column.isNext ? root.style.blue : root.style.ink
+                        }
+                    }
                 }
             }
         }

@@ -1,7 +1,8 @@
 /*
- * Nintendo DS top screen, weather page: the current sky as the pixel sprite on
- * a white card, the temperature in the bitmap face, and the condition. The
- * hinge closes the screen. Module contract: modules/Modules.js.
+ * Nintendo DS top screen, weather page: the current sky as a large glossy glyph
+ * on a cream badge, the temperature in big rounded digits, the condition and
+ * what the daemon's weather does to the displays. The hinge sits under the
+ * screen. Module contract: modules/Modules.js.
  */
 
 pragma ComponentBehavior: Bound
@@ -12,10 +13,6 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
-import "../pixel"
-import "../pixel/PixelFormat.js" as PixelFormat
-import "../pixel/Sprites.js" as Sprites
-import "Nds.js" as Nds
 
 Item {
     id: root
@@ -24,174 +21,109 @@ Item {
     required property SunReactorClient client
     required property ModuleSettings settings
 
+    readonly property NdsStyle style: NdsStyle {
+        theme: root.theme
+    }
     readonly property string domain: settings.domain
     readonly property bool available: client.isConnected && client.weatherEnabled
-    readonly property var clock: PixelFormat.timeParts(client.nowEpochS)
 
     readonly property string condition: {
         const text = weatherText.conditionLabel(client.weatherCondition);
         return client.hasWeatherReading && text.length > 0 ? text : i18nd(domain, "No weather reading");
     }
 
-    /*! What the daemon's bounded weather multiplier does to the targets, in words. */
-    readonly property string effect: {
-        if (!client.hasWeatherReading) {
-            return client.weatherState === "no_api_key"
-                ? i18nd(domain, "No API key is configured")
-                : i18nd(domain, "No reading yet");
-        }
-        if (client.weatherStale) {
-            return i18nd(domain, "Last reading is out of date");
-        }
-        const change = Math.round((1.0 - client.weatherMultiplier) * 100);
-        if (change >= 2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Dimming displays by %1%", change);
-        }
-        if (change <= -2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Brightening displays by %1%", -change);
-        }
-        return i18nd(domain, "Not changing brightness right now");
-    }
+    readonly property real gu: style.gu
+    readonly property real pad: Math.round(gu * 0.75)
+    readonly property real glassW: root.width - 2 * style.bezel
+    readonly property real badge: Math.round(gu * 3.4)
+    readonly property real glassH: Math.round(gu * 5.8)
 
     WeatherText {
         id: weatherText
     }
 
-    PixelStyle {
-        id: pstyle
-        theme: root.theme
-    }
-
-    implicitHeight: surface.implicitHeight
+    implicitHeight: screen.implicitHeight
 
     Accessible.role: Accessible.StaticText
     Accessible.name: weatherText.summary(client)
 
-    NdsLid {
-        id: surface
+    NdsScreen {
+        id: screen
 
         width: parent.width
         theme: root.theme
-        grid: root.theme.grid
-        fillsWidth: true
+        style: root.style
+        wallpaper: "sky"
         hinge: true
-        lidHeight: Nds.WEATHER_TOP_H - Nds.HINGE
-        regionName: "weather"
+        glassHeight: root.glassH
 
-        // Header strip, as on the brightness screen.
-        Rectangle {
-            x: 2
-            y: 2
-            width: surface.artWidth - 4
-            height: 10
-            color: root.theme.bg
-            antialiasing: false
-        }
-        Rectangle {
-            x: 2
-            y: 11
-            width: surface.artWidth - 4
-            height: 1
-            color: root.theme.borderInactive
-            antialiasing: false
-        }
-        PixelLabel {
+        NdsStatusBar {
+            x: root.pad
+            y: Math.round(root.gu * 0.35)
+            width: root.glassW - 2 * root.pad
             theme: root.theme
-            x: 5
-            y: 3
-            face: "bitmap"
-            capitals: true
-            color: pstyle.ink
-            text: i18ndc(root.domain, "Title of the weather panel", "Weather")
-        }
-        PixelLabel {
-            id: clockLabel
-
-            theme: root.theme
-            x: surface.artWidth - 5 - artWidth
-            y: 4
-            face: "small"
-            capitals: true
-            color: pstyle.ink
-            text: root.clock.hm + root.clock.meridiem
+            style: root.style
+            client: root.client
         }
 
-        // The sky on a white card.
-        Repeater {
-            model: Nds.box([], 6, 15, 20, 20, root.theme.bg, root.theme.borderInactive)
-            delegate: Rectangle {
-                required property var modelData
+        // The sky on a cream badge, with the solid glyph.
+        Rectangle {
+            id: badgeBox
 
-                x: modelData.x
-                y: modelData.y
-                width: modelData.w
-                height: modelData.h
-                color: modelData.c
-                antialiasing: false
+            x: root.pad
+            y: Math.round(root.gu * 1.8)
+            width: root.badge
+            height: root.badge
+            radius: width / 2
+            border.width: 1
+            border.color: "#e7d3ac"
+            gradient: Gradient {
+                GradientStop { position: 0; color: "#fffdf6" }
+                GradientStop { position: 1; color: "#fbe6c2" }
             }
         }
-        PixelSprite {
-            x: 8
-            y: 17
-            source: Sprites.weatherAtlas()
-            frame: root.client.hasWeatherReading
-                ? Sprites.conditionFrame(root.client.weatherCondition, root.client.weatherIsNight)
-                : Sprites.weatherFrame("unknown")
-            colors: pstyle.spriteColors
+        WeatherGlyph {
+            x: badgeBox.x + Math.round((badgeBox.width - width) / 2)
+            y: badgeBox.y + Math.round((badgeBox.height - height) / 2)
+            size: Math.round(root.gu * 2.6)
+            condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+            night: root.client.weatherIsNight === true
+            glyphStyle: "solid"
+            palette: root.style.glyphPalette(root.style.cream)
         }
 
-        BitmapText {
-            id: temp
+        // The temperature: big rounded digits, the unit beside them.
+        Text {
+            id: temperature
 
-            theme: root.theme
-            inSurface: true
-            magnification: 2
-            x: 32
-            y: 13
-            color: pstyle.ink
+            x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
+            y: Math.round(root.gu * 1.6)
             text: root.client.hasTemperature ? String(Math.round(root.client.temperatureC)) : "--"
+            font.family: root.style.family
+            font.weight: Font.Bold
+            font.pixelSize: Math.round(root.gu * 2.0)
+            color: root.style.ink
         }
-        PixelLabel {
-            theme: root.theme
-            x: temp.x + temp.artWidth + 3
-            y: 16
-            face: "small"
-            color: pstyle.dim
+        Text {
+            x: temperature.x + temperature.implicitWidth + Math.round(root.gu * 0.2)
+            y: Math.round(root.gu * 2.0)
             text: "°C"
+            font.family: root.style.family
+            font.weight: Font.Bold
+            font.pixelSize: Math.round(root.gu * 1.0)
+            color: root.style.blue
         }
-        // The condition and the effect, each on a white chip so they read on the menu.
-        Repeater {
-            model: Nds.box(Nds.box([], 29, 28, surface.artWidth - 33, 9, root.theme.bg, root.theme.borderInactive),
-                           4, 38, surface.artWidth - 8, 9, root.theme.bg, root.theme.borderInactive)
-            delegate: Rectangle {
-                required property var modelData
 
-                x: modelData.x
-                y: modelData.y
-                width: modelData.w
-                height: modelData.h
-                color: modelData.c
-                antialiasing: false
-            }
-        }
-        PixelLabel {
-            theme: root.theme
-            x: 32
-            y: 30
-            face: "small"
-            color: pstyle.ink
+        Text {
+            x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
+            y: Math.round(root.gu * 4.35)
+            width: root.glassW - x - root.pad
+            elide: Text.ElideRight
             text: root.condition
-            maximumArtWidth: Math.max(8, surface.artWidth - 36)
-        }
-        PixelLabel {
-            theme: root.theme
-            x: 7
-            y: 40
-            face: "small"
-            color: pstyle.ink
-            text: root.effect
-            maximumArtWidth: Math.max(8, surface.artWidth - 14)
-            maximumLines: 1
+            font.family: root.style.family
+            font.weight: Font.Bold
+            font.pixelSize: Math.round(root.gu * 1.0)
+            color: root.style.ink
         }
     }
 }

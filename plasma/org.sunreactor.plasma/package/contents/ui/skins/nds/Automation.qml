@@ -1,20 +1,21 @@
 /*
- * Nintendo DS touch screen, automation: three big touch buttons - AUTO, MANUAL,
- * PAUSE - in the console's own idiom. The chosen one is inverted (accent fill)
- * with the stylus tip on it; a press inverts the button and shifts it one pixel
- * down. The daemon's sentence sits in a speech bubble under them. The rules are
- * in modules/ModeControl.qml. Module contract: modules/Modules.js.
+ * Nintendo DS touch buttons, automation: three big rounded buttons - AUTO,
+ * MANUAL, PAUSE - in a row under the touch screen. The chosen one is filled DS
+ * blue with white type and a stylus-dot highlight where the pen last touched it.
+ * PAUSE has a chevron that opens the pause durations. The daemon's sentence sits
+ * under them. The rules are in modules/ModeControl.qml. Module contract:
+ * modules/Modules.js.
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../pixel"
-import "Nds.js" as Nds
+import "../../components"
 
 Item {
     id: root
@@ -23,22 +24,17 @@ Item {
     required property SunReactorClient client
     required property ModuleSettings settings
 
+    readonly property NdsStyle style: NdsStyle {
+        theme: root.theme
+    }
     readonly property ModeControl control: ModeControl {
         client: root.client
         settings: root.settings
     }
     readonly property bool available: client.isConnected
 
-    PixelStyle {
-        id: pstyle
-
-        theme: root.theme
-    }
-
-    implicitHeight: surface.implicitHeight
-
-    Accessible.role: Accessible.Grouping
-    Accessible.name: i18ndc(control.domain, "Accessible name of the automation mode switch", "Automation mode")
+    readonly property real gu: style.gu
+    readonly property real gap: Math.round(gu * 0.45)
 
     /*! The button captions: the short forms fit three big touch buttons. */
     readonly property var captions: ({
@@ -51,164 +47,151 @@ Item {
     readonly property string statusLine: control.hinting || control.note.length === 0
         ? control.displayText
         : control.displayText + " · " + control.note
-    /*! The sentence in the 5x7 face, which wraps: the middle dot and the arrow
-        have no glyph there, so they become ASCII. */
-    readonly property string shownLine: statusLine.replace(/·/g, "-").replace(/→/g, ">").replace(/[  ]/g, " ")
 
-    NdsLid {
-        id: surface
+    function openDurations(cell) {
+        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
+        durations.y = cell.mapToItem(root, 0, cell.height).y;
+        durations.open();
+    }
+
+    implicitHeight: column.implicitHeight
+
+    Accessible.role: Accessible.Grouping
+    Accessible.name: i18ndc(control.domain, "Accessible name of the automation mode switch", "Automation mode")
+
+    Column {
+        id: column
 
         width: parent.width
-        theme: root.theme
-        grid: root.theme.grid
-        fillsWidth: true
-        lidHeight: 21 + bubbleH + 3
-        regionName: "automation"
+        spacing: Math.round(root.gu * 0.4)
 
-        readonly property int bubbleH: status.artHeight + 5
+        Row {
+            id: buttons
 
-        Repeater {
-            model: root.control.choices
+            width: parent.width
+            height: Math.round(root.gu * 2.1)
+            spacing: root.gap
 
-            delegate: Item {
-                id: touch
+            Repeater {
+                model: root.control.choices
 
-                required property var modelData
-                required property int index
-
-                readonly property string choiceId: modelData.id
-                readonly property bool active: root.control.choice === choiceId
-                readonly property int gap: 3
-                readonly property int buttonWidth: Math.floor((surface.artWidth - 8 - 2 * gap) / 3)
-
-                // Inverted while pressed; a pressed button also sinks one pixel.
-                readonly property bool inverted: active !== mouse.pressed
-                readonly property color fillColor: inverted ? root.theme.accent : root.theme.bg
-                readonly property color edgeColor: inverted || activeFocus ? root.theme.accent : root.theme.borderInactive
-                readonly property color labelColor: inverted ? root.theme.bg : root.theme.fg
-
-                x: 4 + index * (buttonWidth + gap)
-                y: 4 + (mouse.pressed ? 1 : 0)
-                width: buttonWidth
-                height: 13
-                activeFocusOnTab: true
-
-                Accessible.role: Accessible.RadioButton
-                Accessible.name: modelData.label
-                Accessible.description: modelData.tip
-                Accessible.checkable: true
-                Accessible.checked: active
-                Accessible.onPressAction: root.control.pick(choiceId, touch)
-
-                Keys.onPressed: event => {
-                    if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                        root.control.pick(choiceId, touch);
-                        event.accepted = true;
-                    }
-                }
-
-                Repeater {
-                    model: Nds.box([], 0, 0, touch.width, touch.height, touch.fillColor, touch.edgeColor)
-                    delegate: Rectangle {
-                        required property var modelData
-
-                        x: modelData.x
-                        y: modelData.y
-                        width: modelData.w
-                        height: modelData.h
-                        color: modelData.c
-                        antialiasing: false
-                    }
-                }
-
-                PixelLabel {
-                    theme: root.theme
-                    x: Math.floor((touch.width - artWidth) / 2)
-                    y: Math.floor((touch.height - capHeight) / 2)
-                    face: pstyle.bodyFace
-                    capitals: true
-                    color: touch.labelColor
-                    text: root.captions[touch.choiceId] || touch.modelData.label
-                }
-
-                // The stylus tip rests on the chosen button.
-                Repeater {
-                    model: touch.active ? Nds.cursor([], touch.width - 5, -2, root.theme.secondaryAccent) : []
-                    delegate: Rectangle {
-                        required property var modelData
-
-                        x: modelData.x
-                        y: modelData.y
-                        width: modelData.w
-                        height: modelData.h
-                        color: modelData.c
-                        antialiasing: false
-                    }
-                }
-
-                MouseArea {
-                    id: mouse
-
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        touch.forceActiveFocus(Qt.MouseFocusReason);
-                        root.control.pick(touch.choiceId, touch);
-                    }
+                delegate: ModeButton {
+                    width: Math.floor((buttons.width - 2 * root.gap) / 3)
+                    height: buttons.height
                 }
             }
         }
 
-        // The speech bubble: the status sentence, wrapped.
-        Repeater {
-            model: Nds.box([], 4, 21, surface.artWidth - 8, surface.bubbleH, root.theme.bg, root.theme.borderInactive)
-            delegate: Rectangle {
-                required property var modelData
+        Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            text: root.statusLine
+            font.family: root.style.family
+            font.pixelSize: Math.round(root.gu * 0.66)
+            color: root.control.hinting ? root.style.blue : root.style.ink
+        }
+    }
 
-                x: modelData.x
-                y: modelData.y
-                width: modelData.w
-                height: modelData.h
-                color: modelData.c
-                antialiasing: false
+    ModeDurationMenu {
+        id: durations
+
+        control: root.control
+    }
+
+    /*! One touch button: a DS panel, filled blue when it is the chosen mode. */
+    component ModeButton: NdsPanel {
+        id: cell
+
+        required property var modelData
+
+        readonly property string choiceId: modelData.id
+        readonly property bool lit: root.control.choice === choiceId
+
+        style: root.style
+        kind: lit ? "ds" : "panel"
+        outlineColor: root.style.blue
+
+        Accessible.role: Accessible.RadioButton
+        Accessible.name: modelData.label
+        Accessible.description: modelData.tip
+        Accessible.checkable: true
+        Accessible.checked: lit
+        Accessible.onPressAction: root.control.pick(choiceId, cell)
+        activeFocusOnTab: true
+
+        Keys.onPressed: event => {
+            if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                root.control.pick(choiceId, cell);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Down && choiceId === "paused") {
+                root.openDurations(cell);
+                event.accepted = true;
             }
         }
-        Rectangle {
-            x: 13
-            y: 19
-            width: 5
-            height: 3
-            color: root.theme.bg
-            antialiasing: false
-        }
-        Rectangle {
-            x: 13
-            y: 19
-            width: 1
-            height: 2
-            color: root.theme.borderInactive
-            antialiasing: false
-        }
-        Rectangle {
-            x: 17
-            y: 19
-            width: 1
-            height: 2
-            color: root.theme.borderInactive
-            antialiasing: false
+
+        Text {
+            anchors.centerIn: parent
+            anchors.horizontalCenterOffset: cell.choiceId === "paused" ? -Math.round(root.gu * 0.3) : 0
+            text: root.captions[cell.choiceId] || cell.modelData.label
+            font.family: root.style.family
+            font.weight: Font.Bold
+            font.pixelSize: Math.round(root.gu * 1.0)
+            color: cell.lit ? root.style.white : root.style.blue
         }
 
-        PixelLabel {
-            id: status
+        // The stylus dot: a white touch point with a soft halo, on the lit button.
+        Rectangle {
+            visible: cell.lit
+            x: cell.width - Math.round(root.gu * 1.25)
+            y: Math.round(root.gu * 0.3)
+            width: Math.round(root.gu * 0.8)
+            height: width
+            radius: width / 2
+            color: Qt.rgba(1, 1, 1, 0.22)
+        }
+        Rectangle {
+            visible: cell.lit
+            x: cell.width - Math.round(root.gu * 1.05)
+            y: Math.round(root.gu * 0.5)
+            width: Math.round(root.gu * 0.36)
+            height: width
+            radius: width / 2
+            color: root.style.white
+        }
 
-            theme: root.theme
-            x: 8
-            y: 23
-            face: "small"
-            color: root.control.hinting ? root.theme.accent : pstyle.ink
-            text: root.shownLine
-            maximumArtWidth: Math.max(8, surface.artWidth - 16)
-            maximumLines: 3
+        // The whole button is the touch target; the chevron below takes its own clicks.
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                cell.forceActiveFocus(Qt.MouseFocusReason);
+                root.control.pick(cell.choiceId, cell);
+            }
+        }
+
+        // The chevron of PAUSE: a click or a Down key opens the durations.
+        Item {
+            visible: cell.choiceId === "paused"
+            x: cell.width - Math.round(root.gu * 1.2)
+            y: Math.round((cell.height - height) / 2)
+            width: Math.round(root.gu * 1.0)
+            height: Math.round(root.gu * 1.0)
+
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                width: Math.round(root.gu * 0.7)
+                height: width
+                source: "arrow-down"
+                isMask: true
+                color: cell.lit ? root.style.white : root.style.blue
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.openDurations(cell)
+            }
         }
     }
 }
