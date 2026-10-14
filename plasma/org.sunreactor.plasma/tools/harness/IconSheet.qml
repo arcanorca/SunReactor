@@ -104,10 +104,14 @@ Window {
 
     Component.onCompleted: loadFixtures()
 
+    /*! "auto" (default), "modern", "line", "solid" or "pixel": the Weather icons setting. */
+    readonly property string styleArg: argv.length > 3 && argv[3].length > 0 ? argv[3] : "auto"
+
     Theme {
         id: sheetTheme
 
         spec: win.spec
+        overrides: ({ weatherIconStyle: win.styleArg })
     }
 
     Column {
@@ -183,7 +187,7 @@ Window {
         y: win.height - 30
         color: "#7d848e"
         font.pixelSize: 12
-        text: "theme " + win.themeId + "  |  device pixel ratio " + win.devicePixelRatio
+        text: "theme " + win.themeId + " (" + win.styleArg + ")  |  device pixel ratio " + win.devicePixelRatio
               + (win.loadError.length ? "  |  " + win.loadError : "")
               + (sheetTheme.available ? "" : "  |  unknown theme id")
     }

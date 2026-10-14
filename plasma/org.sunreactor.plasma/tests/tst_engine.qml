@@ -151,6 +151,18 @@ Item {
             overridden.overrides = {};
         }
 
+        function test_weatherIconStyle() {
+            compare(vectorTheme.weatherIconStyle, "auto", "the theme's own icon by default");
+            overridden.overrides = { weatherIconStyle: "modern" };
+            compare(overridden.weatherIconStyle, "modern");
+            compare(overridden.glyphStyle, "line", "modern leaves the glyph style to the renderer");
+            overridden.overrides = { weatherIconStyle: "pixel" };
+            compare(overridden.weatherIconStyle, "pixel");
+            overridden.overrides = { weatherIconStyle: "neon" };
+            compare(overridden.weatherIconStyle, "auto", "an unknown style is auto");
+            overridden.overrides = {};
+        }
+
         function test_glyphPalette() {
             const p = vectorTheme.glyphPalette;
             compare(p.bg, "#161616");
