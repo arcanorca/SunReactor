@@ -3,21 +3,19 @@
  * cycle" panel (src/tui/ui/light_cycle.rs) on the daemon's day_curve.
  *
  *     1 Mi   2 Len   3 All                       <- tabs with ≥2 displays
- *     ──────━━━━━─────────────────────────────
  *     ╭ Today's light cycle ────── Tue Oct 13 ╮
- *     │              ━ Brightness target 39%  │
- *     │100% ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ │
- *     │ 50% ┈┈┈┈┈┈┈┈┈┈▃▅▇██●██▇▅▃┈┈┈┈┈┈┈┈┈┈┈┈ │   area, eighth-cell tops,
- *     │  0% ▁▁▁▁▁▁▁▁▄████│████████▄▁▁▁▁▁▁▁▁▁ │   shaded by row
- *     │     00:00   06:00   12:00   18:00     │
- *     │     ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆┃▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆ │   sky light band
- *     │      Night  Morning  Afternoon  Night │
- *     ╰───────────────────────────────────────╯
+ *     │ ▼ Weather −5%      ━ Brightness target 39% │
+ *     │100% ┈┈┈┈┈┈┈┈┈┈▄▆█▆▄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ │   area, eighth-cell tops
+ *     │ 50% ┈┈┈┈┈┈▃▅██●██▅▃┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ │   shaded by row
+ *     │  0% ▁▁▁▁▁▁▁▁▄████│████████▄▁▁▁▁▁▁▁▁▁▁▁▁▁ │
+ *     │     00:00   06:00   12:00   18:00   24:00 │   hour axis; its background
+ *     ╰───────────────────────────────────────────╯   is the sky light (night→day)
  *
- * Absolute 0..100 % scale. The part of the area between pct and
- * pct_no_weather (what the weather costs) is tinted with `warning`. Hover
- * scrubs (time -> target in the legend); it never sets brightness. Blocks and
- * lines are rectangles on the cell grid, text is on the same grid.
+ * Absolute 0..100 % scale, three plot rows (six when the theme is comfortable).
+ * The part of the area between pct and pct_no_weather (what the weather costs)
+ * is tinted with `warning`. Hover scrubs (time -> target in the legend); it
+ * never sets brightness. Blocks and lines are rectangles on the cell grid, text
+ * is on the same grid.
  */
 
 pragma ComponentBehavior: Bound
@@ -75,10 +73,13 @@ Item {
 
     // --- layout in cells -------------------------------------------------------
     readonly property bool tabs: curves.length > 1
-    readonly property int chartRows: term.comfortable ? 9 : 5
+    readonly property int chartRows: term.comfortable ? 6 : 3
     readonly property int gutter: frame.innerCols >= 34 ? 5 : 0
     readonly property int plotCols: Math.max(8, frame.innerCols - gutter - (gutter > 0 ? 1 : 0))
     readonly property int plotHDev: chartRows * term.chDev
+    /*! Gutter labels and grid lines: the quarters when there are rows for them. */
+    readonly property var labelPcts: chartRows >= 6 ? [100, 75, 50, 25, 0] : [100, 50, 0]
+    readonly property var gridPcts: chartRows >= 6 ? [75, 50, 25] : [50]
 
     function colOf(t) {
         return Math.round(Math.max(0, Math.min(1, (t - t0) / Math.max(1, t1 - t0))) * (plotCols - 1));
@@ -120,7 +121,6 @@ Item {
         ? valueAt(current.samples, now, "pctNoWeather") - valueAt(current.samples, now, "pct") : 0
 
     readonly property var bounds: Term.phaseBounds(curve ? curve.sun : null, t0, t1)
-    readonly property int currentPhase: Term.phaseAt(now - t0, bounds)
 
     function shortTime(t) {
         const d = new Date(t * 1000);
@@ -159,7 +159,7 @@ Item {
         width: root.width
         title: i18nd(root.domain, "Today's light cycle")
         rightTitle: root.available ? Qt.formatDate(new Date(root.now * 1000), "ddd MMM d") : ""
-        contentRows: 1 + root.chartRows + 3
+        contentRows: 2 + root.chartRows
         focused: switcher.activeFocus
         regionName: "curve"
 
@@ -209,7 +209,7 @@ Item {
 
         // Percent labels in the gutter.
         Repeater {
-            model: root.gutter > 0 ? [100, 75, 50, 25, 0] : []
+            model: root.gutter > 0 ? root.labelPcts : []
 
             delegate: TermText {
                 required property int modelData
@@ -219,7 +219,7 @@ Item {
 
                 tm: term
                 // A label whose row a higher label already took is skipped.
-                visible: index === 0 || root.rowOf([100, 75, 50, 25, 0][index - 1]) !== row
+                visible: index === 0 || root.rowOf(root.labelPcts[index - 1]) !== row
                 y: term.cy(1 + row)
                 value: Term.padStart(modelData + "%", 4)
                 color: root.theme.textMuted
@@ -321,9 +321,9 @@ Item {
                 }
             }
 
-            // Quarter lines (┈), only where the area leaves the cell empty.
+            // Grid lines (┈), only where the area leaves the cell empty.
             Repeater {
-                model: [100, 75, 50, 25]
+                model: root.gridPcts
 
                 delegate: TermText {
                     required property int modelData
@@ -410,7 +410,24 @@ Item {
             }
         }
 
-        // Hour axis.
+        // Hour axis. Its background is the sky light of each column (night dark,
+        // day light), so the day's phases read without a row of their own.
+        Repeater {
+            model: root.available && !root.showAll ? root.plotCols : 0
+
+            delegate: Rectangle {
+                required property int index
+                readonly property real light: Term.skyLight((index + 0.5) / root.plotCols * (root.t1 - root.t0), root.bounds)
+
+                x: plot.x + term.cx(index)
+                y: term.cy(1 + root.chartRows)
+                width: term.cw
+                height: term.ch
+                antialiasing: false
+                color: root.theme.mix(root.theme.bg, root.theme.secondaryAccent, 0.05 + 0.2 * light)
+            }
+        }
+
         TermText {
             tm: term
             x: plot.x
@@ -446,77 +463,5 @@ Item {
             }
         }
 
-        // Sky light band (▆), the now column as ┃.
-        Item {
-            x: plot.x
-            y: term.cy(2 + root.chartRows)
-            width: plot.width
-            height: term.ch
-
-            Repeater {
-                model: root.available ? root.plotCols : 0
-
-                delegate: Rectangle {
-                    required property int index
-                    readonly property bool isNow: root.nowInside && index === root.nowCol
-                    readonly property real light: Term.skyLight((index + 0.5) / root.plotCols * (root.t1 - root.t0), root.bounds)
-
-                    x: isNow ? term.lineX(index) - Math.floor(term.lwDev / 2) / term.dpr : term.cx(index)
-                    width: isNow ? term.lwHeavy : term.cw
-                    y: isNow ? 0 : Math.round(term.chDev * 2 / 8) / term.dpr
-                    height: isNow ? term.ch : term.ch - y
-                    antialiasing: false
-                    color: isNow ? root.theme.fg
-                        : (light < 0.5 ? root.theme.mix(root.theme.borderInactive, root.theme.secondaryAccent, light * 2)
-                                       : root.theme.mix(root.theme.secondaryAccent, root.theme.accent, (light - 0.5) * 2))
-                }
-            }
-        }
-
-        // Phase names under the band; the current one bold.
-        Repeater {
-            model: {
-                if (!root.available) {
-                    return [];
-                }
-                const names = [i18ndc(root.domain, "Phase of the day", "Night"), i18ndc(root.domain, "Phase of the day", "Dawn"),
-                               i18ndc(root.domain, "Phase of the day", "Morning"), i18ndc(root.domain, "Phase of the day", "Afternoon"),
-                               i18ndc(root.domain, "Phase of the day", "Dusk"), i18ndc(root.domain, "Phase of the day", "Night")];
-                const width = root.plotCols;
-                const day = Math.max(1, root.t1 - root.t0);
-                const col = s => Math.round(Math.max(0, Math.min(1, s / day)) * (width - 1));
-                const occupied = Array(width).fill(false);
-                const placed = [];
-                for (const index of [2, 3, 0, 5, 1, 4]) {
-                    const label = names[index];
-                    const length = Term.len(label);
-                    const center = Math.floor((col(root.bounds[index]) + col(root.bounds[index + 1])) / 2);
-                    const start = Math.min(Math.max(0, center - Math.floor(length / 2)), Math.max(0, width - length));
-                    const lo = Math.max(0, start - 1);
-                    const hi = Math.min(width, start + length + 1);
-                    if (length > width || occupied.slice(lo, hi).some(v => v)) {
-                        continue;
-                    }
-                    for (let i = start; i < start + length; ++i) {
-                        occupied[i] = true;
-                    }
-                    const current = index === root.currentPhase
-                        || (root.currentPhase === 5 && index === 0 && root.now - root.t0 < root.bounds[1]);
-                    placed.push({ at: start, t: label, current: current });
-                }
-                return placed;
-            }
-
-            delegate: TermText {
-                required property var modelData
-
-                tm: term
-                x: plot.x + term.cx(modelData.at)
-                y: term.cy(3 + root.chartRows)
-                value: modelData.t
-                strong: modelData.current
-                color: modelData.current ? root.theme.fg : root.theme.textMuted
-            }
-        }
     }
 }

@@ -1,22 +1,25 @@
 /*
  * Terminal skin of the displays module: the TUI's monitor list and range
- * controls (src/tui/ui/monitors.rs) as one panel.
+ * controls (src/tui/ui/monitors.rs) as one panel. Every control is a full-width
+ * block of four rows:
  *
- *     ╭ Displays ───────────────────── 1 of 2 ╮
- *     │   All displays ‹  44% › ▕█████░░░░░░▏ │
- *     │ ───────────────────────────────────── │
- *     │ ❯ mi-monitor   ‹  39% › ▕████░░░░░░░▏ │
- *     │   ╰ ● Auto · target 39% · range 1–50% │
- *     │                                       │
- *     │   len-p24h-20…    48%   ▕█████░░░░░░▏ │
- *     │   ╰ ● Auto · target 48% · range 5–60% │
- *     ╰ ↑↓ select  ←→ adjust  ⏎ range  a auto ╯
+ *     ╭ Displays ─────────────────────────── 1 of 2 ╮
+ *     │ ❯ All displays                           44% │   name and value; inverse video
+ *     │ ████████████████████████████▌░░░░░░░░░░░░░░░ │   two rows: the bar, a head cell
+ *     │ ████████████████████████████▌░░░░░░░░░░░░░░░ │   press or drag anywhere on it
+ *     │ ● Auto · range 1–50% · target 39%            │   state and range, muted
+ *     │ mi-monitor                               39% │
+ *     │ ██████████████▌░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+ *     │ ██████████████▌░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+ *     │ ● Auto · range 1–50% · target 39%            │
+ *     ╰ ↑↓ select  ←→ adjust  ⏎ range  a auto       ╯
  *
  * Keyboard: ↑/↓ move the cursor (and leave the panel at either end), ←/→
- * step 1 % (Shift or PgUp/PgDn 10 %), Enter opens the range, A / Backspace
- * returns to automatic, Esc closes the range. Mouse: drag a gauge, drag a
- * range handle, click the range text or "a auto". Unknown stays "—" with an
- * empty, inert gauge. Writes are throttled (DDC/CI dislikes packet storms).
+ * step 1 % (Shift or PgUp/PgDn 10 %), Home / End go to the range's ends (0 and
+ * 100 % for all displays), Enter opens the range, A / Backspace returns to
+ * automatic, Esc closes the range. Mouse: press or drag a bar, click a name row
+ * to select it, click the range text or "a auto". Unknown stays "—" with an
+ * empty, inert bar. Writes are throttled (DDC/CI dislikes packet storms).
  */
 
 pragma ComponentBehavior: Bound
@@ -40,9 +43,10 @@ FocusScope {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAll: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
-    /*! One row per display: name, value capsule, then the bar from barStart. */
-    readonly property int nameCells: 12
-    readonly property int barStart: 2 + nameCells + 10
+    /*! Rows per control: name and value, the bar (two rows), the state line. */
+    readonly property int controlRows: 4
+    /*! An open range editor: its track and the two boundary fields. */
+    readonly property int rangeRows: 3
 
     TermMetrics {
         id: term
@@ -58,6 +62,18 @@ FocusScope {
     /*! logicalId -> [min, max]. */
     property var pendingLimits: ({})
     property int cursorIndex: 0
+
+    /*! The controls, top to bottom: mon -1 is "All displays", else an index. */
+    readonly property var rows: {
+        const out = [];
+        if (showAll) {
+            out.push({ mon: -1 });
+        }
+        monitors.forEach((m, i) => out.push({ mon: i }));
+        return out;
+    }
+    readonly property int openRanges: monitors.filter(m => expanded[m.logicalId] === true).length
+    readonly property int contentRows: Math.max(1, rows.length * controlRows + openRanges * rangeRows)
 
     readonly property var targets: {
         const out = [];
@@ -136,6 +152,7 @@ FocusScope {
         }
         pendingPct = ({});
     }
+    /*! Writes the value of the cursor's bar (or the range boundary it is on). */
     function adjust(delta) {
         if (!cursor) {
             return;
@@ -158,6 +175,23 @@ FocusScope {
             } else {
                 setLimits(m, lim[0], Math.max(lim[1] + delta, lim[0]));
             }
+        }
+    }
+    /*! Home / End: the bottom or top of the bar's range (0 and 100 for all). */
+    function jump(top) {
+        if (!cursor || cursor.field !== "value") {
+            return;
+        }
+        if (cursor.mon < 0) {
+            if (client.globalPercent >= 0) {
+                setPct("*", top ? 100 : 0);
+            }
+            return;
+        }
+        const m = monitors[cursor.mon];
+        if (controllable(m) && m.percent >= 0) {
+            const lim = shownLimits(m);
+            setPct(m.logicalId, top ? lim[1] : lim[0]);
         }
     }
 
@@ -233,6 +267,12 @@ FocusScope {
         case Qt.Key_PageDown:
             root.adjust(-10);
             break;
+        case Qt.Key_Home:
+            root.jump(false);
+            break;
+        case Qt.Key_End:
+            root.jump(true);
+            break;
         case Qt.Key_Return:
         case Qt.Key_Enter:
         case Qt.Key_Space:
@@ -287,79 +327,16 @@ FocusScope {
                         root.hint("⏎", i18ndc(root.domain, "Key hint", "range")),
                         root.hint("a", i18ndc(root.domain, "Key hint: back to automatic brightness", "auto")))
             : []
-        contentRows: Math.max(1, column.rows)
+        contentRows: root.contentRows
 
         Column {
             id: column
 
-            readonly property int rows: Math.round(height * term.dpr / term.chDev)
-
             width: frame.innerCols > 0 ? term.cx(frame.innerCols) : 0
 
-            // --- All displays ---------------------------------------------------
-            Item {
-                visible: root.showAll
-                width: parent.width
-                height: term.ch
-
-                TermField {
-                    tm: term
-                    theme: root.theme
-                    cells: frame.innerCols
-                    labelCells: root.nameCells
-                    label: i18nd(root.domain, "All displays")
-                    value: {
-                        const v = root.shownPct("*", root.client.globalPercent);
-                        return v >= 0 ? v + "%" : "—";
-                    }
-                    current: root.isCursor(-1, "value")
-                    active: root.activeFocus
-                    labelColor: root.theme.fg
-                    onClicked: root.select(-1, "value")
-                    onStepped: direction => {
-                        root.select(-1, "value");
-                        root.adjust(direction);
-                    }
-                }
-
-                TermBar {
-                    tm: term
-                    theme: root.theme
-                    x: term.cx(root.barStart)
-                    cells: frame.innerCols - root.barStart
-                    visible: cells >= 4
-                    value: root.shownPct("*", root.client.globalPercent)
-                    focused: root.activeFocus && root.isCursor(-1, "value")
-                    interactive: root.client.globalPercent >= 0
-                    fillColor: root.client.isOverrideActive ? root.theme.warning : root.theme.accent
-                    onMoved: value => {
-                        root.select(-1, "value");
-                        root.setPct("*", value);
-                    }
-                    onReleased: value => {
-                        root.setPct("*", value);
-                        root.flush();
-                    }
-                }
-            }
-            // A rule under the master row, like the TUI's section headings.
-            Item {
-                visible: root.showAll
-                width: parent.width
-                height: term.ch
-
-                Rectangle {
-                    y: term.lineY(0)
-                    width: parent.width
-                    height: term.lw
-                    color: root.theme.borderInactive
-                    antialiasing: false
-                }
-            }
-
-            // --- one block per display -------------------------------------------
+            // --- one block per control: All displays, then each display -------------
             Repeater {
-                model: root.monitors
+                model: root.rows
 
                 delegate: Column {
                     id: block
@@ -367,85 +344,124 @@ FocusScope {
                     required property var modelData
                     required property int index
 
-                    readonly property var m: modelData
-                    readonly property bool canWrite: root.controllable(m)
-                    readonly property bool open: root.expanded[m.logicalId] === true
-                    readonly property int shown: root.shownPct(m.logicalId, m.percent)
-                    readonly property var limits: root.shownLimits(m)
-                    readonly property int target: root.targetNow(m.logicalId)
-                    readonly property bool manual: m.hasOverride === true
-                    readonly property bool unavailable: m.unreachable || m.topology === "temporarily_unavailable"
+                    readonly property int mon: modelData.mon
+                    readonly property bool isAll: mon < 0
+                    readonly property var m: isAll ? null : root.monitors[mon]
+                    readonly property string key: isAll ? "*" : m.logicalId
+                    readonly property bool canWrite: isAll ? root.client.globalPercent >= 0 : root.controllable(m)
+                    readonly property int shown: isAll ? root.shownPct("*", root.client.globalPercent)
+                                                       : root.shownPct(m.logicalId, m.percent)
+                    readonly property var limits: isAll ? [0, 100] : root.shownLimits(m)
+                    readonly property int target: isAll ? -1 : root.targetNow(m.logicalId)
+                    readonly property bool manual: isAll ? root.client.isOverrideActive : m.hasOverride === true
+                    readonly property bool open: !isAll && root.expanded[m.logicalId] === true
+                    readonly property bool unavailable: !isAll && (m.unreachable || m.topology === "temporarily_unavailable")
+                    readonly property bool focusedHere: root.activeFocus && root.isCursor(mon, "value")
+                    readonly property color fillColor: !canWrite ? root.theme.textMuted
+                        : (manual ? root.theme.warning : root.theme.accent)
 
                     width: column.width
 
-                    // Breathing row between displays.
+                    // Line 1: the name, the value at the right end. Focused: inverse.
                     Item {
-                        visible: block.index > 0
-                        width: parent.width
-                        height: term.ch
-                    }
-
-                    Item {
-                        width: parent.width
+                        width: block.width
                         height: term.ch
 
-                        TermField {
-                            tm: term
-                            theme: root.theme
-                            cells: frame.innerCols
-                            labelCells: root.nameCells
-                            label: block.m.logicalId
-                            value: block.shown >= 0 ? block.shown + "%" : "—"
-                            current: root.isCursor(block.index, "value")
-                            active: root.activeFocus
-                            adjustable: block.canWrite && block.shown >= 0
-                            labelColor: block.m.enabled ? root.theme.fg : root.theme.textMuted
-                            valueColor: block.manual ? root.theme.warning : root.theme.fg
-                            onClicked: root.select(block.index, "value")
-                            onStepped: direction => {
-                                root.select(block.index, "value");
-                                root.adjust(direction);
-                            }
+                        Rectangle {
+                            visible: block.focusedHere
+                            anchors.fill: parent
+                            color: root.theme.accent
+                            antialiasing: false
                         }
-
-                        TermBar {
+                        // A hairline on the top edge between blocks: no row of its own.
+                        Rectangle {
+                            visible: block.index > 0
+                            x: 0
+                            y: 0
+                            width: parent.width
+                            height: term.lw
+                            color: root.theme.borderInactive
+                            antialiasing: false
+                        }
+                        TermText {
                             tm: term
-                            theme: root.theme
-                            x: term.cx(root.barStart)
-                            cells: frame.innerCols - root.barStart
-                            visible: cells >= 4
-                            value: block.shown
-                            marker: block.manual && block.target >= 0 ? block.target : -1
-                            interactive: block.canWrite && block.shown >= 0
-                            focused: root.activeFocus && root.isCursor(block.index, "value")
-                            fillColor: !block.canWrite ? root.theme.textMuted
-                                : (block.manual ? root.theme.warning : root.theme.accent)
-                            onMoved: value => {
-                                root.select(block.index, "value");
-                                root.setPct(block.m.logicalId, value);
-                            }
-                            onReleased: value => {
-                                root.setPct(block.m.logicalId, value);
-                                root.flush();
-                            }
+                            visible: root.isCursor(block.mon, "value")
+                            value: root.activeFocus ? "❯" : "›"
+                            strong: root.activeFocus
+                            color: block.focusedHere ? root.theme.onColor(root.theme.accent)
+                                : (root.activeFocus ? root.theme.accent : root.theme.textMuted)
+                        }
+                        TermText {
+                            tm: term
+                            x: term.cx(2)
+                            value: block.isAll ? i18nd(root.domain, "All displays") : block.m.logicalId
+                            cells: Math.max(0, frame.innerCols - 8)
+                            strong: true
+                            color: block.focusedHere ? root.theme.onColor(root.theme.accent)
+                                : (block.isAll || block.m.enabled ? root.theme.fg : root.theme.textMuted)
+                        }
+                        TermText {
+                            tm: term
+                            x: term.cx(Math.max(0, frame.innerCols - 6))
+                            value: Term.padStart(block.shown >= 0 ? block.shown + "%" : "—", 6)
+                            strong: true
+                            color: block.focusedHere ? root.theme.onColor(root.theme.accent)
+                                : (block.manual ? root.theme.warning : root.theme.fg)
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.select(block.mon, "value")
                         }
                     }
 
-                    // ╰ ● Auto · target 39% · range 1–50%   a auto
+                    // Lines 2 and 3: the bar, the whole block is its hit area.
+                    TermSlider {
+                        tm: term
+                        theme: root.theme
+                        cells: frame.innerCols
+                        value: block.shown
+                        marker: block.manual && block.target >= 0 ? block.target : -1
+                        interactive: block.canWrite && block.shown >= 0
+                        fillColor: block.fillColor
+                        onMoved: value => {
+                            root.select(block.mon, "value");
+                            root.setPct(block.key, value);
+                        }
+                        onReleased: value => {
+                            root.setPct(block.key, value);
+                            root.flush();
+                        }
+                    }
+
+                    // Line 4: the state, the range and the target, muted.
                     Item {
-                        width: parent.width
+                        width: block.width
                         height: term.ch
 
                         TermRuns {
                             id: detail
 
                             tm: term
-                            x: term.cx(2)
-                            cells: Math.max(0, frame.innerCols - 2)
+                            cells: frame.innerCols
                             defaultColor: root.theme.textMuted
                             runs: {
                                 const t = root.theme;
-                                const out = [{ t: term.detailGlyph + " ", c: t.textMuted }];
+                                const out = [];
+                                if (block.isAll) {
+                                    out.push({ t: "● ", c: block.manual ? t.warning : t.success });
+                                    out.push({ t: block.manual ? i18ndc(root.domain, "This brightness was set by hand", "Manual")
+                                                                : i18ndc(root.domain, "Brightness follows the automatic curve", "Auto"),
+                                               c: block.manual ? t.warning : t.success, b: true });
+                                    out.push({ t: " · ", c: t.borderInactive });
+                                    out.push({ t: i18ndc(root.domain, "Applies to every display at once", "every display"), c: t.textMuted });
+                                    if (block.manual) {
+                                        out.push({ t: "   " });
+                                        out.push({ t: "a", c: autoHit.containsMouse ? t.accent : t.fg, b: true, k: "auto" });
+                                        out.push({ t: " " + i18ndc(root.domain, "Key hint: back to automatic brightness", "auto"),
+                                                   c: autoHit.containsMouse ? t.accent : t.textMuted, k: "auto2" });
+                                    }
+                                    return out;
+                                }
                                 const m = block.m;
                                 if (!m.enabled) {
                                     out.push({ t: "○ " + i18ndc(root.domain, "This display is excluded from automation", "Off"), c: t.textMuted });
@@ -465,17 +481,19 @@ FocusScope {
                                     out.push({ t: "● ", c: t.success });
                                     out.push({ t: i18ndc(root.domain, "Brightness follows the automatic curve", "Auto"), c: t.success });
                                 }
-                                if (block.target >= 0 && m.enabled && !block.unavailable) {
+                                if (m.enabled && !block.unavailable) {
                                     out.push({ t: " · ", c: t.borderInactive });
-                                    out.push({ t: i18ndc(root.domain, "Placeholder is the brightness the curve targets now",
-                                                         "target %1%", block.target), c: t.textMuted });
+                                    out.push({ t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
+                                                         block.limits[0], block.limits[1]),
+                                               c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
+                                    if (block.target >= 0) {
+                                        out.push({ t: " · ", c: t.borderInactive });
+                                        out.push({ t: i18ndc(root.domain, "Placeholder is the brightness the curve targets now",
+                                                             "target %1%", block.target), c: t.textMuted });
+                                    }
                                 }
-                                out.push({ t: " · ", c: t.borderInactive });
-                                out.push({ t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
-                                                     block.limits[0], block.limits[1]),
-                                           c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
                                 if (block.manual) {
-                                    out.push({ t: "  " });
+                                    out.push({ t: "   " });
                                     out.push({ t: "a", c: autoHit.containsMouse ? t.accent : t.fg, b: true, k: "auto" });
                                     out.push({ t: " " + i18ndc(root.domain, "Key hint: back to automatic brightness", "auto"),
                                                c: autoHit.containsMouse ? t.accent : t.textMuted, k: "auto2" });
@@ -488,7 +506,7 @@ FocusScope {
                             id: rangeHit
 
                             readonly property var span: detail.span("range")
-                            visible: span !== null
+                            visible: !block.isAll && span !== null
                             x: detail.x + term.cx(span ? span[0] : 0)
                             width: term.cx(span ? span[1] : 0)
                             height: term.ch
@@ -496,7 +514,7 @@ FocusScope {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 root.toggleRange(block.m);
-                                root.select(block.index, block.open ? "min" : "value");
+                                root.select(block.mon, block.open ? "min" : "value");
                             }
                         }
                         MouseArea {
@@ -509,11 +527,11 @@ FocusScope {
                             height: term.ch
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.automatic(block.index)
+                            onClicked: root.automatic(block.mon)
                         }
                     }
 
-                    // Range editor.
+                    // Range editor (displays only).
                     Item {
                         visible: block.open
                         width: parent.width
@@ -522,15 +540,15 @@ FocusScope {
                         TermRange {
                             tm: term
                             theme: root.theme
-                            x: term.cx(4)
-                            cells: Math.max(10, frame.innerCols - 4)
+                            x: term.cx(2)
+                            cells: Math.max(10, frame.innerCols - 2)
                             minPct: block.limits[0]
                             maxPct: block.limits[1]
-                            applied: block.m.appliedPercent
-                            focusedHandle: root.activeFocus && root.cursor && root.cursor.mon === block.index
+                            applied: block.isAll ? -1 : block.m.appliedPercent
+                            focusedHandle: root.activeFocus && root.cursor && root.cursor.mon === block.mon
                                 && root.cursor.field !== "value" ? root.cursor.field : ""
                             onMoved: (minPct, maxPct) => {
-                                root.select(block.index, minPct !== block.limits[0] ? "min" : "max");
+                                root.select(block.mon, minPct !== block.limits[0] ? "min" : "max");
                                 root.setLimits(block.m, minPct, maxPct);
                             }
                             onReleased: (minPct, maxPct) => {
@@ -554,12 +572,12 @@ FocusScope {
                             label: index === 0 ? i18ndc(root.domain, "Night minimum boundary", "Minimum")
                                                : i18ndc(root.domain, "Day maximum boundary", "Maximum")
                             value: block.limits[index] + "%"
-                            current: root.isCursor(block.index, modelData)
+                            current: root.isCursor(block.mon, modelData)
                             active: root.activeFocus
                             labelColor: root.theme.fg
-                            onClicked: root.select(block.index, modelData)
+                            onClicked: root.select(block.mon, modelData)
                             onStepped: direction => {
-                                root.select(block.index, modelData);
+                                root.select(block.mon, modelData);
                                 root.adjust(direction);
                             }
                         }

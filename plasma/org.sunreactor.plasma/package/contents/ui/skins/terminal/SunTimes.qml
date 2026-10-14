@@ -1,14 +1,13 @@
 /*
- * Terminal skin of the sun times module: the anchors row of the TUI's light
- * cycle panel (light_cycle.rs render_events) in a "Sun today" box.
+ * Terminal skin of the sun times module: the day as one track, from sunrise to
+ * sunset, with the time now as ●. Two rows, no box: it sits under the forecast.
  *
- *     ╭ Sun today ──────────── Daylight 11h 25m ╮
- *     │   ↑ Sunrise   │ ✶ Solar noon │  ↓ Sunset │
- *     │    7:13 AM    │   12:55 PM   │  6:38 PM  │
- *     │ Sun now 38.0° above the horizon         │   (when enabled)
- *     ╰─────────────────────────────────────────╯
+ *     ↑ 7:13 AM  ━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━  6:38 PM ↓
+ *     Daylight 11h 25m                 Solar noon 12:55 PM
  *
- * The next event is in the accent colour.
+ * The part of the day that has passed is in the accent colour; the dot is
+ * clamped to the track's ends at night. With the solar elevation enabled, the
+ * second row shows the sun's angle instead of the noon.
  */
 
 pragma ComponentBehavior: Bound
@@ -30,19 +29,6 @@ Item {
 
     readonly property string domain: settings.domain
     readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
-    readonly property var entries: [
-        { icon: "↑", label: i18nd(domain, "Sunrise"), epoch: client.sunriseEpochS },
-        { icon: "✶", label: i18nd(domain, "Solar noon"), epoch: client.solarNoonEpochS },
-        { icon: "↓", label: i18nd(domain, "Sunset"), epoch: client.sunsetEpochS },
-    ]
-    readonly property real nextEpoch: {
-        for (const entry of entries) {
-            if (entry.epoch > client.nowEpochS) {
-                return entry.epoch;
-            }
-        }
-        return 0;
-    }
     readonly property bool showElevation: settings.showSolarElevation && client.hasSolarElevation
 
     TermMetrics {
@@ -50,78 +36,103 @@ Item {
         theme: root.theme
     }
 
-    implicitHeight: frame.implicitHeight
+    /*! Cells inside the same margins as a framed module's body. */
+    readonly property int innerCols: Math.max(0, term.cols(root.width) - 4)
+    readonly property real originX: term.inset(root.width) + term.cx(2)
+    /*! Cells of an end label ("↑ 7:13 AM"), and of the gap between label and track. */
+    readonly property int labelCells: 10
+    readonly property int trackStart: labelCells + 1
+    readonly property int trackCells: Math.max(2, innerCols - 2 * (labelCells + 1))
+    /*! Where the dot is along the day: 0 at sunrise, 1 at sunset (clamped). */
+    readonly property real progress: {
+        const rise = client.sunriseEpochS;
+        const set = client.sunsetEpochS;
+        if (!(set > rise)) {
+            return 0;
+        }
+        return Math.max(0, Math.min(1, (client.nowEpochS - rise) / (set - rise)));
+    }
+    readonly property int dotCell: Math.round(progress * (trackCells - 1))
 
-    TermFrame {
-        id: frame
+    implicitHeight: term.cy(2)
+
+    // Row 1: the sunrise, the track and the sunset.
+    TermRuns {
+        id: sunriseLabel
 
         tm: term
-        theme: root.theme
-        width: root.width
-        regionName: "suntimes"
-        title: i18nd(root.domain, "Sun today")
-        rightRuns: [{ t: i18ndc(root.domain, "Length of the day, followed by a duration", "Daylight") + " ", c: root.theme.textMuted },
-                    { t: Term.duration(root.client.sunsetEpochS - root.client.sunriseEpochS), c: root.theme.fg, b: true }]
-        contentRows: root.showElevation ? 3 : 2
+        visible: root.available
+        x: root.originX
+        runs: [{ t: "↑ ", c: root.theme.accent, b: true },
+               { t: Format.timeText(root.client.sunriseEpochS), c: root.theme.fg, b: true }]
+    }
+    TermRuns {
+        id: sunsetLabel
 
-        Repeater {
-            model: root.entries
+        tm: term
+        visible: root.available
+        x: root.originX + term.cx(root.innerCols - sunsetLabel.usedCells)
+        runs: [{ t: Format.timeText(root.client.sunsetEpochS), c: root.theme.fg, b: true },
+               { t: " ↓", c: root.theme.accent, b: true }]
+    }
 
-            delegate: Item {
-                id: entry
+    // The track: a heavy line on the row's centre, accent up to the dot.
+    Rectangle {
+        visible: root.available
+        x: root.originX + term.cx(root.trackStart)
+        y: term.lineY(0) - Math.floor(term.lwDev / 2) / term.dpr
+        width: term.cx(root.trackCells)
+        height: term.lwHeavy
+        color: root.theme.borderInactive
+        antialiasing: false
+    }
+    Rectangle {
+        visible: root.available && root.dotCell > 0
+        x: root.originX + term.cx(root.trackStart)
+        y: term.lineY(0) - Math.floor(term.lwDev / 2) / term.dpr
+        width: term.cx(root.dotCell)
+        height: term.lwHeavy
+        color: root.theme.accent
+        antialiasing: false
+    }
+    TermText {
+        tm: term
+        visible: root.available
+        x: root.originX + term.cx(root.trackStart + root.dotCell)
+        value: "●"
+        strong: true
+        color: root.theme.fg
+    }
 
-                required property var modelData
-                required property int index
+    // Without sun times yet, the row says so.
+    TermText {
+        tm: term
+        visible: !root.available
+        x: root.originX
+        cells: root.innerCols
+        value: i18nd(root.domain, "Sun times are not known yet")
+        color: root.theme.textMuted
+    }
 
-                readonly property int colWidth: Math.floor(frame.innerCols / 3)
-                readonly property int start: index * colWidth
-                readonly property int cells: index === 2 ? frame.innerCols - 2 * colWidth : colWidth
-                readonly property bool isNext: modelData.epoch === root.nextEpoch
-                // Columns after the first start with their │ separator.
-                readonly property int lead: index > 0 ? 1 : 0
-                readonly property int room: cells - lead
-
-                x: term.cx(start)
-                width: term.cx(cells)
-                height: term.cy(2)
-
-                TermRuns {
-                    tm: term
-                    x: term.cx(entry.lead + Math.max(0, Math.floor((entry.room - usedCells) / 2)))
-                    cells: Math.max(0, entry.room)
-                    runs: [{ t: entry.modelData.icon + " ", c: root.theme.accent, b: true },
-                           { t: entry.modelData.label, c: root.theme.textMuted }]
-                }
-                TermText {
-                    tm: term
-                    y: term.ch
-                    x: term.cx(entry.lead + Math.max(0, Math.floor((entry.room - usedCells) / 2)))
-                    value: entry.modelData.epoch > 0 ? Format.timeText(entry.modelData.epoch) : "—"
-                    cells: Math.max(0, entry.room)
-                    strong: true
-                    color: entry.isNext ? root.theme.accent : root.theme.fg
-                }
-                // │ between the columns.
-                Rectangle {
-                    visible: entry.index > 0
-                    x: term.lineX(0)
-                    width: term.lw
-                    height: term.cy(2)
-                    color: root.theme.borderInactive
-                    antialiasing: false
-                }
-            }
-        }
-
-        TermRuns {
-            visible: root.showElevation
-            tm: term
-            y: term.cy(2)
-            cells: frame.innerCols
-            runs: [{ t: i18ndc(root.domain, "Label before the sun's elevation angle", "Sun now") + " ", c: root.theme.textMuted },
-                   { t: root.client.solarElevation.toFixed(1) + "°", c: root.theme.fg, b: true },
-                   { t: " " + (root.client.solarElevation >= 0 ? i18nd(root.domain, "above the horizon")
-                                                                 : i18nd(root.domain, "below the horizon")), c: root.theme.textMuted }]
-        }
+    // Row 2: the day's length, and the noon or the sun's angle.
+    TermRuns {
+        tm: term
+        y: term.cy(1)
+        x: root.originX
+        cells: root.innerCols
+        visible: root.available
+        runs: [{ t: i18nd(root.domain, "Daylight") + " ", c: root.theme.textMuted },
+               { t: Term.duration(root.client.sunsetEpochS - root.client.sunriseEpochS), c: root.theme.fg, b: true }]
+    }
+    TermRuns {
+        tm: term
+        y: term.cy(1)
+        visible: root.available
+        x: root.originX + term.cx(root.innerCols - usedCells)
+        runs: root.showElevation
+            ? [{ t: i18nd(root.domain, "Sun now") + " ", c: root.theme.textMuted },
+               { t: root.client.solarElevation.toFixed(1) + "°", c: root.theme.fg, b: true }]
+            : [{ t: i18nd(root.domain, "Solar noon") + " ", c: root.theme.textMuted },
+               { t: root.client.solarNoonEpochS > 0 ? Format.timeText(root.client.solarNoonEpochS) : "—", c: root.theme.fg, b: true }]
     }
 }

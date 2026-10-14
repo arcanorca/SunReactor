@@ -1,16 +1,21 @@
 /*
  * Terminal skin of the weather module: the TUI's "Current conditions" panel
- * (src/tui/ui/weather.rs) as data lines.
+ * (src/tui/ui/weather.rs) as a picture and a reading.
  *
- *     ╭ Current conditions ────────── ● Up to date ╮
- *     │ Partly cloudy · 15.2°C                     │
- *     │ Effect      Dimming displays by 12%        │
- *     │ Feels like  13.9°C     Humidity    62%     │
- *     │ Wind        3.4 m/s    Air quality 42      │
- *     ╰────────────────────────────────────────────╯
+ *     ╭ Current conditions ───────────── ● Up to date ╮
+ *     │  ▗▄▄▄▖         Partly cloudy                  │   sky picture, 13 x 7 cells,
+ *     │ ▗█████▙▖       ██  ███  ███ ▄▄  ███           │   the temperature in a 5-row
+ *     │▐█████████▌     ██  ███   ██ ▀▀  ███           │   block numeral font
+ *     │ ▝▀▀▀▀▀▀▀▀▘     ███  ███  ██      ███           │
+ *     │                ███  ███  ██        ███        │
+ *     │                ███ ▄▄ ███ ▄▄  ███  ███        │   (rows 1-5)
+ *     │                Dimming displays by 12%        │
+ *     │ Feels 14° │ RH 62% │ Wind 3.4 m/s │ AQI 42     │
+ *     ╰───────────────────────────────────────────────╯
  *
  * The daemon's bounded multiplier is said in words. Only readings the daemon
- * sent are listed; nothing is invented.
+ * sent are listed; nothing is invented. The picture follows the condition and
+ * the sun (night when the sun is down).
  */
 
 pragma ComponentBehavior: Bound
@@ -22,6 +27,7 @@ import "../../engine"
 import "../../modules"
 import "../../components"
 import "Term.js" as Term
+import "TermArt.js" as Art
 
 Item {
     id: root
@@ -69,33 +75,49 @@ Item {
         return i18nd(domain, "Not changing brightness");
     }
 
-    /*! [label, value] pairs the daemon actually reported. */
+    /*! The sun is down: the solar elevation when the daemon sent it, else the sun times. */
+    readonly property bool night: {
+        if (client.hasSolarElevation) {
+            return client.solarElevation < 0;
+        }
+        const now = client.nowEpochS;
+        return client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+            && (now < client.sunriseEpochS || now > client.sunsetEpochS);
+    }
+
+    /*! [label, value] pairs the daemon actually reported, short labels. */
     readonly property var readings: {
         const d = client.weatherDetails;
         const out = [];
         if (d.feelsLikeC !== undefined) {
-            out.push([i18ndc(domain, "Apparent temperature", "Feels like"), d.feelsLikeC.toFixed(1) + "°C"]);
+            out.push([i18ndc(domain, "Short label: apparent temperature", "Feels"), Math.round(d.feelsLikeC) + "°"]);
         }
         if (d.humidityPercent !== undefined) {
-            out.push([i18ndc(domain, "Relative humidity", "Humidity"), Math.round(d.humidityPercent) + "%"]);
-        }
-        if (client.cloudCoverPercent >= 0) {
-            out.push([i18ndc(domain, "Share of the sky covered by cloud", "Cloud cover"), client.cloudCoverPercent + "%"]);
+            out.push([i18ndc(domain, "Short label: relative humidity", "RH"), Math.round(d.humidityPercent) + "%"]);
         }
         if (d.windSpeedMps !== undefined) {
-            out.push([i18ndc(domain, "Wind speed", "Wind"), d.windSpeedMps.toFixed(1) + " m/s"]);
+            out.push([i18ndc(domain, "Wind speed", "Wind"), d.windSpeedMps.toFixed(1) + "m/s"]);
         }
         if (d.airQualityIndex !== undefined) {
-            out.push([i18ndc(domain, "US EPA air quality index", "Air quality"), String(Math.round(d.airQualityIndex))]);
+            out.push([i18ndc(domain, "US EPA air quality index", "AQI"), String(Math.round(d.airQualityIndex))]);
         }
         return out;
     }
 
-    /*! Label column: the longest reported label is 11 cells, so one cell of air. */
-    readonly property int labelCells: 12
-    /*! Two readings side by side when a label and a short value fit in each half. */
-    readonly property bool twoColumns: frame.innerCols >= 2 * (labelCells + 6)
-    readonly property int readingRows: twoColumns ? Math.ceil(readings.length / 2) : readings.length
+    /*! Cells the readings take, labels and values with one space between. */
+    readonly property int detailCells: readings.reduce((n, pair) => n + Term.len(pair[0]) + 1 + Term.len(pair[1]), 0)
+    /*! Spaces either side of the │ separators: one when the row fits, else none. */
+    readonly property int detailPad: readings.length > 1 && detailCells + 3 * (readings.length - 1) <= frame.innerCols ? 1 : 0
+
+    /*! The temperature as the numerals say it, e.g. "15.2°C". */
+    readonly property string temperatureText: client.hasTemperature ? client.temperatureC.toFixed(1) + "°C" : ""
+    readonly property var numerals: Art.bigText(temperatureText)
+    readonly property var sky: Art.weatherArt(client.hasWeatherReading ? client.weatherCondition : "", night)
+    readonly property int artCols: Math.max(...sky.rows.map(row => Array.from(row).length))
+    /*! Columns right of the picture: the numerals and the effect. */
+    readonly property int textCols: Math.max(0, frame.innerCols - artCols - 2)
+    readonly property bool bigNumerals: client.hasWeatherReading && client.hasTemperature
+        && numerals.rows[0].length <= textCols
 
     implicitHeight: frame.implicitHeight
 
@@ -117,61 +139,96 @@ Item {
             }
             return [{ t: "● ", c: t.success }, { t: i18ndc(root.domain, "Weather reading state", "Up to date"), c: t.textMuted }];
         }
-        contentRows: 2 + root.readingRows
+        // Seven picture rows, then the details row.
+        contentRows: 8
 
-        TermRuns {
+        // The sky picture.
+        TermPicture {
             tm: term
-            cells: frame.innerCols
-            runs: {
-                const condition = weatherText.conditionLabel(root.client.weatherCondition);
-                const out = [];
-                if (condition.length > 0) {
-                    out.push({ t: condition, c: root.theme.fg, b: true });
-                }
-                if (root.client.hasTemperature) {
-                    if (out.length > 0) {
-                        out.push({ t: " · ", c: root.theme.borderInactive });
-                    }
-                    out.push({ t: root.client.temperatureC.toFixed(1) + "°C", c: root.theme.fg });
-                }
-                if (out.length === 0) {
-                    out.push({ t: i18nd(root.domain, "No weather reading"), c: root.theme.textMuted });
-                }
-                return out;
-            }
+            theme: root.theme
+            x: 0
+            y: term.cy(0)
+            rows: root.sky.rows
+            roles: root.sky.roles
+            colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.fg, root.theme.bg, 0.15),
+                        m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
+                        d: root.theme.borderInactive })
         }
 
+        // The condition, on the right of the picture's top row.
         TermText {
             tm: term
-            y: term.ch
-            value: Term.padEnd(i18ndc(root.domain, "What the weather does to the brightness targets", "Effect"), root.labelCells)
-            color: root.theme.textMuted
-        }
-        TermText {
-            tm: term
-            x: term.cx(root.labelCells)
-            y: term.ch
-            value: root.effect
-            cells: Math.max(0, frame.innerCols - root.labelCells)
+            x: term.cx(root.artCols + 2)
+            y: term.cy(0)
+            cells: root.textCols
+            value: root.client.hasWeatherReading ? weatherText.conditionLabel(root.client.weatherCondition)
+                : i18nd(root.domain, "No weather reading")
+            strong: true
             color: root.client.hasWeatherReading ? root.theme.fg : root.theme.textMuted
         }
 
-        Repeater {
-            model: root.readings
+        // The temperature, in block numerals (rows 1-5).
+        TermPicture {
+            visible: root.bigNumerals
+            tm: term
+            theme: root.theme
+            x: term.cx(root.artCols + 2)
+            y: term.cy(1)
+            rows: root.numerals.rows
+            roles: root.numerals.roles
+            colours: ({ o: root.theme.fg })
+        }
+        // No numerals (no temperature yet): the status says why, in text.
+        TermText {
+            visible: !root.bigNumerals
+            tm: term
+            x: term.cx(root.artCols + 2)
+            y: term.cy(1)
+            cells: root.textCols
+            value: root.client.hasTemperature ? root.temperatureText : root.effect
+            strong: root.client.hasTemperature
+            color: root.theme.textMuted
+        }
 
-            delegate: TermRuns {
-                required property var modelData
-                required property int index
+        // What the weather does to the brightness (row 6, right of the picture).
+        TermText {
+            tm: term
+            visible: root.client.hasWeatherReading
+            x: term.cx(root.artCols + 2)
+            y: term.cy(6)
+            cells: root.textCols
+            value: root.effect
+            color: root.theme.fg
+        }
 
-                readonly property int half: Math.floor(frame.innerCols / 2)
+        // The details: key value pairs separated by │, one row, cut to fit.
+        Rectangle {
+            x: 0
+            y: term.cy(7)
+            width: term.cx(frame.innerCols)
+            height: term.lw
+            color: root.theme.borderInactive
+            antialiasing: false
+        }
+        TermRuns {
+            id: details
 
-                tm: term
-                x: root.twoColumns && index % 2 === 1 ? term.cx(half) : 0
-                y: term.cy(2 + (root.twoColumns ? Math.floor(index / 2) : index))
-                cells: !root.twoColumns ? frame.innerCols
-                    : (index % 2 === 1 ? frame.innerCols - half : half - 1)
-                runs: [{ t: Term.padEnd(modelData[0], root.labelCells), c: root.theme.textMuted },
-                       { t: modelData[1], c: root.theme.fg }]
+            tm: term
+            y: term.cy(7)
+            cells: frame.innerCols
+            defaultColor: root.theme.textMuted
+            runs: {
+                const t = root.theme;
+                const pad = " ".repeat(root.detailPad);
+                const out = [];
+                root.readings.forEach((pair, i) => {
+                    if (i > 0) {
+                        out.push({ t: pad + "│" + pad, c: t.borderInactive });
+                    }
+                    out.push({ t: pair[0] + " ", c: t.textMuted });
+                    out.push({ t: pair[1], c: t.fg, b: true });
+                });
+                return out;
             }
         }
     }
