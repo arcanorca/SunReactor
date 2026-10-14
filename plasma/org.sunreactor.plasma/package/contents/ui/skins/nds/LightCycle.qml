@@ -167,10 +167,13 @@ Item {
             color: pstyle.ink
             text: surface.shownPct >= 0 ? Math.round(surface.shownPct) + "%" : "--%"
         }
-        // The readout chip: "now" and the applied level, on white.
+        // The readout chip: "now" and the applied level, on white. The caption is
+        // the tiny face (5 rows) so both lines fit the 18-row chip with a row of air
+        // above and below; the small face's cell is 9 rows tall, so two of them
+        // cannot stack inside a chip this size.
         readonly property int applied: root.current && !root.showAll ? root.appliedFor(root.current.monitorId) : -1
         Repeater {
-            model: Nds.box([], hero.x + hero.artWidth + 6, 14, 52, 17, root.theme.bg, root.theme.borderInactive)
+            model: Nds.box([], hero.x + hero.artWidth + 6, 13, 52, 18, root.theme.bg, root.theme.borderInactive)
             delegate: Rectangle {
                 required property var modelData
 
@@ -185,8 +188,8 @@ Item {
         PixelLabel {
             theme: root.theme
             x: hero.x + hero.artWidth + 9
-            y: 17
-            face: "small"
+            y: 15
+            face: "tiny"
             capitals: true
             color: pstyle.dim
             text: surface.scrubbing ? PixelFormat.time(root.scrubTime)
@@ -195,7 +198,7 @@ Item {
         PixelLabel {
             theme: root.theme
             x: hero.x + hero.artWidth + 9
-            y: 24
+            y: 22
             face: "small"
             capitals: true
             color: pstyle.ink

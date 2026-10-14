@@ -56,22 +56,34 @@ ColumnLayout {
         id: strip
 
         Layout.fillWidth: true
-        implicitHeight: root.style.snap(root.style.unit * 3.5)
         readonly property int count: root.points.length
         readonly property real colW: width / Math.max(1, count)
-        /*! The trace band (top) and the glyph and hour rows (below it). */
-        readonly property real traceH: root.style.unit * 1.6
-        readonly property real glyphTop: root.style.unit * 1.75
+
+        // Label boxes: a temperature sits above its dot, an hour below its glyph.
+        FontMetrics {
+            id: tempFont
+
+            font: root.style.dataFont
+        }
+        FontMetrics {
+            id: hourFont
+
+            font: root.style.dataSmallFont
+        }
+
+        /*! The trace band: its top leaves room for the warmest label above its dot,
+            the glyph row sits below the band, the hour below the glyph. */
+        readonly property real traceTop: tempFont.height + root.style.gap * 0.5 + 1
+        readonly property real traceBottom: traceTop + root.style.unit * 0.4
+        readonly property real glyphTop: traceBottom + root.style.unit * 0.45
+        implicitHeight: Math.ceil(glyphTop + root.style.unit * 1.2 + hourFont.height)
 
         function xOf(i) {
             return colW * (i + 0.5);
         }
         function yOf(t) {
             const span = Math.max(1, root.tMax - root.tMin);
-            // Room above the warmest point for its label.
-            const top = root.style.unit * 0.9;
-            const bottom = traceH - root.style.unit * 0.3;
-            return top + (1 - (t - root.tMin) / span) * (bottom - top);
+            return traceTop + (1 - (t - root.tMin) / span) * (traceBottom - traceTop);
         }
 
         // The trace through the temperatures.

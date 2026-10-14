@@ -61,10 +61,14 @@ Item {
         paused: i18ndc(control.domain, "Mode segment, compact: stop adjusting for a while", "Pause"),
     })
 
-    /*! The status sentence and the idle note, joined: one line. */
+    /*! The status sentence and the idle note, joined: wrapped, never cut. */
     readonly property string statusLine: root.control.hinting || root.control.note.length === 0
         ? root.control.displayText
         : root.control.displayText + " · " + root.control.note
+    /*! The sentence in the 5x7 face: the middle dot and the arrow have no glyph there,
+        so they become ASCII, and the no-break spaces become plain spaces. */
+    readonly property string shownLine: statusLine.replace(/·/g, "-").replace(/→/g, ">")
+        .replace(/[  ]/g, " ")
 
     /*! Art pixels of one cell, its frame, and the pixel arrow when it has one. */
     function chromeOf(cell) {
@@ -215,21 +219,19 @@ Item {
                 }
             }
 
-            // What the daemon is doing, and until when, on one line (the rest elides);
-            // a dimmed-while-idle note follows it.
+            // What the daemon is doing, and until when, wrapped over up to three lines
+            // in the body face; a dimmed-while-idle note follows it.
             PixelLabel {
                 id: status
 
                 theme: root.theme
                 x: 0
                 y: cellRow.height + 3
-                text: root.statusLine
-                // The bitmap face for the line: the small face has no colon, and a
-                // time would otherwise change face mid-line.
-                face: "bitmap"
+                text: root.shownLine
+                face: pstyle.bodyFace
                 color: root.control.hinting ? pstyle.hot : pstyle.ink
                 maximumArtWidth: panel.contentWidth
-                maximumLines: 1
+                maximumLines: 3
             }
         }
     }

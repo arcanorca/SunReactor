@@ -1,7 +1,7 @@
 /*
  * Amiga Automation: a Workbench window "Mode" with three gadgets - AUTO | MANUAL
  * | PAUSE with a drop-down triangle for other durations - over the status
- * sentence, wrapped to two lines rather than cut. The chosen mode is the orange
+ * sentence, wrapped to up to three lines rather than cut. The chosen mode is the orange
  * gadget. The rules are in modules/ModeControl.qml. Module contract:
  * modules/Modules.js.
  */
@@ -62,7 +62,7 @@ Item {
 
     /*! The status sentence and the idle note, joined. Automatic shows only its next step
         ("Next 4:20 PM · Set 50% -> 23%", two lines): the full "Following the sun and the
-        weather" sentence needs three and would be cut. The AUTO gadget says the mode. */
+        weather" sentence needs four lines and would be cut. The AUTO gadget says the mode. */
     readonly property string statusLine: {
         const automatic = root.control.choice === "automatic" && !root.control.hinting
             && root.control.nextText.length > 0;
@@ -151,7 +151,7 @@ Item {
                 text: root.statusLine
                 color: root.control.hinting ? tokens.hot : tokens.ink
                 maximumArtWidth: panel.contentWidth
-                maximumLines: 2
+                maximumLines: 3
             }
         }
     }

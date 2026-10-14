@@ -331,7 +331,9 @@ ColumnLayout {
                 x: plot.width / 2 - plot.sunR
                 y: centreY - plot.sunR
                 width: 2 * plot.sunR
-                height: 2 * plot.sunR
+                // The sun sets behind the horizon by design: the sky clips the lower
+                // part, so the box stops at the horizon rather than leaving the sky.
+                height: Math.max(1, Math.min(2 * plot.sunR, plot.horizonY - y))
                 visible: root.targetNow >= 0
                 preferredRendererType: Shape.CurveRenderer
 
@@ -341,7 +343,7 @@ ColumnLayout {
                         x1: 0
                         y1: 0
                         x2: 0
-                        y2: sunShape.height
+                        y2: 2 * plot.sunR
                         GradientStop { position: 0; color: root.style.yellow }
                         GradientStop { position: 1; color: root.style.pink }
                     }

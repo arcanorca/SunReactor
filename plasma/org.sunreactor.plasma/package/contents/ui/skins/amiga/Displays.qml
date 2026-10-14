@@ -89,10 +89,11 @@ Item {
                         readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
                         readonly property bool offMark: modelData.enabled === false || unavailable
 
-                        // Name on the top line; value and gadgets share the slider's line, so a
-                        // row is 17 art px (the gadgets overhang it by two rows each way).
+                        // The name on the top line (rows 0-7); the value and gadgets, and the
+                        // slider under them, on the line below from row 8, so the name never
+                        // meets a gadget and may use the whole width. A row is 19 art px.
                         width: panel.contentWidth
-                        height: expanded && !master ? limits.y + limits.height : 17
+                        height: expanded && !master ? limits.y + limits.height : 19
 
                         AmigaText {
                             id: name
@@ -101,14 +102,14 @@ Item {
                             y: 0
                             text: row.modelData.logicalId
                             color: tokens.ink
-                            maximumArtWidth: Math.max(8, rightGroup.x - 4)
+                            maximumArtWidth: Math.max(8, row.width - 4)
                         }
 
                         Row {
                             id: rightGroup
 
                             x: row.width - width
-                            y: 6
+                            y: 8
                             spacing: 2
 
                             AmigaText {
@@ -140,7 +141,7 @@ Item {
 
                             theme: root.theme
                             style: tokens
-                            y: 8
+                            y: 10
                             width: Math.max(16, row.width - rightGroup.width - 4)
                             value: row.percent
                             enabled: row.controllable
@@ -157,7 +158,7 @@ Item {
                             id: limits
 
                             visible: row.expanded && !row.master
-                            y: 18
+                            y: 19
                             width: row.width
                             spacing: 2
 

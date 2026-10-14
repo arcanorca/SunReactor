@@ -89,8 +89,10 @@ Item {
                         return "";
                     }
 
+                    // Name line (rows 2-8), two rows of air, then the bar: its min and
+                    // max marks sit two rows under the cells, so the tile ends at row 19.
                     width: rows.width
-                    height: 13
+                    height: 20
 
                     Repeater {
                         model: Nds.box([], 0, 0, tile.width, tile.height, root.theme.bg, root.theme.borderInactive)
@@ -111,7 +113,7 @@ Item {
 
                         theme: root.theme
                         x: 4
-                        y: 1
+                        y: 2
                         face: pstyle.bodyFace
                         capitals: true
                         color: pstyle.ink
@@ -124,7 +126,7 @@ Item {
 
                         theme: root.theme
                         x: tile.width - 4 - artWidth
-                        y: 1
+                        y: 2
                         face: pstyle.bodyFace
                         capitals: true
                         color: tile.hint.length > 0 ? pstyle.dim
@@ -139,7 +141,7 @@ Item {
                         style: pstyle
                         cellHeight: 4
                         x: 4
-                        y: 8
+                        y: 11
                         width: tile.width - 8
                         value: tile.percent
                         enabled: tile.controllable
