@@ -117,11 +117,32 @@ PlasmaExtras.Representation {
         w.height = wanted;
     }
     onPopupHeightChanged: Qt.callLater(root.fitWindow)
+    /*! After the window shows, the first layout of a page can settle a little later (a
+        curve that arrives late): fit again a few times, 120 ms apart, then stop. */
+    Timer {
+        id: showFit
+
+        property int tries: 0
+
+        interval: 120
+        repeat: true
+        onTriggered: {
+            root.fitWindow();
+            tries += 1;
+            if (tries >= 8) {
+                stop();
+            }
+        }
+    }
     Connections {
         target: root.Window.window
         ignoreUnknownSignals: true
 
         function onVisibleChanged(): void {
+            if (root.Window.window && root.Window.window.visible) {
+                showFit.tries = 0;
+                showFit.restart();
+            }
             Qt.callLater(root.fitWindow);
         }
     }
