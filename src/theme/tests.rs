@@ -757,12 +757,7 @@ fn builtin_palettes_match_frozen_legacy_table() {
 
 #[test]
 fn builtin_families_follow_design_classification() {
-    let pixel = [
-        "handheld",
-        "commodore64",
-        "amiga",
-        "classicmacintosh",
-    ];
+    let pixel = ["handheld", "commodore64", "amiga", "classicmacintosh"];
     let instrument = [
         "braun",
         "vfd_hifi",

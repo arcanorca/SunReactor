@@ -349,11 +349,11 @@ systemctl --user restart plasma-plasmashell.service
 | Part | Location |
 |---|---|
 | C++ plugin | `~/.local/lib/libsunreactorplugin.so` |
-| QML module | `~/.local/lib/qml/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
+| QML module | `~/.local/lib/qt6/qml/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
 | Widget package | `~/.local/share/plasma/plasmoids/org.sunreactor.plasma/` |
 | Application icon | `~/.local/share/icons/hicolor/scalable/apps/` |
 
-The QML module goes wherever CMake's `KDE_INSTALL_QMLDIR` points: `lib/qml` on this system, and the Qt layout of other distributions elsewhere. Plasma must find that directory on its QML import path. On the systemd user environment used here, `QML2_IMPORT_PATH` already includes `~/.local/lib/qml`.
+The installer passes `-DKDE_INSTALL_QMLDIR=lib/qt6/qml`, the Qt 6 layout; Plasma must find that directory on its QML import path (add `~/.local/lib/qt6/qml` to `QML2_IMPORT_PATH` in a `~/.config/plasma-workspace/env/*.sh` file if it is not there already).
 
 **KF6 partial-upgrade caveat.** If CMake prints `Plasma not found: the plasmoid package will not be installed`, it could not load Plasma's CMake package. That usually means a half-finished upgrade of the KDE Frameworks and Plasma set. The plugin still builds and installs. Finish the upgrade and run CMake again, or install the package with `kpackagetool6 --type Plasma/Applet --install plasma/org.sunreactor.plasma/package`. The installer does not depend on Plasma's CMake package: it copies the package itself and validates it with `kpackagetool6` when that is present.
 

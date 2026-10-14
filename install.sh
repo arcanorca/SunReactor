@@ -737,7 +737,7 @@ print_plasma_widget_plan() {
     printf '  decision: %s\n' "$PLASMA_DECISION"
     printf '  tools:    %s\n' "${tools% }"
     printf '  source:   %s\n' "$PLASMA_SRC_DIR"
-    printf '  plugin:   CMake install layout under %s (lib/, lib/qml/org/sunreactor/plasma/)\n' "$PLASMA_PREFIX"
+    printf '  plugin:   CMake install layout under %s (lib/, lib/qt6/qml/org/sunreactor/plasma/)\n' "$PLASMA_PREFIX"
     printf '  package:  %s\n' "$PLASMA_PKG_DIR"
     printf '  backups:  %s/plasma-widget-<timestamp>-<pid>/\n' "$PLASMA_BACKUP_ROOT"
     printf '  restart:  %s (never run by the installer)\n' "$PLASMA_RESTART_CMD"
@@ -767,7 +767,7 @@ install_plasma_widget() {
 
     log_info "Building the Plasma widget plugin (usually under a minute)..."
     if ! cmake -S "$PLASMA_SRC_DIR" -B "$build" -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$PLASMA_PREFIX" >"$log" 2>&1 ||
+            -DCMAKE_INSTALL_PREFIX="$PLASMA_PREFIX" -DKDE_INSTALL_QMLDIR=lib/qt6/qml >"$log" 2>&1 ||
         ! cmake --build "$build" --target sunreactorplugin sunreactorpluginplugin -j"$jobs" >>"$log" 2>&1 ||
         ! DESTDIR="$stage" cmake --install "$build" >>"$log" 2>&1; then
         plasma_widget_failure_tail "$log"
