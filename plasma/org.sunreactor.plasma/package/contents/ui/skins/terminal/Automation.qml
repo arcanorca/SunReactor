@@ -23,6 +23,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
+import "Term.js" as Term
 
 FocusScope {
     id: root
@@ -254,7 +255,7 @@ FocusScope {
                     tm: term
                     x: term.cx(2)
                     cells: Math.max(0, frame.innerCols - 2)
-                    value: root.statusLine
+                    value: Term.shedSegments(root.statusLine, Math.max(0, frame.innerCols - 2))
                     color: root.control.hinting ? root.theme.warning : root.theme.fg
                 }
             }

@@ -3,10 +3,14 @@
  *
  * A cell is `cw` x `ch` logical px, and both are whole device pixels at the
  * window's effective device pixel ratio (theme.grid.devicePixelRatio, which is
- * the fractional value on Wayland). The cell width comes from the font's real
- * advance, rounded to device pixels; every text run gets `letterSpacing` =
- * cw - advance, so glyph n of a run starts exactly at n * cw and text columns
- * line up with the rectangles that draw frames, gauges and block fills.
+ * the fractional value on Wayland). The grid is fitted to the popup's width,
+ * never to the system font: the cell is the page width over `targetCols`
+ * (41), rounded down to device pixels, and the font size follows the cell
+ * (cw / 0.6, clamped to 10-15 px). So the layouts see 40+ columns whatever
+ * the user's font, and a page's rows do not change height when it scrolls.
+ * Every text run gets `letterSpacing` = cw - advance, so glyph n of a run
+ * starts exactly at n * cw and text columns line up with the rectangles that
+ * draw frames, gauges and block fills.
  *
  * Box-drawing lines and block elements are never drawn with glyphs (glyph
  * joins leave gaps at fractional font sizes); they are rectangles on the cell
@@ -21,8 +25,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Window
-import org.kde.kirigami as Kirigami
 
 import "../../engine"
 import "Term.js" as Term
@@ -52,12 +54,28 @@ Item {
     readonly property real dpr: theme.grid.devicePixelRatio > 0 ? theme.grid.devicePixelRatio : 1
     readonly property bool comfortable: theme.density === "comfortable"
 
-    /*! Font size in logical px: the Plasma body size (10 pt -> 13 px). */
-    readonly property int pixelSize: {
-        const f = Kirigami.Theme.defaultFont;
-        const px = f.pixelSize > 0 ? f.pixelSize : f.pointSize * Screen.logicalPixelDensity * 25.4 / 72;
-        return Math.max(9, Math.round(px));
-    }
+    /*! The width the grid must fit (logical px): the popup's page width, shared
+        by every module (Theme.gridContentWidth). The cell follows this width,
+        never the system font, so the layouts see the same grid at 10, 12 or 14
+        pt, and the same grid while a page scrolls. */
+    readonly property real gridWidth: theme.gridContentWidth > 0 ? theme.gridContentWidth : 316
+
+    /*! The grid is designed for this many columns across `gridWidth` (the cell is
+        the widest that keeps at least this many): every layout is written for 40. */
+    readonly property int targetCols: 41
+
+    /*! Cell width bounds in logical px: the 10 to 15 px font at 0.6 em advance. */
+    readonly property real cwMin: 6
+    readonly property real cwMax: 9
+
+    /*! Cell width in device px (an integer): the width over the target columns,
+        clamped to the bounds. Whole device pixels at any DPR. */
+    readonly property int cwDev: Math.max(1, Math.min(Math.round(cwMax * dpr),
+                                          Math.max(Math.round(cwMin * dpr),
+                                                   Math.floor(Math.round(gridWidth * dpr) / targetCols))))
+    readonly property real cw: cwDev / dpr
+    /*! Font size in logical px, the cell over the 0.6 em advance, clamped 10 to 15 px. */
+    readonly property int pixelSize: Math.max(10, Math.min(15, Math.round(cw / 0.6)))
 
     /*! The font's own advance and line height (logical px). Both bundled
         candidates (JetBrains Mono, IBM Plex Mono) advance 600/1000 em; it is
@@ -67,10 +85,8 @@ Item {
     readonly property real advance: pixelSize * 0.6
     readonly property real fontHeight: pixelSize * 1.32
 
-    /*! Cell size in device px (integers) and logical px. */
-    readonly property int cwDev: Math.max(1, Math.round(advance * dpr))
+    /*! Row height in device px (an integer). */
     readonly property int chDev: Math.max(2, Math.round(fontHeight * (comfortable ? 1.28 : 1.06) * dpr))
-    readonly property real cw: cwDev / dpr
     readonly property real ch: chDev / dpr
     /*! Added to every glyph advance so runs stay on the grid. */
     readonly property real letterSpacing: cw - advance

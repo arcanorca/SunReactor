@@ -75,6 +75,16 @@ PlasmaExtras.Representation {
     readonly property real popupMaxHeight: Math.max(root.popupMinHeight, Math.min(
         Kirigami.Units.gridUnit * 34,
         Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.6 : Kirigami.Units.gridUnit * 34))
+    /*! The width the terminal skins' grid spans (Theme.gridContentWidth): the page
+        column less one grid unit, the width of a page's scrollbar. A page that
+        scrolls keeps this width, so its rows and the popup height do not feed
+        back into each other. */
+    Binding {
+        target: root.theme
+        property: "gridContentWidth"
+        value: pages.width - 2 * root.edgeInset - Kirigami.Units.gridUnit
+    }
+
     /*! Status line, tab row and the gap above the pages. */
     readonly property real headerHeight: headerColumn.implicitHeight + pages.Layout.topMargin
     /*! The shown page's column. */

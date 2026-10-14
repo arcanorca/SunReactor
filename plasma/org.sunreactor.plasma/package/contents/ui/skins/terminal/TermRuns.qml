@@ -43,6 +43,16 @@ Item {
     }
     readonly property int usedCells: placed.length > 0
         ? placed[placed.length - 1].at + tm.len(placed[placed.length - 1].t) : 0
+    /*! Some run was cut or dropped to fit `cells` (the audit reports it). */
+    readonly property bool cut: {
+        let whole = 0;
+        for (const run of runs) {
+            if (run && run.t) {
+                whole += tm.len(run.t);
+            }
+        }
+        return cells >= 0 && usedCells < whole;
+    }
 
     /*! [startCell, cells] of the run tagged `k` (for hit areas), or null. */
     function span(key) {

@@ -114,25 +114,49 @@ Item {
         color: root.theme.textMuted
     }
 
+    /*! Row 2 as [label, value] pairs. The day's length, and the noon or the sun's
+        angle, each in the longest wording; the row takes the first combination
+        that fits both sides with a cell between them. The length's label goes
+        first, then the noon's, never a cut word. */
+    readonly property string dayLength: Term.duration(client.sunsetEpochS - client.sunriseEpochS)
+    readonly property var dayLeftForms: [[i18nd(domain, "Daylight"), dayLength], ["", dayLength]]
+    readonly property var dayRightForms: {
+        if (showElevation) {
+            return [[i18nd(domain, "Sun now"), client.solarElevation.toFixed(1) + "°"], ["", client.solarElevation.toFixed(1) + "°"]];
+        }
+        const noon = client.solarNoonEpochS > 0 ? Format.timeText(client.solarNoonEpochS) : "—";
+        return [[i18nd(domain, "Solar noon"), noon], [i18nd(domain, "Noon"), noon], ["", noon]];
+    }
+    readonly property var dayRow: {
+        const cellsOf = pair => pair[0].length > 0 ? Term.len(pair[0]) + 1 + Term.len(pair[1]) : Term.len(pair[1]);
+        for (const left of dayLeftForms) {
+            for (const right of dayRightForms) {
+                if (cellsOf(left) + 1 + cellsOf(right) <= innerCols) {
+                    return { left: left, right: right };
+                }
+            }
+        }
+        // Nothing fits beside each other: the noon alone, the shortest wording.
+        return { left: null, right: dayRightForms[dayRightForms.length - 1] };
+    }
+
     // Row 2: the day's length, and the noon or the sun's angle.
     TermRuns {
         tm: term
         y: term.cy(1)
         x: root.originX
-        cells: root.innerCols
-        visible: root.available
-        runs: [{ t: i18nd(root.domain, "Daylight") + " ", c: root.theme.textMuted },
-               { t: Term.duration(root.client.sunsetEpochS - root.client.sunriseEpochS), c: root.theme.fg, b: true }]
+        visible: root.available && root.dayRow.left !== null
+        runs: root.dayRow.left === null ? [] : [
+            { t: root.dayRow.left[0].length > 0 ? root.dayRow.left[0] + " " : "", c: root.theme.textMuted },
+            { t: root.dayRow.left[1], c: root.theme.fg, b: true }]
     }
     TermRuns {
         tm: term
         y: term.cy(1)
         visible: root.available
         x: root.originX + term.cx(root.innerCols - usedCells)
-        runs: root.showElevation
-            ? [{ t: i18nd(root.domain, "Sun now") + " ", c: root.theme.textMuted },
-               { t: root.client.solarElevation.toFixed(1) + "°", c: root.theme.fg, b: true }]
-            : [{ t: i18nd(root.domain, "Solar noon") + " ", c: root.theme.textMuted },
-               { t: root.client.solarNoonEpochS > 0 ? Format.timeText(root.client.solarNoonEpochS) : "—", c: root.theme.fg, b: true }]
+        runs: [
+            { t: root.dayRow.right[0].length > 0 ? root.dayRow.right[0] + " " : "", c: root.theme.textMuted },
+            { t: root.dayRow.right[1], c: root.theme.fg, b: true }]
     }
 }

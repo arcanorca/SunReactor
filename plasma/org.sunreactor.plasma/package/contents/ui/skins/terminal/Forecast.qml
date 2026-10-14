@@ -75,6 +75,13 @@ Item {
         }
         return out;
     }
+    /*! The narrowest column, in cells: the time labels are 12-hour ("3:00 PM")
+        when every one fits it, else 24-hour ("15:00"), which always does. */
+    readonly property int minSlotCells: slots.length > 0 ? Math.min(...slots.map(s => s.width)) : 0
+    readonly property bool longTimes: points.every(p => Term.len(Format.timeText(p.epochS)) <= minSlotCells)
+    function clockLabel(epochS) {
+        return longTimes ? Format.timeText(epochS) : Format.timeShortText(epochS);
+    }
     /*! The sparkline: one level per cell, through the temperature of each column. */
     readonly property string spark: Art.sparkline(points.map(p => p.temperatureC), frame.innerCols,
                                                  slots.map(s => s.centre))
@@ -139,7 +146,7 @@ Item {
                     tm: term
                     y: term.cy(0)
                     x: term.cx(Math.max(0, Math.floor((slot.geometry.width - usedCells) / 2)))
-                    value: Format.timeText(slot.modelData.epochS)
+                    value: root.clockLabel(slot.modelData.epochS)
                     cells: slot.geometry.width
                     color: root.theme.textMuted
                 }

@@ -24,6 +24,43 @@ function fit(text, cells) {
     return chars.slice(0, Math.max(0, cells - 1)).join("") + "…";
 }
 
+/*! The first of `forms` (longest first) that fits `cells`; the last one when
+    none does. Fixed labels are shortened this way, never cut with "…". */
+function firstFit(forms, cells) {
+    for (const form of forms) {
+        if (len(form) <= cells) {
+            return form;
+        }
+    }
+    return forms[forms.length - 1];
+}
+
+/*! `text` with its " · " segments dropped from the end (the least important,
+    the sentence's order is importance) until it fits `cells`; the first
+    segment always stays. */
+function shedSegments(text, cells) {
+    const parts = String(text).split(" · ");
+    while (parts.length > 1 && len(parts.join(" · ")) > cells) {
+        parts.pop();
+    }
+    return parts.join(" · ");
+}
+
+/*! Runs (TermRuns: { t, ... }) with the runs of the highest `shed` rank dropped
+    first, a whole rank at a time, until they fit `cells`. Runs without a rank
+    are kept: a label that must not go has none. */
+function shedRuns(runs, cells) {
+    const rankOf = run => run.shed || 0;
+    const width = list => list.reduce((n, run) => n + len(run.t), 0);
+    let out = runs.slice();
+    let rank = Math.max(0, ...out.map(rankOf));
+    while (width(out) > cells && rank > 0) {
+        out = out.filter(run => rankOf(run) !== rank);
+        rank = Math.max(0, ...out.map(rankOf));
+    }
+    return out;
+}
+
 /*! Left-aligned in exactly `cells` (cut or space-padded). */
 function padEnd(text, cells) {
     const cut = fit(text, cells);

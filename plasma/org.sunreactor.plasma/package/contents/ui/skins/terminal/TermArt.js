@@ -29,6 +29,44 @@ const DIGITS = {
     "C": ["███", "█  ", "█  ", "█  ", "███"],
 };
 
+/*! 3-row numerals, for a row too narrow for the 5-row set (the same glyphs,
+    so no fallback font): "█" is ink, " " is paper, glyphs touch. */
+const SMALL_DIGITS = {
+    "0": ["█▀█", "█ █", "█▄█"],
+    "1": [" ▄ ", " █ ", "▄█▄"],
+    "2": ["▀▀█", "█▀▀", "█▄▄"],
+    "3": ["▀▀█", " ▀█", "▄▄█"],
+    "4": ["█ █", "▀▀█", "  █"],
+    "5": ["█▀▀", "▀▀█", "▄▄█"],
+    "6": ["█▀▀", "█▀█", "█▄█"],
+    "7": ["▀▀█", "  █", "  █"],
+    "8": ["█▀█", "█▀█", "█▄█"],
+    "9": ["█▀█", "▀▀█", "▄▄█"],
+    ".": [" ", " ", "▄"],
+    "-": ["  ", "██", "  "],
+    "°": ["°", " ", " "],
+    "C": ["█▀▀", "█  ", "█▄▄"],
+};
+
+/*! 3-row numerals of a string, glyphs side by side with no gap: { rows, roles }. */
+function smallText(text) {
+    const rows = ["", "", ""];
+    const roles = ["", "", ""];
+    for (const ch of Array.from(String(text))) {
+        const glyph = SMALL_DIGITS[ch];
+        if (!glyph) {
+            continue;
+        }
+        const width = Math.max(...glyph.map(row => Array.from(row).length));
+        for (let r = 0; r < 3; ++r) {
+            const row = (glyph[r] !== undefined ? glyph[r] : "").padEnd(width, " ");
+            rows[r] += row;
+            roles[r] += Array.from(row).map(c => c === " " ? " " : "o").join("");
+        }
+    }
+    return { rows: rows, roles: roles };
+}
+
 /*! Rows of one numeral string, one glyph gap between glyphs. */
 function bigText(text) {
     const rows = ["", "", "", "", ""];

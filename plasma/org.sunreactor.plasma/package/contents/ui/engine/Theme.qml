@@ -241,6 +241,11 @@ Item {
 
     /*! Device pixel ratio, art-pixel size (deviceScale/unit), snap helpers. */
     readonly property PixelGrid grid: pixelGrid
+    /*! The logical width the terminal skins' character grid spans: the popup's
+        page column less the scrollbar's gutter (FullRepresentation binds it; 0
+        until the popup is laid out). It does not change when a page starts to
+        scroll, so the cell, the row heights and so the page height stay put. */
+    property real gridContentWidth: 0
 
     PixelGrid {
         id: pixelGrid

@@ -452,15 +452,15 @@ FocusScope {
                                     out.push({ t: block.manual ? i18ndc(root.domain, "This brightness was set by hand", "Manual")
                                                                 : i18ndc(root.domain, "Brightness follows the automatic curve", "Auto"),
                                                c: block.manual ? t.warning : t.success, b: true });
-                                    out.push({ t: " · ", c: t.borderInactive });
-                                    out.push({ t: i18ndc(root.domain, "Applies to every display at once", "every display"), c: t.textMuted });
+                                    out.push({ t: " · ", c: t.borderInactive, shed: 1 });
+                                    out.push({ t: i18ndc(root.domain, "Applies to every display at once", "every display"), c: t.textMuted, shed: 1 });
                                     if (block.manual) {
                                         out.push({ t: "   " });
                                         out.push({ t: "a", c: autoHit.containsMouse ? t.accent : t.fg, b: true, k: "auto" });
                                         out.push({ t: " " + i18ndc(root.domain, "Key hint: back to automatic brightness", "auto"),
                                                    c: autoHit.containsMouse ? t.accent : t.textMuted, k: "auto2" });
                                     }
-                                    return out;
+                                    return Term.shedRuns(out, frame.innerCols);
                                 }
                                 const m = block.m;
                                 if (!m.enabled) {
@@ -475,7 +475,7 @@ FocusScope {
                                     out.push({ t: i18ndc(root.domain, "This brightness was set by hand", "Manual"), c: t.warning, b: true });
                                     if (root.client.overrideUntilEpochS > 0) {
                                         out.push({ t: " " + i18ndc(root.domain, "Placeholder is a time of day", "until %1",
-                                                                   Format.timeText(root.client.overrideUntilEpochS)), c: t.textMuted });
+                                                                   Format.timeText(root.client.overrideUntilEpochS)), c: t.textMuted, shed: 1 });
                                     }
                                 } else {
                                     out.push({ t: "● ", c: t.success });
@@ -487,9 +487,9 @@ FocusScope {
                                                          block.limits[0], block.limits[1]),
                                                c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
                                     if (block.target >= 0) {
-                                        out.push({ t: " · ", c: t.borderInactive });
+                                        out.push({ t: " · ", c: t.borderInactive, shed: 2 });
                                         out.push({ t: i18ndc(root.domain, "Placeholder is the brightness the curve targets now",
-                                                             "target %1%", block.target), c: t.textMuted });
+                                                             "target %1%", block.target), c: t.textMuted, shed: 2 });
                                     }
                                 }
                                 if (block.manual) {
@@ -498,7 +498,7 @@ FocusScope {
                                     out.push({ t: " " + i18ndc(root.domain, "Key hint: back to automatic brightness", "auto"),
                                                c: autoHit.containsMouse ? t.accent : t.textMuted, k: "auto2" });
                                 }
-                                return out;
+                                return Term.shedRuns(out, frame.innerCols);
                             }
                         }
 
