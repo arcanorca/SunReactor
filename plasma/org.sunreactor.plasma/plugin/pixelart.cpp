@@ -75,6 +75,23 @@ void PixelGlyphs::assign(T &field, const T &value)
 void PixelGlyphs::setText(const QString &v) { assign(m_text, v); }
 void PixelGlyphs::setColor(const QColor &v) { assign(m_color, v); }
 void PixelGlyphs::setGhostColor(const QColor &v) { assign(m_ghost, v); }
+namespace {
+/*! The built-in face a name selects; unknown names use the small face. */
+const GlyphTables::Face &glyphFace(const QString &name)
+{
+    if (name == QLatin1String("tiny")) {
+        return GlyphTables::tinyFace();
+    }
+    if (name == QLatin1String("topaz")) {
+        return GlyphTables::topazFace();
+    }
+    if (name == QLatin1String("petscii")) {
+        return GlyphTables::petsciiFace();
+    }
+    return GlyphTables::smallFace();
+}
+} // namespace
+
 void PixelGlyphs::setFace(const QString &v) { assign(m_face, v); }
 void PixelGlyphs::setPitch(int v) { assign(m_pitch, std::clamp(v, 1, 8)); }
 void PixelGlyphs::setDot(int v) { assign(m_dot, std::clamp(v, 0, 8)); }
@@ -125,7 +142,7 @@ bool PixelGlyphs::covers(const QString &text, const QString &face) const
             if (!segFace().contains(c) && !isSegNarrow(c)) {
                 return false;
             }
-        } else if (!(f == QLatin1String("tiny") ? tinyFace() : f == QLatin1String("topaz") ? topazFace() : f == QLatin1String("petscii") ? petsciiFace() : smallFace()).contains(c)) {
+        } else if (!glyphFace(f).contains(c)) {
             return false;
         }
     }
@@ -138,9 +155,7 @@ int PixelGlyphs::advance(char32_t c) const
         const int w = isSegNarrow(c) ? m_segWidth : m_segLength + 2 * m_segWidth;
         return w + m_letterSpacing * m_segWidth + 1;
     }
-    const Face &face = m_face == QLatin1String("tiny") ? tinyFace()
-        : m_face == QLatin1String("topaz") ? topazFace()
-        : m_face == QLatin1String("petscii") ? petsciiFace() : smallFace();
+    const Face &face = glyphFace(m_face);
     const auto it = face.constFind(c);
     const int w = it == face.constEnd() ? 3 : it->width;
     return (w + m_letterSpacing) * m_pitch;
@@ -273,9 +288,7 @@ void PixelGlyphs::drawGlyph(QImage &img, char32_t c, int x, int y, QRgb lit, QRg
         return;
     }
 
-    const Face &face = m_face == QLatin1String("tiny") ? tinyFace()
-        : m_face == QLatin1String("topaz") ? topazFace()
-        : m_face == QLatin1String("petscii") ? petsciiFace() : smallFace();
+    const Face &face = glyphFace(m_face);
     const auto it = face.constFind(c);
     if (it == face.constEnd()) {
         return;

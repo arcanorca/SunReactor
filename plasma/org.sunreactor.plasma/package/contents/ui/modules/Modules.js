@@ -258,8 +258,8 @@ var TABBAR = {
     "id:macos": "skins/macos/Tabs.qml",
     "id:amiga": "skins/amiga/Tabs.qml",
     "id:wii": "skins/wii/Tabs.qml",
-    "id:commodore64": "skins/commodore64/Tabs.qml",
-    "id:nds": "skins/nds/Tabs.qml"
+    "id:nds": "skins/nds/Tabs.qml",
+    "id:commodore64": "skins/commodore64/Tabs.qml"
 };
 
 /*

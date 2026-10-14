@@ -488,15 +488,15 @@ const Face &tinyFace()
     return face;
 }
 
-const Face &petsciiFace()
-{
-    static const Face face = buildFace(std::begin(kPetscii), std::end(kPetscii));
-    return face;
-}
-
 const Face &topazFace()
 {
     static const Face face = buildFace(std::begin(kTopaz), std::end(kTopaz));
+    return face;
+}
+
+const Face &petsciiFace()
+{
+    static const Face face = buildFace(std::begin(kPetscii), std::end(kPetscii));
     return face;
 }
 
