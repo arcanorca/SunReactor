@@ -51,8 +51,8 @@
         <entry name="rendererOverride" type="String">
             <default></default>
         </entry>
-        <!-- Weather icons: "auto" (follows the theme's drawing style), "line" (outline),
-             "solid" (filled) or "pixel" (the old 16 px sprites). -->
+        <!-- Weather icons: "auto" (the theme's own icon), "modern" (full colour, the same
+             in every theme), "line" (outline), "solid" (filled) or "pixel" (16 px sprites). -->
         <entry name="weatherIconStyle" type="String">
             <default>auto</default>
         </entry>

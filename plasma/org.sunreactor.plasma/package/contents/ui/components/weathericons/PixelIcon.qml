@@ -32,8 +32,12 @@ Item {
     readonly property real dpr: theme.grid.devicePixelRatio
     /*! Device px per art px: the largest whole multiple of 16 that fits, at least 1. */
     readonly property int artPx: Math.max(1, Math.floor(size * dpr / 16 + 0.001))
+    /*! Draw the pixel family's atlas frame instead of the shared sky sprite (the
+        explicit "pixel" style on a pixel theme). The DMG always uses the atlas. */
+    property bool atlas: false
     /*! The DMG: its four shades, the LCD tile of the lightest one, the atlas frame. */
     readonly property bool mono: Sprites.isMonoRamp(theme)
+    readonly property bool useAtlas: mono || atlas
     readonly property var shades: theme.shades
     readonly property int atlasFrame: Sprites.conditionFrame(condition, night)
 
@@ -44,19 +48,19 @@ Item {
     }
 
     PixelSkySprite {
-        visible: !root.mono
+        visible: !root.useAtlas
         x: Math.round((root.width * root.dpr - 16 * root.artPx) / 2) / root.dpr
         y: Math.round((root.height * root.dpr - 16 * root.artPx) / 2) / root.dpr
-        source: root.mono ? "" : Icons.conditionArt(root.condition, root.night)
+        source: root.useAtlas ? "" : Icons.conditionArt(root.condition, root.night)
         artSize: 16
         artScale: root.artPx / root.dpr
     }
 
     PixelSprite {
-        visible: root.mono
+        visible: root.useAtlas
         x: Math.round((root.width * root.dpr - 16 * root.artPx) / 2) / root.dpr
         y: Math.round((root.height * root.dpr - 16 * root.artPx) / 2) / root.dpr
-        source: root.mono ? Sprites.weatherAtlas() : ""
+        source: root.useAtlas ? Sprites.weatherAtlas() : ""
         frame: root.atlasFrame
         colors: Sprites.monoWeatherColors(root.atlasFrame, root.shades)
         artScale: root.artPx / root.dpr

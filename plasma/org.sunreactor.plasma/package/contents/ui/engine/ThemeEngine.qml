@@ -32,7 +32,7 @@ Item {
     property string densityOverride: ""
     property string rendererOverride: ""
     property int pixelScaleOverride: 0
-    /*! "auto", "line", "solid" or "pixel" (plasmoid config weatherIconStyle). */
+    /*! "auto", "modern", "line", "solid" or "pixel" (plasmoid config weatherIconStyle). */
     property string weatherIconStyleOverride: ""
     property var modulesOverride: []
     /*! Module ids to leave out (plasmoid config hiddenModules). */

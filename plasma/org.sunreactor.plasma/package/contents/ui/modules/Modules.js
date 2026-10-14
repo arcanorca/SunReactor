@@ -307,7 +307,8 @@ function tabBarSource(themeId, renderer) {
 
 /*
  * Weather icons (components/weathericons/): the panel's sky and the popup's
- * weather headers draw the icon of the theme's own weather style. Keys are
+ * weather headers draw the icon of the theme's own weather style when the user
+ * leaves "Weather icons" on "Match the theme" (ThemedWeatherIcon). Keys are
  * "id:<theme id>" (wins) or the renderer name; values are paths relative to ui/.
  * Every file takes the same contract:
  *   required property string condition   daemon condition token ("" unknown)

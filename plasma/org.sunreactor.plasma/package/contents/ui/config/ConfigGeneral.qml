@@ -14,9 +14,9 @@ import org.kde.kcmutils as KCM
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
-import "../Icons.js" as Icons
 import "../modules/Modules.js" as Modules
 import "../components"
+import "../components/weathericons"
 import "../engine"
 
 KCM.SimpleKCM {
@@ -92,6 +92,11 @@ KCM.SimpleKCM {
             weatherIconStyle: root.cfg_weatherIconStyle,
         })
     }
+
+    /*! The condition the preview icons show: the client's reading, else clear (or unknown offline). */
+    readonly property string previewCondition: preview.hasWeatherReading ? preview.weatherCondition
+                                                                         : (preview.isConnected ? "clear" : "")
+    readonly property bool previewNight: preview.hasWeatherReading ? preview.weatherIsNight : !preview.isDaylight
 
     readonly property bool themesAvailable: preview.themeRegistry === SunReactorClient.CapabilitySupported
     readonly property bool validAccent: /^#[0-9a-fA-F]{6}$/.test(cfg_accentOverride)
@@ -234,31 +239,25 @@ KCM.SimpleKCM {
                     anchors.centerIn: parent
                     spacing: Kirigami.Units.smallSpacing
 
-                    Item {
-                        // 32 px: two screen pixels per art pixel, like a panel.
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 32
+                    // The current condition in the chosen style, at a panel size and a popup size.
+                    ThemedWeatherIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        theme: previewTheme
+                        condition: root.previewCondition
+                        night: root.previewNight
+                        size: 32
+                        surface: Kirigami.Theme.backgroundColor
+                        ink: Kirigami.Theme.textColor
+                    }
 
-                        Kirigami.Icon {
-                            anchors.fill: parent
-                            visible: previewTheme.glyphStyle === "pixel"
-                            roundToIconSize: false
-                            source: preview.hasWeatherReading
-                                ? Icons.conditionArt(preview.weatherCondition, preview.weatherIsNight)
-                                : (preview.isConnected ? Icons.skyArt(!preview.isDaylight)
-                                                       : Icons.art("unknown"))
-                        }
-
-                        WeatherGlyph {
-                            anchors.centerIn: parent
-                            visible: previewTheme.glyphStyle !== "pixel"
-                            size: 32
-                            condition: preview.hasWeatherReading ? preview.weatherCondition
-                                                                 : (preview.isConnected ? "clear" : "")
-                            night: preview.hasWeatherReading ? preview.weatherIsNight : !preview.isDaylight
-                            glyphStyle: previewTheme.glyphStyle
-                            palette: previewTheme.glyphColours(Kirigami.Theme.backgroundColor, previewTheme.fg)
-                        }
+                    ThemedWeatherIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        theme: previewTheme
+                        condition: root.previewCondition
+                        night: root.previewNight
+                        size: 22
+                        surface: Kirigami.Theme.backgroundColor
+                        ink: Kirigami.Theme.textColor
                     }
 
                     ColumnLayout {
@@ -578,6 +577,7 @@ KCM.SimpleKCM {
                 configValue: root.cfg_weatherIconStyle
                 model: [
                     { value: "auto", label: i18ndc(root.domain, "Weather icon style", "Match the theme") },
+                    { value: "modern", label: i18ndc(root.domain, "Weather icon style", "Modern (colour)") },
                     { value: "line", label: i18ndc(root.domain, "Weather icon style", "Outline") },
                     { value: "solid", label: i18ndc(root.domain, "Weather icon style", "Filled") },
                     { value: "pixel", label: i18ndc(root.domain, "Weather icon style", "Pixel art") },

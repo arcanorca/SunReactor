@@ -147,13 +147,20 @@ Item {
 
     // --- weather icons ---------------------------------------------------------------
 
-    /*! Weather icon style for WeatherGlyph: "line" (outline), "solid" (filled) or
-        "pixel" (the legacy sprites). The `weatherIconStyle` override wins; "auto"
-        follows the renderer: pixel themes are filled, the rest outlined. */
-    readonly property string glyphStyle: {
+    /*! The weather icon style the user chose: "auto" (the theme's own icon, the
+        default), or an explicit "modern" (full colour), "line", "solid" or "pixel".
+        Any other value counts as "auto". ThemedWeatherIcon reads it. */
+    readonly property string weatherIconStyle: {
         const wanted = overrides && overrides.weatherIconStyle ? overrides.weatherIconStyle : "";
-        if (["line", "solid", "pixel"].indexOf(wanted) >= 0) {
-            return wanted;
+        return ["modern", "line", "solid", "pixel"].indexOf(wanted) >= 0 ? wanted : "auto";
+    }
+    /*! Weather icon style for WeatherGlyph: "line" (outline), "solid" (filled) or
+        "pixel" (the legacy sprites). An explicit line, solid or pixel style wins;
+        "auto" and "modern" follow the renderer: pixel themes are filled, the rest
+        outlined. */
+    readonly property string glyphStyle: {
+        if (["line", "solid", "pixel"].indexOf(weatherIconStyle) >= 0) {
+            return weatherIconStyle;
         }
         return isPixel ? "solid" : "line";
     }
