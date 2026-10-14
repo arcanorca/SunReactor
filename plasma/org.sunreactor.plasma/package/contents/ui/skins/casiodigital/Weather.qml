@@ -12,6 +12,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "Casio.js" as Casio
@@ -93,13 +94,20 @@ Item {
             spacing: root.style.gapWide
             visible: root.client.hasWeatherReading
 
-            WeatherGlyph {
-                Layout.alignment: Qt.AlignVCenter
+            ThemedWeatherIcon {
+                theme: root.theme
                 size: root.style.digitHero
                 condition: root.client.weatherCondition
                 night: root.client.weatherIsNight
-                glyphStyle: "solid"
-                palette: root.style.glyphPalette
+                Layout.alignment: Qt.AlignVCenter
+                WeatherGlyph {
+                    anchors.centerIn: parent
+                    size: root.style.digitHero
+                    condition: root.client.weatherCondition
+                    night: root.client.weatherIsNight
+                    glyphStyle: "solid"
+                    palette: root.style.glyphPalette
+                }
             }
 
             ColumnLayout {

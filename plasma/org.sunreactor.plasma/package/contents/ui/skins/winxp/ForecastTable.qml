@@ -150,14 +150,21 @@ ColumnLayout {
                             width: interval.width * cell.modelData.weight / 100
                             height: interval.height
 
-                            WinXpWeatherIcon {
+                            ThemedWeatherIcon {
+                                theme: root.theme
+                                size: 22
+                                condition: interval.modelData.condition
+                                night: interval.modelData.isNight
                                 visible: cell.index === 0
                                 x: root.ui.pad
                                 anchors.verticalCenter: parent.verticalCenter
-                                theme: root.theme
-                                condition: interval.modelData.condition
-                                night: interval.modelData.isNight
-                                size: 22
+                                WinXpWeatherIcon {
+                                    anchors.centerIn: parent
+                                    theme: root.theme
+                                    condition: interval.modelData.condition
+                                    night: interval.modelData.isNight
+                                    size: 22
+                                }
                             }
 
                             Text {

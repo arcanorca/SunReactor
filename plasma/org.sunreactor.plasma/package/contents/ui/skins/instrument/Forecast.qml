@@ -20,6 +20,7 @@ import QtQuick.Shapes
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 
@@ -215,16 +216,36 @@ ColumnLayout {
         }
         Repeater {
             model: root.points
-            delegate: Text {
+            delegate: Item {
+                id: skySlot
+
                 required property var modelData
                 Layout.preferredWidth: 1
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                text: root.shortCondition(modelData.condition)
-                textFormat: Text.PlainText
-                font: root.style.legendFont
-                color: root.style.ink
-                elide: Text.ElideRight
+                implicitHeight: shortLabel.implicitHeight
+
+                // The short condition in "auto"; a chosen Weather icons style draws the icon in its place.
+                Text {
+                    id: shortLabel
+
+                    visible: root.theme.weatherIconStyle === "auto"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    horizontalAlignment: Text.AlignHCenter
+                    text: root.shortCondition(skySlot.modelData.condition)
+                    textFormat: Text.PlainText
+                    font: root.style.legendFont
+                    color: root.style.ink
+                    elide: Text.ElideRight
+                }
+                ThemedWeatherIcon {
+                    visible: !shortLabel.visible
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    theme: root.theme
+                    condition: skySlot.modelData.condition
+                    night: skySlot.modelData.isNight === true
+                    size: shortLabel.implicitHeight
+                }
             }
         }
 

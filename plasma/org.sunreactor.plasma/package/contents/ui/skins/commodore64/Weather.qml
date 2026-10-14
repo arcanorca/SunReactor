@@ -11,6 +11,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "Petscii.js" as Petscii
@@ -106,9 +107,20 @@ Item {
 
                 spacing: style.cw
 
+                // The Petscii picture in the "auto" style; the chosen Weather icons style
+                // is drawn as a square of the same footprint in its place.
+                ThemedWeatherIcon {
+                    visible: root.theme.weatherIconStyle !== "auto"
+                    theme: root.theme
+                    condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                    night: root.client.hasWeatherReading && root.client.weatherIsNight
+                    size: Math.max(sprite.width, sprite.height)
+                }
+
                 Column {
                     id: sprite
 
+                    visible: root.theme.weatherIconStyle === "auto"
                     width: surface.spriteCols * style.cw
 
                     Repeater {

@@ -96,12 +96,19 @@ WinWindow {
             Layout.fillWidth: true
             spacing: root.ui.gap
 
-            WinXpWeatherIcon {
-                Layout.alignment: Qt.AlignTop
+            ThemedWeatherIcon {
                 theme: root.theme
+                size: 48
                 condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
                 night: root.client.hasWeatherReading && root.client.weatherIsNight
-                size: 48
+                Layout.alignment: Qt.AlignTop
+                WinXpWeatherIcon {
+                    anchors.centerIn: parent
+                    theme: root.theme
+                    condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                    night: root.client.hasWeatherReading && root.client.weatherIsNight
+                    size: 48
+                }
             }
 
             ColumnLayout {

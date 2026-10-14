@@ -13,6 +13,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules" as Mod
 import "../../components" as Components
 
@@ -97,13 +98,20 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: root.style.gap2
 
-            WeatherGlyph {
-                Layout.alignment: Qt.AlignVCenter
+            ThemedWeatherIcon {
+                theme: root.theme
                 size: root.style.snap(root.style.unit * 2.0)
                 condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
                 night: root.client.hasWeatherReading && root.client.weatherIsNight
-                glyphStyle: "line"
-                palette: root.style.glyphPalette
+                Layout.alignment: Qt.AlignVCenter
+                WeatherGlyph {
+                    anchors.centerIn: parent
+                    size: root.style.snap(root.style.unit * 2.0)
+                    condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                    night: root.client.hasWeatherReading && root.client.weatherIsNight
+                    glyphStyle: "line"
+                    palette: root.style.glyphPalette
+                }
             }
             RowLayout {
                 Layout.alignment: Qt.AlignVCenter

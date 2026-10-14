@@ -11,6 +11,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 import "Casio.js" as Casio
@@ -85,13 +86,20 @@ Item {
                         color: root.style.inkMuted
                     }
 
-                    WeatherGlyph {
-                        Layout.alignment: Qt.AlignHCenter
+                    ThemedWeatherIcon {
+                        theme: root.theme
                         size: root.style.snap(root.style.unit * 1.5)
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight === true
-                        glyphStyle: "solid"
-                        palette: root.style.glyphPalette
+                        Layout.alignment: Qt.AlignHCenter
+                        WeatherGlyph {
+                            anchors.centerIn: parent
+                            size: root.style.snap(root.style.unit * 1.5)
+                            condition: slot.modelData.condition
+                            night: slot.modelData.isNight === true
+                            glyphStyle: "solid"
+                            palette: root.style.glyphPalette
+                        }
                     }
 
                     RowLayout {

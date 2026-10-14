@@ -89,12 +89,19 @@ ColumnLayout {
                         font: root.style.captionFont
                         color: root.style.inkSoft
                     }
-                    WiiWeatherIcon {
-                        Layout.alignment: Qt.AlignHCenter
+                    ThemedWeatherIcon {
                         theme: root.theme
                         size: root.style.snap(root.style.unit * 1.1)
                         condition: slot.modelData.condition
                         night: root.isNight(slot.modelData.epochS)
+                        Layout.alignment: Qt.AlignHCenter
+                        WiiWeatherIcon {
+                            anchors.centerIn: parent
+                            theme: root.theme
+                            size: root.style.snap(root.style.unit * 1.1)
+                            condition: slot.modelData.condition
+                            night: root.isNight(slot.modelData.epochS)
+                        }
                     }
                     Text {
                         Layout.alignment: Qt.AlignHCenter

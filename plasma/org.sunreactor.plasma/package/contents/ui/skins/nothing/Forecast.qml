@@ -17,6 +17,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 
@@ -98,14 +99,22 @@ Item {
                         color: root.style.muted
                     }
 
-                    DotIcon {
+                    ThemedWeatherIcon {
                         Layout.alignment: Qt.AlignHCenter
-                        pitch: root.style.pitchFine
+                        theme: root.theme
+                        size: root.style.pitchFine * 12
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight
-                        litColor: root.style.ink
-                        accentColor: root.style.accent
-                        dimColor: root.style.textGhost
+
+                        DotIcon {
+                            anchors.centerIn: parent
+                            pitch: root.style.pitchFine
+                            condition: slot.modelData.condition
+                            night: slot.modelData.isNight
+                            litColor: root.style.ink
+                            accentColor: root.style.accent
+                            dimColor: root.style.textGhost
+                        }
                     }
 
                     DotText {

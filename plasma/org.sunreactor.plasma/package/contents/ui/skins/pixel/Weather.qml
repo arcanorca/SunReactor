@@ -11,6 +11,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "Sprites.js" as Sprites
@@ -99,20 +100,29 @@ Item {
 
             // The 16 px sky sprite, or the vector glyph (solid, by default) where the
             // theme does not draw its weather as the sprite (PixelStyle.spriteWeather).
-            PixelSprite {
-                id: sprite
-                visible: pstyle.spriteWeather
-                source: Sprites.weatherAtlas()
-                frame: root.skyFrame
-                colors: pstyle.weatherColors(root.skyFrame)
-            }
-            WeatherGlyph {
-                visible: !pstyle.spriteWeather
+            // The chosen Weather icons setting replaces both.
+            ThemedWeatherIcon {
+                theme: root.theme
                 size: 16
                 condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
                 night: root.client.hasWeatherReading && root.client.weatherIsNight
-                glyphStyle: root.theme.glyphStyle
-                palette: root.theme.glyphColours(pstyle.paper, pstyle.ink)
+
+                PixelSprite {
+                    id: sprite
+                    visible: pstyle.spriteWeather
+                    source: Sprites.weatherAtlas()
+                    frame: root.skyFrame
+                    colors: pstyle.weatherColors(root.skyFrame)
+                }
+                WeatherGlyph {
+                    anchors.centerIn: parent
+                    visible: !pstyle.spriteWeather
+                    size: 16
+                    condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                    night: root.client.hasWeatherReading && root.client.weatherIsNight
+                    glyphStyle: root.theme.glyphStyle
+                    palette: root.theme.glyphColours(pstyle.paper, pstyle.ink)
+                }
             }
             PixelDigits {
                 id: temp

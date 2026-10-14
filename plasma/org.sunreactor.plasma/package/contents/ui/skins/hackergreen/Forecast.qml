@@ -16,6 +16,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 import "../terminal"
@@ -105,18 +106,28 @@ Item {
                     color: root.theme.textMuted
                 }
 
-                Repeater {
-                    model: slot.rows
+                // The three art rows, or the chosen Weather icons style in their place.
+                ThemedWeatherIcon {
+                    x: slot.centred(7)
+                    y: term.cy(1)
+                    theme: root.theme
+                    condition: slot.modelData.condition
+                    night: root.isNight(slot.modelData.epochS)
+                    size: Math.min(term.cy(4) - term.cy(1), term.cx(7))
 
-                    delegate: TermText {
-                        required property string modelData
-                        required property int index
+                    Repeater {
+                        model: slot.rows
 
-                        tm: term
-                        x: slot.centred(7)
-                        y: term.cy(1 + index)
-                        value: modelData
-                        color: root.theme.fg
+                        delegate: TermText {
+                            required property string modelData
+                            required property int index
+
+                            tm: term
+                            x: 0
+                            y: term.cy(1 + index) - term.cy(1)
+                            value: modelData
+                            color: root.theme.fg
+                        }
                     }
                 }
 

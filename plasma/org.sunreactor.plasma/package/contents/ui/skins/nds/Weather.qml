@@ -77,13 +77,20 @@ Item {
             width: root.badge
             height: root.badge
         }
-        NdsWeatherIcon {
-            x: badgeBox.x + Math.round((badgeBox.width - width) / 2)
-            y: badgeBox.y + Math.round((badgeBox.height - height) / 2)
-            size: Math.round(root.gu * 2.9)
+        ThemedWeatherIcon {
             theme: root.theme
+            size: Math.round(root.gu * 2.9)
             condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
             night: root.client.weatherIsNight === true
+            x: badgeBox.x + Math.round((badgeBox.width - width) / 2)
+            y: badgeBox.y + Math.round((badgeBox.height - height) / 2)
+            NdsWeatherIcon {
+                anchors.centerIn: parent
+                size: Math.round(root.gu * 2.9)
+                theme: root.theme
+                condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                night: root.client.weatherIsNight === true
+            }
         }
 
         // The temperature: big rounded digits, the unit beside them.

@@ -112,12 +112,19 @@ ColumnLayout {
             anchors.fill: parent
             spacing: root.style.gap2
 
-            WiiWeatherIcon {
-                Layout.alignment: Qt.AlignVCenter
+            ThemedWeatherIcon {
                 theme: root.theme
                 size: root.style.snap(root.style.unit * 2.3)
                 condition: root.client.weatherCondition
                 night: root.client.weatherIsNight
+                Layout.alignment: Qt.AlignVCenter
+                WiiWeatherIcon {
+                    anchors.centerIn: parent
+                    theme: root.theme
+                    size: root.style.snap(root.style.unit * 2.3)
+                    condition: root.client.weatherCondition
+                    night: root.client.weatherIsNight
+                }
             }
 
             RowLayout {

@@ -10,6 +10,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../pixel/PixelFormat.js" as PixelFormat
 import "../pixel/Sprites.js" as Sprites
@@ -83,12 +84,19 @@ Item {
                             color: tokens.ink
                         }
 
-                        PixelSprite {
+                        ThemedWeatherIcon {
                             x: Math.floor((slot.width - width) / 2)
                             y: 8
-                            source: Sprites.weatherAtlas()
-                            frame: Sprites.conditionFrame(slot.modelData.condition, slot.modelData.isNight)
-                            colors: tokens.spriteColors
+                            theme: root.theme
+                            size: 16
+                            condition: slot.modelData.condition
+                            night: slot.modelData.isNight
+
+                            PixelSprite {
+                                source: Sprites.weatherAtlas()
+                                frame: Sprites.conditionFrame(slot.modelData.condition, slot.modelData.isNight)
+                                colors: tokens.spriteColors
+                            }
                         }
 
                         AmigaText {

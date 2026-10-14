@@ -21,6 +21,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 
@@ -138,15 +139,23 @@ Rectangle {
             Layout.fillWidth: true
             spacing: root.style.pad
 
-            DotIcon {
+            ThemedWeatherIcon {
                 // The 12 x 12 pictogram, drawn bare: its lit dots only, no unlit grid.
                 Layout.alignment: Qt.AlignTop
-                pitch: root.style.pitchIcon
+                theme: root.theme
+                size: root.style.pitchIcon * 12
                 condition: root.reading ? root.client.weatherCondition : ""
                 night: root.reading && root.client.weatherIsNight
-                litColor: root.style.ink
-                accentColor: root.style.accent
-                dimColor: root.style.textGhost
+
+                DotIcon {
+                    anchors.centerIn: parent
+                    pitch: root.style.pitchIcon
+                    condition: root.reading ? root.client.weatherCondition : ""
+                    night: root.reading && root.client.weatherIsNight
+                    litColor: root.style.ink
+                    accentColor: root.style.accent
+                    dimColor: root.style.textGhost
+                }
             }
 
             ColumnLayout {

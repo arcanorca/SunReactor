@@ -9,6 +9,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../pixel/PixelFormat.js" as PixelFormat
 import "Petscii.js" as Petscii
@@ -34,7 +35,8 @@ Item {
     /*! The condition icon and the temperature in a slot of `cells`, one cell kept
      *  clear on the right; the degree sign goes first when the slot is narrow. */
     function slotTemperature(point, cells) {
-        const icon = Petscii.icon(point.condition, point.isNight);
+        // The glyph stands for the condition in "auto"; a chosen style draws the icon above.
+        const icon = root.theme.weatherIconStyle === "auto" ? Petscii.icon(point.condition, point.isNight) : "";
         const degrees = Math.round(point.temperatureC);
         const full = icon + degrees + "°";
         return Petscii.cells(full) <= cells - 1 ? full : Petscii.fit(icon + degrees, cells - 1);
@@ -87,6 +89,14 @@ Item {
                             ink: style.hot
                             text: PixelFormat.hour(new Date(slot.modelData.epochS * 1000).getHours())
                             maximumArtWidth: slot.width
+                        }
+                        // The chosen Weather icons style, two text rows high; "auto" uses the glyph.
+                        ThemedWeatherIcon {
+                            visible: root.theme.weatherIconStyle !== "auto"
+                            theme: root.theme
+                            condition: slot.modelData.condition
+                            night: slot.modelData.isNight === true
+                            size: style.ch * 2
                         }
                         C64Text {
                             ink: style.ink

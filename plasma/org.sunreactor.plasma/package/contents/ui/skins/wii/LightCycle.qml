@@ -20,6 +20,7 @@ import QtQuick.Shapes
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 import "../instrument/Curve.js" as Curve
@@ -273,13 +274,20 @@ ColumnLayout {
                         border.width: root.style.line2
                         border.color: root.style.accentLine
                     }
-                    WeatherGlyph {
-                        anchors.centerIn: parent
+                    ThemedWeatherIcon {
+                        theme: root.theme
                         size: nowMarker.d * 0.62
                         condition: "clear"
                         night: false
-                        glyphStyle: "solid"
-                        palette: root.style.glyphPalette
+                        anchors.centerIn: parent
+                        WeatherGlyph {
+                            anchors.centerIn: parent
+                            size: nowMarker.d * 0.62
+                            condition: "clear"
+                            night: false
+                            glyphStyle: "solid"
+                            palette: root.style.glyphPalette
+                        }
                     }
                 }
 

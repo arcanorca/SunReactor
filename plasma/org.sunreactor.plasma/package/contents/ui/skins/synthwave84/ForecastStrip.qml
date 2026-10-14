@@ -18,6 +18,7 @@ import QtQuick.Shapes
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules" as Mod
 import "../../Format.js" as Format
 
@@ -140,13 +141,20 @@ ColumnLayout {
                     color: root.style.ink
                 }
                 // The sky: a line glyph in cyan, the sun in pink.
-                WeatherGlyph {
-                    x: Math.round((column.width - width) / 2)
-                    y: strip.glyphTop
+                ThemedWeatherIcon {
+                    theme: root.theme
                     size: root.style.snap(root.style.unit * 1.0)
                     condition: column.modelData.condition
-                    glyphStyle: "line"
-                    palette: root.style.glyphPalette
+                    night: false
+                    x: Math.round((column.width - width) / 2)
+                    y: strip.glyphTop
+                    WeatherGlyph {
+                        anchors.centerIn: parent
+                        size: root.style.snap(root.style.unit * 1.0)
+                        condition: column.modelData.condition
+                        glyphStyle: "line"
+                        palette: root.style.glyphPalette
+                    }
                 }
                 // The hour.
                 Text {

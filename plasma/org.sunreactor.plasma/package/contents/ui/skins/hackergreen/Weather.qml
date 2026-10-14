@@ -18,6 +18,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "../terminal"
@@ -143,20 +144,29 @@ Item {
         bodyHeight: term.cy(Math.max(3, root.textRows))
         glowing: true
 
-        // The sky, three rows of seven cells.
-        Repeater {
-            model: root.artRows
+        // The sky, three rows of seven cells, or the chosen Weather icons style in its place.
+        ThemedWeatherIcon {
+            x: term.cx(1)
+            y: term.cy(0)
+            theme: root.theme
+            condition: root.client.weatherCondition
+            night: root.night
+            size: Math.min(term.cy(3) - term.cy(0), term.cx(7))
 
-            delegate: TermText {
-                required property string modelData
-                required property int index
+            Repeater {
+                model: root.artRows
 
-                tm: term
-                x: term.cx(1)
-                y: term.cy(index)
-                value: modelData
-                strong: true
-                color: root.artColor
+                delegate: TermText {
+                    required property string modelData
+                    required property int index
+
+                    tm: term
+                    x: 0
+                    y: term.cy(index) - term.cy(0)
+                    value: modelData
+                    strong: true
+                    color: root.artColor
+                }
             }
         }
 

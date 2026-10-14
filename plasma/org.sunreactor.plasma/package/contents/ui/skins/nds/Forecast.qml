@@ -188,13 +188,20 @@ Item {
             font.pixelSize: Math.round(root.gu * 0.6)
             color: root.style.muted
         }
-        NdsWeatherIcon {
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: Math.round(root.gu * 0.8)
-            size: Math.round(Math.min(tile.width * 0.7, root.gu * 1.4))
+        ThemedWeatherIcon {
             theme: root.theme
+            size: Math.round(Math.min(tile.width * 0.7, root.gu * 1.4))
             condition: tile.modelData.condition || ""
             night: tile.modelData.isNight === true
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Math.round(root.gu * 0.8)
+            NdsWeatherIcon {
+                anchors.centerIn: parent
+                size: Math.round(Math.min(tile.width * 0.7, root.gu * 1.4))
+                theme: root.theme
+                condition: tile.modelData.condition || ""
+                night: tile.modelData.isNight === true
+            }
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter

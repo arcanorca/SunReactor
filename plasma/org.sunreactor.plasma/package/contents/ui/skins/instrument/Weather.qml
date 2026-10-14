@@ -17,6 +17,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 
@@ -123,7 +124,19 @@ ColumnLayout {
             }
         }
 
+        // The chosen Weather icons style, beside the condition; "auto" shows no icon here.
+        ThemedWeatherIcon {
+            visible: root.theme.weatherIconStyle !== "auto"
+            Layout.alignment: Qt.AlignVCenter
+            theme: root.theme
+            condition: root.client.weatherCondition
+            night: root.client.weatherIsNight
+            size: conditionText.implicitHeight
+        }
+
         Text {
+            id: conditionText
+
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignBaseline
             text: root.client.hasWeatherReading

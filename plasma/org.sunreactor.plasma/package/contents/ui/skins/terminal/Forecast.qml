@@ -17,6 +17,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "../../Format.js" as Format
@@ -151,18 +152,28 @@ Item {
                     color: root.theme.textMuted
                 }
 
-                TermPicture {
-                    id: symbol
-
-                    tm: term
-                    theme: root.theme
+                // The symbol, two rows high, or the chosen Weather icons style in its place.
+                ThemedWeatherIcon {
+                    x: term.cx(Math.max(0, Math.floor((slot.geometry.width - symbol.cols) / 2)))
                     y: term.cy(1)
-                    x: term.cx(Math.max(0, Math.floor((slot.geometry.width - cols) / 2)))
-                    rows: slot.icon.rows
-                    roles: slot.icon.roles
-                    colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.textMuted, root.theme.fg, 0.4),
-                                m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
-                                d: root.theme.borderInactive })
+                    theme: root.theme
+                    condition: slot.modelData.condition
+                    night: root.nightAt(slot.modelData.epochS)
+                    size: Math.min(term.cy(2), term.cx(symbol.cols))
+
+                    TermPicture {
+                        id: symbol
+
+                        tm: term
+                        theme: root.theme
+                        x: 0
+                        y: 0
+                        rows: slot.icon.rows
+                        roles: slot.icon.roles
+                        colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.textMuted, root.theme.fg, 0.4),
+                                    m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
+                                    d: root.theme.borderInactive })
+                    }
                 }
 
                 TermText {

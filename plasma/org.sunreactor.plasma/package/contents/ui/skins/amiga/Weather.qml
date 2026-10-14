@@ -11,6 +11,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "../pixel/Sprites.js" as Sprites
@@ -129,14 +130,22 @@ Item {
             title: i18ndc(root.domain, "Title of the weather window", "Weather")
             contentHeight: effectText.y + effectText.height
 
-            PixelSprite {
-                id: sky
+            // The atlas sprite, or the chosen Weather icons style in its place.
+            ThemedWeatherIcon {
+                theme: root.theme
+                size: 16
+                condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                night: root.client.hasWeatherReading && root.client.weatherIsNight
 
-                source: Sprites.weatherAtlas()
-                frame: root.client.hasWeatherReading
-                    ? Sprites.conditionFrame(root.client.weatherCondition, root.client.weatherIsNight)
-                    : Sprites.weatherFrame("unknown")
-                colors: tokens.spriteColors
+                PixelSprite {
+                    id: sky
+
+                    source: Sprites.weatherAtlas()
+                    frame: root.client.hasWeatherReading
+                        ? Sprites.conditionFrame(root.client.weatherCondition, root.client.weatherIsNight)
+                        : Sprites.weatherFrame("unknown")
+                    colors: tokens.spriteColors
+                }
             }
 
             AmigaText {

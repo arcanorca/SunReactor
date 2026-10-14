@@ -10,6 +10,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "PixelFormat.js" as PixelFormat
 import "Sprites.js" as Sprites
@@ -92,23 +93,29 @@ Item {
                         color: pstyle.dim
                         text: PixelFormat.time(slot.modelData.epochS)
                     }
-                    PixelSprite {
+                    ThemedWeatherIcon {
                         x: Math.floor((slot.width - 16) / 2)
                         y: 6
-                        visible: pstyle.spriteWeather
-                        source: Sprites.weatherAtlas()
-                        frame: slot.skyFrame
-                        colors: pstyle.weatherColors(slot.skyFrame)
-                    }
-                    WeatherGlyph {
-                        x: Math.floor((slot.width - 16) / 2)
-                        y: 6
-                        visible: !pstyle.spriteWeather
+                        theme: root.theme
                         size: 16
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight
-                        glyphStyle: root.theme.glyphStyle
-                        palette: root.theme.glyphColours(pstyle.paper, pstyle.ink)
+
+                        PixelSprite {
+                            visible: pstyle.spriteWeather
+                            source: Sprites.weatherAtlas()
+                            frame: slot.skyFrame
+                            colors: pstyle.weatherColors(slot.skyFrame)
+                        }
+                        WeatherGlyph {
+                            anchors.centerIn: parent
+                            visible: !pstyle.spriteWeather
+                            size: 16
+                            condition: slot.modelData.condition
+                            night: slot.modelData.isNight
+                            glyphStyle: root.theme.glyphStyle
+                            palette: root.theme.glyphColours(pstyle.paper, pstyle.ink)
+                        }
                     }
                     PixelLabel {
                         theme: root.theme

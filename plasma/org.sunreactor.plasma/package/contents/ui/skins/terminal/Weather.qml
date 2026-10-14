@@ -24,6 +24,7 @@ import QtQuick
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../components"
 import "Term.js" as Term
@@ -171,17 +172,27 @@ Item {
         // Seven picture rows, then the details row.
         contentRows: 8
 
-        // The sky picture.
-        TermPicture {
-            tm: term
-            theme: root.theme
+        // The sky picture, or the chosen Weather icons style in its place: the largest
+        // square that fits the seven picture rows and the picture's columns.
+        ThemedWeatherIcon {
             x: 0
             y: term.cy(0)
-            rows: root.sky.rows
-            roles: root.sky.roles
-            colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.fg, root.theme.bg, 0.15),
-                        m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
-                        d: root.theme.borderInactive })
+            theme: root.theme
+            condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+            night: root.night
+            size: Math.min(term.cy(7) - term.cy(0), term.cx(root.artCols))
+
+            TermPicture {
+                tm: term
+                theme: root.theme
+                x: 0
+                y: 0
+                rows: root.sky.rows
+                roles: root.sky.roles
+                colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.fg, root.theme.bg, 0.15),
+                            m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
+                            d: root.theme.borderInactive })
+            }
         }
 
         // The condition, on the right of the picture's top row.

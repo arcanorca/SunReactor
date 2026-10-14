@@ -11,6 +11,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 
@@ -88,13 +89,20 @@ ColumnLayout {
                             Layout.alignment: Qt.AlignHCenter
                             spacing: root.style.snap(4)
 
-                            WeatherGlyph {
-                                Layout.alignment: Qt.AlignVCenter
+                            ThemedWeatherIcon {
+                                theme: root.theme
                                 size: root.style.snap(20)
                                 condition: hour.modelData.condition || ""
                                 night: hour.modelData.isNight === true
-                                glyphStyle: "solid"
-                                palette: root.theme.glyphPalette
+                                Layout.alignment: Qt.AlignVCenter
+                                WeatherGlyph {
+                                    anchors.centerIn: parent
+                                    size: root.style.snap(20)
+                                    condition: hour.modelData.condition || ""
+                                    night: hour.modelData.isNight === true
+                                    glyphStyle: "solid"
+                                    palette: root.theme.glyphPalette
+                                }
                             }
 
                             Text {
