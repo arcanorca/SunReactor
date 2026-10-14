@@ -415,7 +415,8 @@ T.Slider {
                     color: control.enabled ? control.litColor : control.style.inkMuted
                 }
                 Rectangle {
-                    x: control.valueX
+                    // At 100 % the cursor would hang one line past the track's right edge.
+                    x: Math.min(control.valueX, control.style.floorSnap(control.width - control.style.line))
                     y: control.trackY
                     width: control.style.line
                     height: control.zone
