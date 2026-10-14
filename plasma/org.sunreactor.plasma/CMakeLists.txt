@@ -111,6 +111,23 @@ install(
 # Automated Test Target
 enable_testing()
 
+# Shader packs (package/contents/ui/skins/*/shaders/*.qsb) are committed, so the
+# widget needs no build tools. With qsb present, `make plasmoid_shaders` rebuilds
+# them from their .frag sources, and the test fails when a committed pack is stale.
+find_program(QSB_EXECUTABLE NAMES qsb
+    HINTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}" /usr/lib/qt6/bin)
+if (QSB_EXECUTABLE)
+    add_custom_target(plasmoid_shaders
+        COMMAND ${CMAKE_COMMAND} -E env QSB=${QSB_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_shaders.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Rebuilding the shader packs with qsb"
+        VERBATIM)
+    add_test(NAME shader_packs_current
+        COMMAND ${CMAKE_COMMAND} -E env QSB=${QSB_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_shaders.sh --check)
+endif()
+
 add_executable(test_sunreactorclient
     tests/test_sunreactorclient.cpp
     plugin/sunreactorclient.cpp

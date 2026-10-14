@@ -106,6 +106,9 @@ QtObject {
     readonly property real gap: snap(Kirigami.Units.smallSpacing)
     readonly property real gap2: snap(Kirigami.Units.smallSpacing * 2)
     readonly property real gap3: snap(Kirigami.Units.smallSpacing * 3)
+    /*! The side margin of every PS3 module, from each edge of the popup (logical px):
+        no readout, value or axis label touches the popup's edge. */
+    readonly property real sideMargin: 12
     /*! Hit height of a thin slider. */
     readonly property real sliderHeight: snap(sizeBody * 1.1)
 }

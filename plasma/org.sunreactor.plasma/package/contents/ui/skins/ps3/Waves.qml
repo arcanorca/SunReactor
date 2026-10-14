@@ -1,25 +1,33 @@
 /*
- * The XMB wave: translucent silk ribbons flowing slowly across the popup, over
- * the navy backdrop and under the content. FullRepresentation loads it inside
- * the popup Frame (Modules.OVERLAY).
+ * The XMB wave: the full-screen background of the PlayStation 3 popup, drawn by
+ * a fragment shader (shaders/xmb.frag, compiled to shaders/xmb.frag.qsb by
+ * tools/build_shaders.sh). It lies over the navy backdrop and under the content
+ * (FullRepresentation loads it inside the popup Frame: Modules.OVERLAY).
  *
- * Each ribbon is a band along a sine that repeats once per popup width, so the
- * loop is seamless: the drift carries a ribbon one width per loop and the sway
- * returns to its start. The paths are built once per size, each ribbon is drawn
- * once into a texture (ShaderEffectSource, live: false), and the frames only move
- * those textures (x and y). Five nested bands per ribbon (wide and faint, narrow
- * and bright) give the silk its soft edges without a blur.
+ * Motion: the picture is a loop of `period` seconds. A 33 ms timer advances it
+ * (30 frames a second: the wave is slow, and 60 Hz would double the work for no
+ * visible gain). A timer rather than a NumberAnimation is what caps the rate, as
+ * a NumberAnimation follows the display's refresh. The timer runs only while the
+ * popup is on screen and the desktop's animation speed is not "instant"; a hidden
+ * popup costs nothing, and an instant desktop keeps the first frame still. The
+ * shader is drawn at half the device resolution: the ribbons are soft, so the
+ * upscale is invisible and a frame costs a quarter of the pixels.
  *
- * The loop runs only while the popup window is on screen and the desktop's
- * animation speed is not "instant"; otherwise the first frame stays still.
- * Screenshot harness only: the motion_t config (SUNREACTOR_HARNESS_CONFIG)
- * freezes the loop at that fraction, for comparing frames.
+ * Calendar: the month sets the ribbons' tint (most months keep the palette's
+ * blue; a null entry is the palette accent) and the hour dims the picture at
+ * night. With no usable date the picture is the classic blue, by day.
+ *
+ * Fallback: until the shader has compiled, or where it cannot compile (no RHI, an
+ * old driver), the ShaderEffect stays hidden and the backdrop gradient shows.
+ *
+ * Screenshot harness only (SUNREACTOR_HARNESS_CONFIG): motion_t freezes the loop
+ * at a fraction 0 to 1, xmb_month (1 to 12) and xmb_hour (0 to 24) fix the
+ * calendar, so frames compare.
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasmoid
 
@@ -30,172 +38,160 @@ Item {
 
     required property Theme theme
 
-    readonly property XmbStyle style: XmbStyle {
-        theme: root.theme
-    }
-
     clip: true
 
-    /*! Position in the loop, 0 to 1. One loop moves each ribbon one popup width. */
-    property real phase: 0
-    /*! Seconds for one loop: slow enough to read as drifting silk. */
-    readonly property int loopMs: 13000
+    /*! Seconds for one loop. shaders/xmb.frag has the same PERIOD. */
+    readonly property real period: 40
     /*! The desktop's animation speed. Kirigami reports 1 ms, not 0, when it is
         "instant": that keeps the frame still. */
     readonly property bool motion: Kirigami.Units.longDuration > 1
-    /*! Harness only: the frozen phase from motion_t, or -1 for the live loop. */
+    /*! Harness only: the frozen fraction of the loop from motion_t, or -1 for the live loop. */
     readonly property real frozenPhase: {
         const v = Number(Plasmoid.configuration.motion_t);
         return Number.isFinite(v) && v >= 0 && v < 1 ? v : -1;
     }
-    /*! The loop plays only while the popup is on screen (never when it is closed). */
-    readonly property bool playing: motion && frozenPhase < 0 && visible && Window.window !== null
+    /*! The popup is on screen: shown, and not hidden or minimised. */
+    readonly property bool shown: visible && Window.window !== null
         && Window.visibility !== Window.Hidden && Window.visibility !== Window.Minimized
+    readonly property bool playing: motion && frozenPhase < 0 && shown
 
-    Binding {
-        target: root
-        property: "phase"
-        value: root.frozenPhase
-        when: root.frozenPhase >= 0
-    }
+    /*! Seconds into the loop: advanced by the frame timer while playing. */
+    property real clockTime: 0
+    readonly property real time: frozenPhase >= 0 ? frozenPhase * period : clockTime
 
-    NumberAnimation {
-        target: root
-        property: "phase"
-        from: 0
-        to: 1
-        duration: root.loopMs
-        loops: Animation.Infinite
+    Timer {
+        id: frames
+
+        /*! 30 frames a second. */
+        interval: 33
+        repeat: true
         running: root.playing
+
+        property double last: 0
+
+        onRunningChanged: last = Date.now()
+        onTriggered: {
+            const now = Date.now();
+            // A late tick moves the picture by the time it really took, at most 0.1 s.
+            const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+            last = now;
+            root.clockTime = (root.clockTime + dt) % root.period;
+        }
     }
 
-    /*! The ribbons, back to front. y is the centre line, amp the height of the
-        wave, thick the full thickness and bob the sway (fractions of the popup
-        height); cycles the waves per popup width, sway the sway's cycles per loop,
-        shift the wave's offset (fraction of a cycle); peak the opacity at the
-        centre of the widest band. */
-    readonly property var ribbons: [
-        { y: 0.25, amp: 0.075, thick: 0.26, bob: 0.025, cycles: 1, sway: 1, shift: 0.00, peak: 0.12 },
-        { y: 0.52, amp: 0.095, thick: 0.22, bob: 0.035, cycles: 2, sway: 2, shift: 0.35, peak: 0.11 },
-        { y: 0.80, amp: 0.060, thick: 0.22, bob: 0.025, cycles: 1, sway: 1, shift: 0.62, peak: 0.10 }
+    /*! The local clock: read when the popup shows, then once a minute while it shows. */
+    property var clock: new Date()
+    onShownChanged: {
+        if (shown) {
+            clock = new Date();
+        }
+    }
+    Timer {
+        interval: 60000
+        repeat: true
+        running: root.shown
+        onTriggered: root.clock = new Date()
+    }
+
+    /*! The month, 0 for January, or -1 when the date is unknown. Harness: xmb_month. */
+    readonly property int month: {
+        const m = Number(Plasmoid.configuration.xmb_month);
+        if (Number.isInteger(m) && m >= 1 && m <= 12) {
+            return m - 1;
+        }
+        return isNaN(root.clock.getTime()) ? -1 : root.clock.getMonth();
+    }
+    /*! The hour of the day (0 to 24, fractional), or -1 when the time is unknown. Harness: xmb_hour. */
+    readonly property real hour: {
+        const h = Number(Plasmoid.configuration.xmb_hour);
+        if (Number.isFinite(h) && h >= 0 && h <= 24) {
+            return h;
+        }
+        if (isNaN(root.clock.getTime())) {
+            return -1;
+        }
+        return root.clock.getHours() + root.clock.getMinutes() / 60;
+    }
+
+    /*! 1 at night, 0 by day, easing through dusk (19 to 21 h) and dawn (5 to 7 h). */
+    readonly property real nightFactor: {
+        if (root.hour < 0) {
+            return 0;
+        }
+        return Math.max(root.ease(19, 21, root.hour), 1 - root.ease(5, 7, root.hour));
+    }
+
+    function ease(a: real, b: real, x: real): real {
+        const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+        return t * t * (3 - 2 * t);
+    }
+
+    /*! The ribbons' tint by month, January first: "#rrggbb", or null for the
+        palette's accent (the classic blue). Most months keep the blue; the others
+        lean a little towards the season, and keep the text's contrast. */
+    readonly property var monthTints: [
+        "#9dbcff",  // January: silver-blue
+        "#7f8fff",  // February: periwinkle
+        "#3fc4ea",  // March: aqua
+        "#4aa8ff",  // April: sky
+        null,       // May
+        null,       // June
+        "#2f7bff",  // July: royal
+        null,       // August
+        "#6a9fd6",  // September: steel
+        "#7384ff",  // October: violet-blue
+        "#3566d6",  // November: cobalt
+        "#a6d8ff"   // December: ice
     ]
 
-    /*! The nested bands of each ribbon, widest and faintest first: share is the
-        band's fraction of the ribbon's thickness, k its share of the ribbon's
-        peak opacity, color its tint. Stacked, they fall off towards the edges. */
-    readonly property var bands: [
-        { share: 1.0, k: 0.22, color: root.style.accent },
-        { share: 0.8, k: 0.28, color: root.style.accent },
-        { share: 0.6, k: 0.36, color: root.style.accentSoft },
-        { share: 0.4, k: 0.46, color: root.style.accentSoft },
-        { share: 0.2, k: 0.85, color: root.style.ink }
-    ]
-
-    /*! The centre line of ribbon r at x (logical px, 0 to two popup widths). The
-        wave repeats every popup width, so the path loops with the drift. */
-    function centreY(r, x) {
-        const u = 2 * Math.PI * (r.cycles * x / root.width + r.shift);
-        return root.height * (r.y + r.amp * (Math.sin(u) + 0.4 * Math.sin(2 * u + 1.3)));
+    /*! WCAG relative luminance (linear light) of a colour: the picture's text-contrast
+        budget. The picture's 99th percentile stays at or under 0.12 (white text keeps
+        about 6:1 against it). */
+    function luminanceOf(c: color): real {
+        const lin = v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
     }
 
-    /*! The outline of one band of ribbon r: its centre line shifted by half of
-        `share` times its thickness, along the top and back along the bottom. */
-    function bandPath(r, share) {
-        const n = 96;
-        const span = 2 * root.width;
-        const half = root.height * r.thick * share / 2;
-        const top = [];
-        const bottom = [];
-        for (let i = 0; i <= n; ++i) {
-            const x = span * i / n;
-            const c = root.centreY(r, x);
-            top.push(Qt.point(x, c - half));
-            bottom.push(Qt.point(x, c + half));
-        }
-        return top.concat(bottom.reverse());
+    /*! The colour, scaled down (never up) to the luminance `budget`: a month's tint
+        may be paler than the classic blue, never brighter over the text. */
+    function withinBudget(c: color, budget: real): color {
+        const s = Math.min(1, Math.pow(budget / Math.max(1e-6, root.luminanceOf(c)), 1 / 2.4));
+        return Qt.rgba(c.r * s, c.g * s, c.b * s, 1);
     }
 
-    Repeater {
-        model: root.ribbons
+    /*! The ribbons' tint: the month's, within the budget of the palette's blue. */
+    readonly property color ribbonTint: root.month >= 0 && root.monthTints[root.month] !== null
+        ? root.withinBudget(Qt.color(root.monthTints[root.month]), root.luminanceOf(root.theme.accent))
+        : root.theme.accent
+    /*! The white-blue highlight of the ribbon cores: the palette's second accent, mixed in,
+        within the budget of the classic blue's highlight. */
+    readonly property color sheenTint: root.withinBudget(
+        root.theme.mix(root.ribbonTint, root.theme.secondaryAccent, 0.5),
+        root.luminanceOf(root.theme.mix(root.theme.accent, root.theme.secondaryAccent, 0.5)))
+    /*! The top of the backdrop: the navy, lifted towards the ribbons' tint. */
+    readonly property color deepTint: root.theme.mix(root.theme.bg, root.ribbonTint, 0.42)
 
-        delegate: Item {
-            id: ribbon
+    ShaderEffect {
+        id: wave
 
-            required property var modelData
+        /*! The device pixel ratio of the window this is in (1 when it has none). */
+        readonly property real dpr: Window.window ? Window.window.devicePixelRatio : 1
 
-            // Two popup widths: the drift never shows the path's open end.
-            width: root.width * 2
-            height: root.height
-            x: root.phase * root.width - root.width
-            y: modelData.bob * root.height * Math.sin(2 * Math.PI * (modelData.sway * root.phase + modelData.shift))
+        anchors.fill: parent
+        // Drawn only once compiled: until then, or where it cannot compile, the backdrop shows.
+        visible: status === ShaderEffect.Compiled
+        fragmentShader: Qt.resolvedUrl("shaders/xmb.frag.qsb")
 
-            // The rows the band can reach (its wave, its thickness and its sway):
-            // the texture covers only those, so a frame blends less of the popup.
-            readonly property real reachTop: Math.max(0, root.height * (modelData.y - 1.4 * modelData.amp
-                                                     - modelData.thick / 2 - modelData.bob))
-            readonly property real reachBottom: Math.min(root.height, root.height * (modelData.y + 1.4 * modelData.amp
-                                                        + modelData.thick / 2 + modelData.bob))
+        property real time: root.time
+        property vector2d resolution: Qt.vector2d(width, height)
+        property color colour: root.ribbonTint
+        property color sheen: root.sheenTint
+        property color deep: root.deepTint
+        property real nightFactor: root.nightFactor
 
-            // The ribbon is drawn into a texture once per size (live: false) and
-            // only moved from then on: a frame costs a textured quad, not the curves.
-            ShaderEffectSource {
-                id: capture
-
-                x: 0
-                y: ribbon.reachTop
-                width: ribbon.width
-                height: Math.max(1, ribbon.reachBottom - ribbon.reachTop)
-                sourceItem: art
-                sourceRect: Qt.rect(0, ribbon.reachTop, ribbon.width, height)
-                hideSource: true
-                live: false
-                smooth: true
-
-                onWidthChanged: scheduleUpdate()
-                onHeightChanged: scheduleUpdate()
-                onYChanged: scheduleUpdate()
-            }
-
-            Item {
-                id: art
-
-                width: ribbon.width
-                height: ribbon.height
-
-                Repeater {
-                    model: root.bands
-
-                    delegate: Shape {
-                        id: band
-
-                        required property var modelData
-
-                        anchors.fill: parent
-                        preferredRendererType: Shape.CurveRenderer
-
-                        function tone(f) {
-                            return root.style.alpha(band.modelData.color, ribbon.modelData.peak * band.modelData.k * f);
-                        }
-
-                        ShapePath {
-                            strokeColor: "transparent"
-                            fillGradient: LinearGradient {
-                                x1: 0
-                                y1: 0
-                                x2: ribbon.width
-                                y2: 0
-                                // Brighter every half popup width, so the silk reads as folded light.
-                                GradientStop { position: 0; color: band.tone(0.55) }
-                                GradientStop { position: 0.25; color: band.tone(1) }
-                                GradientStop { position: 0.5; color: band.tone(0.55) }
-                                GradientStop { position: 0.75; color: band.tone(1) }
-                                GradientStop { position: 1; color: band.tone(0.55) }
-                            }
-                            PathPolyline { path: root.bandPath(ribbon.modelData, band.modelData.share) }
-                        }
-                    }
-                }
-            }
-        }
+        layer.enabled: true
+        layer.smooth: true
+        layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr / 2)),
+                                   Math.max(1, Math.round(height * dpr / 2)))
     }
 }

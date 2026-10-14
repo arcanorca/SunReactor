@@ -17,6 +17,12 @@ import "../../Format.js" as Format
 ColumnLayout {
     id: root
 
+    // The PS3 side margin: the module's content keeps clear of the popup's edges.
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.leftMargin: root.style.sideMargin
+    anchors.rightMargin: root.style.sideMargin
+
     required property Theme theme
     required property SunReactorClient client
     required property ModuleSettings settings
