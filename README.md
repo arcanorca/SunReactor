@@ -309,6 +309,14 @@ The Plasma widget is a KDE Plasma 6 panel item with a popup for `sunreactord`. T
 
 Inside, the popup is a set of modules (`contents/ui/modules`), a theme engine (`contents/ui/engine`) that turns the daemon's theme into colours, fonts and metrics, a pixel renderer for the pixel-art themes, and per-theme skins (`contents/ui/skins`). The design record is [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md).
 
+<div align="center">
+  <img src="docs/images/widget-themes.png" alt="Plasma widget popup, eight flagship themes, brightness page" width="95%" />
+  <br/>
+  <img src="docs/images/widget-weather.png" alt="Plasma widget popup, the same themes on the weather page" width="95%" />
+</div>
+
+The first sheet shows the brightness page of eight flagship themes; the second shows their weather pages. The theme list is in [THEMES.md](docs/THEMES.md).
+
 ### Requirements
 - Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
 - CMake 3.22 or newer, `extra-cmake-modules` 6.0 or newer, and a C++20 compiler

@@ -372,7 +372,17 @@ Green, macOS, Nintendo DS, Nothing, PlayStation 3, Synthwave '84, Nintendo Wii,
 Windows XP), 5 instrument flavours (Braun, Nixie, Oscilloscope, ThinkPad, VFD
 Hi-Fi), and 23 family defaults.
 
-## 7. Troubleshooting
+## 7. Screenshots
+
+Captured headless at 1.35x device pixel ratio with the fake daemon in the
+widget's QA harness (`plasma/org.sunreactor.plasma/tools/shot.sh`):
+
+| Image | What it shows |
+|---|---|
+| ![Eight flagship themes on the brightness page](images/widget-themes.png) | The popup's brightness page for Amiga, Casio Digital, Cyberpunk, Hacker Green, Nintendo DS, Nothing, Synthwave '84 and Windows XP |
+| ![The same themes on the weather page](images/widget-weather.png) | The weather page of the same eight themes, each with its own weather art |
+
+## 8. Troubleshooting
 
 - **`unknown theme` with a suggestion**: check the spelling against
   `sunreactorctl theme list`. Ids are lowercase with underscores.
