@@ -321,6 +321,16 @@ class Nest:
             shutil.copy(src, self.out / "appletsrc")
 
 
+def refuse_real_session():
+    """Abort unless this runs on a private runtime dir and a private session bus."""
+    runtime = os.path.realpath(os.environ.get("XDG_RUNTIME_DIR", ""))
+    bus = os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")
+    if not runtime or runtime.startswith("/run/user/"):
+        raise SystemExit("driver.py: refusing: XDG_RUNTIME_DIR=%r is the real runtime dir" % runtime)
+    if not bus or "/run/user/" in bus:
+        raise SystemExit("driver.py: refusing: the session bus %r is not private" % bus)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     ap.add_argument("--theme", required=True)
@@ -334,6 +344,7 @@ def main():
                     help="run plasmashell under gdb and print every thread's stack 15 s after the popup opens")
     args = ap.parse_args()
 
+    refuse_real_session()
     DBusGMainLoop(set_as_default=True)
     nest = Nest(args)
     status = 0

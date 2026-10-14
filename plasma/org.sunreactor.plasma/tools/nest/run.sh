@@ -58,6 +58,11 @@ done
 mkdir -p "$OUT" || exit 2
 
 TMP_ROOT="${TMPDIR:-/tmp}"
+# Safety: nothing here may touch the user's real runtime dir /run/user/<uid>, where
+# sunreactord keeps its socket. The private temp dir must not lie under it.
+case "$(realpath -m -- "$TMP_ROOT")" in
+    /run/user/*) echo "run.sh: refusing: TMPDIR=$TMP_ROOT is under /run/user" >&2; exit 2 ;;
+esac
 RUNDIR="$(mktemp -d "$TMP_ROOT/srnest.XXXXXX")" || exit 2
 cleanup() {
     if [ "$KEEP" = 1 ]; then
@@ -70,6 +75,17 @@ trap cleanup EXIT
 
 RT="$RUNDIR/rt"
 X="$RUNDIR/xdg"
+# Safety: the runtime dir this session exports must lie under the private temp dir
+# and must not resolve under /run/user; any other value aborts before anything runs.
+for dir in "$RT" "$RUNDIR"; do
+    case "$(realpath -m -- "$dir")" in
+        /run/user/*) echo "run.sh: refusing: $dir resolves under /run/user" >&2; exit 2 ;;
+    esac
+done
+case "$(realpath -m -- "$RT")" in
+    "$(realpath -m -- "$RUNDIR")"/*) ;;
+    *) echo "run.sh: refusing: the runtime dir is not under the private temp dir" >&2; exit 2 ;;
+esac
 mkdir -m 700 "$RT" || exit 2
 mkdir -p "$RT/sunreactor" "$X/home" "$X/config" "$X/data" "$X/cache" "$X/state" || exit 2
 if [ "$FONT" = inter12 ]; then
@@ -85,6 +101,7 @@ NEST_ENV=(
     HOME="$X/home" PATH=/usr/bin:/usr/sbin:/bin LANG=en_US.UTF-8 TZ=Europe/Istanbul
     XDG_RUNTIME_DIR="$RT" XDG_CONFIG_HOME="$X/config" XDG_DATA_HOME="$X/data"
     XDG_CACHE_HOME="$X/cache" XDG_STATE_HOME="$X/state"
+    DBUS_SYSTEM_BUS_ADDRESS="unix:path=$RT/no-system-bus"
     XDG_CURRENT_DESKTOP=KDE XDG_SESSION_TYPE=wayland KDE_FULL_SESSION=true
     QT_QPA_PLATFORMTHEME=KDE LIBGL_ALWAYS_SOFTWARE=1 PYTHONDONTWRITEBYTECODE=1
     QML_IMPORT_PATH="$WIDGET/build/qml"
