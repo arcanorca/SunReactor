@@ -16,6 +16,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../components/weathericons"
 import "../../Format.js" as Format
 
 ColumnLayout {
@@ -88,13 +89,12 @@ ColumnLayout {
                         font: root.style.captionFont
                         color: root.style.inkSoft
                     }
-                    WeatherGlyph {
+                    WiiWeatherIcon {
                         Layout.alignment: Qt.AlignHCenter
+                        theme: root.theme
                         size: root.style.snap(root.style.unit * 1.1)
                         condition: slot.modelData.condition
                         night: root.isNight(slot.modelData.epochS)
-                        glyphStyle: "solid"
-                        palette: root.style.glyphPalette
                     }
                     Text {
                         Layout.alignment: Qt.AlignHCenter

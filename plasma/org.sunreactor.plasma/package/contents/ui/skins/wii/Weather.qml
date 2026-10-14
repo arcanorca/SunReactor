@@ -22,6 +22,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../components"
+import "../../components/weathericons"
 
 ColumnLayout {
     id: root
@@ -111,13 +112,12 @@ ColumnLayout {
             anchors.fill: parent
             spacing: root.style.gap2
 
-            WeatherGlyph {
+            WiiWeatherIcon {
                 Layout.alignment: Qt.AlignVCenter
+                theme: root.theme
                 size: root.style.snap(root.style.unit * 2.3)
                 condition: root.client.weatherCondition
                 night: root.client.weatherIsNight
-                glyphStyle: "solid"
-                palette: root.style.glyphPalette
             }
 
             RowLayout {
