@@ -27,7 +27,9 @@ Item {
     }
     readonly property string domain: settings.domain
     readonly property var monitors: client.isConnected ? client.monitors : []
-    readonly property bool available: client.isConnected && monitors.length > 0
+    /*! The automation controls sit under the panels on this screen when the theme lists them. */
+    readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
+    readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
     readonly property var rows: {
         const out = [];
         if (monitors.length > 1) {
@@ -43,9 +45,12 @@ Item {
     readonly property real gu: style.gu
     readonly property real pad: Math.round(gu * 0.35)
     readonly property real inset: Math.round(gu * 0.6)
-    readonly property real panelH: Math.round(gu * 3.3)
+    readonly property real panelH: Math.round(gu * 3.0)
     readonly property real gap: Math.round(gu * 0.25)
-    readonly property real glassH: 2 * pad + rows.length * panelH + Math.max(0, rows.length - 1) * gap
+    readonly property real panelsH: rows.length * panelH + Math.max(0, rows.length - 1) * gap
+    /*! The tray (ModeRows) below the panels, when this screen hosts it. */
+    readonly property real trayGap: Math.round(gu * 0.45)
+    readonly property real glassH: 2 * pad + panelsH + (hostsModes ? trayGap + modes.trayH : 0)
 
     implicitHeight: screen.implicitHeight
 
@@ -70,6 +75,20 @@ Item {
                 width: screen.glassWidth - 2 * root.inset
                 height: root.panelH
             }
+        }
+
+        // The automation controls, under the panels, with the daemon's sentence in a bubble.
+        ModeRows {
+            id: modes
+
+            visible: root.hostsModes
+            x: root.inset
+            y: root.pad + root.panelsH + root.trayGap
+            width: screen.glassWidth - 2 * root.inset
+            theme: root.theme
+            client: root.client
+            settings: root.settings
+            style: root.style
         }
     }
 

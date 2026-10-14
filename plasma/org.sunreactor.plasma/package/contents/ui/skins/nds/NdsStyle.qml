@@ -79,6 +79,9 @@ QtObject {
     readonly property color hingeBottom: "#aab5c4"
     readonly property color hingeSlot: "#4b5563"
     readonly property color track: "#cfe0f7"
+    /*! The speech bubble of the automation sentence, and its edge. */
+    readonly property color cream: "#fff6d8"
+    readonly property color creamEdge: "#e2cb8c"
 
     /*! The same colour at a given opacity. */
     function alpha(c, a) {
