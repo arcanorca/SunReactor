@@ -31,7 +31,9 @@ ColumnLayout {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool available: client.isConnected && monitors.length > 0
 
-    spacing: style.rowGap
+    // Each strip carries its shadow room below it (WiiTile), so the spacing
+    // between strips is the rest of the row gap: the gap itself does not change.
+    spacing: Math.max(0, style.rowGap - style.shadowRoom)
 
     Repeater {
         model: root.monitors

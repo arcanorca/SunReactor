@@ -70,8 +70,13 @@ ColumnLayout {
     Item {
         id: sunBand
 
+        /*! The sun's dot is 9 px across and sits on the arc: at noon its top is a
+            radius above the arc's peak. The arc starts this far down the band, so
+            the dot stays inside the module's clip. */
+        readonly property real dotRadius: root.style.snap(4.5)
+
         Layout.fillWidth: true
-        Layout.preferredHeight: root.style.snap(30)
+        Layout.preferredHeight: root.style.snap(30) + dotRadius
 
         // The arc: the whole day faint, the part the sun has covered in its yellow.
         Item {
@@ -80,6 +85,7 @@ ColumnLayout {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
+            anchors.topMargin: sunBand.dotRadius
             height: root.style.snap(16)
 
             Shape {

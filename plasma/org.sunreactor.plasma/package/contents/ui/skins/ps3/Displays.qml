@@ -33,6 +33,13 @@ ColumnLayout {
 
     spacing: 0
 
+    // The emphasised item's halo reaches a gap past the first and last row:
+    // the module keeps that room so its clip never cuts the halo.
+    Item {
+        Layout.fillWidth: true
+        implicitHeight: root.style.gap
+    }
+
     DisplayRow {
         visible: root.showAllDisplays
         style: root.style
@@ -81,5 +88,10 @@ ColumnLayout {
             onLimitsRequested: (minVal, maxVal) => root.client.setMonitorLimits(modelData.logicalId, minVal, maxVal)
             onClearOverrideRequested: () => root.client.clearMonitorOverride(modelData.logicalId)
         }
+    }
+
+    Item {
+        Layout.fillWidth: true
+        implicitHeight: root.style.gap
     }
 }

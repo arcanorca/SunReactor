@@ -128,6 +128,9 @@ QtObject {
     readonly property real gap2: snap(Kirigami.Units.smallSpacing * 2)
     readonly property real tilePad: snap(theme.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.smallSpacing * 1.5)
     readonly property real rowGap: snap(Kirigami.Units.smallSpacing)
+    /*! The room a tile's shadow needs below it (see WiiTile). A column of tiles
+        takes it out of its own spacing, so the gaps between tiles stay rowGap. */
+    readonly property real shadowRoom: snap(3)
     /*! Height of a pill button: a touch target that still sits in the popup's budget. */
     readonly property real pillHeight: snap(unit * 1.5)
 

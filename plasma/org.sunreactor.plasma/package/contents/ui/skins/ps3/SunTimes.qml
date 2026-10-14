@@ -94,11 +94,14 @@ ColumnLayout {
     }
 
     // The day as a thin line, sunrise to sunset; the sun's place is a bright dot.
+    // The band is as tall as the dot, and a gap of room sits under it, so the
+    // dot never falls below the module's clip.
     Item {
         id: track
 
         Layout.fillWidth: true
-        implicitHeight: root.style.snap(root.style.unit * 0.22)
+        Layout.bottomMargin: root.style.gap
+        implicitHeight: root.style.snap(root.style.unit * 0.36)
 
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter

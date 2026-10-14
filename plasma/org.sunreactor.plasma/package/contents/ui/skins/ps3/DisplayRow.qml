@@ -92,6 +92,10 @@ Item {
     }
 
     Layout.fillWidth: true
+    // The halo reaches one gap past the row on each side: the row keeps that room
+    // inside its slot, so the module's clip never cuts the halo.
+    Layout.leftMargin: row.style.gap
+    Layout.rightMargin: row.style.gap
     implicitWidth: 200
     implicitHeight: content.implicitHeight + style.gap2
 

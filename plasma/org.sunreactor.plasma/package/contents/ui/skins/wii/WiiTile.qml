@@ -10,6 +10,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Layouts
 
 Item {
     id: root
@@ -26,10 +27,15 @@ Item {
     /*! The content box: inset by the padding on every side. */
     default property alias content: body.data
 
+    /*! How far the shadow falls below the face. The layout keeps this room under
+        the tile (Layout.bottomMargin), so a module's clip never cuts the shadow. */
+    readonly property real shadowRoom: style.shadowRoom
+    Layout.bottomMargin: shadowRoom
+
     // Shadow: two faint offsets below the face, so the tile sits on the page.
     Rectangle {
         x: 0
-        y: root.style.snap(3)
+        y: root.shadowRoom
         width: root.width
         height: root.height
         radius: root.tileRadius

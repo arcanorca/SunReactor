@@ -50,6 +50,10 @@ WinWindow {
         property string hint: ""
         property bool limitsOpen: false
 
+        /*! The name column, shared by the row and its range trackbars so the
+            trackbars line up. Wide enough for a typical monitor model name. */
+        readonly property real nameWidth: row.style.snap(row.style.unit * 7)
+
         signal requested(int percent)
         signal limitsRequested(int minVal, int maxVal)
         signal clearOverrideRequested()
@@ -61,8 +65,8 @@ WinWindow {
             spacing: row.style.gap
 
             Text {
-                Layout.preferredWidth: row.style.snap(row.style.unit * 5.2)
-                Layout.maximumWidth: Layout.preferredWidth
+                Layout.preferredWidth: row.nameWidth
+                Layout.maximumWidth: row.nameWidth
                 text: row.name
                 textFormat: Text.PlainText
                 font: row.style.boldFont
@@ -119,7 +123,7 @@ WinWindow {
                 spacing: row.style.gap
 
                 Text {
-                    Layout.preferredWidth: row.style.snap(row.style.unit * 5.2)
+                    Layout.preferredWidth: row.nameWidth
                     text: i18ndc(root.domain, "Range trackbar: the automatic minimum", "Min")
                     textFormat: Text.PlainText
                     font: row.style.smallFont
@@ -138,7 +142,7 @@ WinWindow {
                 spacing: row.style.gap
 
                 Text {
-                    Layout.preferredWidth: row.style.snap(row.style.unit * 5.2)
+                    Layout.preferredWidth: row.nameWidth
                     text: i18ndc(root.domain, "Range trackbar: the automatic maximum", "Max")
                     textFormat: Text.PlainText
                     font: row.style.smallFont

@@ -130,7 +130,9 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 font: root.style.bodyFont
                 color: root.control.hinting ? root.style.accentInk : root.style.ink
-                maximumLineCount: 1
+                // The sentence keeps its words: it wraps once when the tile is narrow.
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
                 elide: Text.ElideRight
             }
 
