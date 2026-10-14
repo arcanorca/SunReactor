@@ -69,7 +69,7 @@ Rectangle {
             return sentenceChoices[sentenceChoices.length - 1];
         }
         for (let i = 0; i < sentenceChoices.length; ++i) {
-            if (sentenceWidths.itemAt(i).advanceWidth <= limit) {
+            if (sentenceWidths.itemAt(i).advanceWidth <= limit) { // qmllint disable missing-property
                 return sentenceChoices[i];
             }
         }

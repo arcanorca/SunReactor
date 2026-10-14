@@ -75,7 +75,7 @@ Item {
         }
         for (let i = 0; i < effectForms.length; ++i) {
             const probe = effectProbes.itemAt(i);
-            if (probe && probe.artWidth <= limit) {
+            if (probe && probe.artWidth <= limit) { // qmllint disable missing-property
                 return effectForms[i];
             }
         }
