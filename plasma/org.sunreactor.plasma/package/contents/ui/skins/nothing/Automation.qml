@@ -38,6 +38,43 @@ Rectangle {
         client: root.client
         settings: root.settings
     }
+    /*! The sentence with its note, as the skin sets it (lower case). */
+    readonly property string fullSentence: (root.control.displayText
+        + (root.control.note.length > 0 ? " · " + root.control.note : "")).toLowerCase()
+    /*! The sentence from all of its " · " segments down to the first: the note
+        goes first, then the least important segment, never a cut word. */
+    readonly property var sentenceChoices: {
+        const parts = root.fullSentence.split(" · ");
+        const out = [];
+        for (let n = parts.length; n >= 1; --n) {
+            out.push(parts.slice(0, n).join(" · "));
+        }
+        return out;
+    }
+    Repeater {
+        id: sentenceWidths
+
+        model: root.sentenceChoices
+
+        TextMetrics {
+            required property string modelData
+
+            font: root.style.sentence
+            text: modelData
+        }
+    }
+    /*! The longest choice that fits `limit` px. */
+    function sentenceFor(limit: real): string {
+        if (sentenceWidths.count < sentenceChoices.length) {
+            return sentenceChoices[sentenceChoices.length - 1];
+        }
+        for (let i = 0; i < sentenceChoices.length; ++i) {
+            if (sentenceWidths.itemAt(i).advanceWidth <= limit) {
+                return sentenceChoices[i];
+            }
+        }
+        return sentenceChoices[sentenceChoices.length - 1];
+    }
     readonly property bool available: client.isConnected
 
     implicitHeight: content.implicitHeight + 2 * style.pad
@@ -124,11 +161,14 @@ Rectangle {
         }
 
         Text {
+            id: sentence
+
             // Wrapped text reports its one-line width as implicit: a preferred width of 1 keeps the column narrow.
             Layout.fillWidth: true
             Layout.preferredWidth: 1
-            text: (root.control.displayText + (root.control.note.length > 0 ? " · " + root.control.note : ""))
-                .toLowerCase()
+            // The note goes when the sentence with it does not fit the line: the
+            // state is kept whole, never cut with an ellipsis.
+            text: root.sentenceFor(sentence.width)
             textFormat: Text.PlainText
             font: root.style.sentence
             color: root.style.muted
