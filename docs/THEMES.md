@@ -237,28 +237,9 @@ Unknown ids fail with the nearest matches. For example,
   refreshes it with the daemon. A pinned theme is fetched again when the popup
   opens, on config reload, and every 10 minutes.
 
-### 4.3 If the configured theme cannot be used
+A broken or unknown theme falls back to the built-in with the same id (or `amber`); it never stops brightness automation. `sunreactorctl theme validate` and `config validate` tell you what is wrong.
 
-The daemon never stops automatic brightness because of a theme. If `tui.theme`
-names an unknown theme, or the user file with that id is broken:
-
-- the daemon falls back to the built-in with the same id if there is one,
-  otherwise to `amber`;
-- `sunreactorctl status` shows `theme_warning` with the reason;
-- `sunreactorctl config validate` and `doctor` report the same problem as an
-  error and exit non-zero.
-
-### 4.4 IPC shapes (for scripts)
-
-| Request | Response |
-|---|---|
-| `{"version":1,"request":"list_themes"}` | `{"version":1,"response":"themes","themes":[...]}`: id, name, family and palette summary per theme |
-| `{"version":1,"request":"get_theme","id":"nord"}` | `{"version":1,"response":"theme","theme":{...}}`: the full resolved theme (palette, widget tokens, source) |
-| `{"version":1,"request":"day_curve","monitor_id":null}` | `{"version":1,"response":"day_curve",...}`: the day's policy curve used by the widget's light cycle |
-
-`status` gains `theme` (palette and widget tokens) and `theme_warning`. Both are
-optional fields, so older clients keep working. An unknown id to `get_theme`
-returns `invalid_request` with the reason in the message.
+Scripts can read themes and the day curve over the control socket (`list_themes`, `get_theme`, `day_curve`); the request shapes are in `src/ipc/protocol.rs`.
 
 ## 5. How the Plasma widget uses themes
 
