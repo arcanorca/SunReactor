@@ -85,24 +85,14 @@ The runtime is built around failure isolation and non-blocking hardware access, 
        └────────────────────────┘      └─────────────────────────┘
 ```
 
-### 1. Hardware state and monitor wake
-- **DRM Kernel State Gating:** Before dispatching DDC transactions over I2C, the daemon queries connector status directly from kernel DRM attributes (`/sys/class/drm/*/status` and `dpms`). If a display is in standby, suspend, or disconnected, hardware writes are skipped immediately—eliminating I2C bus locks and timeout penalties.
-- **Signal-Independent Probe Schedule:** Desktop wake notifications (e.g. logind, DRM uevents) can be dropped or skipped during compositor transitions. SunReactor implements a scheduled hardware probe loop (`runtime/wake.rs`). Every `probe_seconds` (default: 15s), the daemon directly verifies physical monitor registers.
-- **Fast-Recovery Windows:** When a monitor returns from an unreachable state, a 60-second fast-probe window (2-second pulses) activates. This immediately counteracts compositor state restores (such as KWin's internal saved DDC cache) and locks the display back to the active astronomical curve.
+### Reliability notes
+- Before sending DDC commands, the daemon reads the connector state from DRM sysfs and skips displays that are asleep or gone.
+- A periodic probe and a short fast-retry window after wake re-apply the target if the compositor reset it.
+- Failures are tracked per display with exponential backoff (5 s up to 300 s); one slow monitor does not delay the others.
+- IPC is newline-delimited JSON with a 64 KiB limit, read/write deadlines, and a per-tick request budget.
+- Config reloads are validated first and rolled back on error; state of removed displays is pruned.
 
-### 2. Failures and backoff
-- **Transient vs. Persistent Faults:** Hardware communication errors are isolated per monitor. Transient timeouts (busy DDC buses, hotplug debounce) and persistent device missing states are classified and tracked independently.
-- **Exponential Backoff:** If a monitor fails to acknowledge a write or read, it enters per-device exponential backoff (`5s, 10s, 20s, ... 300s`). Healthy displays continue applying curve updates smoothly without being blocked or delayed by an unresponsive display.
-- **Automatic Recovery:** When a degraded or disconnected monitor responds successfully, its backoff state is cleared immediately without requiring daemon restarts.
-
-### 3. IPC limits
-- **Bounded Main-Loop Quantum:** The daemon IPC subsystem accepts Unix domain socket connections through a cooperative drain quantum (maximum 16 accepted requests or 8ms wall-clock duration per loop tick). Incoming IPC traffic can never starve or desynchronize the core brightness fade ticks.
-- **Strict Payload Boundaries:** Every IPC message is framed with newline-delimited JSON and limited to 64 KiB payload limit. Operation deadlines guard against lingering sockets and slow-read attacks.
-- **Non-Destructive Socket Cleanup:** Stale socket cleanup validates file metadata and active listeners, preventing accidental unlinking of foreign runtime resources.
-
-### 4. Fail-Safe Configuration & State Pruning
-- **Atomic Config Reloads:** Live configuration reloads (`sunreactorctl reload-config` or TUI writebacks) validate schema integrity, monitor IDs, and boundary constraints before updating runtime state. If validation fails, previous active configurations remain in memory.
-- **Automatic Stale State Pruning:** Whenever a display is removed from `config.toml`, orphan runtime backoff trackers and monitor override state are cleanly purged during bootstrap and reload cycles.
+More detail: [docs/RELIABILITY.md](docs/RELIABILITY.md).
 
 ---
 
@@ -264,130 +254,19 @@ show_logo = true
 
 ### Themes
 
-Themes are data shared by the TUI and the Plasma widget. The 40 built-ins are
-embedded in the binaries; user themes live in `~/.config/sunreactor/themes/<id>.toml`
-(the file stem must equal `id`; a user file shadows a built-in with the same id).
-`tui.theme` accepts any theme id or alias, including legacy names such as
-`workbench` or `vfdhifi`; an unknown name fails `config validate` with the nearest matches.
-
-The full authoring guide (every key, the family defaults, the widget's follow and pin model, the flagship skins and a worked example) is in [docs/THEMES.md](docs/THEMES.md).
-
-A broken theme never stops automatic brightness: the daemon logs and skips
-invalid theme files, falls back to the built-in theme of the same id (or
-`amber`) and reports the reason as `theme_warning` in `sunreactorctl status`.
-`sunreactorctl config validate`, `theme validate` and `doctor` report the same
-problems as errors with the file name and exit non-zero.
-
-```toml
-# ~/.config/sunreactor/themes/pocket_night.toml
-id = "pocket_night"
-name = "Pocket Night"
-aliases = ["gbp_night"]
-extends = "handheld"      # inherit everything, override only what changes
-family = "pixel"          # pixel | instrument | terminal (widget defaults)
-
-[palette]                 # bg fg accent secondary_accent border_active border_inactive
-bg = "#0b120a"            # text_muted success warning error, all "#rrggbb"
-accent = "#c23b5f"
-
-[tui]
-glyph_style = "pixel"     # rounded | pixel
-
-[widget]                  # optional; family defaults fill every missing key
-glow = 0.25
-modules = ["telemetry", "curve", "displays", "automation"]
-```
-
-```bash
-sunreactorctl theme show handheld            # resolved palette and widget tokens
-sunreactorctl theme export dracula > ~/.config/sunreactor/themes/mine.toml
-sunreactorctl theme validate                 # check every user theme file
-sunreactorctl theme validate ./mine.toml     # check one file (extends / aliases included)
-```
-
----
+Themes are TOML files shared by the TUI and the Plasma widget. 40 are built in; put your own in `~/.config/sunreactor/themes/<id>.toml` and select one with `tui.theme` or `sunreactorctl theme set <id>`. A broken theme file is logged and skipped; it never stops brightness automation. The file format and the `sunreactorctl theme` commands are in [docs/THEMES.md](docs/THEMES.md).
 
 ## // PLASMA WIDGET
 
-The widget is a Plasma 6 panel item with a popup. It is a QML package plus a small C++ plugin that talks to the daemon's control socket. It does no brightness logic and never touches hardware: it shows what `sunreactord` is doing and sends the same commands as `sunreactorctl`.
-
-The popup has a Brightness page (day curve, one slider per display, automation mode with the next scheduled step) and a Weather page (conditions, forecast, sun times). The panel can show a weather icon, a brightness readout, a small curve or a ring gauge.
-
-The widget follows the terminal UI's theme by default, or you can pin another theme. Many themes have their own layout and weather icons; the rest use a layout chosen by theme family. The pictures below are a selection. Everything is drawn with QML shapes and a few C++ items, no bitmap assets for the vector themes. Internals and the design notes are in [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md).
+A Plasma 6 panel widget with a popup, written in QML with a small C++ plugin that talks to the daemon's control socket. It shows the day curve, one slider per display, the automation mode and the weather, and it follows the terminal UI's theme (or a pinned one). It does no brightness logic of its own.
 
 <div align="center">
-  <img src="docs/images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
+  <img src="docs/images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="85%" />
   <br/>
-  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Casio Digital" width="95%" />
+  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Casio Digital" width="85%" />
 </div>
 
-Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Casio Digital. The full theme list is in [THEMES.md](docs/THEMES.md).
-
-### Requirements
-- Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
-- CMake 3.22 or newer, `extra-cmake-modules` 6.0 or newer, and a C++20 compiler
-- `sunreactord` from this version for themes and the day curve (older daemons still work, see Troubleshooting)
-
-### Install
-From a clone of the repository, the installer builds and installs the widget:
-
-```bash
-./install.sh                    # installs the widget when plasmashell and kpackagetool6 exist
-./install.sh --with-plasma      # try even when those tools are not found
-./install.sh --no-plasma        # skip the widget
-./install.sh --dry-run          # print what the widget step would do; change nothing
-systemctl --user restart plasma-plasmashell.service   # the installer never restarts plasmashell
-```
-
-The step builds the plugin with CMake in a temporary directory, copies the plugin and the QML module under `~/.local`, replaces the widget package in one piece, and keeps the previous widget in `~/.local/share/sunreactor-backups/`. A failed widget step is reported and never fails the installation or rolls back the daemon.
-
-By hand, from the repository root:
-
-```bash
-cmake -S plasma/org.sunreactor.plasma -B build/plasma -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-cmake --build build/plasma -j"$(nproc)"
-cmake --install build/plasma
-systemctl --user restart plasma-plasmashell.service
-```
-
-`cmake --install` places the files here:
-
-| Part | Location |
-|---|---|
-| C++ plugin | `~/.local/lib/libsunreactorplugin.so` |
-| QML module | `~/.local/lib/qt6/qml/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
-| Widget package | `~/.local/share/plasma/plasmoids/org.sunreactor.plasma/` |
-| Application icon | `~/.local/share/icons/hicolor/scalable/apps/` |
-
-The installer passes `-DKDE_INSTALL_QMLDIR=lib/qt6/qml`, the Qt 6 layout; Plasma must find that directory on its QML import path (add `~/.local/lib/qt6/qml` to `QML2_IMPORT_PATH` in a `~/.config/plasma-workspace/env/*.sh` file if it is not there already).
-
-**KF6 partial-upgrade caveat.** If CMake prints `Plasma not found: the plasmoid package will not be installed`, it could not load Plasma's CMake package. That usually means a half-finished upgrade of the KDE Frameworks and Plasma set. The plugin still builds and installs. Finish the upgrade and run CMake again, or install the package with `kpackagetool6 --type Plasma/Applet --install plasma/org.sunreactor.plasma/package`. The installer does not depend on Plasma's CMake package: it copies the package itself and validates it with `kpackagetool6` when that is present.
-
-### Settings
-The configure dialog of the widget holds these settings:
-
-| Section | Keys | Meaning |
-|---|---|---|
-| General | `showTemperature`, `showSolarElevation` | show the outside temperature and the sun's elevation |
-| General | `defaultSuspendMinutes`, `overrideDurationMinutes` | default pause length and how long a manual override lasts (0 = until resumed or never) |
-| General | `socketPath` | empty uses the daemon's default socket under `XDG_RUNTIME_DIR` |
-| Appearance | `themeMode`, `pinnedTheme` | follow the terminal UI's theme, or pin one (see [THEMES.md](docs/THEMES.md#5-how-the-plasma-widget-uses-themes)) |
-| Appearance | `accentOverride`, `densityOverride`, `pixelScale`, `rendererOverride` | override the theme's accent, density, art-pixel size and renderer |
-| Appearance | `weatherIconStyle` | `auto`, `modern`, `line`, `solid` or `pixel` weather icons |
-| Appearance | `moduleOrder`, `hiddenModules` | popup modules in order, and the ones to hide (`telemetry` starts hidden) |
-| Panel | `panelMode`, `panelDisplay` | `sky`, `readout`, `sparkline` or `ring`, and the display it describes (empty = average of all) |
-
-### Popup size
-Plasma stores a popup size for each applet as `popupWidth` and `popupHeight` in the applet's `[Configuration]` section of `~/.config/plasma-org.kde.plasma.desktop-appletsrc`. The widget fits its popup window to the page on screen itself, so a stored height no longer keeps the window too tall or too short when the page changes. Plasma still records the size when you resize the window.
-
-### Troubleshooting
-- **The popup does not fit, or keeps a wrong height.** Stop plasmashell (`systemctl --user stop plasma-plasmashell.service`). Delete the `popupHeight=` and `popupWidth=` lines in the `[Containments][N][Applets][M][Configuration]` section of the widget's applet (the one whose `plugin=org.sunreactor.plasma`). Start plasmashell again. Do not edit the file while plasmashell runs, because it rewrites the file.
-- **Text or art looks wrong after a scale change.** Text and pixel art follow Plasma's display scale and font DPI. Pixel themes size their art to the device pixel ratio while `pixelScale` is 0; set it to 1 to 6 to choose a size. If text clips at a fractional scale, check Plasma's display scale and font settings first.
-- **Plasma reports a QML import error for `org.sunreactor.plasma`.** Plasma cannot see the QML module directory. Check `systemctl --user show-environment | grep QML`. The directory from the table above must be on `QML2_IMPORT_PATH` or `QML_IMPORT_PATH`. Add it with a file in `~/.config/environment.d/` and log in again.
-- **The daemon is older than the widget.** The widget keeps running. It uses the theme in the daemon's flat fields, hides the light cycle because there is no day curve, and shows a pinned theme as followed, with a note in the settings. To get themes and the day curve, install `sunreactord` from this version and restart it with `systemctl --user restart sunreactord.service`.
-- **The widget shows offline.** Check `systemctl --user status sunreactord.service` and `sunreactorctl status`.
-
-Test and screenshot tooling is described in [`DESIGN.md`](plasma/org.sunreactor.plasma/DESIGN.md) (section 7) and, when present, `plasma/org.sunreactor.plasma/tools/qa.sh`.
+Install it with the installer (`./install.sh`, or `--no-plasma` to skip) and restart plasmashell: `systemctl --user restart plasma-plasmashell.service`. Requirements, manual install, settings and troubleshooting are in [docs/PLASMA.md](docs/PLASMA.md). Themes are described in [docs/THEMES.md](docs/THEMES.md).
 
 ---
 

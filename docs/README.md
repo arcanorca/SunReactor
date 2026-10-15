@@ -8,6 +8,7 @@ The documents below go deeper.
 | Document | What it covers |
 |---|---|
 | [THEMES.md](THEMES.md) | Theme file format, user themes, `sunreactorctl theme`, and how the Plasma widget follows, pins and overrides a theme |
+| [PLASMA.md](PLASMA.md) | Plasma widget: install, settings, popup size, troubleshooting |
 | [systemd-user-unit.md](systemd-user-unit.md) | The user service template, how its paths are rendered, and why each directive is there |
 | [DISTRIBUTION_COMPATIBILITY.md](DISTRIBUTION_COMPATIBILITY.md) | The release-qualified Linux build and installer contract |
 | [RELIABILITY.md](RELIABILITY.md) | Reliability strategy: hardware failures stay per monitor and out of the policy |
