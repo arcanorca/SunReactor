@@ -27,5 +27,4 @@ Rules
   your theme to match src/theme/builtin/<id>.toml (family/widget block changed; do not touch other
   entries). View PNGs with the Read tool, critique like a designer, iterate at most 3 rounds.
   Check: no QML warnings in .log files; /usr/lib/qt6/bin/qmllint -I build/qml on your files;
-  ctest passes. Never open windows on the desktop. Commit only your files (trailer
-  `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`). Report <= 8 lines with paths.
+  ctest passes. Never open windows on the desktop. Commit only your files. Report <= 8 lines with paths.

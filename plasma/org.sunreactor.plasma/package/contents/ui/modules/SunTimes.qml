@@ -60,11 +60,11 @@ PlasmaComponents3.ItemDelegate {
     Accessible.ignored: true
 
     contentItem: ColumnLayout {
-        spacing: Kirigami.Units.smallSpacing
+        spacing: root.theme.spacing
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: Kirigami.Units.gridUnit
+            spacing: root.theme.gridUnit
 
             Repeater {
                 model: root.entries
@@ -84,6 +84,7 @@ PlasmaComponents3.ItemDelegate {
                         text: entry.modelData.label
                         textFormat: Text.PlainText
                         font.family: root.theme.bodyFont
+                        font.pixelSize: root.theme.fontSizeSmall
                         color: root.theme.textMuted
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
@@ -96,6 +97,7 @@ PlasmaComponents3.ItemDelegate {
                         horizontalAlignment: Text.AlignHCenter
                         font.features: ({ "tnum": 1 })
                         font.family: root.theme.digitsFont
+                        font.pixelSize: root.theme.fontSizeBody
                         font.weight: entry.isNext ? Font.Bold : Font.Normal
                         color: entry.isNext ? root.theme.accent : root.theme.fg
                     }
@@ -108,7 +110,7 @@ PlasmaComponents3.ItemDelegate {
             id: track
 
             Layout.fillWidth: true
-            implicitHeight: 16
+            implicitHeight: Math.round(16 * root.theme.scaleFactor)
 
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
@@ -128,7 +130,7 @@ PlasmaComponents3.ItemDelegate {
 
             WeatherIcon {
                 // The sprite's native 16 px, on a whole logical pixel.
-                size: 16
+                size: Math.round(16 * root.theme.scaleFactor)
                 x: Math.round(root.dayProgress * (track.width - width))
                 anchors.verticalCenter: parent.verticalCenter
                 theme: root.theme
@@ -147,7 +149,7 @@ PlasmaComponents3.ItemDelegate {
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             font.family: root.theme.bodyFont
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            font.pixelSize: root.theme.fontSizeSmall
             color: root.theme.textMuted
             text: root.client.solarElevation >= 0
                 ? i18ndc(root.domain, "Placeholder is an angle in degrees",

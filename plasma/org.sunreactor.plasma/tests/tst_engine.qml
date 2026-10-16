@@ -9,9 +9,11 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtTest
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../package/contents/ui/engine"
+import "../package/contents/ui/engine/ScaleHelper.js" as ScaleHelper
 
 Item {
     id: top
@@ -195,6 +197,97 @@ Item {
             engine.mode = "follow";
             compare(offline.pinnedThemeId, "");
             compare(engine.notice, "");
+        }
+
+        function test_scaleHelperAutoScale() {
+            compare(ScaleHelper.calculateAutoScale(null), 1.0);
+            compare(ScaleHelper.calculateAutoScale({ width: 0, height: 0 }), 1.15, "1080p fallback");
+
+            // 1080p desktop with 96 DPI
+            const fhd = { width: 1920, height: 1080, devicePixelRatio: 1.0, desktopAvailableHeight: 1050, pixelDensity: 96 / 25.4 };
+            compare(ScaleHelper.calculateAutoScale(fhd), 1.15);
+
+            // 14-inch FHD laptop at DPR 1.0 (157 physical DPI)
+            const laptop100 = { width: 1920, height: 1080, devicePixelRatio: 1.0, desktopAvailableHeight: 1050, pixelDensity: 157.2 / 25.4 };
+            compare(ScaleHelper.calculateAutoScale(laptop100), 1.25, "14-inch 1080p laptop at DPR 1.0");
+
+            // 14-inch FHD laptop at DPR 1.25 (scaled by Wayland/Plasma: 1536x864 logical, 157 physical DPI)
+            const laptop125 = { width: 1536, height: 864, devicePixelRatio: 1.25, desktopAvailableHeight: 840, pixelDensity: (157.2 / 1.25) / 25.4 };
+            compare(ScaleHelper.calculateAutoScale(laptop125), 1.25, "14-inch 1080p laptop at DPR 1.25");
+
+            // 1440p desktop (2560x1440)
+            const qhd = { width: 2560, height: 1440, devicePixelRatio: 1.0, desktopAvailableHeight: 1400, pixelDensity: 0 };
+            compare(ScaleHelper.calculateAutoScale(qhd), 1.25);
+
+            // 4K UHD desktop (3840x2160, DPR 1.0)
+            const uhd = { width: 3840, height: 2160, devicePixelRatio: 1.0, desktopAvailableHeight: 2100, pixelDensity: 0 };
+            compare(ScaleHelper.calculateAutoScale(uhd), 1.50);
+
+            // Low resolution screen (e.g. 1280x720)
+            const lowRes = { width: 1280, height: 720, devicePixelRatio: 1.0, desktopAvailableHeight: 700, pixelDensity: 0 };
+            compare(ScaleHelper.calculateAutoScale(lowRes), 1.0);
+
+            // Height-constrained display
+            const smallH = { width: 1920, height: 600, devicePixelRatio: 1.0, desktopAvailableHeight: 500, pixelDensity: 0 };
+            verify(ScaleHelper.calculateAutoScale(smallH) <= 1.0, "constrained height avoids overflow");
+
+            // resolveScale explicit vs auto
+            compare(ScaleHelper.resolveScale(150, null), 1.5);
+            compare(ScaleHelper.resolveScale(50, null), 0.5);
+            compare(ScaleHelper.resolveScale(300, null), 3.0);
+            compare(ScaleHelper.resolveScale(0, null), 1.0);
+        }
+
+        function test_themeUiScale() {
+            verify(vectorTheme.scaleFactor >= 0.5 && vectorTheme.scaleFactor <= 3.0);
+            compare(vectorTheme.gridUnit, Math.round(Kirigami.Units.gridUnit * vectorTheme.scaleFactor));
+            const expectedSpacing = Math.round((vectorTheme.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing) * vectorTheme.scaleFactor);
+            compare(vectorTheme.spacing, expectedSpacing);
+
+            // Font token hierarchy tests
+            compare(vectorTheme.fontSizeBody, Math.max(11, Math.round(vectorTheme.gridUnit * 0.72)));
+            compare(vectorTheme.fontSizeSmall, Math.max(9, Math.round(vectorTheme.gridUnit * 0.58)));
+            compare(vectorTheme.fontSizeHeader, Math.max(13, Math.round(vectorTheme.gridUnit * 0.88)));
+            verify(vectorTheme.fontSizeBody > vectorTheme.fontSizeSmall, "body text is strictly larger than small text");
+
+            overridden.spec = top.braun;
+            overridden.overrides = { uiScale: 150 };
+            compare(overridden.scaleFactor, 1.5);
+            compare(overridden.gridUnit, Math.round(Kirigami.Units.gridUnit * 1.5));
+            const expectedOverriddenSpacing = Math.round((overridden.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing) * 1.5);
+            compare(overridden.spacing, expectedOverriddenSpacing);
+
+            // Proportional pixelScale scaling across UI scale factors
+            overridden.spec = top.handheld; // base 0 -> default 2
+            overridden.overrides = { uiScale: 100 };
+            compare(overridden.pixelScale, 2, "pixelScale at 100% is base 2");
+            overridden.overrides = { uiScale: 150 };
+            compare(overridden.pixelScale, 3, "pixelScale at 150% scales to 3");
+            overridden.overrides = { uiScale: 200 };
+            compare(overridden.pixelScale, 4, "pixelScale at 200% scales to 4");
+
+            // C64 with base 3
+            overridden.spec = top.c64;
+            overridden.overrides = { uiScale: 100 };
+            compare(overridden.pixelScale, 3, "C64 pixelScale at 100% is 3");
+            overridden.overrides = { uiScale: 200 };
+            compare(overridden.pixelScale, 6, "C64 pixelScale at 200% scales to 6");
+
+            // Clamping tests
+            overridden.overrides = { uiScale: 20 };
+            compare(overridden.scaleFactor, 0.5, "clamped to minimum 0.5");
+            overridden.overrides = { uiScale: 500 };
+            compare(overridden.scaleFactor, 3.0, "clamped to maximum 3.0");
+
+            overridden.spec = top.braun;
+            overridden.overrides = {};
+        }
+
+        function test_engineUiScaleOverride() {
+            engine.uiScaleOverride = 125;
+            compare(engine.theme.scaleFactor, 1.25);
+            engine.uiScaleOverride = 0;
+            verify(engine.theme.scaleFactor > 0);
         }
     }
 }

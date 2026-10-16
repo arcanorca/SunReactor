@@ -17,7 +17,7 @@
 #
 # Every stage runs even when an earlier one fails; the build-dependent stages are
 # skipped only when the build itself fails. The audits and the pixel proof run under
-# flock on $SR_AUDIT_LOCK (default /tmp/claude-1000/audit.lock) with SHOT_SERVERNUM=63
+# flock on $SR_AUDIT_LOCK (default /tmp/sunreactor-1000/audit.lock) with SHOT_SERVERNUM=63
 # unless the environment sets them. Exit status 0 only if every stage passes.
 # DIR (default ~/.cache/sunreactor/qa/STAMP) keeps each stage's log and the audit report.
 set -uo pipefail
@@ -26,7 +26,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 BUILD="$ROOT/build"
 QMLLINT="${QMLLINT:-/usr/lib/qt6/bin/qmllint}"
-LOCK="${SR_AUDIT_LOCK:-/tmp/claude-1000/audit.lock}"
+LOCK="${SR_AUDIT_LOCK:-/tmp/sunreactor-1000/audit.lock}"
 export SHOT_SERVERNUM="${SHOT_SERVERNUM:-63}"
 OUT=""
 NEST=0

@@ -63,7 +63,7 @@ QtObject {
 
     /*! Card corner radius (theme widget.radius, 6 for this theme). */
     readonly property real radius: theme.radius > 0 ? theme.radius : 6
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property real gap: snap(Kirigami.Units.smallSpacing)
     readonly property real gap2: snap(Kirigami.Units.smallSpacing * 2)
     readonly property real rowGap: snap(Kirigami.Units.smallSpacing * 1.5)

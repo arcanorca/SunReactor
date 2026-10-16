@@ -98,31 +98,33 @@ QtObject {
         });
     }
 
-    /*! Body text, 13 px. */
-    readonly property font body: face(geistRegular, 13, 0, false)
-    readonly property font bodyMedium: face(geistMedium, 13, 0, false)
-    /*! Captions and secondary labels, 11 px. */
-    readonly property font caption: face(geistRegular, 11, 0, false)
-    readonly property font captionMedium: face(geistMedium, 11, 0, false)
+    readonly property real scaleFactor: theme.scaleFactor > 0 ? theme.scaleFactor : 1.0
+
+    /*! Body text, 13 px scaled. */
+    readonly property font body: face(geistRegular, Math.round(13 * scaleFactor), 0, false)
+    readonly property font bodyMedium: face(geistMedium, Math.round(13 * scaleFactor), 0, false)
+    /*! Captions and secondary labels, 11 px scaled. */
+    readonly property font caption: face(geistRegular, Math.round(11 * scaleFactor), 0, false)
+    readonly property font captionMedium: face(geistMedium, Math.round(11 * scaleFactor), 0, false)
     /*! Figures in the lists and the tiles. */
-    readonly property font value: face(geistRegular, 13, 0, true)
-    readonly property font readout: face(geistRegular, 14, -0.1, true)
-    /*! The hero percentage: 32 px, 2.5 times the body. */
-    readonly property font hero: face(geistLight, 32, -0.64, true)
+    readonly property font value: face(geistRegular, Math.round(13 * scaleFactor), 0, true)
+    readonly property font readout: face(geistRegular, Math.round(14 * scaleFactor), -0.1, true)
+    /*! The hero percentage: 32 px scaled. */
+    readonly property font hero: face(geistLight, Math.round(32 * scaleFactor), -0.64, true)
     /*! The temperature: light and large, tracked slightly tighter. */
-    readonly property font temperature: face(geistLight, 40, -0.8, true)
+    readonly property font temperature: face(geistLight, Math.round(40 * scaleFactor), -0.8, true)
 
     // --- metrics (logical px) ---------------------------------------------------
 
-    readonly property int radiusCard: 12
-    readonly property int radiusList: 10
-    readonly property int radiusSegment: 7
+    readonly property int radiusCard: Math.round(12 * scaleFactor)
+    readonly property int radiusList: Math.round(10 * scaleFactor)
+    readonly property int radiusSegment: Math.round(7 * scaleFactor)
     /*! Horizontal inset of a list row, and the indent of its separators. */
-    readonly property int padRow: 12
-    readonly property int padCard: 12
-    readonly property int gap: 6
-    readonly property int section: 10
-    readonly property int sliderHeight: 28
-    readonly property int segmentHeight: 26
-    readonly property int chipHeight: 18
+    readonly property int padRow: Math.round(12 * scaleFactor)
+    readonly property int padCard: Math.round(12 * scaleFactor)
+    readonly property int gap: Math.round(6 * scaleFactor)
+    readonly property int section: Math.round(10 * scaleFactor)
+    readonly property int sliderHeight: Math.round(28 * scaleFactor)
+    readonly property int segmentHeight: Math.round(26 * scaleFactor)
+    readonly property int chipHeight: Math.round(18 * scaleFactor)
 }

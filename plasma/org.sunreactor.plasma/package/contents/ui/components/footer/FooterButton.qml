@@ -27,10 +27,10 @@ QQC2.AbstractButton {
 
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
-    padding: Kirigami.Units.smallSpacing
-    leftPadding: iconOnly ? padding : Kirigami.Units.smallSpacing * 2
+    padding: root.theme.spacing
+    leftPadding: iconOnly ? padding : root.theme.spacing * 2
     rightPadding: leftPadding
-    implicitHeight: Math.max(Kirigami.Units.gridUnit * 1.6, implicitContentHeight + topPadding + bottomPadding)
+    implicitHeight: Math.max(root.theme.gridUnit * 1.6, implicitContentHeight + topPadding + bottomPadding)
     implicitWidth: implicitContentWidth + leftPadding + rightPadding
 
     Accessible.role: Accessible.Button
@@ -51,12 +51,12 @@ QQC2.AbstractButton {
     }
 
     contentItem: RowLayout {
-        spacing: Kirigami.Units.smallSpacing
+        spacing: root.theme.spacing
 
         Kirigami.Icon {
             visible: root.icon.name.length > 0
-            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-            Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            Layout.preferredWidth: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
+            Layout.preferredHeight: Layout.preferredWidth
             source: root.icon.name
             isMask: root.theme.available
             color: root.ink
@@ -67,6 +67,7 @@ QQC2.AbstractButton {
             textFormat: Text.PlainText
             color: root.ink
             font.family: root.theme.available ? root.theme.bodyFont : Kirigami.Theme.defaultFont.family
+            font.pixelSize: root.theme.fontSizeBody
         }
         BitmapText {
             id: bitmapLabel

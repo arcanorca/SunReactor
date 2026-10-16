@@ -85,7 +85,7 @@ QtObject {
     }
 
     /*! The type scale (logical px), anchored to the Plasma grid unit. */
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.72))
     readonly property int sizeLegend: Math.max(9, Math.round(sizeBody * 0.8))
     readonly property int sizeTab: Math.round(sizeBody * 1.2)

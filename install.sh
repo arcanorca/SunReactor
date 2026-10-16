@@ -836,6 +836,29 @@ install_plasma_widget() {
     if [[ -d "$backup_dir" ]]; then
         log_info "The previous widget files are kept in $backup_dir"
     fi
+
+    # Ensure Qt 6 finds the user QML module in ~/.local/lib/qt6/qml
+    local qml_dir="$PLASMA_PREFIX/lib/qt6/qml"
+    local env_d="$CONFIG_HOME/environment.d"
+    local plasma_env="$CONFIG_HOME/plasma-workspace/env"
+
+    mkdir -p "$env_d" "$plasma_env"
+    if [[ ! -f "$env_d/10-qml-import-path.conf" ]]; then
+        printf 'QML2_IMPORT_PATH="%s"\n' "$qml_dir" > "$env_d/10-qml-import-path.conf"
+    fi
+    if [[ ! -f "$plasma_env/10-qml-import-path.sh" ]]; then
+        cat <<'EOF' > "$plasma_env/10-qml-import-path.sh"
+#!/bin/sh
+export QML2_IMPORT_PATH="$HOME/.local/lib/qt6/qml${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
+export QML_IMPORT_PATH="$HOME/.local/lib/qt6/qml${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}"
+EOF
+        chmod +x "$plasma_env/10-qml-import-path.sh"
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user set-environment QML2_IMPORT_PATH="$qml_dir${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}" >/dev/null 2>&1 || true
+        systemctl --user set-environment QML_IMPORT_PATH="$qml_dir${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" >/dev/null 2>&1 || true
+    fi
+
     log_info "Restart plasmashell to load the widget (the installer does not restart it):"
     log_info "    $PLASMA_RESTART_CMD"
     return 0

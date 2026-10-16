@@ -32,6 +32,7 @@ Item {
     property string densityOverride: ""
     property string rendererOverride: ""
     property int pixelScaleOverride: 0
+    property int uiScaleOverride: 0
     /*! "auto", "modern", "line", "solid" or "pixel" (plasmoid config weatherIconStyle). */
     property string weatherIconStyleOverride: ""
     property var modulesOverride: []
@@ -67,6 +68,7 @@ Item {
             density: root.densityOverride,
             renderer: root.rendererOverride,
             pixelScale: root.pixelScaleOverride,
+            uiScale: root.uiScaleOverride,
             weatherIconStyle: root.weatherIconStyleOverride,
             modules: root.modulesOverride,
             hidden: root.hiddenModules,

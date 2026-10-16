@@ -114,11 +114,11 @@ Item {
 
         visible: !root.theme.isPixel
         width: parent.width
-        spacing: Kirigami.Units.smallSpacing
+        spacing: root.theme.spacing
 
         Rectangle {
             Layout.alignment: Qt.AlignVCenter
-            implicitWidth: Kirigami.Units.smallSpacing * 2
+            implicitWidth: root.theme.spacing * 2
             implicitHeight: implicitWidth
             radius: root.theme.isVector ? width / 2 : 0
             color: root.theme.stateColor(root.client.mode)
@@ -129,6 +129,7 @@ Item {
             text: root.lineText
             textFormat: Text.PlainText
             font.family: root.theme.digitsFont
+            font.pixelSize: root.theme.fontSizeBody
             font.features: ({ "tnum": 1 })
             color: root.theme.fg
             elide: Text.ElideRight

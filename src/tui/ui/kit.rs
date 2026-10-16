@@ -253,7 +253,7 @@ pub(crate) fn detail_line(text: Vec<Span<'static>>, styles: &SemanticStyles) -> 
     Line::from(spans)
 }
 
-/// Claude-style activity glyphs for genuinely in-flight work.
+/// Activity glyphs for genuinely in-flight work.
 const SPINNER_FRAMES: [&str; 6] = ["·", "✢", "✳", "✶", "✻", "✽"];
 
 /// A ping-pong spinner frame derived from wall-clock time.

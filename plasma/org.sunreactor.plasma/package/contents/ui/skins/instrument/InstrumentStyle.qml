@@ -150,7 +150,7 @@ QtObject {
     readonly property bool monoType: isVfd || isScope || isCrt
 
     /*! The type scale (logical px), anchored to the Plasma grid unit. */
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property int sizeLegend: Math.max(8, Math.round(unit * 0.5))
     readonly property int sizeData: Math.max(10, Math.round(unit * 0.62))
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.72))

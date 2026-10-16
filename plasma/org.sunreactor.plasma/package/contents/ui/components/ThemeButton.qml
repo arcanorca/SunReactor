@@ -65,16 +65,16 @@ QQC2.AbstractButton {
                              : theme.grid.snap(logical);
     }
 
-    readonly property real box: snapped(24)
+    readonly property real box: snapped(24 * theme.scaleFactor)
     readonly property real inset: snapped((implicitWidth - box) / 2)
-    readonly property real cell: snapped(6.5)
-    readonly property real badgeSize: snapped(10)
+    readonly property real cell: snapped(6.5 * theme.scaleFactor)
+    readonly property real badgeSize: snapped(10 * theme.scaleFactor)
 
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
     padding: 0
-    implicitWidth: dotted ? box : snapped(28)
-    implicitHeight: dotted ? box : snapped(28)
+    implicitWidth: dotted ? box : snapped(28 * theme.scaleFactor)
+    implicitHeight: dotted ? box : snapped(28 * theme.scaleFactor)
 
     Accessible.role: Accessible.Button
     Accessible.name: i18ndc(domain, "Accessible name; placeholder is a theme name", "Theme: %1", shownName)

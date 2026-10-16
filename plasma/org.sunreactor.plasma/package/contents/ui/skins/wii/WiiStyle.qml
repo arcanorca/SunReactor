@@ -97,7 +97,7 @@ QtObject {
 
     /*! The type scale (logical px), anchored to the Plasma grid unit. The hero
         numeral is 2.5 x the body size: never more than 2.6 x. */
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property int sizeCaption: Math.max(9, Math.round(unit * 0.56))
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.72))
     readonly property int sizeTitle: Math.max(12, Math.round(unit * 0.8))

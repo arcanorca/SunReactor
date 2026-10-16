@@ -33,6 +33,7 @@ KCM.SimpleKCM {
     property string cfg_pinnedTheme: ""
     property alias cfg_accentOverride: accentField.text
     property string cfg_densityOverride: ""
+    property int cfg_uiScale: 0
     property int cfg_pixelScale: 0
     property string cfg_rendererOverride: ""
     property string cfg_weatherIconStyle: "auto"
@@ -52,6 +53,7 @@ KCM.SimpleKCM {
     property string cfg_pinnedThemeDefault: ""
     property string cfg_accentOverrideDefault: ""
     property string cfg_densityOverrideDefault: ""
+    property int cfg_uiScaleDefault: 0
     property int cfg_pixelScaleDefault: 0
     property string cfg_rendererOverrideDefault: ""
     property string cfg_weatherIconStyleDefault: "auto"
@@ -90,6 +92,7 @@ KCM.SimpleKCM {
             accent: root.cfg_accentOverride,
             renderer: root.cfg_rendererOverride,
             weatherIconStyle: root.cfg_weatherIconStyle,
+            uiScale: root.cfg_uiScale,
         })
     }
 
@@ -225,7 +228,7 @@ KCM.SimpleKCM {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: Math.max(Kirigami.Units.gridUnit * 7,
                                                 previewRow.implicitWidth + Kirigami.Units.gridUnit * 2)
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 2.6
+                Layout.preferredHeight: previewTheme.gridUnit * 2.6
                 radius: Kirigami.Units.smallSpacing
                 color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g,
                                Kirigami.Theme.textColor.b, 0.07)
@@ -245,7 +248,7 @@ KCM.SimpleKCM {
                         theme: previewTheme
                         condition: root.previewCondition
                         night: root.previewNight
-                        size: 32
+                        size: Math.round(32 * previewTheme.scaleFactor)
                         surface: Kirigami.Theme.backgroundColor
                         ink: Kirigami.Theme.textColor
                     }
@@ -255,7 +258,7 @@ KCM.SimpleKCM {
                         theme: previewTheme
                         condition: root.previewCondition
                         night: root.previewNight
-                        size: 22
+                        size: Math.round(22 * previewTheme.scaleFactor)
                         surface: Kirigami.Theme.backgroundColor
                         ink: Kirigami.Theme.textColor
                     }
@@ -273,8 +276,8 @@ KCM.SimpleKCM {
                                 : i18ndc(root.domain, "No value is known yet", "—")
                             font.features: ({ "tnum": 1 })
                             font.pixelSize: elevationCheckBox.checked
-                                ? Kirigami.Theme.smallFont.pixelSize
-                                : Kirigami.Theme.defaultFont.pixelSize
+                                ? previewTheme.fontSizeSmall
+                                : previewTheme.fontSizeBody
                         }
 
                         QQC2.Label {
@@ -285,7 +288,7 @@ KCM.SimpleKCM {
                                          "%1°", preview.solarElevation.toFixed(1))
                                 : i18ndc(root.domain, "No value is known yet", "—")
                             font.features: ({ "tnum": 1 })
-                            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                            font.pixelSize: previewTheme.fontSizeSmall
                             opacity: 0.75
                         }
                     }
@@ -539,6 +542,65 @@ KCM.SimpleKCM {
                     { value: "comfortable", label: i18nd(root.domain, "Comfortable") },
                 ]
                 onValueSelected: value => root.cfg_densityOverride = value
+            }
+
+            ValueComboBox {
+                id: scaleCombo
+                Kirigami.FormData.label: i18nd(root.domain, "Interface scale:")
+                configValue: root.cfg_uiScale
+                model: [
+                    { value: 0, label: i18ndc(root.domain, "Scale option", "Automatic (screen-based)") },
+                    { value: 85, label: "85%" },
+                    { value: 100, label: i18ndc(root.domain, "Scale option", "100% (Standard)") },
+                    { value: 115, label: "115%" },
+                    { value: 125, label: "125%" },
+                    { value: 135, label: "135%" },
+                    { value: 150, label: "150%" },
+                    { value: 175, label: "175%" },
+                    { value: 200, label: "200%" },
+                ]
+                onValueSelected: value => root.cfg_uiScale = value
+            }
+
+            RowLayout {
+                Kirigami.FormData.label: i18nd(root.domain, "Fine scale adjustment:")
+                spacing: Kirigami.Units.smallSpacing
+
+                QQC2.Slider {
+                    id: customScaleSlider
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 10
+                    from: 50
+                    to: 250
+                    stepSize: 5
+                    value: root.cfg_uiScale > 0 ? root.cfg_uiScale : Math.round(previewTheme.scaleFactor * 100)
+                    onMoved: root.cfg_uiScale = Math.round(value)
+                }
+
+                QQC2.Label {
+                    text: root.cfg_uiScale === 0
+                        ? i18ndc(root.domain, "Scale status", "Auto (%1%)", Math.round(previewTheme.scaleFactor * 100))
+                        : i18ndc(root.domain, "Percentage scale", "%1%", Math.round(customScaleSlider.value))
+                    font: Kirigami.Theme.smallFont
+                }
+
+                QQC2.ToolButton {
+                    visible: root.cfg_uiScale !== 0
+                    icon.name: "edit-clear"
+                    text: i18nd(root.domain, "Reset to automatic scale")
+                    display: QQC2.AbstractButton.IconOnly
+                    onClicked: root.cfg_uiScale = 0
+
+                    QQC2.ToolTip.visible: hovered
+                    QQC2.ToolTip.text: text
+                }
+            }
+
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 18
+                text: i18nd(root.domain, "Scales text, icons, and layout across all themes. Automatic dynamically selects the ideal size for your screen resolution and density.")
+                wrapMode: Text.WordWrap
+                font: Kirigami.Theme.smallFont
+                opacity: 0.75
             }
 
             ValueComboBox {

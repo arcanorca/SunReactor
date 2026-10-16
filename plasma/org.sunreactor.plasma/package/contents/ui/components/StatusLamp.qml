@@ -61,8 +61,8 @@ Item {
         }
     }
 
-    implicitWidth: 8
-    implicitHeight: 8
+    implicitWidth: Math.round(8 * root.theme.scaleFactor)
+    implicitHeight: implicitWidth
 
     Accessible.role: Accessible.Indicator
     Accessible.name: root.stateText

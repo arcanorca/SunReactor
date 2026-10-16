@@ -47,6 +47,10 @@
         <entry name="pixelScale" type="Int">
             <default>0</default>
         </entry>
+        <!-- UI scale percentage, 50..300; 0 = automatic from screen resolution and dimensions. -->
+        <entry name="uiScale" type="Int">
+            <default>0</default>
+        </entry>
         <!-- "pixel", "vector" or "terminal"; empty keeps the theme's renderer. -->
         <entry name="rendererOverride" type="String">
             <default></default>

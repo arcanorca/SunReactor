@@ -113,7 +113,7 @@ QtObject {
         return Qt.font({ family: dataFamily, pixelSize: px, features: { "tnum": 1 } });
     }
 
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property int sizeCap: Math.max(8, Math.round(unit * 0.5))
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.72))
     /*! 7-segment digit heights: small for times, medium for readings, hero for the target. */

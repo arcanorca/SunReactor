@@ -19,4 +19,5 @@ ThemeEngine {
     weatherIconStyleOverride: Plasmoid.configuration.weatherIconStyle
     modulesOverride: Plasmoid.configuration.moduleOrder
     hiddenModules: Plasmoid.configuration.hiddenModules
+    uiScaleOverride: Plasmoid.configuration.uiScale
 }

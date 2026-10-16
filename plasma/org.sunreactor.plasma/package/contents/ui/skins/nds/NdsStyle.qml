@@ -38,7 +38,7 @@ QtObject {
     // --- metrics ------------------------------------------------------------------
 
     /*! The popup's grid unit, logical px. */
-    readonly property real gu: Kirigami.Units.gridUnit
+    readonly property real gu: theme.gridUnit
     /*! Panel corners: the theme's radius (14 px). */
     readonly property real radius: theme.radius > 0 ? theme.radius : 14
     /*! Thickness of the black bezel around each screen. */

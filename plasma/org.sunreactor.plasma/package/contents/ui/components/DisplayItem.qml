@@ -80,12 +80,12 @@ PlasmaComponents3.ItemDelegate {
     }
 
     contentItem: RowLayout {
-        spacing: root.theme.compact ? Kirigami.Units.largeSpacing : Kirigami.Units.gridUnit
+        spacing: root.theme.compact ? Math.round(Kirigami.Units.largeSpacing * root.theme.scaleFactor) : root.theme.gridUnit
 
         Kirigami.Icon {
             Layout.alignment: Qt.AlignTop
-            Layout.preferredWidth: Kirigami.Units.iconSizes.medium
-            Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+            Layout.preferredWidth: Math.round(Kirigami.Units.iconSizes.medium * root.theme.scaleFactor)
+            Layout.preferredHeight: Layout.preferredWidth
             source: root.iconName
             color: root.theme.fg
             isMask: root.theme.available
@@ -94,17 +94,18 @@ PlasmaComponents3.ItemDelegate {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignTop
-            spacing: Kirigami.Units.smallSpacing
+            spacing: root.theme.spacing
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
+                spacing: root.theme.spacing
 
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     text: root.text
                     textFormat: Text.PlainText
                     font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontSizeBody
                     color: root.theme.fg
                     elide: Text.ElideRight
                 }
@@ -122,6 +123,7 @@ PlasmaComponents3.ItemDelegate {
                     text: root.hint
                     textFormat: Text.PlainText
                     font.family: root.theme.bodyFont
+                    font.pixelSize: root.theme.fontSizeSmall
                     color: root.theme.textMuted
                     visible: root.hint.length > 0 && !root.hasOverride
                 }
@@ -142,6 +144,7 @@ PlasmaComponents3.ItemDelegate {
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
                     font.family: root.theme.digitsFont
+                    font.pixelSize: root.theme.fontSizeBody
                     color: root.hasValue && (slider.pressed || root.activeFocus) ? root.theme.accent : root.theme.fg
                 }
             }
@@ -180,18 +183,18 @@ PlasmaComponents3.ItemDelegate {
                 Layout.fillWidth: true
                 visible: root.hasLimits && root.limitsExpanded
                 columns: 4
-                columnSpacing: Kirigami.Units.smallSpacing
+                columnSpacing: root.theme.spacing
                 rowSpacing: 0
 
                 Kirigami.Icon {
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                    Layout.preferredWidth: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
+                    Layout.preferredHeight: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
                     source: "weather-clear-night"
                 }
 
                 PlasmaComponents3.Label {
                     text: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
-                    font: Kirigami.Theme.smallFont
+                    font.pixelSize: root.theme.fontSizeSmall
                     color: root.theme.textMuted
                 }
 
@@ -215,24 +218,24 @@ PlasmaComponents3.ItemDelegate {
                 }
 
                 PlasmaComponents3.Label {
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 2
+                    Layout.preferredWidth: root.theme.gridUnit * 2
                     horizontalAlignment: Text.AlignRight
                     text: i18ndc(root.domain, "Percentage", "%1%", Math.round(minSlider.value))
                     font.features: ({ "tnum": 1 })
                     font.family: root.theme.digitsFont
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.pixelSize: root.theme.fontSizeSmall
                     color: root.theme.fg
                 }
 
                 Kirigami.Icon {
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                    Layout.preferredWidth: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
+                    Layout.preferredHeight: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
                     source: "weather-clear"
                 }
 
                 PlasmaComponents3.Label {
                     text: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
-                    font: Kirigami.Theme.smallFont
+                    font.pixelSize: root.theme.fontSizeSmall
                     color: root.theme.textMuted
                 }
 
@@ -256,12 +259,12 @@ PlasmaComponents3.ItemDelegate {
                 }
 
                 PlasmaComponents3.Label {
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 2
+                    Layout.preferredWidth: root.theme.gridUnit * 2
                     horizontalAlignment: Text.AlignRight
                     text: i18ndc(root.domain, "Percentage", "%1%", Math.round(maxSlider.value))
                     font.features: ({ "tnum": 1 })
                     font.family: root.theme.digitsFont
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.pixelSize: root.theme.fontSizeSmall
                     color: root.theme.fg
                 }
             }

@@ -27,7 +27,7 @@ ColumnLayout {
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
 
-    spacing: Kirigami.Units.smallSpacing
+    spacing: root.theme.spacing
 
     DisplayItem {
         visible: root.showAllDisplays
@@ -41,8 +41,8 @@ ColumnLayout {
 
     Rectangle {
         Layout.fillWidth: true
-        Layout.leftMargin: Kirigami.Units.smallSpacing
-        Layout.rightMargin: Kirigami.Units.smallSpacing
+        Layout.leftMargin: root.theme.spacing
+        Layout.rightMargin: root.theme.spacing
         implicitHeight: root.theme.hairline
         color: root.theme.line
         visible: root.showAllDisplays

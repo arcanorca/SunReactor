@@ -49,7 +49,7 @@ QtObject {
 
     // --- metrics ------------------------------------------------------------------
 
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     /*! Card corner radius (BRAND.md: 20 to 28). */
     readonly property real radius: 24
     /*! Space between rows and sections. */

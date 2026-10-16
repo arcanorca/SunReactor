@@ -53,9 +53,9 @@ PlasmaExtras.Representation {
         showSolarElevation: Plasmoid.configuration.showSolarElevation
     }
 
-    Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-    Layout.preferredWidth: Kirigami.Units.gridUnit * 19
-    Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+    Layout.minimumWidth: root.theme.gridUnit * 16
+    Layout.preferredWidth: root.theme.gridUnit * 19
+    Layout.maximumWidth: root.theme.gridUnit * 40
     // The height is the page on screen plus the chrome around it: see popupHeight.
     Layout.minimumHeight: root.popupMinHeight
     Layout.preferredHeight: root.popupHeight
@@ -69,12 +69,12 @@ PlasmaExtras.Representation {
     // popupMaxHeight scrolls.
 
     /*! The smallest popup: 14 grid units. */
-    readonly property real popupMinHeight: Kirigami.Units.gridUnit * 14
-    /*! The largest popup: 60% of the screen's available height, at most 34 grid
+    readonly property real popupMinHeight: root.theme.gridUnit * 14
+    /*! The largest popup: 75% of the screen's available height, at most 34 grid
         units (34 alone until the screen is known). */
     readonly property real popupMaxHeight: Math.max(root.popupMinHeight, Math.min(
-        Kirigami.Units.gridUnit * 34,
-        Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.6 : Kirigami.Units.gridUnit * 34))
+        root.theme.gridUnit * 34,
+        Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.75 : root.theme.gridUnit * 34))
     /*! The width the terminal skins' grid spans (Theme.gridContentWidth): the page
         column less one grid unit, the width of a page's scrollbar. A page that
         scrolls keeps this width, so its rows and the popup height do not feed
@@ -82,7 +82,7 @@ PlasmaExtras.Representation {
     Binding {
         target: root.theme
         property: "gridContentWidth"
-        value: pages.width - 2 * root.edgeInset - Kirigami.Units.gridUnit
+        value: pages.width - 2 * root.edgeInset - root.theme.gridUnit
     }
 
     /*! Status line, tab row and the gap above the pages. */
@@ -159,7 +159,7 @@ PlasmaExtras.Representation {
 
     /*! The inset of the content from each side of the popup, so no glyph or
         focus ring of any skin touches the first or last device pixel column. */
-    readonly property real edgeInset: Kirigami.Units.smallSpacing
+    readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * root.theme.scaleFactor)
 
     /*! A skin's popup backdrop (Modules.BACKDROP): a Gradient the Frame fills with, or nothing. */
     Loader {
@@ -344,8 +344,8 @@ PlasmaExtras.Representation {
 
             PlasmaExtras.PlaceholderMessage {
                 Layout.fillWidth: true
-                Layout.topMargin: Kirigami.Units.gridUnit
-                Layout.bottomMargin: Kirigami.Units.gridUnit
+                Layout.topMargin: root.theme.gridUnit
+                Layout.bottomMargin: root.theme.gridUnit
                 visible: !root.client.isConnected
                 iconName: "network-disconnect"
                 text: i18nd(root.domain, "Not connected")
@@ -502,7 +502,7 @@ PlasmaExtras.Representation {
             id: pageColumn
 
             x: root.edgeInset
-            width: panel.width - 2 * root.edgeInset - Kirigami.Units.gridUnit
+            width: panel.width - 2 * root.edgeInset - root.theme.gridUnit
             spacing: root.theme.sectionSpacing
 
             Repeater {

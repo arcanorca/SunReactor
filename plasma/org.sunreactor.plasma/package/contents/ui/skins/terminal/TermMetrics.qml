@@ -64,9 +64,11 @@ Item {
         the widest that keeps at least this many): every layout is written for 40. */
     readonly property int targetCols: 41
 
-    /*! Cell width bounds in logical px: the 10 to 15 px font at 0.6 em advance. */
-    readonly property real cwMin: 6
-    readonly property real cwMax: 9
+    readonly property real scaleFactor: theme.scaleFactor > 0 ? theme.scaleFactor : 1.0
+
+    /*! Cell width bounds in logical px: the font at 0.6 em advance, scaled by scaleFactor. */
+    readonly property real cwMin: 6 * scaleFactor
+    readonly property real cwMax: 12 * scaleFactor
 
     /*! Cell width in device px (an integer): the width over the target columns,
         clamped to the bounds. Whole device pixels at any DPR. */
@@ -74,8 +76,8 @@ Item {
                                           Math.max(Math.round(cwMin * dpr),
                                                    Math.floor(Math.round(gridWidth * dpr) / targetCols))))
     readonly property real cw: cwDev / dpr
-    /*! Font size in logical px, the cell over the 0.6 em advance, clamped 10 to 15 px. */
-    readonly property int pixelSize: Math.max(10, Math.min(15, Math.round(cw / 0.6)))
+    /*! Font size in logical px, the cell over the 0.6 em advance, clamped to scaled range. */
+    readonly property int pixelSize: Math.max(Math.round(10 * scaleFactor), Math.min(Math.round(20 * scaleFactor), Math.round(cw / 0.6)))
 
     /*! The font's own advance and line height (logical px). Both bundled
         candidates (JetBrains Mono, IBM Plex Mono) advance 600/1000 em; it is

@@ -394,7 +394,7 @@ folder", validation message for bad user themes.
   are counted), the quick overflow audit of every theme with `--jobs 2` (fails on
   any OVERFLOW, CLIPPED or COLLISION, or a render that did not finish), and
   `pixel_proof.sh` for the pixel themes. The audits run under
-  `flock /tmp/claude-1000/audit.lock` with `SHOT_SERVERNUM=63` by default. It
+  `flock /tmp/sunreactor-1000/audit.lock` with `SHOT_SERVERNUM=63` by default. It
   prints one line per stage and exits 0 only if all pass; the logs and the audit
   report are kept in DIR.
 - Rust: unit tests for registry, alias compat, user theme load/extends,

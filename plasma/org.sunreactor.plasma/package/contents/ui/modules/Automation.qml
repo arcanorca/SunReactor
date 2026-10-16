@@ -31,14 +31,14 @@ ColumnLayout {
         settings: root.settings
     }
 
-    spacing: Kirigami.Units.smallSpacing
+    spacing: root.theme.spacing
 
     Accessible.role: Accessible.Grouping
     Accessible.name: i18ndc(control.domain, "Accessible name of the automation mode buttons", "Automation mode")
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: Kirigami.Units.smallSpacing
+        spacing: root.theme.spacing
 
         PlasmaComponents3.Button {
             id: automaticButton
@@ -114,6 +114,7 @@ ColumnLayout {
         visible: root.control.displayText.length > 0
         text: root.control.displayText
         textFormat: Text.PlainText
+        font.pixelSize: root.theme.fontSizeBody
         wrapMode: Text.WordWrap
         maximumLineCount: 2
         elide: Text.ElideRight
@@ -124,6 +125,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: text.length > 0
         text: root.control.note
+        font.pixelSize: root.theme.fontSizeSmall
         wrapMode: Text.WordWrap
     }
 }

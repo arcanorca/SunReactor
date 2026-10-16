@@ -37,7 +37,7 @@ QtObject {
 
     // --- metrics (logical px) -------------------------------------------------
 
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property bool compact: theme.compact
     /*! Chamfer of a plain strip. A titled panel is cut as deep as its tab is high. */
     readonly property real cut: snap(Math.round(unit * 0.7))

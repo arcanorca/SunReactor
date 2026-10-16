@@ -78,7 +78,7 @@ ColumnLayout {
     readonly property real costNow: current
         ? valueAt(current.samples, now, "pctNoWeather") - valueAt(current.samples, now, "pct") : 0
 
-    spacing: Kirigami.Units.smallSpacing
+    spacing: root.theme.spacing
 
     Accessible.role: Accessible.Chart
     Accessible.name: i18nd(domain, "Today's brightness curve")
@@ -124,12 +124,13 @@ ColumnLayout {
     // Readout: what the curve says right now, or under the pointer.
     RowLayout {
         Layout.fillWidth: true
-        spacing: Kirigami.Units.smallSpacing
+        spacing: root.theme.spacing
 
         PlasmaComponents3.Label {
             Layout.fillWidth: true
             textFormat: Text.PlainText
             font.family: root.theme.digitsFont
+            font.pixelSize: root.theme.fontSizeBody
             font.features: ({ "tnum": 1 })
             color: root.theme.fg
             elide: Text.ElideRight
@@ -150,6 +151,7 @@ ColumnLayout {
             visible: !root.showAll && root.costNow >= 1
             textFormat: Text.PlainText
             font.family: root.theme.digitsFont
+            font.pixelSize: root.theme.fontSizeBody
             font.features: ({ "tnum": 1 })
             color: root.theme.textMuted
             text: i18ndc(root.domain, "Brightness the weather is taking away right now", "Weather −%1%",
@@ -161,9 +163,9 @@ ColumnLayout {
         id: plot
 
         Layout.fillWidth: true
-        implicitHeight: Kirigami.Units.gridUnit * 4.5
+        implicitHeight: Math.round(root.theme.gridUnit * 4.5)
 
-        readonly property real pad: Kirigami.Units.smallSpacing
+        readonly property real pad: root.theme.spacing
         function xAt(t) {
             return (t - root.t0) / Math.max(1, root.t1 - root.t0) * width;
         }
@@ -267,7 +269,7 @@ ColumnLayout {
         Rectangle {
             readonly property real applied: root.current ? root.appliedFor(root.current.monitorId) : -1
             visible: !root.showAll && applied >= 0 && root.now >= root.t0 && root.now <= root.t1
-            width: Kirigami.Units.smallSpacing * 3
+            width: root.theme.spacing * 3
             height: width
             radius: root.theme.isVector ? width / 2 : 0
             x: plot.xAt(root.now) - width / 2
@@ -279,7 +281,7 @@ ColumnLayout {
 
         Rectangle {
             visible: !root.showAll && root.targetNow >= 0
-            width: Kirigami.Units.smallSpacing * 2
+            width: root.theme.spacing * 2
             height: width
             radius: root.theme.isVector ? width / 2 : 0
             x: plot.xAt(root.now) - width / 2
@@ -318,7 +320,8 @@ ColumnLayout {
 
         TextMetrics {
             id: hourMetrics
-            font: Kirigami.Theme.smallFont
+            font.family: Kirigami.Theme.smallFont.family
+            font.pixelSize: root.theme.fontSizeSmall
             text: "00"
         }
 
@@ -329,7 +332,8 @@ ColumnLayout {
                 required property int modelData
                 x: Math.max(0, Math.min(parent.width - width, plot.xAt(root.t0 + modelData * 3600) - width / 2))
                 text: String(modelData).padStart(2, "0")
-                font: Kirigami.Theme.smallFont
+                font.family: Kirigami.Theme.smallFont.family
+                font.pixelSize: root.theme.fontSizeSmall
                 color: root.theme.textMuted
             }
         }

@@ -20,6 +20,7 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../modules/Modules.js" as Modules
+import "ScaleHelper.js" as ScaleHelper
 
 Item {
     id: root
@@ -142,8 +143,31 @@ Item {
         if (wanted > 0) {
             return Math.min(6, wanted);
         }
-        return available ? (widget.pixelScale || 0) : 0;
+        const base = available && widget.pixelScale > 0 ? widget.pixelScale : 2;
+        return Math.max(1, Math.min(6, Math.round(base * scaleFactor)));
     }
+
+    // --- scaling (UI scale / auto sizing) -------------------------------------------
+
+    /*! uiScale from overrides (0 = automatic based on screen resolution and dimension). */
+    readonly property int uiScale: {
+        const wanted = overrides && overrides.uiScale !== undefined ? Number(overrides.uiScale) : 0;
+        return isNaN(wanted) ? 0 : wanted;
+    }
+
+    /*! Automatic scale factor computed from screen resolution and physical dimensions. */
+    readonly property real autoScaleFactor: ScaleHelper.calculateAutoScale(Screen)
+
+    /*! Resolved effective scale factor (e.g. 1.0, 1.15, 1.25, 1.5). */
+    readonly property real scaleFactor: ScaleHelper.resolveScale(uiScale, Screen)
+
+    /*! Scaled grid unit, anchored to Kirigami.Units.gridUnit. */
+    readonly property real gridUnit: Math.round(Kirigami.Units.gridUnit * scaleFactor)
+
+    /*! Scaled font pixel sizes, anchored to gridUnit so they scale reliably with UI scale. */
+    readonly property int fontSizeBody: Math.max(11, Math.round(gridUnit * 0.72))
+    readonly property int fontSizeSmall: Math.max(9, Math.round(gridUnit * 0.58))
+    readonly property int fontSizeHeader: Math.max(13, Math.round(gridUnit * 0.88))
 
     // --- weather icons ---------------------------------------------------------------
 
@@ -187,9 +211,9 @@ Item {
 
     // --- metrics (logical px) ------------------------------------------------------
 
-    readonly property real spacing: compact ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing
-    readonly property real padding: compact ? Kirigami.Units.smallSpacing * 2 : Kirigami.Units.largeSpacing * 1.5
-    readonly property real sectionSpacing: compact ? Kirigami.Units.smallSpacing * 2 : Kirigami.Units.gridUnit
+    readonly property real spacing: Math.round((compact ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing) * scaleFactor)
+    readonly property real padding: Math.round((compact ? Kirigami.Units.smallSpacing * 2 : Kirigami.Units.largeSpacing * 1.5) * scaleFactor)
+    readonly property real sectionSpacing: compact ? Math.round(Kirigami.Units.smallSpacing * 2 * scaleFactor) : gridUnit
     /*! One device pixel, for hairlines that must stay crisp in vector themes. */
     readonly property real hairline: 1 / grid.devicePixelRatio
     readonly property real lineWidth: Math.max(1, Math.round(grid.devicePixelRatio)) / grid.devicePixelRatio

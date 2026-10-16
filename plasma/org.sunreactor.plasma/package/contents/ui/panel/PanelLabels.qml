@@ -93,8 +93,8 @@ ColumnLayout {
         font.features: ({ "tnum": 1 })
         font.family: root.theme.digitsFont
         font.pixelSize: root.vertical || root.elevationShown
-            ? Kirigami.Theme.smallFont.pixelSize
-            : Kirigami.Theme.defaultFont.pixelSize
+            ? root.theme.fontSizeSmall
+            : root.theme.fontSizeBody
     }
 
     PlasmaComponents3.Label {
@@ -105,7 +105,7 @@ ColumnLayout {
         color: root.color
         font.features: ({ "tnum": 1 })
         font.family: root.theme.digitsFont
-        font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+        font.pixelSize: root.theme.fontSizeSmall
         opacity: 0.75
     }
 }

@@ -86,7 +86,7 @@ QtObject {
     readonly property string sansBold: plexSemi.status === FontLoader.Ready ? plexSemi.font.family : sans
 
     /*! The type scale, anchored to the Plasma grid unit like the other skins. */
-    readonly property real unit: Kirigami.Units.gridUnit
+    readonly property real unit: theme.gridUnit
     readonly property int sizeSmall: Math.max(10, Math.round(unit * 0.6))
     readonly property int sizeBody: Math.max(11, Math.round(unit * 0.72))
     /*! The hero reading is at most 2.6 x the body size. */

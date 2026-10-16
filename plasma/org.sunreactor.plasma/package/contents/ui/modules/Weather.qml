@@ -98,11 +98,11 @@ PlasmaComponents3.ItemDelegate {
     }
 
     contentItem: RowLayout {
-        spacing: Kirigami.Units.gridUnit
+        spacing: root.theme.gridUnit
 
         WeatherIcon {
-            Layout.preferredWidth: Kirigami.Units.iconSizes.medium
-            Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+            Layout.preferredWidth: Math.round(Kirigami.Units.iconSizes.medium * root.theme.scaleFactor)
+            Layout.preferredHeight: Layout.preferredWidth
             theme: root.theme
             condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
             night: root.client.hasWeatherReading && root.client.weatherIsNight
@@ -117,6 +117,7 @@ PlasmaComponents3.ItemDelegate {
                 text: root.summary
                 textFormat: Text.PlainText
                 font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontSizeBody
                 color: root.theme.fg
                 elide: Text.ElideRight
             }
@@ -126,6 +127,7 @@ PlasmaComponents3.ItemDelegate {
                 text: root.effect
                 textFormat: Text.PlainText
                 font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontSizeSmall
                 color: root.theme.textMuted
                 elide: Text.ElideRight
             }

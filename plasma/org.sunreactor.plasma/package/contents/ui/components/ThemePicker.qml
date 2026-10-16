@@ -65,8 +65,8 @@ QQC2.Popup {
     /*! Small text: the theme's body face (its bitmap face is for the tab bar). */
     readonly property string textFamily: theme.available && theme.bodyFont.length > 0
         ? theme.bodyFont : Kirigami.Theme.defaultFont.family
-    readonly property int textPx: 11
-    readonly property int captionPx: 9
+    readonly property int textPx: Math.round(11 * theme.scaleFactor)
+    readonly property int captionPx: Math.round(9 * theme.scaleFactor)
     /*! The popover's fill: the theme's bg at 85%, so the widget behind shows through
         while themes are flipped. Only the fill is translucent; text, swatches and
         the hairline border stay opaque. */
@@ -83,9 +83,9 @@ QQC2.Popup {
         return lb > 0.6 ? Qt.darker(root.theme.bg, 6) : root.theme.mix(root.theme.bg, Qt.rgba(1, 1, 1, 1), 0.9);
     }
     /*! One row: 1.6 grid units. */
-    readonly property real rowHeight: Kirigami.Units.gridUnit * 1.6
+    readonly property real rowHeight: root.theme.gridUnit * 1.6
     /*! The popover's width: 11.5 grid units, and never wider than the window allows. */
-    readonly property real widthCap: Kirigami.Units.gridUnit * 11.5
+    readonly property real widthCap: root.theme.gridUnit * 11.5
     /*! Largest popover height: 60% of the window, and never past its bottom edge. */
     property real maxHeight: 0
     /*! The height the content wants, unclipped (the list's full length included). */
@@ -98,7 +98,7 @@ QQC2.Popup {
     // The content fills the capped popover, so the list gets the rest and scrolls.
     contentWidth: width - leftPadding - rightPadding
     contentHeight: height - topPadding - bottomPadding
-    padding: Kirigami.Units.smallSpacing / 2
+    padding: root.theme.spacing / 2
     modal: false
     focus: true
     closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
@@ -124,14 +124,14 @@ QQC2.Popup {
             return;
         }
         const origin = anchorItem.mapToItem(null, 0, 0);
-        const edge = Kirigami.Units.smallSpacing;
+        const edge = root.theme.spacing;
         const wide = Math.max(0, Math.min(root.widthCap, win.width - 2 * edge));
         const left = Math.max(edge, Math.min(origin.x + anchorItem.width - wide, win.width - edge - wide));
         const top = origin.y + anchorItem.height + edge;
         root.width = wide;
         root.x = left - origin.x;
         root.y = anchorItem.height + edge;
-        root.maxHeight = Math.max(Kirigami.Units.gridUnit * 4,
+        root.maxHeight = Math.max(root.theme.gridUnit * 4,
                                   Math.min(win.height * 0.6, win.height - top - edge));
     }
 
@@ -278,16 +278,16 @@ QQC2.Popup {
         // The daemon fell back to another theme: say why, once, at the top.
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Kirigami.Units.smallSpacing
-            Layout.rightMargin: Kirigami.Units.smallSpacing
-            Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
+            Layout.leftMargin: root.theme.spacing
+            Layout.rightMargin: root.theme.spacing
+            Layout.bottomMargin: root.theme.spacing / 2
             visible: root.client.themeWarning.length > 0
-            spacing: Kirigami.Units.smallSpacing
+            spacing: root.theme.spacing
 
             Kirigami.Icon {
                 Layout.alignment: Qt.AlignTop
-                implicitWidth: Kirigami.Units.iconSizes.small
-                implicitHeight: Kirigami.Units.iconSizes.small
+                implicitWidth: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
+                implicitHeight: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
                 source: "dialog-warning"
                 isMask: true
                 color: root.theme.warning
@@ -313,8 +313,8 @@ QQC2.Popup {
             implicitHeight: root.rowHeight
             topPadding: 0
             bottomPadding: 0
-            leftPadding: Kirigami.Units.smallSpacing
-            rightPadding: Kirigami.Units.smallSpacing
+            leftPadding: root.theme.spacing
+            rightPadding: root.theme.spacing
             focusPolicy: Qt.StrongFocus
             hoverEnabled: true
             Accessible.role: Accessible.RadioButton
@@ -337,11 +337,11 @@ QQC2.Popup {
             }
 
             contentItem: RowLayout {
-                spacing: Kirigami.Units.smallSpacing
+                spacing: root.theme.spacing
 
                 Kirigami.Icon {
-                    implicitWidth: Kirigami.Units.iconSizes.small
-                    implicitHeight: Kirigami.Units.iconSizes.small
+                    implicitWidth: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
+                    implicitHeight: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
                     source: root.pinned ? "" : "checkmark"
                     isMask: true
                     color: root.theme.accent
@@ -376,8 +376,8 @@ QQC2.Popup {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.smallSpacing / 2
-            Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
+            Layout.topMargin: root.theme.spacing / 2
+            Layout.bottomMargin: root.theme.spacing / 2
             implicitHeight: root.theme.lineWidth
             color: root.theme.line
         }
@@ -387,10 +387,10 @@ QQC2.Popup {
             objectName: "themesStatus"
 
             Layout.fillWidth: true
-            Layout.leftMargin: Kirigami.Units.smallSpacing
-            Layout.rightMargin: Kirigami.Units.smallSpacing
-            Layout.topMargin: Kirigami.Units.smallSpacing / 2
-            Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
+            Layout.leftMargin: root.theme.spacing
+            Layout.rightMargin: root.theme.spacing
+            Layout.topMargin: root.theme.spacing / 2
+            Layout.bottomMargin: root.theme.spacing / 2
             visible: root.themesNotice.length > 0
             text: root.themesNotice
             textFormat: Text.PlainText
@@ -419,9 +419,9 @@ QQC2.Popup {
                 required property string section
 
                 width: ListView.view.width
-                topPadding: Kirigami.Units.smallSpacing / 2
+                topPadding: root.theme.spacing / 2
                 bottomPadding: 0
-                leftPadding: Kirigami.Units.smallSpacing
+                leftPadding: root.theme.spacing
                 text: root.familyLabel(section)
                 textFormat: Text.PlainText
                 font.family: root.textFamily
@@ -480,8 +480,8 @@ QQC2.Popup {
                 implicitHeight: root.rowHeight
                 topPadding: 0
                 bottomPadding: 0
-                leftPadding: Kirigami.Units.smallSpacing
-                rightPadding: Kirigami.Units.smallSpacing
+                leftPadding: root.theme.spacing
+                rightPadding: root.theme.spacing
                 hoverEnabled: true
                 focusPolicy: Qt.NoFocus
                 Accessible.role: Accessible.RadioButton
@@ -501,11 +501,11 @@ QQC2.Popup {
                 }
 
                 contentItem: RowLayout {
-                    spacing: Kirigami.Units.smallSpacing
+                    spacing: root.theme.spacing
 
                     Kirigami.Icon {
-                        implicitWidth: Kirigami.Units.iconSizes.small
-                        implicitHeight: Kirigami.Units.iconSizes.small
+                        implicitWidth: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
+                        implicitHeight: Math.round(Kirigami.Units.iconSizes.small * root.theme.scaleFactor)
                         source: row.active ? "checkmark" : ""
                         isMask: true
                         color: root.theme.accent
@@ -520,8 +520,8 @@ QQC2.Popup {
                             delegate: Rectangle {
                                 required property string modelData
 
-                                width: 4
-                                height: 8
+                                width: Math.round(4 * root.theme.scaleFactor)
+                                height: Math.round(8 * root.theme.scaleFactor)
                                 color: modelData
                                 border.width: root.theme.hairline
                                 border.color: root.theme.line

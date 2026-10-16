@@ -47,7 +47,7 @@ PlasmaComponents3.ItemDelegate {
     Accessible.ignored: true
 
     contentItem: RowLayout {
-        spacing: Kirigami.Units.smallSpacing
+        spacing: root.theme.spacing
 
         Repeater {
             model: root.points
@@ -68,15 +68,15 @@ PlasmaComponents3.ItemDelegate {
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
                     font.family: root.theme.digitsFont
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.pixelSize: root.theme.fontSizeSmall
                     color: root.theme.textMuted
                     elide: Text.ElideRight
                 }
 
                 WeatherIcon {
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.medium
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+                    Layout.preferredWidth: Math.round(Kirigami.Units.iconSizes.medium * root.theme.scaleFactor)
+                    Layout.preferredHeight: Layout.preferredWidth
                     theme: root.theme
                     condition: slot.modelData.condition
                     night: slot.modelData.isNight
@@ -91,6 +91,7 @@ PlasmaComponents3.ItemDelegate {
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
                     font.family: root.theme.digitsFont
+                    font.pixelSize: root.theme.fontSizeBody
                     color: root.theme.fg
                 }
             }
