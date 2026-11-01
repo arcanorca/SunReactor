@@ -29,7 +29,7 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` with 40
 
 ---
 
-## // KDE PLASMA WIDGET
+## // KDE PLASMA WIDGET (OPTIONAL)
 
 A KDE Plasma 6 panel widget with a popup: day curve, a slider per display, automation mode and weather. It follows the terminal UI's theme or a pinned one. It is a QML package with a small C++ plugin that talks to the daemon's socket, and it does no brightness logic of its own.
 
