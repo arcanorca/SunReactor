@@ -3,7 +3,7 @@
   <br/>
   <a href="https://ratatui.rs"><img src="https://img.shields.io/badge/Built_with-Ratatui-000?logo=ratatui&logoColor=fff&labelColor=201a16&color=ffd970" alt="Built with Ratatui" /></a>
   <img src="https://img.shields.io/badge/Language-Rust_1.80+-orange?logo=rust&logoColor=white" alt="Rust" />
-  <img src="https://img.shields.io/badge/Platform-Linux_|_Windows-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/Platform-Linux-blue" alt="Platform" />
   <img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License" />
 </div>
 
@@ -29,6 +29,39 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` with 40
 
 ---
 
+## // KDE PLASMA WIDGET
+
+A KDE Plasma 6 panel widget with a popup: day curve, a slider per display, automation mode and weather. It follows the terminal UI's theme or a pinned one. It is a QML package with a small C++ plugin that talks to the daemon's socket, and it does no brightness logic of its own.
+
+<div align="center">
+  <img src="docs/images/widget-themes.png" alt="KDE Plasma widget, brightness page: Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
+  <br/>
+  <img src="docs/images/widget-weather.png" alt="KDE Plasma widget, weather page: Cyberpunk, Wii, Casio Digital" width="95%" />
+</div>
+
+Top: brightness page in Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in Cyberpunk, Wii and Casio Digital. The full theme list is in [THEMES.md](docs/THEMES.md).
+
+### Requirements
+- Plasma 6 with KF6 and Qt 6, CMake 3.22+, `extra-cmake-modules`, a C++20 compiler
+- `sunreactord` from this version (older daemons work, but without themes and the day curve)
+
+### Install
+From a clone, `./install.sh` builds and installs the widget (`--no-plasma` skips it). Then restart plasmashell:
+
+```bash
+systemctl --user restart plasma-plasmashell.service
+```
+
+Manual install and file locations are in [docs/PLASMA.md](docs/PLASMA.md).
+
+### Settings
+Theme (follow or pin), panel mode (sky, readout, sparkline, ring), weather icon style, and which popup sections to show. Defaults work without changes.
+
+### Troubleshooting
+Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASMA.md](docs/PLASMA.md).
+
+---
+
 ## // RECENT CHANGES
 
 Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
@@ -36,7 +69,7 @@ Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
 **Next release (0.13.0)**
 - Themes are TOML data shared by the terminal UI and the Plasma widget. 40 are built in; you can add your own in `~/.config/sunreactor/themes/` ([docs/THEMES.md](docs/THEMES.md)).
 - New `sunreactorctl theme` commands, and new IPC requests (`list_themes`, `get_theme`, `day_curve`) used by the widget.
-- The Plasma widget was rewritten around that theme data: see [Plasma widget](#-plasma-widget).
+- The Plasma widget was rewritten around that theme data: see [KDE Plasma widget](#-kde-plasma-widget).
 
 **0.12.0**
 - Monitor power state is read from DRM sysfs before DDC commands are sent, so sleeping or disconnected displays are skipped.
@@ -145,7 +178,7 @@ SunReactor computes target brightness deterministically without requiring consta
 
 ### 2. Native KDE Plasma 6 Desktop Integration
 A KDE Plasma 6 panel widget lives in [`plasma/`](plasma/). It shows the current brightness, the day curve and the weather, and lets you pause automation or set a manual brightness per display.
-- Installation, settings and troubleshooting are in [Plasma widget](#-plasma-widget).
+- Installation, settings and troubleshooting are in [KDE Plasma widget](#-kde-plasma-widget).
 
 ### 3. Scriptable Control CLI (`sunreactorctl`)
 ```bash
@@ -165,7 +198,7 @@ sunreactorctl theme set nord       # Set tui.theme and reload the daemon
 ## // INSTALLATION & COMPATIBILITY
 
 ### System Requirements
-- **OS:** Linux (Kernel $\ge 5.15$, glibc $\ge 2.34$ or musl) or Windows 10/11.
+- **OS:** Linux (Kernel $\ge 5.15$, glibc $\ge 2.34$ or musl).
 - **Arch / CachyOS / Fedora / Debian / Ubuntu / openSUSE** fully qualified.
 - **Hardware Backends:**
   - External Displays: `ddcutil` ($\ge 1.4.1$, recommended $\ge 2.2.0$) with user access to `/dev/i2c-*` (`uaccess` or `i2c` group).
@@ -178,7 +211,7 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 
 *The installer verifies the release SHA-256 manifest and installs unprivileged binaries to `~/.local/bin`. When a systemd user manager is available, it also installs, enables, and starts `sunreactord.service`, then verifies that the daemon answers on IPC. Use `--no-service` to install without starting brightness automation.*
 
-*From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [Plasma widget](#-plasma-widget).*
+*From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [KDE Plasma widget](#-kde-plasma-widget).*
 
 ### Building from Source (Optimized Native Profile)
 ```bash
@@ -290,39 +323,6 @@ sunreactorctl theme export dracula > ~/.config/sunreactor/themes/mine.toml
 sunreactorctl theme validate                 # check every user theme file
 sunreactorctl theme validate ./mine.toml     # check one file (extends / aliases included)
 ```
-
----
-
-## // PLASMA WIDGET
-
-A Plasma 6 panel widget with a popup: day curve, a slider per display, automation mode and weather. It follows the terminal UI's theme or a pinned one. It is a QML package with a small C++ plugin that talks to the daemon's socket, and it does no brightness logic of its own.
-
-<div align="center">
-  <img src="docs/images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
-  <br/>
-  <img src="docs/images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Casio Digital" width="95%" />
-</div>
-
-Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Casio Digital. The full theme list is in [THEMES.md](docs/THEMES.md).
-
-### Requirements
-- Plasma 6 with KF6 and Qt 6, CMake 3.22+, `extra-cmake-modules`, a C++20 compiler
-- `sunreactord` from this version (older daemons work, but without themes and the day curve)
-
-### Install
-From a clone, `./install.sh` builds and installs the widget (`--no-plasma` skips it). Then restart plasmashell:
-
-```bash
-systemctl --user restart plasma-plasmashell.service
-```
-
-Manual install and file locations are in [docs/PLASMA.md](docs/PLASMA.md).
-
-### Settings
-Theme (follow or pin), panel mode (sky, readout, sparkline, ring), weather icon style, and which popup sections to show. Defaults work without changes.
-
-### Troubleshooting
-Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASMA.md](docs/PLASMA.md).
 
 ---
 

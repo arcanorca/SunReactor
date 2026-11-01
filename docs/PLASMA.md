@@ -1,4 +1,4 @@
-# Plasma widget
+# KDE Plasma widget
 
 The widget is a Plasma 6 panel item with a popup. It is a QML package plus a small C++ plugin that talks to the daemon's control socket. It does no brightness logic and never touches hardware: it shows what `sunreactord` is doing and sends the same commands as `sunreactorctl`.
 
@@ -7,12 +7,12 @@ The popup has a Brightness page (day curve, one slider per display, automation m
 The widget follows the terminal UI's theme by default, or you can pin another theme. Many themes have their own layout and weather icons; the rest use a layout chosen by theme family. The pictures below are a selection. Everything is drawn with QML shapes and a few C++ items, no bitmap assets for the vector themes. Internals and the design notes are in [`DESIGN.md`](../plasma/org.sunreactor.plasma/DESIGN.md).
 
 <div align="center">
-  <img src="images/widget-themes.png" alt="Plasma widget, brightness page: macOS, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
+  <img src="images/widget-themes.png" alt="KDE Plasma widget, brightness page: Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
   <br/>
-  <img src="images/widget-weather.png" alt="Plasma widget, weather page: macOS, Wii, Casio Digital" width="95%" />
+  <img src="images/widget-weather.png" alt="KDE Plasma widget, weather page: Cyberpunk, Wii, Casio Digital" width="95%" />
 </div>
 
-Top: brightness page in macOS, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in macOS, Wii and Casio Digital. The full theme list is in [THEMES.md](THEMES.md).
+Top: brightness page in Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green and Windows XP. Bottom: weather page in Cyberpunk, Wii and Casio Digital. The full theme list is in [THEMES.md](THEMES.md).
 
 ### Requirements
 - Plasma 6 with KF6 (Kirigami, KPackage) and Qt 6 (Core, Gui, Qml, Quick, Network)
