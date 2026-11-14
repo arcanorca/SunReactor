@@ -414,25 +414,27 @@ impl DaemonRuntime {
         }
         self.ensure_configured_monitor(monitor_id)?;
 
-        for monitor in &mut self.config.monitors {
-            if monitor.logical_id == monitor_id {
-                monitor.min_pct = min_pct;
-                monitor.max_pct = max_pct;
-            }
-        }
+        // Read, modify, validate, and persist the same config snapshot before
+        // replacing the live runtime config. A failed save therefore cannot
+        // leave the daemon reporting limits that disappear on reload.
+        let mut report = config::load_from_path(&self.config.path)?;
+        let Some(monitor) = report
+            .config
+            .monitors
+            .iter_mut()
+            .find(|monitor| monitor.logical_id == monitor_id)
+        else {
+            return Err(RuntimeError::Ipc(ipc::IpcError::Protocol {
+                message: format!("unknown monitor logical_id `{monitor_id}` in config file"),
+            }));
+        };
+        monitor.min_pct = min_pct;
+        monitor.max_pct = max_pct;
 
-        if let Ok(mut report) = config::load_from_path(&self.config.path) {
-            if let Some(m) = report
-                .config
-                .monitors
-                .iter_mut()
-                .find(|m| m.logical_id == monitor_id)
-            {
-                m.min_pct = min_pct;
-                m.max_pct = max_pct;
-                let _ = config::save_to_path(&report.config, &self.config.path);
-            }
-        }
+        let next_config = RuntimeConfig::from_report(report.clone())?;
+        config::save_to_path(&report.config, &self.config.path)?;
+        self.config = next_config;
+        self.day_curve_cache = None;
 
         Ok(format!(
             "updated limits for {monitor_id} to min={min_pct}%, max={max_pct}%"

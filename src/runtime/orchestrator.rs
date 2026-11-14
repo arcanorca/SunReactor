@@ -1933,6 +1933,43 @@ mod tests {
     }
 
     #[test]
+    fn ipc_set_monitor_limits_reports_persistence_errors_without_mutating_config() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            state_path,
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        let unwritable_path = temp.path().join("config-directory");
+        std::fs::create_dir_all(&unwritable_path).expect("config directory");
+        runtime.config.path = unwritable_path;
+
+        let (response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetMonitorLimits {
+                monitor_id: String::from("internal"),
+                min_pct: 30,
+                max_pct: 80,
+            },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(matches!(response.response, Response::Error { .. }));
+        let monitor = runtime
+            .config
+            .monitors
+            .iter()
+            .find(|monitor| monitor.logical_id == "internal")
+            .expect("configured monitor");
+        assert_eq!((monitor.min_pct, monitor.max_pct), (10, 100));
+    }
+
+    #[test]
     #[cfg(target_os = "linux")]
     fn ipc_set_override_reports_immediate_apply_failures_without_losing_state() {
         let temp = TempDir::new();
