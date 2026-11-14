@@ -80,10 +80,11 @@ pub(crate) fn load_from_path(path: &Path) -> Result<ConfigReport, ConfigError> {
 
 pub(crate) fn parse_str(raw: &str, path: &Path) -> Result<Config, ConfigError> {
     super::compat::reject_removed_legacy_fields(raw)?;
-    let config: Config = toml::from_str(raw).map_err(|source| ConfigError::Parse {
+    let mut config: Config = toml::from_str(raw).map_err(|source| ConfigError::Parse {
         path: path.to_path_buf(),
         source,
     })?;
+    config.normalize();
     config.validate()?;
     Ok(config)
 }

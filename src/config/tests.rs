@@ -148,6 +148,9 @@ fn cloud_dimming_helpers_round_trip_the_canonical_multiplier() {
         .set_cloud_dimming_percent(0)
         .expect("0% should be accepted");
     assert!((weather.min_multiplier - 1.0).abs() < f64::EPSILON);
+
+    weather.min_multiplier = 0.3;
+    assert_eq!(weather.cloud_dimming_percent(), 50);
 }
 
 #[test]
@@ -160,11 +163,38 @@ fn rejects_cloud_dimming_above_fifty_percent() {
 }
 
 #[test]
-fn rejects_min_multiplier_below_half() {
-    let mut config = super::Config::default();
-    config.weather.min_multiplier = 0.49;
-    let error = config.validate().expect_err("values below 0.5 must fail");
-    assert!(error.to_string().contains("0.5 <= min_multiplier <= 1"));
+fn loads_legacy_low_multiplier_clamped_without_rewriting_file() {
+    let raw = VALID_CONFIG.replace("min_multiplier = 0.75", "min_multiplier = 0.3");
+    let path = std::env::temp_dir().join(format!(
+        "sunreactor-config-normalize-{}.toml",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be valid")
+            .as_nanos()
+    ));
+    fs::write(&path, &raw).expect("fixture config should be writable");
+
+    let report = load_from_path(&path).expect("legacy multiplier should load");
+    assert!((report.config.weather.min_multiplier - 0.5).abs() < f64::EPSILON);
+    assert_eq!(report.config.weather.cloud_dimming_percent(), 50);
+    assert_eq!(
+        fs::read_to_string(&path).expect("fixture should remain readable"),
+        raw
+    );
+    fs::remove_file(path).expect("fixture should be removed");
+}
+
+#[test]
+fn rejects_zero_and_above_one_min_multiplier() {
+    for value in ["0.0", "1.2"] {
+        let raw = VALID_CONFIG.replace(
+            "min_multiplier = 0.75",
+            &format!("min_multiplier = {value}"),
+        );
+        let error = parse_str(&raw, Path::new("invalid-multiplier.toml"))
+            .expect_err("invalid multiplier should fail");
+        assert!(error.to_string().contains("weather.min_multiplier"));
+    }
 }
 
 #[test]
