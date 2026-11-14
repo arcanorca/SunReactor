@@ -26,7 +26,9 @@ impl ApplySettings {
             smooth_transition: config.daemon.smooth_transition,
             min_apply_interval: Duration::from_secs(config.daemon.tick_seconds),
             dry_run: config.daemon.dry_run,
-            apply_reassert_interval: Duration::from_secs(config.daemon.apply_reassert_minutes * 60),
+            apply_reassert_interval: Duration::from_secs(
+                config.daemon.apply_reassert_minutes.saturating_mul(60),
+            ),
             ddc_timeout: Duration::from_secs(config.daemon.ddc_timeout_seconds),
             backlight_timeout: Duration::from_secs(config.daemon.backlight_timeout_seconds),
         }

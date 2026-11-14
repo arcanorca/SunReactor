@@ -1,6 +1,12 @@
 use std::fmt::Write as _;
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
+#[cfg(unix)]
+use std::io;
 use std::path::Path;
-use std::time::Duration;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::config::{MonitorConfig, MonitorSelector};
 use crate::ddcutil::DdcutilClient;
@@ -14,6 +20,10 @@ use super::{
 
 const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
 const DEFAULT_DDC_ADDRESS: u16 = 0x37;
+#[cfg(unix)]
+const DDC_LOCK_FILE_NAME: &str = "sunreactor_i2c.lock";
+#[cfg(unix)]
+static DDC_LOCK_OPEN_WARNED: AtomicBool = AtomicBool::new(false);
 
 pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
     apply_with_runner(
@@ -56,22 +66,7 @@ fn apply_with_runner_in<R: ProcessRunner>(
         let args = build_setvcp_args(selection, percent);
 
         #[cfg(unix)]
-        let _lock = {
-            let uid = unsafe { libc::geteuid() };
-            let lock_path = format!("/run/user/{uid}/sunreactor_i2c.lock");
-            let lock_file = std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(false)
-                .open(&lock_path)
-                .ok();
-
-            if let Some(ref f) = lock_file {
-                use rustix::fs::{flock, FlockOperation};
-                let _ = flock(f, FlockOperation::LockExclusive);
-            }
-            lock_file // keep open until block ends
-        };
+        let _lock = acquire_ddc_lock(timeout)?;
 
         let run_result = DdcutilClient::run_with_compatible_arguments(runner, &args, timeout);
 
@@ -101,6 +96,69 @@ fn apply_with_runner_in<R: ProcessRunner>(
                     continue;
                 }
                 return Err(error.with_attempts(attempts));
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn acquire_ddc_lock(timeout: Duration) -> Result<Option<File>, BackendError> {
+    let lock_path = crate::paths::runtime_socket_dir().map_or_else(
+        |_| {
+            let uid = unsafe { libc::geteuid() };
+            std::path::PathBuf::from(format!("/run/user/{uid}/sunreactor/{DDC_LOCK_FILE_NAME}"))
+        },
+        |path| path.join(DDC_LOCK_FILE_NAME),
+    );
+    acquire_ddc_lock_at(&lock_path, timeout)
+}
+
+#[cfg(unix)]
+fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<Option<File>, BackendError> {
+    let lock_file = match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(lock_path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            if !DDC_LOCK_OPEN_WARNED.swap(true, Ordering::AcqRel) {
+                tracing::warn!(path = %lock_path.display(), error = %error, "ddc_lock_unavailable_continuing_without_lock");
+            }
+            return Ok(None);
+        }
+    };
+
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .unwrap_or_else(Instant::now);
+    loop {
+        match rustix::fs::flock(
+            &lock_file,
+            rustix::fs::FlockOperation::NonBlockingLockExclusive,
+        ) {
+            Ok(()) => return Ok(Some(lock_file)),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(BackendError::CommandTimeout {
+                        backend: BackendKind::Ddc,
+                        program: String::from(DDC_LOCK_FILE_NAME),
+                        after: timeout,
+                        detail: format!("timed out acquiring {}", lock_path.display()),
+                        attempts: 1,
+                    });
+                }
+                std::thread::sleep(Duration::from_millis(25).min(remaining));
+            }
+            Err(error) => {
+                return Err(BackendError::Io {
+                    backend: BackendKind::Ddc,
+                    program: String::from(DDC_LOCK_FILE_NAME),
+                    message: format!("failed to acquire {}: {error}", lock_path.display()),
+                    attempts: 1,
+                });
             }
         }
     }
@@ -636,6 +694,8 @@ fn should_retry(error: &BackendError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::fs::OpenOptions;
     use std::time::Duration;
 
     use crate::backends::testutil::FakeRunner;
@@ -647,6 +707,27 @@ mod tests {
     };
     #[cfg(target_os = "linux")]
     use super::{build_selector, verified_bus_selection};
+
+    #[cfg(unix)]
+    #[test]
+    fn ddc_lock_times_out_without_blocking_indefinitely() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let lock_path = temp.path().join("ddc.lock");
+        let holder = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)
+            .expect("lock file");
+        rustix::fs::flock(&holder, rustix::fs::FlockOperation::LockExclusive)
+            .expect("holder should acquire lock");
+
+        let started = std::time::Instant::now();
+        let error = super::acquire_ddc_lock_at(&lock_path, Duration::from_millis(60))
+            .expect_err("contended lock should time out");
+        assert!(matches!(error, super::BackendError::CommandTimeout { .. }));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 
     /// A minimal EDID base block with a monitor name and serial descriptor.
     fn edid(model: &str, serial: &str) -> Vec<u8> {

@@ -108,8 +108,10 @@ pub(crate) fn cache_is_fresh(
     snapshot: &WeatherSnapshotMetadata,
     now_epoch_s: u64,
 ) -> bool {
-    !snapshot.provider.trim().is_empty()
-        && now_epoch_s.saturating_sub(snapshot.fetched_at_epoch_s) <= cache_ttl(config).as_secs()
+    let Some(age_seconds) = now_epoch_s.checked_sub(snapshot.fetched_at_epoch_s) else {
+        return false;
+    };
+    !snapshot.provider.trim().is_empty() && age_seconds <= cache_ttl(config).as_secs()
 }
 pub(crate) fn smooth_cloud_cover(
     previous_cloud_cover_percent: Option<u8>,
@@ -120,5 +122,23 @@ pub(crate) fn smooth_cloud_cover(
             + u16::from(fresh_cloud_cover_percent))
         .div_ceil(2) as u8,
         None => fresh_cloud_cover_percent,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn future_dated_snapshot_is_stale() {
+        let config = WeatherConfig::default();
+        let snapshot = WeatherSnapshotMetadata {
+            provider: String::from("test"),
+            fetched_at_epoch_s: 1_800_000_300,
+            cloud_cover_percent: Some(50),
+            ..WeatherSnapshotMetadata::default()
+        };
+
+        assert!(!cache_is_fresh(&config, &snapshot, 1_800_000_000));
     }
 }

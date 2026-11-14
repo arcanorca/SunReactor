@@ -10,6 +10,8 @@ use std::time::Duration;
 
 const LISTENER_POLL_TIMEOUT: Duration = Duration::from_millis(250);
 const LISTENER_RETRY_DELAY: Duration = Duration::from_secs(5);
+#[cfg(target_os = "linux")]
+const LOGIND_RETRY_MAX_DELAY: Duration = Duration::from_mins(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayRecoveryReason {
@@ -272,13 +274,35 @@ fn connector_id(payload: &[u8]) -> Option<String> {
 #[cfg(target_os = "linux")]
 #[allow(clippy::needless_pass_by_value)]
 fn logind_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
+    let mut retry_delay = LISTENER_RETRY_DELAY;
+    let mut unavailable_logged = false;
     while !shutdown.load(Ordering::Acquire) {
         match logind_listener_once(&pending, &shutdown) {
-            Ok(()) => {}
-            Err(error) => tracing::warn!(error = %error, "logind_event_listener_unavailable"),
+            Ok(()) => {
+                retry_delay = LISTENER_RETRY_DELAY;
+            }
+            Err(error) => {
+                if unavailable_logged {
+                    tracing::debug!(error = %error, "logind_event_listener_unavailable");
+                } else {
+                    tracing::warn!(error = %error, "logind_event_listener_unavailable");
+                    unavailable_logged = true;
+                }
+                wait_interruptibly(&shutdown, retry_delay);
+                retry_delay = next_logind_retry_delay(retry_delay);
+                continue;
+            }
         }
-        wait_interruptibly(&shutdown, LISTENER_RETRY_DELAY);
+        wait_interruptibly(&shutdown, retry_delay);
     }
+}
+
+#[cfg(target_os = "linux")]
+fn next_logind_retry_delay(current: Duration) -> Duration {
+    current
+        .checked_mul(2)
+        .unwrap_or(LOGIND_RETRY_MAX_DELAY)
+        .min(LOGIND_RETRY_MAX_DELAY)
 }
 
 #[cfg(target_os = "linux")]
@@ -353,6 +377,17 @@ fn wait_interruptibly(shutdown: &AtomicBool, duration: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn logind_retry_delay_doubles_and_caps() {
+        let mut delay = LISTENER_RETRY_DELAY;
+        let expected = [10, 20, 40, 80, 160, 300, 300];
+        for seconds in expected {
+            delay = next_logind_retry_delay(delay);
+            assert_eq!(delay, Duration::from_secs(seconds));
+        }
+    }
 
     #[test]
     fn queue_drain_coalesces_burst_to_newest_request() {

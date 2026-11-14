@@ -120,7 +120,9 @@ impl ProcessRunner for RealProcessRunner {
         };
         let stdout_thread = spawn_reader(stdout);
         let stderr_thread = spawn_reader(stderr);
-        let deadline = Instant::now() + timeout;
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .unwrap_or_else(Instant::now);
 
         let child_exited = loop {
             match child_exited_without_reaping(&child) {

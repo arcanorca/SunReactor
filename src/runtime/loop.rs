@@ -172,22 +172,46 @@ impl DaemonRuntime {
                 self.execute_scheduled_tick(now_utc, runner, cadence, desktop_idle);
             }
             LoopAction::RunFadeStep => {
+                if self.config.daemon.dry_run {
+                    self.fade_engine.cancel_all();
+                    return;
+                }
                 // Fade steps are hardware writes too.  Do not let the high-
                 // cadence path bypass topology authorization while the first
                 // complete capability observation is still pending.
-                if self.last_capabilities.is_none() {
+                let Some(capabilities) = self.last_capabilities.as_ref() else {
+                    self.fade_engine.cancel_all();
                     wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
                     return;
-                }
+                };
+                let reconcile_actions =
+                    crate::runtime::topology::reconcile(&self.config.monitors, capabilities);
                 let step_start = Instant::now();
                 let steps = self.fade_engine.process_tick();
                 for (monitor_id, percent) in steps {
-                    if let Some(monitor) = self
+                    let Some(monitor_index) = self
                         .config
                         .monitors
                         .iter()
-                        .find(|m| m.logical_id == monitor_id)
-                    {
+                        .position(|monitor| monitor.logical_id == monitor_id)
+                    else {
+                        self.fade_engine.active_fades.remove(&monitor_id);
+                        continue;
+                    };
+                    let action = reconcile_actions
+                        .get(monitor_index)
+                        .copied()
+                        .unwrap_or(crate::runtime::topology::ReconcileAction::AmbiguousOrUnsafe);
+                    if !action.allowed_to_apply() {
+                        tracing::debug!(
+                            monitor = %monitor_id,
+                            action = action.name(),
+                            "fade_step_skipped_topology"
+                        );
+                        self.fade_engine.active_fades.remove(&monitor_id);
+                        continue;
+                    }
+                    if let Some(monitor) = self.config.monitors.get(monitor_index) {
                         let target = crate::policy::PerMonitorTarget {
                             logical_id: monitor_id,
                             percent,
@@ -263,6 +287,28 @@ impl DaemonRuntime {
             Err(error) => log_tick_error(&error),
         }
     }
+
+    fn execute_pending_apply(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        cadence: &mut LoopCadence,
+        desktop_idle: &mut DesktopIdleSync,
+    ) {
+        let Some((force, clear_backoff)) = self.take_pending_apply() else {
+            return;
+        };
+        cadence.note_tick_attempt();
+        desktop_idle.note_tick_attempt(now_utc);
+        let result = if clear_backoff {
+            self.run_resync_at_with_runner(now_utc, &RealProcessRunner, true)
+        } else {
+            self.run_once_at_with_runner(now_utc, &RealProcessRunner, force)
+        };
+        match result {
+            Ok(report) => log_tick(&report),
+            Err(error) => log_tick_error(&error),
+        }
+    }
 }
 
 impl DaemonRuntime {
@@ -305,6 +351,7 @@ impl DaemonRuntime {
             );
         }
 
+        let mut apply_after_drain = false;
         while !shutdown_requested() {
             let _ = self.drain_ipc_requests_with_quantum_impl(
                 &listener,
@@ -314,6 +361,17 @@ impl DaemonRuntime {
 
             if shutdown_requested() {
                 break;
+            }
+
+            if apply_after_drain {
+                apply_after_drain = false;
+                self.execute_pending_apply(Utc::now(), &mut cadence, &mut desktop_idle);
+            }
+            if self.has_pending_apply() {
+                // Give clients that arrive immediately after a mutation one
+                // more bounded IPC drain before a slow hardware apply starts.
+                apply_after_drain = true;
+                continue;
             }
 
             let now_utc = Utc::now();

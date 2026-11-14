@@ -1,11 +1,10 @@
 use chrono::{DateTime, Utc};
 
-use crate::apply::{ApplyStatus, ApplySummary};
 use crate::backends::{ProcessRunner, RealProcessRunner};
 use crate::config::{self, ConfigError, ConfigReport};
 use crate::ipc;
 
-use super::orchestrator::{log_tick, DaemonRuntime, IpcOutcome, RuntimeError, TickReport};
+use super::orchestrator::{DaemonRuntime, IpcOutcome, RuntimeError};
 use super::runtime_config::RuntimeConfig;
 use super::wake::WakeReason;
 
@@ -23,6 +22,7 @@ impl DaemonRuntime {
         runner: &R,
         now_utc: DateTime<Utc>,
     ) -> (ipc::ResponseEnvelope, IpcOutcome) {
+        let _ = runner;
         let now_epoch_s = now_utc.timestamp().max(0) as u64;
 
         match request {
@@ -42,7 +42,10 @@ impl DaemonRuntime {
                 }
 
                 match self.suspend(now_epoch_s, minutes) {
-                    Ok(message) => (ipc::ResponseEnvelope::ack(message), IpcOutcome::default()),
+                    Ok(message) => {
+                        self.mark_pending_apply(false, false);
+                        (ipc::ResponseEnvelope::ack(message), IpcOutcome::default())
+                    }
                     Err(error) => (
                         ipc::ResponseEnvelope::error(
                             ipc::ErrorCode::InternalError,
@@ -53,19 +56,18 @@ impl DaemonRuntime {
                 }
             }
             ipc::Request::Resume => match self.resume() {
-                Ok(()) => (
-                    self.respond_after_resync(
-                        "resume",
-                        "resumed automatic apply and cleared manual overrides",
-                        now_utc,
-                        runner,
-                        true,
-                    ),
-                    IpcOutcome {
-                        tick_attempted: true,
-                        config_reloaded: false,
-                    },
-                ),
+                Ok(()) => {
+                    self.mark_pending_apply(true, true);
+                    (
+                        ipc::ResponseEnvelope::ack(
+                            "resumed automatic apply and cleared manual overrides; apply queued",
+                        ),
+                        IpcOutcome {
+                            tick_attempted: true,
+                            config_reloaded: false,
+                        },
+                    )
+                }
                 Err(error) => (
                     ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, error.to_string()),
                     IpcOutcome::default(),
@@ -81,10 +83,13 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 match self.set_override(now_epoch_s, monitor_id.as_deref(), percent, minutes) {
-                    Ok(message) => (
-                        self.respond_after_forced_apply("set_override", &message, now_utc, runner),
-                        outcome,
-                    ),
+                    Ok(message) => {
+                        self.mark_pending_apply(true, false);
+                        (
+                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                            outcome,
+                        )
+                    }
                     Err(error) => (ipc_error_response(&error), outcome),
                 }
             }
@@ -98,15 +103,13 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 match self.set_monitor_limits(&monitor_id, min_pct, max_pct) {
-                    Ok(message) => (
-                        self.respond_after_forced_apply(
-                            "set_monitor_limits",
-                            &message,
-                            now_utc,
-                            runner,
-                        ),
-                        outcome,
-                    ),
+                    Ok(message) => {
+                        self.mark_pending_apply(true, false);
+                        (
+                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                            outcome,
+                        )
+                    }
                     Err(error) => (ipc_error_response(&error), outcome),
                 }
             }
@@ -116,15 +119,13 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 match self.clear_override(monitor_id.as_deref(), global) {
-                    Ok(message) => (
-                        self.respond_after_forced_apply(
-                            "clear_override",
-                            &message,
-                            now_utc,
-                            runner,
-                        ),
-                        outcome,
-                    ),
+                    Ok(message) => {
+                        self.mark_pending_apply(true, false);
+                        (
+                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                            outcome,
+                        )
+                    }
                     Err(error) => (ipc_error_response(&error), outcome),
                 }
             }
@@ -137,13 +138,9 @@ impl DaemonRuntime {
                     Ok(()) => {
                         let message =
                             format!("reloaded config from {}", self.config.path.display());
+                        self.mark_pending_apply(true, false);
                         (
-                            self.respond_after_forced_apply(
-                                "reload_config",
-                                &message,
-                                now_utc,
-                                runner,
-                            ),
+                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
                             outcome,
                         )
                     }
@@ -188,25 +185,14 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
 
-                match self.run_once_at_with_runner(now_utc, runner, force) {
-                    Ok(report) => {
-                        log_tick(&report);
-                        (
-                            ipc::ResponseEnvelope::run_once(
-                                run_once_response(&report),
-                                "completed one daemon tick",
-                            ),
-                            outcome,
-                        )
-                    }
-                    Err(error) => (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InternalError,
-                            error.to_string(),
-                        ),
-                        outcome,
+                self.mark_pending_apply(force, false);
+                (
+                    ipc::ResponseEnvelope::run_once(
+                        queued_run_once_response(),
+                        "daemon tick queued",
                     ),
-                }
+                    outcome,
+                )
             }
             ipc::Request::IdleDim => {
                 let outcome = IpcOutcome {
@@ -214,13 +200,9 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
                 self.state.desktop_idle_dimmed = true;
+                self.mark_pending_apply(true, false);
                 (
-                    self.respond_after_forced_apply(
-                        "idle_dim",
-                        "desktop idle dimming active",
-                        now_utc,
-                        runner,
-                    ),
+                    ipc::ResponseEnvelope::ack("desktop idle dimming active; apply queued"),
                     outcome,
                 )
             }
@@ -231,6 +213,7 @@ impl DaemonRuntime {
                 };
                 self.state.desktop_idle_dimmed = false;
                 let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
+                self.mark_pending_apply(true, false);
                 (
                     ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
                     outcome,
@@ -265,47 +248,6 @@ impl DaemonRuntime {
         Ok(())
     }
 
-    fn respond_after_forced_apply<R: ProcessRunner + Sync>(
-        &mut self,
-        trigger: &'static str,
-        success_message: &str,
-        now_utc: DateTime<Utc>,
-        runner: &R,
-    ) -> ipc::ResponseEnvelope {
-        self.run_once_at_with_runner(now_utc, runner, true)
-            .map_or_else(
-                |error| {
-                    tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
-                    ipc::ResponseEnvelope::error(
-                        ipc::ErrorCode::InternalError,
-                        format!("{success_message}, but immediate apply failed: {error}"),
-                    )
-                },
-                |report| immediate_apply_response(success_message, &report),
-            )
-    }
-
-    fn respond_after_resync<R: ProcessRunner + Sync>(
-        &mut self,
-        trigger: &'static str,
-        success_message: &str,
-        now_utc: DateTime<Utc>,
-        runner: &R,
-        clear_backoff: bool,
-    ) -> ipc::ResponseEnvelope {
-        self.run_resync_at_with_runner(now_utc, runner, clear_backoff)
-            .map_or_else(
-                |error| {
-                    tracing::error!(trigger = %trigger, error = %error, "force_apply_failed");
-                    ipc::ResponseEnvelope::error(
-                        ipc::ErrorCode::InternalError,
-                        format!("{success_message}, but immediate apply failed: {error}"),
-                    )
-                },
-                |report| immediate_apply_response(success_message, &report),
-            )
-    }
-
     fn suspend(&mut self, now_epoch_s: u64, minutes: Option<u64>) -> Result<String, RuntimeError> {
         let previous = self.state.suspend_until_epoch_s;
         let previous_indefinite = self.state.suspend_indefinite;
@@ -328,14 +270,19 @@ impl DaemonRuntime {
         let previous_suspend_until = self.state.suspend_until_epoch_s;
         let previous_suspend_indefinite = self.state.suspend_indefinite;
         let previous_override = self.state.manual_override.take();
+        let previous_monitors = self.state.monitors.clone();
 
         self.state.suspend_until_epoch_s = None;
         self.state.suspend_indefinite = false;
+        for monitor in self.state.monitors.values_mut() {
+            monitor.backoff = None;
+        }
 
         if let Err(error) = self.persist_state_if_changed() {
             self.state.suspend_until_epoch_s = previous_suspend_until;
             self.state.suspend_indefinite = previous_suspend_indefinite;
             self.state.manual_override = previous_override;
+            self.state.monitors = previous_monitors;
             return Err(error);
         }
         Ok(())
@@ -414,25 +361,28 @@ impl DaemonRuntime {
         }
         self.ensure_configured_monitor(monitor_id)?;
 
-        for monitor in &mut self.config.monitors {
-            if monitor.logical_id == monitor_id {
-                monitor.min_pct = min_pct;
-                monitor.max_pct = max_pct;
-            }
-        }
+        // Read, modify, validate, and persist the same config snapshot before
+        // replacing the live runtime config. A failed save therefore cannot
+        // leave the daemon reporting limits that disappear on reload.
+        let mut report = config::load_from_path(&self.config.path)?;
+        let Some(monitor) = report
+            .config
+            .monitors
+            .iter_mut()
+            .find(|monitor| monitor.logical_id == monitor_id)
+        else {
+            return Err(RuntimeError::Ipc(ipc::IpcError::Protocol {
+                message: format!("unknown monitor logical_id `{monitor_id}` in config file"),
+            }));
+        };
+        monitor.min_pct = min_pct;
+        monitor.max_pct = max_pct;
 
-        if let Ok(mut report) = config::load_from_path(&self.config.path) {
-            if let Some(m) = report
-                .config
-                .monitors
-                .iter_mut()
-                .find(|m| m.logical_id == monitor_id)
-            {
-                m.min_pct = min_pct;
-                m.max_pct = max_pct;
-                let _ = config::save_to_path(&report.config, &self.config.path);
-            }
-        }
+        let next_config = RuntimeConfig::from_report(report.clone())?;
+        config::save_to_path(&report.config, &self.config.path)?;
+        self.fade_engine.cancel_all();
+        self.config = next_config;
+        self.day_curve_cache = None;
 
         Ok(format!(
             "updated limits for {monitor_id} to min={min_pct}%, max={max_pct}%"
@@ -531,6 +481,7 @@ impl DaemonRuntime {
         &mut self,
         new_config: RuntimeConfig,
     ) -> Result<(), RuntimeError> {
+        self.fade_engine.cancel_all();
         let location_changed = self.config.location != new_config.location;
 
         let previous_config = std::mem::replace(&mut self.config, new_config);
@@ -567,16 +518,6 @@ impl DaemonRuntime {
     }
 }
 
-fn immediate_apply_response(success_message: &str, report: &TickReport) -> ipc::ResponseEnvelope {
-    log_tick(report);
-
-    if let Some(message) = immediate_apply_error_message(success_message, &report.apply_summary) {
-        ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, message)
-    } else {
-        ipc::ResponseEnvelope::ack(success_message)
-    }
-}
-
 pub(super) fn ipc_error_response(error: &RuntimeError) -> ipc::ResponseEnvelope {
     let code = match error {
         RuntimeError::Ipc(ipc::IpcError::Protocol { .. }) => ipc::ErrorCode::InvalidRequest,
@@ -585,43 +526,15 @@ pub(super) fn ipc_error_response(error: &RuntimeError) -> ipc::ResponseEnvelope 
     ipc::ResponseEnvelope::error(code, error.to_string())
 }
 
-pub(super) fn run_once_response(report: &TickReport) -> ipc::RunOnceResponse {
+fn queued_run_once_response() -> ipc::RunOnceResponse {
     ipc::RunOnceResponse {
-        tick_duration_ms: report.tick_duration.as_millis().min(u128::from(u64::MAX)) as u64,
-        monitors_evaluated: report.monitors_evaluated as u32,
-        writes_attempted: report.apply_summary.attempted as u32,
-        writes_skipped: report.apply_summary.skipped as u32,
-        writes_succeeded: report.apply_summary.succeeded as u32,
-        writes_failed: report.apply_summary.failed as u32,
+        tick_duration_ms: 0,
+        monitors_evaluated: 0,
+        writes_attempted: 0,
+        writes_skipped: 0,
+        writes_succeeded: 0,
+        writes_failed: 0,
     }
-}
-
-pub(super) fn immediate_apply_error_message(
-    action: &str,
-    summary: &ApplySummary,
-) -> Option<String> {
-    if summary.failed == 0 {
-        return None;
-    }
-
-    let failures = summary
-        .records
-        .iter()
-        .filter(|record| record.status == ApplyStatus::Failed)
-        .map(|record| format!("{} ({})", record.logical_id, record.detail))
-        .take(3)
-        .collect::<Vec<_>>();
-
-    let detail = if failures.is_empty() {
-        format!("{} monitor(s)", summary.failed)
-    } else {
-        failures.join("; ")
-    };
-
-    Some(format!(
-        "{action}, but immediate apply failed on {} monitor(s): {detail}",
-        summary.failed
-    ))
 }
 
 impl DaemonRuntime {

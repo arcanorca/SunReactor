@@ -1,5 +1,9 @@
 #[cfg(target_os = "linux")]
 use std::env;
+#[cfg(target_os = "linux")]
+use std::fs;
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 pub const CONFIG_DIR: &str = "~/.config/sunreactor/";
@@ -23,6 +27,11 @@ pub enum PathError {
     MissingHome,
     #[error("XDG_RUNTIME_DIR is not set and the current user id could not be resolved")]
     MissingRuntimeUid,
+    #[cfg(target_os = "linux")]
+    #[error(
+        "no safe runtime directory: set XDG_RUNTIME_DIR to a user-owned writable directory or set XDG_STATE_HOME (HOME is used by default) for the fallback runtime path"
+    )]
+    NoSafeRuntimeDirectory,
     #[error("{env_var} must be an absolute path, got {}", value.display())]
     InvalidAbsolutePath {
         env_var: &'static str,
@@ -84,7 +93,7 @@ pub fn cache_dir() -> Result<PathBuf, PathError> {
 
 #[cfg(target_os = "linux")]
 pub fn runtime_socket_dir() -> Result<PathBuf, PathError> {
-    resolve_runtime_base_dir().map(|base| base.join(APP_DIR_NAME))
+    resolve_runtime_base_dir()
 }
 
 pub fn runtime_socket_path() -> Result<PathBuf, PathError> {
@@ -228,7 +237,11 @@ fn resolve_runtime_base_dir() -> Result<PathBuf, PathError> {
         Some(value) if !value.is_empty() => {
             let path = PathBuf::from(value);
             if path.is_absolute() {
-                Ok(path)
+                if is_safe_runtime_dir(&path) {
+                    Ok(path.join(APP_DIR_NAME))
+                } else {
+                    Err(PathError::NoSafeRuntimeDirectory)
+                }
             } else {
                 Err(PathError::InvalidAbsolutePath {
                     env_var: "XDG_RUNTIME_DIR",
@@ -236,10 +249,41 @@ fn resolve_runtime_base_dir() -> Result<PathBuf, PathError> {
                 })
             }
         }
-        _ => current_uid()
-            .map(|uid| Path::new("/run/user").join(uid.to_string()))
-            .ok_or(PathError::MissingRuntimeUid),
+        _ => {
+            let uid = current_uid().ok_or(PathError::MissingRuntimeUid)?;
+            let system_dir = Path::new("/run/user").join(uid.to_string());
+            if is_safe_runtime_dir(&system_dir) {
+                return Ok(system_dir.join(APP_DIR_NAME));
+            }
+
+            let state_base = resolve_user_dir("XDG_STATE_HOME", ".local/state")?;
+            let fallback = state_base.join(APP_DIR_NAME).join("run");
+            create_safe_runtime_dir(&fallback)
+                .then_some(fallback)
+                .ok_or(PathError::NoSafeRuntimeDirectory)
+        }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn is_safe_runtime_dir(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    metadata.is_dir()
+        && current_uid().is_some_and(|uid| metadata.uid() == uid)
+        && metadata.permissions().mode() & 0o200 != 0
+}
+
+#[cfg(target_os = "linux")]
+fn create_safe_runtime_dir(path: &Path) -> bool {
+    if fs::create_dir_all(path).is_err() {
+        return false;
+    }
+    if fs::set_permissions(path, fs::Permissions::from_mode(0o700)).is_err() {
+        return false;
+    }
+    is_safe_runtime_dir(path)
 }
 
 #[cfg(target_os = "linux")]

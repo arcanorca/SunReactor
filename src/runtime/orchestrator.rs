@@ -73,6 +73,9 @@ pub struct DaemonRuntime {
     /// the policy config and the weather multiplier, so repeated widget
     /// requests are served from memory instead of re-running the policy.
     pub(super) day_curve_cache: Option<(String, crate::ipc::DayCurveResponse)>,
+    pending_apply: bool,
+    pending_apply_force: bool,
+    pending_apply_clear_backoff: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +102,27 @@ impl DaemonRuntime {
         self.run_once_at_with_runner(Utc::now(), &RealProcessRunner, false)
     }
 
+    pub(super) fn mark_pending_apply(&mut self, force: bool, clear_backoff: bool) {
+        self.pending_apply = true;
+        self.pending_apply_force |= force;
+        self.pending_apply_clear_backoff |= clear_backoff;
+    }
+
+    pub(super) fn take_pending_apply(&mut self) -> Option<(bool, bool)> {
+        if !self.pending_apply {
+            return None;
+        }
+        self.pending_apply = false;
+        Some((
+            std::mem::take(&mut self.pending_apply_force),
+            std::mem::take(&mut self.pending_apply_clear_backoff),
+        ))
+    }
+
+    pub(super) fn has_pending_apply(&self) -> bool {
+        self.pending_apply
+    }
+
     /// Perform one complete capability observation before a one-shot apply.
     /// A one-shot invocation has no daemon loop available to perform the
     /// normal asynchronous observation/reconciliation handshake.
@@ -107,6 +131,7 @@ impl DaemonRuntime {
             &RealProcessRunner,
             std::path::Path::new("/sys/class/backlight"),
         );
+        self.fade_engine.cancel_all();
         self.last_capabilities = Some(CapabilitySnapshot::from_discovery(&report));
     }
 
@@ -148,6 +173,7 @@ impl DaemonRuntime {
     pub(super) fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
         match self.capability_refresh.publish_completed() {
             Some(CapabilityRefreshPublication::Published(snapshot)) => {
+                self.fade_engine.cancel_all();
                 self.last_capabilities = Some(snapshot);
                 Some(true)
             }
@@ -172,6 +198,7 @@ impl DaemonRuntime {
     }
 
     pub(super) fn handle_display_event(&mut self, reason: DisplayRecoveryReason) {
+        self.fade_engine.cancel_all();
         let wake_reason = match reason {
             DisplayRecoveryReason::DrmHotplug => WakeReason::DrmHotplug,
             DisplayRecoveryReason::DrmConnectorChange => WakeReason::DrmConnectorChange,
@@ -420,6 +447,16 @@ impl DaemonRuntime {
         Self::bootstrap_with_paths(config, state_path, socket_path)
     }
 
+    /// Bootstraps one-shot mode without resolving or creating the IPC socket
+    /// directory. Hardware apply remains available; only the persistent state
+    /// directory is initialized.
+    pub fn bootstrap_once() -> Result<Self, RuntimeError> {
+        let config = config::load()?;
+        let state_path = paths::state_file()?;
+        let socket_path = state_path.with_file_name("once-control.sock");
+        Self::bootstrap_with_paths_mode(config, state_path, socket_path, false)
+    }
+
     #[must_use]
     /// Generates a human-readable startup message summarizing the active
     /// configuration source, connected monitors, and runtime paths.
@@ -444,6 +481,16 @@ impl DaemonRuntime {
         state_path: PathBuf,
         socket_path: PathBuf,
     ) -> Result<Self, RuntimeError> {
+        Self::bootstrap_with_paths_mode(config, state_path, socket_path, true)
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn bootstrap_with_paths_mode(
+        config: ConfigReport,
+        state_path: PathBuf,
+        socket_path: PathBuf,
+        create_socket_dir: bool,
+    ) -> Result<Self, RuntimeError> {
         for warning in &config.warnings {
             tracing::info!(warning = %warning, "config_compat_warning");
         }
@@ -452,8 +499,10 @@ impl DaemonRuntime {
             create_runtime_dir(state_dir)?;
         }
         #[cfg(target_os = "linux")]
-        if let Some(socket_dir) = socket_path.parent() {
-            create_runtime_dir(socket_dir)?;
+        if create_socket_dir {
+            if let Some(socket_dir) = socket_path.parent() {
+                create_runtime_dir(socket_dir)?;
+            }
         }
 
         let state = RuntimeState::load_from_path(&state_path)?;
@@ -498,6 +547,9 @@ impl DaemonRuntime {
             probe_schedule,
             display_events: None,
             day_curve_cache: None,
+            pending_apply: false,
+            pending_apply_force: false,
+            pending_apply_clear_backoff: false,
         };
 
         runtime.prepare_apply_resync(false);
@@ -600,6 +652,24 @@ mod tests {
 
     struct PanicObservationRunner;
 
+    struct SlowApplyRunner;
+
+    impl ProcessRunner for SlowApplyRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[String],
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            std::thread::sleep(Duration::from_secs(2));
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            })
+        }
+    }
+
     impl ProcessRunner for PanicObservationRunner {
         fn run(
             &self,
@@ -667,6 +737,24 @@ mod tests {
             crate::paths::IpcEndpoint::NamedPipe(socket_path.display().to_string())
         );
         assert_eq!(runtime.state, RuntimeState::default());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn one_shot_bootstrap_does_not_create_socket_directory() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+
+        DaemonRuntime::bootstrap_with_paths_mode(
+            test_config_report(),
+            state_path,
+            socket_path.clone(),
+            false,
+        )
+        .expect("one-shot bootstrap should succeed");
+
+        assert!(!socket_path.parent().expect("socket directory").exists());
     }
 
     #[test]
@@ -1749,7 +1837,8 @@ mod tests {
         assert!(matches!(resume_response.response, Response::Ack { .. }));
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
         assert_eq!(runtime.state.manual_override, None);
-        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(runner.calls().len(), 0);
+        assert!(runtime.pending_apply);
         assert_eq!(
             RuntimeState::load_from_path(&state_path)
                 .expect("state file should load")
@@ -1803,7 +1892,8 @@ mod tests {
         assert!(matches!(resume_response.response, Response::Ack { .. }));
         assert!(!runtime.state.suspend_indefinite);
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
-        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(runner.calls().len(), 0);
+        assert!(runtime.pending_apply);
     }
 
     #[test]
@@ -1847,9 +1937,8 @@ mod tests {
 
         assert!(outcome.tick_attempted);
         assert!(matches!(response.response, Response::Ack { .. }));
-        assert_eq!(runner.calls().len(), 1);
-        assert!(runner.calls()[0]
-            .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
+        assert_eq!(runner.calls().len(), 0);
+        assert!(runtime.pending_apply);
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
         assert_eq!(runtime.state.manual_override, None);
         assert_eq!(
@@ -1864,7 +1953,7 @@ mod tests {
                 .state
                 .monitor("internal")
                 .and_then(|monitor| monitor.last_applied_at_epoch_s),
-            Some(1_800_000_000)
+            Some(1_799_999_940)
         );
         assert_eq!(
             RuntimeState::load_from_path(&state_path)
@@ -1933,6 +2022,75 @@ mod tests {
     }
 
     #[test]
+    fn deferred_mutation_and_following_status_do_not_wait_for_apply() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        let now = Utc
+            .timestamp_opt(1_800_000_000, 0)
+            .single()
+            .expect("valid time");
+        let runner = SlowApplyRunner;
+
+        let started = std::time::Instant::now();
+        let (set_response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetOverride {
+                monitor_id: Some(String::from("internal")),
+                percent: 36,
+                minutes: Some(10),
+            },
+            &runner,
+            now,
+        );
+        assert!(started.elapsed() < Duration::from_millis(200));
+        assert!(matches!(set_response.response, Response::Ack { .. }));
+
+        let status_started = std::time::Instant::now();
+        let (status_response, _) =
+            runtime.handle_ipc_request_with_runner(Request::Status, &runner, now);
+        assert!(status_started.elapsed() < Duration::from_millis(200));
+        assert!(matches!(status_response.response, Response::Status { .. }));
+    }
+
+    #[test]
+    fn ipc_set_monitor_limits_reports_persistence_errors_without_mutating_config() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime =
+            DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
+                .expect("runtime should bootstrap");
+        let unwritable_path = temp.path().join("config-directory");
+        std::fs::create_dir_all(&unwritable_path).expect("config directory");
+        runtime.config.path = unwritable_path;
+
+        let (response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetMonitorLimits {
+                monitor_id: String::from("internal"),
+                min_pct: 30,
+                max_pct: 80,
+            },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(matches!(response.response, Response::Error { .. }));
+        let monitor = runtime
+            .config
+            .monitors
+            .iter()
+            .find(|monitor| monitor.logical_id == "internal")
+            .expect("configured monitor");
+        assert_eq!((monitor.min_pct, monitor.max_pct), (10, 100));
+    }
+
+    #[test]
     #[cfg(target_os = "linux")]
     fn ipc_set_override_reports_immediate_apply_failures_without_losing_state() {
         let temp = TempDir::new();
@@ -1974,11 +2132,8 @@ mod tests {
 
         assert!(outcome.tick_attempted);
 
-        let Response::Error { message, .. } = response.response else {
-            panic!("set_override should surface immediate apply failures");
-        };
-        assert!(message.contains("set manual override for internal to 36%"));
-        assert!(message.contains("immediate apply failed"));
+        assert!(matches!(response.response, Response::Ack { .. }));
+        assert!(runtime.pending_apply);
         assert_eq!(
             runtime.state.manual_override.as_ref().and_then(
                 |manual_override| manual_override.target_percent("internal", 1_800_000_000)
@@ -2084,10 +2239,10 @@ mod tests {
             panic!("run_once request should return a run_once response");
         };
 
-        assert_eq!(run_once.monitors_evaluated, 1);
-        assert_eq!(run_once.writes_attempted, 1);
+        assert_eq!(run_once.monitors_evaluated, 0);
+        assert_eq!(run_once.writes_attempted, 0);
         assert_eq!(run_once.writes_skipped, 0);
-        assert_eq!(run_once.writes_succeeded, 1);
+        assert_eq!(run_once.writes_succeeded, 0);
     }
 
     #[test]
