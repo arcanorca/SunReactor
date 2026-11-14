@@ -1085,7 +1085,7 @@ mod tests {
 
     use super::{
         parse_command, render_status, render_theme, set_theme_at, CliCommand, OverrideTarget,
-        ThemeCommand,
+        ThemeCommand, WeatherCommand,
     };
 
     fn parse(args: &[&str]) -> anyhow::Result<CliCommand> {
