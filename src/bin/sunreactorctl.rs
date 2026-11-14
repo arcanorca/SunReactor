@@ -11,7 +11,7 @@ use sunreactor::{
     cli_help,
     config::{self, ConfigSource},
     discovery,
-    ipc::{self, Request, RequestEnvelope, Response, StatusResponse},
+    ipc::{self, Request, RequestEnvelope, Response, ResponseEnvelope, StatusResponse},
     paths, version,
 };
 
@@ -28,6 +28,11 @@ enum ThemeCommand {
     Set { id: String },
     Validate { file: Option<PathBuf> },
     Export { id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum WeatherCommand {
+    CloudDimming { percent: Option<u8> },
 }
 
 const THEME_USAGE: &str = "usage: sunreactorctl theme <list [--json] | show <id> [--json] | set <id> | validate [file] | export <id>>";
@@ -66,6 +71,7 @@ enum CliCommand {
     ConfigInit,
     ConfigValidate,
     Theme(ThemeCommand),
+    Weather(WeatherCommand),
     #[cfg(target_os = "linux")]
     Doctor {
         json: bool,
@@ -127,12 +133,33 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
             _ => anyhow::bail!("usage: sunreactorctl config <init|validate>"),
         },
         Some("theme" | "themes") => parse_theme_command(&args[1..]),
+        Some("weather") => parse_weather_command(&args[1..]),
         #[cfg(target_os = "linux")]
         Some("doctor") => parse_doctor_command(&args[1..]),
         #[cfg(feature = "tui")]
         Some("tui") => Ok(CliCommand::Tui),
         Some(other) => anyhow::bail!("unknown command: {other}"),
     }
+}
+
+fn parse_weather_command(args: &[String]) -> anyhow::Result<CliCommand> {
+    if args.first().map(String::as_str) != Some("cloud-dimming") || args.len() > 2 {
+        anyhow::bail!("usage: sunreactorctl weather cloud-dimming [<percent>]");
+    }
+    let percent = args
+        .get(1)
+        .map(|raw| {
+            raw.parse::<u8>().map_err(|_| {
+                anyhow::anyhow!("cloud dimming percent must be an integer in the range 0..=50")
+            })
+        })
+        .transpose()?;
+    if percent.is_some_and(|value| value > 50) {
+        anyhow::bail!("cloud dimming percent must be an integer in the range 0..=50");
+    }
+    Ok(CliCommand::Weather(WeatherCommand::CloudDimming {
+        percent,
+    }))
 }
 
 fn parse_theme_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -477,6 +504,9 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
         }
         CliCommand::ConfigValidate => validate_config(),
         CliCommand::Theme(command) => run_theme_command(command),
+        CliCommand::Weather(WeatherCommand::CloudDimming { percent }) => {
+            run_cloud_dimming_command(percent)
+        }
         #[cfg(target_os = "linux")]
         CliCommand::Doctor { json } => {
             let report = sunreactor::doctor::run_diagnostics();
@@ -513,6 +543,31 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
         #[cfg(feature = "tui")]
         CliCommand::Tui => sunreactor::tui::run().map_err(|e| anyhow::anyhow!("{e}")),
     }
+}
+
+fn run_cloud_dimming_command(percent: Option<u8>) -> anyhow::Result<String> {
+    if let Some(percent) = percent {
+        return run_ipc_command(Request::SetCloudDimming { percent });
+    }
+
+    let current = match ipc::ControlSocket::from_runtime() {
+        Ok(socket) => match socket.send_request(&RequestEnvelope::new(Request::Status)) {
+            Ok(ResponseEnvelope {
+                response: Response::Status { status },
+                ..
+            }) => status.weather.map(|weather| weather.cloud_dimming_percent),
+            Ok(_) | Err(ipc::IpcError::Unavailable { .. }) => None,
+            Err(error) => return Err(error.into()),
+        },
+        Err(_) => None,
+    }
+    .or_else(|| {
+        config::load()
+            .ok()
+            .map(|report| report.config.weather.cloud_dimming_percent())
+    })
+    .ok_or_else(|| anyhow::anyhow!("cloud dimming setting is unavailable"))?;
+    Ok(format!("cloud_dimming_percent: {current}"))
 }
 
 fn run_theme_command(command: ThemeCommand) -> anyhow::Result<String> {
@@ -862,6 +917,10 @@ fn render_status(status: &StatusResponse) -> String {
                 "weather_cloud_cover_percent: {}",
                 optional_u8(weather.cloud_cover_percent)
             ));
+            lines.push(format!(
+                "weather_cloud_dimming_percent: {}",
+                weather.cloud_dimming_percent
+            ));
         }
         None => lines.push(String::from("weather_enabled: false")),
     }
@@ -937,6 +996,7 @@ fn render_offline_status(socket: &ipc::ControlSocket) -> String {
         String::from("weather_consecutive_failures: unavailable"),
         String::from("weather_last_error: unavailable"),
         String::from("weather_cloud_cover_percent: unavailable"),
+        String::from("weather_cloud_dimming_percent: unavailable"),
     ]
     .join("\n")
 }
@@ -1025,7 +1085,7 @@ mod tests {
 
     use super::{
         parse_command, render_status, render_theme, set_theme_at, CliCommand, OverrideTarget,
-        ThemeCommand,
+        ThemeCommand, WeatherCommand,
     };
 
     fn parse(args: &[&str]) -> anyhow::Result<CliCommand> {
@@ -1210,6 +1270,35 @@ mod tests {
 
         let run_once = parse_command(&[String::from("run-once")]).expect("run-once should parse");
         assert!(matches!(run_once, CliCommand::RunOnce { force: false }));
+    }
+
+    #[test]
+    fn parses_cloud_dimming_commands_and_bounds_percent() {
+        let show = parse_command(&[String::from("weather"), String::from("cloud-dimming")])
+            .expect("cloud dimming query should parse");
+        assert_eq!(
+            show,
+            CliCommand::Weather(WeatherCommand::CloudDimming { percent: None })
+        );
+
+        let set = parse_command(&[
+            String::from("weather"),
+            String::from("cloud-dimming"),
+            String::from("50"),
+        ])
+        .expect("cloud dimming update should parse");
+        assert_eq!(
+            set,
+            CliCommand::Weather(WeatherCommand::CloudDimming { percent: Some(50) })
+        );
+
+        let error = parse_command(&[
+            String::from("weather"),
+            String::from("cloud-dimming"),
+            String::from("51"),
+        ])
+        .expect_err("51% must fail");
+        assert!(error.to_string().contains("0..=50"));
     }
 
     #[test]

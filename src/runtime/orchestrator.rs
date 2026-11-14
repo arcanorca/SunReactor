@@ -2091,6 +2091,93 @@ mod tests {
     }
 
     #[test]
+    fn ipc_set_cloud_dimming_persists_and_status_reports_the_new_value() {
+        let temp = TempDir::new();
+        let config_path = temp.path().join("config.toml");
+        let mut report = test_weather_config_report();
+        report.path = config_path.clone();
+        config::save_to_path(&report.config, &config_path).expect("fixture config should save");
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
+            .expect("runtime should bootstrap");
+
+        let (response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetCloudDimming { percent: 40 },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+        assert!(matches!(response.response, Response::Ack { .. }));
+
+        let persisted = config::parse_text(
+            &std::fs::read_to_string(&config_path).expect("config should be readable"),
+            &config_path,
+        )
+        .expect("persisted config should validate");
+        assert!((persisted.weather.min_multiplier - 0.6).abs() < f64::EPSILON);
+        let status = runtime.status_response(1_800_000_000);
+        assert_eq!(
+            status
+                .weather
+                .expect("weather status should be present")
+                .cloud_dimming_percent,
+            40
+        );
+        assert!(runtime.has_pending_apply());
+    }
+
+    #[test]
+    fn ipc_set_cloud_dimming_rejects_values_above_fifty() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_weather_config_report(),
+            state_path,
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+
+        let (response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetCloudDimming { percent: 51 },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+        assert!(matches!(response.response, Response::Error { .. }));
+        assert_eq!(runtime.config.weather.cloud_dimming_percent(), 25);
+    }
+
+    #[test]
+    fn ipc_set_cloud_dimming_reports_persistence_errors_without_mutating_config() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_weather_config_report(),
+            state_path,
+            socket_path,
+        )
+        .expect("runtime should bootstrap");
+        let unwritable_path = temp.path().join("config-directory");
+        std::fs::create_dir_all(&unwritable_path).expect("config directory");
+        runtime.config.path = unwritable_path;
+
+        let (response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetCloudDimming { percent: 40 },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+        assert!(matches!(response.response, Response::Error { .. }));
+        assert_eq!(runtime.config.weather.cloud_dimming_percent(), 25);
+    }
+
+    #[test]
     #[cfg(target_os = "linux")]
     fn ipc_set_override_reports_immediate_apply_failures_without_losing_state() {
         let temp = TempDir::new();

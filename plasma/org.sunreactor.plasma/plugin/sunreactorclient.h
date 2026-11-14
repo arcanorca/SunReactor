@@ -87,6 +87,8 @@ private:
     Q_PROPERTY(QString weatherCondition READ weatherCondition NOTIFY statusChanged)
     Q_PROPERTY(bool weatherIsNight READ weatherIsNight NOTIFY statusChanged)
     Q_PROPERTY(int cloudCoverPercent READ cloudCoverPercent NOTIFY statusChanged)
+    /*! Maximum daylight reduction under full cloud cover, or -1 when unknown. */
+    Q_PROPERTY(int cloudDimmingPercent READ cloudDimmingPercent NOTIFY statusChanged)
     Q_PROPERTY(bool hasTemperature READ hasTemperature NOTIFY statusChanged)
     Q_PROPERTY(double temperatureC READ temperatureC NOTIFY statusChanged)
     /*! Bounded weather modifier; 1.0 means "no effect on the target". */
@@ -165,6 +167,7 @@ public:
     [[nodiscard]] QString weatherCondition() const { return m_weatherCondition; }
     [[nodiscard]] bool weatherIsNight() const;
     [[nodiscard]] int cloudCoverPercent() const { return m_cloudCoverPercent; }
+    [[nodiscard]] int cloudDimmingPercent() const { return m_cloudDimmingPercent; }
     [[nodiscard]] bool hasTemperature() const { return m_hasTemperature; }
     [[nodiscard]] double temperatureC() const { return m_temperatureC; }
     [[nodiscard]] double weatherMultiplier() const { return m_weatherMultiplier; }
@@ -192,6 +195,7 @@ public:
     void setPopupOpen(bool open);
     void setPollingEnabled(bool enabled);
     void setPinnedThemeId(const QString &id);
+    Q_INVOKABLE void setCloudDimming(int percent);
 
 public Q_SLOTS:
     void queryStatus();
@@ -363,6 +367,7 @@ private:
     QString m_weatherDescription;
     QString m_weatherDayPhase;
     int m_cloudCoverPercent = SunReactor::UNKNOWN_PERCENT;
+    int m_cloudDimmingPercent = SunReactor::UNKNOWN_PERCENT;
     bool m_hasTemperature = false;
     double m_temperatureC = 0.0;
     double m_weatherMultiplier = 1.0;

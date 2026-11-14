@@ -392,6 +392,49 @@ KCM.SimpleKCM {
 
             Item {
                 Kirigami.FormData.isSection: true
+                Kirigami.FormData.label: i18nd(root.domain, "Weather")
+            }
+
+            RowLayout {
+                Kirigami.FormData.label: i18nd(root.domain, "Maximum cloud dimming:")
+                spacing: Kirigami.Units.smallSpacing
+
+                QQC2.Slider {
+                    id: cloudDimmingSlider
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 10
+                    from: 0
+                    to: 50
+                    stepSize: 5
+                    snapMode: QQC2.Slider.SnapAlways
+                    enabled: preview.cloudDimmingPercent >= 0
+                    value: enabled ? preview.cloudDimmingPercent : 0
+                    onPressedChanged: {
+                        if (!pressed && enabled) {
+                            preview.setCloudDimming(Math.round(value))
+                        }
+                    }
+                }
+
+                QQC2.Label {
+                    text: preview.cloudDimmingPercent >= 0
+                        ? i18ndc(root.domain, "Cloud dimming percentage", "%1 %", Math.round(cloudDimmingSlider.value))
+                        : i18nd(root.domain, "Daemon offline")
+                    font: Kirigami.Theme.smallFont
+                }
+            }
+
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 18
+                text: preview.cloudDimmingPercent >= 0
+                    ? i18nd(root.domain, "Applied to the daemon immediately")
+                    : i18nd(root.domain, "Daemon offline")
+                wrapMode: Text.WordWrap
+                font: Kirigami.Theme.smallFont
+                opacity: 0.75
+            }
+
+            Item {
+                Kirigami.FormData.isSection: true
                 Kirigami.FormData.label: i18nd(root.domain, "Look")
             }
 

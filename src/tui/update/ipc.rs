@@ -36,6 +36,19 @@ pub(super) fn handle_ipc(event: IpcEvent, model: &mut Model) {
             let new_multiplier = status.weather.as_ref().and_then(|w| w.multiplier);
 
             if let Some(weather) = &status.weather {
+                if model.pending_cloud_dimming_previous.is_none() {
+                    let _ = model
+                        .config
+                        .weather
+                        .set_cloud_dimming_percent(weather.cloud_dimming_percent);
+                    if !(model.input_mode == crate::tui::model::InputMode::Editing
+                        && model.active_tab == crate::tui::model::Tab::Settings
+                        && model.active_setting == crate::tui::model::settings_index::CLOUD_DIMMING)
+                    {
+                        model.form.cloud_dimming_input = tui_input::Input::default()
+                            .with_value(weather.cloud_dimming_percent.to_string());
+                    }
+                }
                 if let Some(fetched_at) = weather.fetched_at_epoch_s {
                     match model.last_weather_fetched_at {
                         None => {
@@ -85,6 +98,9 @@ pub(super) fn handle_ipc(event: IpcEvent, model: &mut Model) {
                 command_id, action, ..
             } = model.action_state
             {
+                if action == ActionKind::SetCloudDimming {
+                    model.rollback_cloud_dimming();
+                }
                 if action == ActionKind::SaveConfig {
                     tracing::warn!(
                         command_id,
@@ -143,10 +159,14 @@ pub(super) fn handle_ipc(event: IpcEvent, model: &mut Model) {
                 ActionKind::Suspend => String::from("Writes suspended"),
                 ActionKind::Resume => String::from("Writes resumed"),
                 ActionKind::RefreshWeather => String::from("Weather refresh requested"),
+                ActionKind::SetCloudDimming => String::from("Cloud dimming applied"),
                 ActionKind::SaveConfig | ActionKind::ReloadConfig => {
                     String::from("Settings saved and applied")
                 }
             };
+            if action == ActionKind::SetCloudDimming {
+                model.pending_cloud_dimming_previous = None;
+            }
             model.action_state = ActionState::Success {
                 action,
                 message: display_message,
@@ -206,6 +226,9 @@ pub(super) fn handle_ipc(event: IpcEvent, model: &mut Model) {
                     completed_at: Instant::now(),
                 };
             } else {
+                if action == ActionKind::SetCloudDimming {
+                    model.rollback_cloud_dimming();
+                }
                 tracing::warn!(
                     command_id,
                     action = ?action,
@@ -409,6 +432,52 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_cloud_dimming_ack_and_error_reconcile_live_value() {
+        let mut model = Model::new();
+        model.status = Some(dummy_status(1));
+        model.daemon_connection = crate::tui::DaemonConnection::Connected;
+        model.form.cloud_dimming_input = tui_input::Input::default().with_value(String::from("40"));
+
+        assert!(model.commit_cloud_dimming_value(40));
+        let ActionState::Pending {
+            command_id,
+            action: ActionKind::SetCloudDimming,
+            ..
+        } = model.action_state
+        else {
+            panic!("expected pending cloud dimming update");
+        };
+        update::update(
+            &mut model,
+            Message::Ipc(IpcEvent::CommandSucceeded {
+                command_id,
+                action: ActionKind::SetCloudDimming,
+                message: String::from("updated maximum cloud dimming to 40%"),
+            }),
+        );
+        assert!(matches!(model.action_state, ActionState::Success { .. }));
+        assert_eq!(model.config.weather.cloud_dimming_percent(), 40);
+
+        model.form.cloud_dimming_input = tui_input::Input::default().with_value(String::from("45"));
+        assert!(model.commit_cloud_dimming_value(45));
+        let ActionState::Pending { command_id, .. } = model.action_state else {
+            panic!("expected pending cloud dimming update");
+        };
+        update::update(
+            &mut model,
+            Message::Ipc(IpcEvent::CommandFailed {
+                command_id,
+                action: ActionKind::SetCloudDimming,
+                error_category: ErrorCategory::DaemonRejected,
+                message: String::from("write rejected"),
+            }),
+        );
+        assert!(matches!(model.action_state, ActionState::Error { .. }));
+        assert_eq!(model.config.weather.cloud_dimming_percent(), 40);
+        assert_eq!(model.form.cloud_dimming_input.value(), "40");
     }
 
     #[test]

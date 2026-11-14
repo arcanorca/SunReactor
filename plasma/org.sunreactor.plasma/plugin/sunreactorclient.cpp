@@ -539,6 +539,25 @@ void SunReactorClient::setMonitorLimits(const QString &monitorId, int minPct, in
     enqueueRequest(req);
 }
 
+void SunReactorClient::setCloudDimming(int percent)
+{
+    QJsonObject req = request(QStringLiteral("set_cloud_dimming"));
+    req[QStringLiteral("percent")] = qBound(0, percent, 50);
+
+    // A burst can arrive before the socket's connected signal has written the
+    // frame. Replace that not-yet-sent frame as well as queued frames so a
+    // ten-keypress burst produces one daemon request.
+    if (m_isBusy && !m_responseHandled
+        && m_inFlightRequest.value(QStringLiteral("request")).toString()
+            == QStringLiteral("set_cloud_dimming")
+        && m_socket->state() != QLocalSocket::ConnectedState) {
+        m_inFlightRequest = req;
+        m_inFlightQueuedAtMs = m_elapsed.elapsed();
+        return;
+    }
+    enqueueRequest(req);
+}
+
 void SunReactorClient::clearMonitorOverride(const QString &monitorId)
 {
     const QString id = monitorId.trimmed();
@@ -699,6 +718,16 @@ void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
         for (QueuedRequest &queued : m_requestQueue) {
             if (queued.object.value(QStringLiteral("request")).toString() == name
                 && requestMonitorKey(queued.object) == monitor) {
+                queued.object = requestObj;
+                queued.queuedAtMs = now;
+                return;
+            }
+        }
+    }
+
+    if (name == QStringLiteral("set_cloud_dimming")) {
+        for (QueuedRequest &queued : m_requestQueue) {
+            if (queued.object.value(QStringLiteral("request")).toString() == name) {
                 queued.object = requestObj;
                 queued.queuedAtMs = now;
                 return;
@@ -923,7 +952,9 @@ bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
         if (!wasRead) {
             // Commands that move the policy also move today's curve.
             const bool curveMoves = sent == QLatin1String("reload_config")
-                || sent == QLatin1String("set_monitor_limits") || sent == QLatin1String("refresh_weather")
+                || sent == QLatin1String("set_monitor_limits")
+                || sent == QLatin1String("set_cloud_dimming")
+                || sent == QLatin1String("refresh_weather")
                 || sent == QLatin1String("run_once");
             if (curveMoves && m_dayCurveSupport != CapabilityUnsupported && !isQueued(kDayCurve)) {
                 QJsonObject curve = request(kDayCurve);
@@ -1101,6 +1132,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     const qint64 previousGlobalOverrideUntil = m_globalOverrideUntilEpochS;
     const qint64 previousMonitorOverrideUntil = m_perMonitorOverrideUntilEpochS;
     const int previousGlobalPercent = m_globalPercent;
+    const int previousCloudDimming = m_cloudDimmingPercent;
     const bool previousWeatherEnabled = m_weatherEnabled;
     const bool previousWeatherStale = m_weatherStale;
     const bool previousHasWeather = m_hasWeatherReading;
@@ -1162,6 +1194,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
         || previousWeatherStale != m_weatherStale || previousHasWeather != m_hasWeatherReading
         || previousWeatherState != m_weatherState || previousWeatherCondition != m_weatherCondition
         || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
+        || previousCloudDimming != m_cloudDimmingPercent
         || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
         || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
@@ -1340,6 +1373,7 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
         m_weatherDescription.clear();
         m_weatherDayPhase.clear();
         m_cloudCoverPercent = UNKNOWN_PERCENT;
+        m_cloudDimmingPercent = UNKNOWN_PERCENT;
         m_hasTemperature = false;
         m_temperatureC = 0.0;
         m_weatherMultiplier = 1.0;
@@ -1358,6 +1392,9 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
     m_weatherDescription = displayString(weather.value(QStringLiteral("condition_description")));
     m_weatherDayPhase = displayString(weather.value(QStringLiteral("day_phase")));
     m_cloudCoverPercent = optionalPercent(weather, "cloud_cover_percent");
+    const QJsonValue cloudDimming = weather.value(QStringLiteral("cloud_dimming_percent"));
+    m_cloudDimmingPercent = cloudDimming.isDouble() ? qBound(0, cloudDimming.toInt(), 50)
+                                                    : UNKNOWN_PERCENT;
 
     const QJsonValue temperature = weather.value(QStringLiteral("temperature"));
     m_hasTemperature = temperature.isDouble();
@@ -1512,6 +1549,7 @@ void SunReactorClient::clearStatus()
     const bool previousOverride = m_isOverrideActive;
     const bool previousIdleDimmed = m_isDesktopIdleDimmed;
     const int previousGlobalPercent = m_globalPercent;
+    const int previousCloudDimming = m_cloudDimmingPercent;
     const QVariantList previousMonitors = m_monitors;
     const bool previousHasWeather = m_hasWeatherReading;
     const QVariantList previousForecast = m_forecast;
@@ -1527,6 +1565,7 @@ void SunReactorClient::clearStatus()
     m_isOverrideActive = false;
     m_isDesktopIdleDimmed = false;
     m_globalPercent = UNKNOWN_PERCENT;
+    m_cloudDimmingPercent = UNKNOWN_PERCENT;
     m_monitors.clear();
     m_hasWeatherReading = false;
     m_forecast.clear();
@@ -1549,6 +1588,7 @@ void SunReactorClient::clearStatus()
     }
     if (previousSuspended != m_isSuspended || previousOverride != m_isOverrideActive
         || previousIdleDimmed != m_isDesktopIdleDimmed || previousGlobalPercent != m_globalPercent
+        || previousCloudDimming != m_cloudDimmingPercent
         || previousHasWeather != m_hasWeatherReading || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
         || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg

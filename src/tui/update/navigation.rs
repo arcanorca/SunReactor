@@ -48,6 +48,9 @@ pub(super) fn move_horizontal(app: &mut Model, delta: i8) {
             }
             save_toggled_settings(app);
         }
+        Tab::Settings if app.active_setting == crate::tui::model::settings_index::CLOUD_DIMMING => {
+            app.step_cloud_dimming(delta);
+        }
         Tab::Location | Tab::Weather | Tab::Settings => {}
     }
 }

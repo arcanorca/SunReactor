@@ -198,6 +198,25 @@ pub struct WeatherConfig {
     pub min_multiplier: f64,
 }
 
+impl WeatherConfig {
+    /// Maximum daylight reduction at full cloud cover, as a user-facing percent.
+    #[must_use]
+    pub fn cloud_dimming_percent(&self) -> u8 {
+        ((1.0 - self.min_multiplier) * 100.0)
+            .round()
+            .clamp(0.0, 50.0) as u8
+    }
+
+    /// Set the maximum daylight reduction and preserve the canonical persisted field.
+    pub fn set_cloud_dimming_percent(&mut self, percent: u8) -> Result<(), String> {
+        if percent > 50 {
+            return Err(String::from("cloud dimming percent must be within 0..=50"));
+        }
+        self.min_multiplier = 1.0 - f64::from(percent) / 100.0;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
@@ -251,6 +270,12 @@ impl ThemeId {
 }
 
 impl Config {
+    /// Normalize values that remain backward compatible but exceed the
+    /// current user-facing control range before validation and runtime use.
+    pub(crate) fn normalize(&mut self) {
+        self.weather.normalize();
+    }
+
     /// Strict check of `tui.theme` for `sunreactorctl config validate` and
     /// `doctor`. Deliberately not part of [`Config::validate`]: the theme is
     /// cosmetic, so the daemon loads such configs, falls back to a built-in
@@ -271,6 +296,18 @@ impl Config {
                 "tui.theme",
                 format!("{problem} (run `sunreactorctl theme list` / `theme validate`)"),
             )),
+        }
+    }
+}
+
+impl WeatherConfig {
+    pub(crate) fn normalize(&mut self) {
+        if self.min_multiplier.is_finite() && self.min_multiplier > 0.0 && self.min_multiplier < 0.5
+        {
+            tracing::warn!(
+                "weather.min_multiplier below 0.5 clamped to 0.5 (max cloud dimming is 50%)"
+            );
+            self.min_multiplier = 0.5;
         }
     }
 }

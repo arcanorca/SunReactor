@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crate::config::{self as app_config, Config};
 use crate::ipc::Request;
 use crate::tui::globe::{rotation_duration, GlobeCenter};
-use crate::tui::model::{ActionKind, ActionState, ErrorCategory, Model};
+use crate::tui::model::{ActionKind, ActionState, DaemonConnection, ErrorCategory, Model};
 use crate::tui::worker::IpcCommand;
 
 impl Model {
@@ -53,7 +53,8 @@ impl Model {
                 ..
             } => {
                 if now.duration_since(*started_at) >= Duration::from_secs(8) {
-                    if *action == ActionKind::SaveConfig {
+                    let timed_out_action = *action;
+                    if timed_out_action == ActionKind::SaveConfig {
                         tracing::warn!(
                             command_id = *command_id,
                             category = ?ErrorCategory::Timeout,
@@ -65,18 +66,21 @@ impl Model {
                             "config_saved_daemon_unsynced"
                         );
                         self.action_state = ActionState::Warning {
-                            action: *action,
+                            action: timed_out_action,
                             category: ErrorCategory::Timeout,
                             message: String::from("Saved — daemon did not respond"),
                             completed_at: now,
                         };
                     } else {
+                        if timed_out_action == ActionKind::SetCloudDimming {
+                            self.rollback_cloud_dimming();
+                        }
                         self.action_state = ActionState::Error {
-                            action: *action,
+                            action: timed_out_action,
                             category: ErrorCategory::Timeout,
                             message: format!(
                                 "{}: daemon did not respond (timeout)",
-                                action.label()
+                                timed_out_action.label()
                             ),
                             completed_at: now,
                         };
@@ -248,6 +252,52 @@ impl Model {
             description: String::from("Refreshing weather…"),
             started_at: Instant::now(),
         };
+    }
+
+    pub fn commit_cloud_dimming_value(&mut self, percent: u8) -> bool {
+        if percent > 50 {
+            self.action_state = ActionState::Error {
+                action: ActionKind::SetCloudDimming,
+                category: ErrorCategory::Validation,
+                message: String::from("Cloud dimming must be between 0 and 50%"),
+                completed_at: Instant::now(),
+            };
+            return false;
+        }
+
+        let previous = self.config.weather.cloud_dimming_percent();
+        if self.daemon_connection == DaemonConnection::Connected
+            && self
+                .status
+                .as_ref()
+                .is_some_and(|status| status.daemon_alive)
+        {
+            let _ = self.config.weather.set_cloud_dimming_percent(percent);
+            self.config_dirty = false;
+            self.last_config_mutation = None;
+            self.pending_cloud_dimming_previous = Some(previous);
+            let command_id = self.send_command(
+                ActionKind::SetCloudDimming,
+                Request::SetCloudDimming { percent },
+            );
+            self.action_state = ActionState::Pending {
+                command_id,
+                action: ActionKind::SetCloudDimming,
+                description: format!("Setting cloud dimming to {percent}%…"),
+                started_at: Instant::now(),
+            };
+            true
+        } else {
+            self.save_config()
+        }
+    }
+
+    pub(crate) fn rollback_cloud_dimming(&mut self) {
+        if let Some(previous) = self.pending_cloud_dimming_previous.take() {
+            let _ = self.config.weather.set_cloud_dimming_percent(previous);
+            self.form.cloud_dimming_input =
+                tui_input::Input::default().with_value(previous.to_string());
+        }
     }
 }
 

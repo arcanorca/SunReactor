@@ -113,6 +113,29 @@ impl DaemonRuntime {
                     Err(error) => (ipc_error_response(&error), outcome),
                 }
             }
+            ipc::Request::SetCloudDimming { percent } => {
+                if percent > 50 {
+                    return (
+                        ipc::ResponseEnvelope::error(
+                            ipc::ErrorCode::InvalidRequest,
+                            "cloud dimming percent must be within 0..=50",
+                        ),
+                        IpcOutcome::default(),
+                    );
+                }
+                match self.set_cloud_dimming(percent) {
+                    Ok(message) => {
+                        // The next daemon tick observes the new multiplier. Keep the
+                        // request path free of a synchronous hardware apply.
+                        self.mark_pending_apply(true, false);
+                        (
+                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                            IpcOutcome::default(),
+                        )
+                    }
+                    Err(error) => (ipc_error_response(&error), IpcOutcome::default()),
+                }
+            }
             ipc::Request::ClearOverride { monitor_id, global } => {
                 let outcome = IpcOutcome {
                     tick_attempted: true,
@@ -361,32 +384,59 @@ impl DaemonRuntime {
         }
         self.ensure_configured_monitor(monitor_id)?;
 
-        // Read, modify, validate, and persist the same config snapshot before
-        // replacing the live runtime config. A failed save therefore cannot
-        // leave the daemon reporting limits that disappear on reload.
-        let mut report = config::load_from_path(&self.config.path)?;
-        let Some(monitor) = report
-            .config
-            .monitors
-            .iter_mut()
-            .find(|monitor| monitor.logical_id == monitor_id)
-        else {
-            return Err(RuntimeError::Ipc(ipc::IpcError::Protocol {
-                message: format!("unknown monitor logical_id `{monitor_id}` in config file"),
-            }));
-        };
-        monitor.min_pct = min_pct;
-        monitor.max_pct = max_pct;
-
-        let next_config = RuntimeConfig::from_report(report.clone())?;
-        config::save_to_path(&report.config, &self.config.path)?;
+        let (message, next_config) = self.update_config_transaction(|config| {
+            let Some(monitor) = config
+                .monitors
+                .iter_mut()
+                .find(|monitor| monitor.logical_id == monitor_id)
+            else {
+                return Err(RuntimeError::Ipc(ipc::IpcError::Protocol {
+                    message: format!("unknown monitor logical_id `{monitor_id}` in config file"),
+                }));
+            };
+            monitor.min_pct = min_pct;
+            monitor.max_pct = max_pct;
+            Ok(format!(
+                "updated limits for {monitor_id} to min={min_pct}%, max={max_pct}%"
+            ))
+        })?;
         self.fade_engine.cancel_all();
         self.config = next_config;
         self.day_curve_cache = None;
 
-        Ok(format!(
-            "updated limits for {monitor_id} to min={min_pct}%, max={max_pct}%"
-        ))
+        Ok(message)
+    }
+
+    fn set_cloud_dimming(&mut self, percent: u8) -> Result<String, RuntimeError> {
+        let (message, next_config) = self.update_config_transaction(|config| {
+            config
+                .weather
+                .set_cloud_dimming_percent(percent)
+                .map_err(|message| RuntimeError::Ipc(ipc::IpcError::Protocol { message }))?;
+            Ok(format!("updated maximum cloud dimming to {percent}%"))
+        })?;
+
+        self.config = next_config;
+        self.weather_engine
+            .sync_config(&self.config.weather, &self.config.location);
+        self.day_curve_cache = None;
+        Ok(message)
+    }
+
+    /// Read, modify, validate, and atomically persist one complete config
+    /// snapshot before a caller replaces its live runtime configuration.
+    fn update_config_transaction<F>(
+        &self,
+        update: F,
+    ) -> Result<(String, RuntimeConfig), RuntimeError>
+    where
+        F: FnOnce(&mut crate::config::Config) -> Result<String, RuntimeError>,
+    {
+        let mut report = config::load_from_path(&self.config.path)?;
+        let message = update(&mut report.config)?;
+        let next_config = RuntimeConfig::from_report(report.clone())?;
+        config::save_to_path(&report.config, &self.config.path)?;
+        Ok((message, next_config))
     }
 
     fn clear_override(

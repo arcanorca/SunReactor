@@ -164,6 +164,12 @@ fn setting_groups(app: &Model) -> Vec<Group> {
             FieldKind::Adjustable,
         ),
         Row::editable(
+            setting::CLOUD_DIMMING,
+            "Cloud dimming",
+            format!("{}%", app.config.weather.cloud_dimming_percent()),
+            FieldKind::Text,
+        ),
+        Row::editable(
             setting::WEATHER_API_KEY,
             "API key",
             api_key,
@@ -335,7 +341,7 @@ fn render_about(f: &mut Frame, app: &Model, groups: &[Group], area: Rect, styles
     f.render_widget(Clear, area);
     f.render_widget(block.style(styles.base), area);
 
-    let max_dim = ((1.0 - app.config.weather.min_multiplier) * 100.0).round();
+    let cloud_dimming = app.config.weather.cloud_dimming_percent();
     let description = match app.active_setting {
         setting::THEME => String::from("Colour palette for every screen. Enter opens the list."),
         setting::EFFECTS => String::from(
@@ -356,7 +362,14 @@ fn render_about(f: &mut Frame, app: &Model, groups: &[Group], area: Rect, styles
             "How long s pauses brightness writes. Leave it empty to pause until you resume with r.",
         ),
         setting::WEATHER_ENABLED => {
-            format!("Cloud cover can lower daylight brightness by up to {max_dim:.0}%.")
+            format!(
+                "Lowers daylight brightness by up to this much under full cloud cover. Has no effect at night. Current value: {cloud_dimming}%.",
+            )
+        }
+        setting::CLOUD_DIMMING => {
+            format!(
+                "Lowers daylight brightness by up to this much under full cloud cover. Has no effect at night. Current value: {cloud_dimming}%.",
+            )
         }
         setting::WEATHER_API_KEY => String::from(
             "Your OpenWeather key. Saved in config.toml unless it comes from an environment variable. Never shown.",
@@ -755,7 +768,7 @@ mod tests {
         model.motion.level = crate::config::MotionLevel::Instrument;
         model.active_tab = Tab::Settings;
         model.active_setting = 0;
-        assert_eq!(model.tab_field_count(Tab::Settings), 10);
+        assert_eq!(model.tab_field_count(Tab::Settings), settings_index::COUNT);
 
         // 1. Navigate down to Effects (index 1)
         crate::tui::update::update(

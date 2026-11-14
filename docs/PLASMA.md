@@ -62,6 +62,7 @@ The configure dialog of the widget holds these settings:
 | General | `showTemperature`, `showSolarElevation` | show the outside temperature and the sun's elevation |
 | General | `defaultSuspendMinutes`, `overrideDurationMinutes` | default pause length and how long a manual override lasts (0 = until resumed or never) |
 | General | `socketPath` | empty uses the daemon's default socket under `XDG_RUNTIME_DIR` |
+| Weather | Maximum cloud dimming | 0..=50% daylight reduction under full cloud cover; applied to the daemon immediately and disabled while it is offline |
 | Appearance | `themeMode`, `pinnedTheme` | follow the terminal UI's theme, or pin one (see [THEMES.md](THEMES.md#5-how-the-plasma-widget-uses-themes)) |
 | Appearance | `accentOverride`, `densityOverride`, `pixelScale`, `rendererOverride` | override the theme's accent, density, art-pixel size and renderer |
 | Appearance | `weatherIconStyle` | `auto`, `modern`, `line`, `solid` or `pixel` weather icons |

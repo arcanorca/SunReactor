@@ -72,6 +72,9 @@ provider = "openweather"
 api_key_env = "OPENWEATHER_API_KEY"
 # api_key = "set-only-if-you-accept-storing-a-secret-in-config"
 refresh_minutes = 30
+# Canonical multiplier: cloud dimming percent = round((1 - min_multiplier) * 100).
+# Keep this between 0.5 and 1.0 (0..=50%); change it with
+# `sunreactorctl weather cloud-dimming`, the TUI Settings row, or the Plasma plasmoid.
 min_multiplier = 0.75
 
 [tui]

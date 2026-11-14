@@ -202,6 +202,7 @@ impl DaemonRuntime {
 
         Some(ipc::WeatherStatus {
             enabled: true,
+            cloud_dimming_percent: self.config.weather.cloud_dimming_percent(),
             state,
             // Loading is a transport state, not a statement that a
             // last-known-good snapshot is unusable.
