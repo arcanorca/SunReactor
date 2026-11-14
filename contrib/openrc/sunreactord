@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+
+# Example user-level OpenRC service. Copy this file into the user's OpenRC
+# service directory (usually ~/.local/share/openrc/user/sunreactord), adjust
+# command_user for the host, and enable it with the user's OpenRC instance.
+name="sunreactord"
+description="SunReactor adaptive brightness daemon"
+command="${HOME}/.local/bin/sunreactord"
+command_user="${USER}"
+command_background="yes"
+pidfile="${XDG_RUNTIME_DIR:-${HOME}/.local/state}/sunreactor/sunreactord.pid"
+output_log="${XDG_STATE_HOME:-${HOME}/.local/state}/sunreactor/openrc.log"
+error_log="${XDG_STATE_HOME:-${HOME}/.local/state}/sunreactor/openrc.log"
+
+depend() {
+    need localmount
+    after bootmisc
+}

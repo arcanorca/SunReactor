@@ -85,6 +85,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CMake, copies the plugin and QML module under `~/.local`, replaces the widget
   package, and keeps the previous widget in `~/.local/share/sunreactor-backups/`.
   It never restarts plasmashell and never fails the installation.
+- **Linux distribution portability**: installations without a usable systemd user
+  manager now get an XDG autostart entry, and `--uninstall` removes it. OpenRC
+  and runit user-level examples ship under `contrib/`; package hints select the
+  distro's package manager and privilege helper. Plasma QML installation follows
+  the host's `lib` or `lib64` Qt layout and writes an idempotent `sunreactor.sh`
+  environment file.
 
 ### Changed
 - **TUI**: palettes come from the registry (`src/tui/theme.rs`). The theme picker

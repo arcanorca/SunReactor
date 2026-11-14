@@ -1,14 +1,20 @@
-#!/usr/bin/env bash
+#!/bin/sh
+# shellcheck shell=bash
+
+# Keep the entry point POSIX-readable so `sh install.sh` either re-execs the
+# required interpreter or explains how to install it before parsing Bash code.
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    fi
+    printf 'Error: SunReactor installer requires bash. Install bash and rerun: bash %s\n' "$0" >&2
+    exit 1
+fi
 
 # ==========================================
 # SUNREACTOR AUTOMATED INSTALLER
 # ==========================================
 # Adheres to strict mode, SOLID, and KISS.
-
-if [ -z "${BASH_VERSION:-}" ]; then
-    printf 'Error: SunReactor installer requires bash. Please run with: bash %s\n' "$0" >&2
-    exit 1
-fi
 
 set -euo pipefail
 
@@ -26,11 +32,15 @@ readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 readonly STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 readonly CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 readonly SYSTEMD_DIR="$CONFIG_HOME/systemd/user"
+readonly AUTOSTART_DIR="$CONFIG_HOME/autostart"
+readonly AUTOSTART_FILE="$AUTOSTART_DIR/sunreactord.desktop"
 readonly CFG_DIR="$CONFIG_HOME/sunreactor"
 readonly STATE_DIR="$STATE_HOME/sunreactor"
 readonly CACHE_DIR="$CACHE_HOME/sunreactor"
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly TMP_DIR="$(mktemp -d)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+TMP_DIR="$(mktemp -d)"
+readonly TMP_DIR
 readonly BACKUP_DIR="$TMP_DIR/backup"
 
 # State variables
@@ -45,6 +55,7 @@ INSTALL_MUTATED=0
 INSTALL_COMMITTED=0
 INSTALL_ROLLBACK_INCOMPLETE=0
 SYSTEMD_UNIT_MUTATED=0
+AUTOSTART_FILE_MUTATED=0
 SYSTEMD_MANAGER_AVAILABLE=0
 SERVICE_WAS_ACTIVE=0
 SERVICE_WAS_ENABLED=0
@@ -143,6 +154,25 @@ detect_libc() {
     return 1
 }
 
+version_at_least() {
+    local required="$1" actual="$2"
+    awk -v required="$required" -v actual="$actual" '
+        function component(value, index, parts) {
+            split(value, parts, ".")
+            return (index in parts) ? (parts[index] + 0) : 0
+        }
+        BEGIN {
+            for (i = 1; i <= 8; i++) {
+                r = component(required, i)
+                a = component(actual, i)
+                if (a > r) exit 0
+                if (a < r) exit 1
+            }
+            exit 0
+        }
+    ' </dev/null
+}
+
 verify_checksum() {
     local archive_path="$1" sums_path="$2" artifact_name="$3"
     local expected actual
@@ -195,6 +225,134 @@ log_success() {
 
 log_error() {
     echo -e "\033[1;31m==> ERROR:\033[0m \033[1m$1\033[0m" >&2
+}
+
+log_warning() {
+    echo -e "\033[1;33m==> WARNING:\033[0m \033[1m$1\033[0m" >&2
+}
+
+# Return the first available privilege helper. User-local installs do not need
+# it, but dependency instructions and future privileged operations must not
+# assume that sudo is installed.
+privilege_helper() {
+    if [[ ${EUID:-$(id -u 2>/dev/null || echo 1)} -eq 0 ]]; then
+        return 0
+    fi
+    local helper
+    for helper in sudo doas run0; do
+        if command -v "$helper" >/dev/null 2>&1; then
+            printf '%s\n' "$helper"
+            return 0
+        fi
+    done
+    return 1
+}
+
+run_privileged() {
+    if [[ ${EUID:-$(id -u 2>/dev/null || echo 1)} -eq 0 ]]; then
+        "$@"
+        return
+    fi
+    local helper
+    if helper=$(privilege_helper); then
+        "$helper" "$@"
+        return
+    fi
+    log_warning "Root privileges are required for this command; run it manually: $*"
+    return 1
+}
+
+detect_package_manager() {
+    local distro_id="" distro_like=""
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        distro_id="${ID:-}"
+        distro_like="${ID_LIKE:-}"
+    fi
+    case " $distro_id $distro_like " in
+        *' arch '*|*' manjaro '*|*' cachyos '*) printf 'pacman\n' ;;
+        *' debian '*|*' ubuntu '*|*' linuxmint '*|*' pop '*) printf 'apt\n' ;;
+        *' fedora '*|*' rhel '*|*' centos '*|*' rocky '*|*' alma '*) printf 'dnf\n' ;;
+        *' suse '*|*' opensuse '*|*' sles '*) printf 'zypper\n' ;;
+        *' void '*) printf 'xbps-install\n' ;;
+        *' alpine '*) printf 'apk\n' ;;
+        *' gentoo '*) printf 'emerge\n' ;;
+        *' nixos '*|*' nix '*) printf 'nix\n' ;;
+        *)
+            if command -v pacman >/dev/null 2>&1; then printf 'pacman\n'
+            elif command -v apt-get >/dev/null 2>&1; then printf 'apt\n'
+            elif command -v dnf >/dev/null 2>&1; then printf 'dnf\n'
+            elif command -v zypper >/dev/null 2>&1; then printf 'zypper\n'
+            elif command -v xbps-install >/dev/null 2>&1; then printf 'xbps-install\n'
+            elif command -v apk >/dev/null 2>&1; then printf 'apk\n'
+            elif command -v emerge >/dev/null 2>&1; then printf 'emerge\n'
+            elif command -v nix >/dev/null 2>&1; then printf 'nix\n'
+            else return 1
+            fi
+            ;;
+    esac
+}
+
+package_install_command() {
+    local manager="$1" helper command_text
+    command_text=$(package_install_command_without_helper "$manager") || return 1
+    if [[ "$manager" == nix ]]; then
+        printf '%s\n' "$command_text"
+        return 0
+    fi
+    if helper=$(privilege_helper 2>/dev/null) && [[ -n "$helper" ]]; then
+        printf '%s %s\n' "$helper" "$command_text"
+    else
+        printf '%s\n' "$command_text"
+    fi
+}
+
+package_install_command_without_helper() {
+    local manager="$1" packages="ddcutil brightnessctl i2c-tools"
+    case "$manager" in
+        pacman) printf 'pacman -S %s' "$packages" ;;
+        apt) printf 'apt install %s' "$packages" ;;
+        dnf) printf 'dnf install %s' "$packages" ;;
+        zypper) printf 'zypper install %s' "$packages" ;;
+        xbps-install) printf 'xbps-install -S %s' "$packages" ;;
+        apk) printf 'apk add %s' "$packages" ;;
+        emerge) printf 'emerge app-misc/ddcutil app-misc/brightnessctl sys-apps/i2c-tools' ;;
+        nix) printf 'nix profile install nixpkgs#ddcutil nixpkgs#brightnessctl nixpkgs#i2c-tools' ;;
+        *) return 1 ;;
+    esac
+}
+
+print_dependency_hints() {
+    local missing=() groups manager command_text
+    command -v ddcutil >/dev/null 2>&1 || missing+=(ddcutil)
+    command -v brightnessctl >/dev/null 2>&1 || missing+=(brightnessctl)
+    if [[ ! -d /sys/module/i2c_dev ]] && ! compgen -G '/dev/i2c-*' >/dev/null 2>&1; then
+        missing+=(i2c-dev)
+    fi
+    groups=$(id -nG 2>/dev/null || true)
+    if [[ ${EUID:-1} -ne 0 ]] && compgen -G '/dev/i2c-*' >/dev/null 2>&1 &&
+        [[ " $groups " != *' i2c '* ]]; then
+        missing+=(i2c-group-membership)
+    fi
+    [[ ${#missing[@]} -gt 0 ]] || return 0
+    if ! manager=$(detect_package_manager); then
+        log_warning "Optional display dependencies missing (${missing[*]}). Install ddcutil, brightnessctl, i2c-dev/i2c-tools, and join the i2c group using your distribution's package manager."
+        return 0
+    fi
+    command_text=$(package_install_command_without_helper "$manager")
+    if [[ "$manager" == nix || ${EUID:-1} -eq 0 ]]; then
+        log_warning "Optional display dependencies missing (${missing[*]}). Install with: $command_text"
+    elif privilege_helper >/dev/null 2>&1; then
+        local helper
+        helper=$(privilege_helper)
+        log_warning "Optional display dependencies missing (${missing[*]}). Install with: $helper $command_text"
+    else
+        log_warning "Optional display dependencies missing (${missing[*]}). Run as root: $command_text"
+    fi
+    if [[ " ${missing[*]} " == *' i2c-group-membership '* ]]; then
+        log_warning "After installing i2c support, add your user to the i2c group (for example: usermod -aG i2c $USER) and log in again."
+    fi
 }
 
 # ==========================================
@@ -269,7 +427,7 @@ download_release() {
             log_error "Could not determine the host glibc version."
             exit 1
         }
-        if ! printf '%s\n%s\n' "$required_glibc" "$host_glibc" | sort -V -C; then
+        if ! version_at_least "$required_glibc" "$host_glibc"; then
             log_error "The GNU artifact requires glibc >= $required_glibc; this host has glibc $host_glibc."
             exit 1
         fi
@@ -344,6 +502,9 @@ begin_install_transaction() {
     if [[ $NO_SERVICE -eq 0 || -n "${DESTDIR:-}" ]]; then
         backup_file "$target_systemd/sunreactord.service" "$BACKUP_DIR/sunreactord.service"
     fi
+    if [[ -z "${DESTDIR:-}" && $NO_SERVICE -eq 0 ]]; then
+        backup_file "$AUTOSTART_FILE" "$BACKUP_DIR/sunreactord.desktop"
+    fi
 
     if [[ -z "${DESTDIR:-}" && $NO_SERVICE -eq 0 ]] && systemd_user_manager_available; then
         SYSTEMD_MANAGER_AVAILABLE=1
@@ -412,6 +573,9 @@ rollback_installation() {
     if [[ $SYSTEMD_UNIT_MUTATED -eq 1 ]]; then
         restore_file "$BACKUP_DIR/sunreactord.service" \
             "$target_systemd/sunreactord.service" 644 || rollback_failed=1
+    fi
+    if [[ $AUTOSTART_FILE_MUTATED -eq 1 ]]; then
+        restore_file "$BACKUP_DIR/sunreactord.desktop" "$AUTOSTART_FILE" 644 || rollback_failed=1
     fi
 
     if [[ $SYSTEMD_MANAGER_AVAILABLE -eq 1 ]]; then
@@ -493,6 +657,30 @@ install_systemd_unit() {
     log_success "Service unit installed: $target_systemd/sunreactord.service"
 }
 
+install_autostart_entry() {
+    local entry="$TMP_DIR/sunreactord.desktop"
+    mkdir -p "$AUTOSTART_DIR" || {
+        log_error "Failed to create the XDG autostart directory: $AUTOSTART_DIR"
+        return 1
+    }
+    cat >"$entry" <<EOF
+[Desktop Entry]
+Type=Application
+Name=SunReactor daemon
+Comment=SunReactor adaptive display brightness daemon
+Exec=$BIN_DIR/sunreactord
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+    AUTOSTART_FILE_MUTATED=1
+    if ! atomic_install "$entry" "$AUTOSTART_FILE" 644; then
+        log_error "Failed to install the XDG autostart entry: $AUTOSTART_FILE"
+        return 1
+    fi
+    log_success "XDG autostart entry installed: $AUTOSTART_FILE"
+    log_info "Start the daemon now with: $BIN_DIR/sunreactord"
+}
+
 setup_systemd() {
     local start_action=start
     log_info "Setting up systemd service..."
@@ -552,7 +740,7 @@ systemd_user_unit_paths() {
 }
 
 unit_path_is_discoverable() {
-    local intended_path="$1" manager_paths="$2" path
+    local intended_path="$1" manager_paths="$2"
     # UnitPath is an array rendered with shell quoting. Keep this helper only
     # for diagnostics; FragmentPath is the authoritative postcondition.
     [[ "$manager_paths" == *"$intended_path"* ]] && return 0
@@ -727,8 +915,10 @@ plasma_widget_decision() {
 }
 
 print_plasma_widget_plan() {
-    local tool state tools=""
+    local tool state tools="" qml_system_dir qml_relative_dir
     plasma_widget_decision || true
+    qml_system_dir=$(qt6_qml_system_dir)
+    qml_relative_dir=$(qml_install_relative_dir "$qml_system_dir")
     for tool in cmake plasmashell kpackagetool6; do
         if command -v "$tool" >/dev/null 2>&1; then state=found; else state=missing; fi
         tools+="$tool=$state "
@@ -737,10 +927,18 @@ print_plasma_widget_plan() {
     printf '  decision: %s\n' "$PLASMA_DECISION"
     printf '  tools:    %s\n' "${tools% }"
     printf '  source:   %s\n' "$PLASMA_SRC_DIR"
-    printf '  plugin:   CMake install layout under %s (lib/, lib/qt6/qml/org/sunreactor/plasma/)\n' "$PLASMA_PREFIX"
+    printf '  plugin:   CMake install layout under %s (lib/, %s/org/sunreactor/plasma/)\n' "$PLASMA_PREFIX" "$qml_relative_dir"
+    printf '  qml-dir:  %s (system Qt path: %s)\n' "$PLASMA_PREFIX/$qml_relative_dir" "$qml_system_dir"
     printf '  package:  %s\n' "$PLASMA_PKG_DIR"
     printf '  backups:  %s/plasma-widget-<timestamp>-<pid>/\n' "$PLASMA_BACKUP_ROOT"
     printf '  restart:  %s (never run by the installer)\n' "$PLASMA_RESTART_CMD"
+    if [[ $NO_SERVICE -eq 1 ]]; then
+        printf '  service:  disabled by --no-service\n'
+    else
+        printf '  service:  systemd user manager when systemctl --user show-environment succeeds\n'
+        printf '  fallback: XDG autostart entry %s (Exec=%s)\n' "$AUTOSTART_FILE" "$BIN_DIR/sunreactord"
+        printf '  start:    %s\n' "$BIN_DIR/sunreactord"
+    fi
 }
 
 plasma_widget_failure_tail() {
@@ -753,10 +951,96 @@ plasma_widget_backup() {
     mkdir -p "$backup_dir/$(dirname "$2")" && cp -a "$1" "$backup_dir/$2"
 }
 
+qt6_qml_system_dir() {
+    local qml_dir candidate
+    if command -v qtpaths6 >/dev/null 2>&1; then
+        qml_dir=$(qtpaths6 --query QT_INSTALL_QML 2>/dev/null || true)
+        if [[ "$qml_dir" == /* && "$qml_dir" != *$'\n'* ]]; then
+            printf '%s\n' "$qml_dir"
+            return 0
+        fi
+    fi
+    if command -v qmake6 >/dev/null 2>&1; then
+        qml_dir=$(qmake6 -query QT_INSTALL_QML 2>/dev/null || true)
+        if [[ "$qml_dir" == /* && "$qml_dir" != *$'\n'* ]]; then
+            printf '%s\n' "$qml_dir"
+            return 0
+        fi
+    fi
+    for candidate in /usr/lib64/qt6/qml /usr/lib/qt6/qml /lib64/qt6/qml /lib/qt6/qml; do
+        if [[ -d "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    # Keep the conventional Qt layout when the distro has no Qt tools yet.
+    printf '/usr/lib/qt6/qml\n'
+}
+
+qml_install_relative_dir() {
+    local system_dir="$1" relative
+    if [[ "$system_dir" == /usr/* ]]; then
+        relative=${system_dir#/usr/}
+    elif [[ "$system_dir" == /* ]]; then
+        relative=${system_dir#/}
+    else
+        relative="lib/qt6/qml"
+    fi
+    [[ -n "$relative" ]] || relative="lib/qt6/qml"
+    printf '%s\n' "$relative"
+}
+
+shell_single_quote() {
+    local value="$1"
+    value=${value//\'/\'\\\'\'}
+    printf "'%s'" "$value"
+}
+
+prepend_path_once() {
+    local directory="$1" existing="${2:-}"
+    case ":$existing:" in
+        *":$directory:"*) printf '%s\n' "$existing" ;;
+        "::") printf '%s\n' "$directory" ;;
+        *) printf '%s:%s\n' "$directory" "$existing" ;;
+    esac
+}
+
+write_plasma_environment() {
+    local qml_dir="$1" env_d="$CONFIG_HOME/environment.d"
+    local plasma_env="$CONFIG_HOME/plasma-workspace/env"
+    local env_file="$plasma_env/sunreactor.sh" quoted
+
+    mkdir -p "$env_d" "$plasma_env" "$CFG_DIR"
+    # Keep an environment.d drop-in for login managers, but never overwrite a
+    # file owned by the user or another package.
+    if [[ ! -f "$env_d/10-qml-import-path.conf" ]]; then
+        printf 'QML2_IMPORT_PATH="%s"\nQML_IMPORT_PATH="%s"\n' "$qml_dir" "$qml_dir" \
+            >"$env_d/10-qml-import-path.conf"
+    fi
+    quoted=$(shell_single_quote "$qml_dir")
+    cat >"$env_file" <<EOF
+#!/bin/sh
+sunreactor_qml_dir=$quoted
+case ":\${QML2_IMPORT_PATH:-}:" in
+    *":\$sunreactor_qml_dir:"*) ;;
+    *) QML2_IMPORT_PATH="\$sunreactor_qml_dir\${QML2_IMPORT_PATH:+:\$QML2_IMPORT_PATH}" ;;
+esac
+case ":\${QML_IMPORT_PATH:-}:" in
+    *":\$sunreactor_qml_dir:"*) ;;
+    *) QML_IMPORT_PATH="\$sunreactor_qml_dir\${QML_IMPORT_PATH:+:\$QML_IMPORT_PATH}" ;;
+esac
+export QML_IMPORT_PATH QML2_IMPORT_PATH
+EOF
+    chmod 755 "$env_file"
+    printf '%s\n' "$qml_dir" >"$CFG_DIR/plasma-qml-dir"
+    log_info "Qt QML import directory recorded: $qml_dir"
+}
+
 # Builds, stages and installs the widget. Every step before the first change
 # to the user's files is a check, so a failure leaves the previous widget alone.
 install_plasma_widget() {
     local work="" build stage staged_root qmldir jobs log rel src dest pkg_new backup_dir
+    local qml_system_dir qml_relative_dir qml_dir qml2_environment qml_environment
 
     work=$(mktemp -d "$TMP_DIR/plasma.XXXXXX") || return 1
     build="$work/build"
@@ -765,9 +1049,13 @@ install_plasma_widget() {
     log="$work/build.log"
     jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
 
+    qml_system_dir=$(qt6_qml_system_dir)
+    qml_relative_dir=$(qml_install_relative_dir "$qml_system_dir")
+    qml_dir="$PLASMA_PREFIX/$qml_relative_dir"
     log_info "Building the Plasma widget plugin (usually under a minute)..."
+    log_info "Using Qt QML layout: $qml_system_dir -> $qml_relative_dir"
     if ! cmake -S "$PLASMA_SRC_DIR" -B "$build" -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$PLASMA_PREFIX" -DKDE_INSTALL_QMLDIR=lib/qt6/qml >"$log" 2>&1 ||
+            -DCMAKE_INSTALL_PREFIX="$PLASMA_PREFIX" -DKDE_INSTALL_QMLDIR="$qml_relative_dir" >"$log" 2>&1 ||
         ! cmake --build "$build" --target sunreactorplugin sunreactorpluginplugin -j"$jobs" >>"$log" 2>&1 ||
         ! DESTDIR="$stage" cmake --install "$build" >>"$log" 2>&1; then
         plasma_widget_failure_tail "$log"
@@ -837,26 +1125,16 @@ install_plasma_widget() {
         log_info "The previous widget files are kept in $backup_dir"
     fi
 
-    # Ensure Qt 6 finds the user QML module in ~/.local/lib/qt6/qml
-    local qml_dir="$PLASMA_PREFIX/lib/qt6/qml"
-    local env_d="$CONFIG_HOME/environment.d"
-    local plasma_env="$CONFIG_HOME/plasma-workspace/env"
-
-    mkdir -p "$env_d" "$plasma_env"
-    if [[ ! -f "$env_d/10-qml-import-path.conf" ]]; then
-        printf 'QML2_IMPORT_PATH="%s"\n' "$qml_dir" > "$env_d/10-qml-import-path.conf"
-    fi
-    if [[ ! -f "$plasma_env/10-qml-import-path.sh" ]]; then
-        cat <<'EOF' > "$plasma_env/10-qml-import-path.sh"
-#!/bin/sh
-export QML2_IMPORT_PATH="$HOME/.local/lib/qt6/qml${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
-export QML_IMPORT_PATH="$HOME/.local/lib/qt6/qml${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}"
-EOF
-        chmod +x "$plasma_env/10-qml-import-path.sh"
-    fi
-    if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user set-environment QML2_IMPORT_PATH="$qml_dir${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}" >/dev/null 2>&1 || true
-        systemctl --user set-environment QML_IMPORT_PATH="$qml_dir${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" >/dev/null 2>&1 || true
+    write_plasma_environment "$qml_dir"
+    if systemd_user_manager_available; then
+        qml2_environment=$(prepend_path_once "$qml_dir" "${QML2_IMPORT_PATH:-}")
+        qml_environment=$(prepend_path_once "$qml_dir" "${QML_IMPORT_PATH:-}")
+        if ! systemctl --user set-environment "QML2_IMPORT_PATH=$qml2_environment" >/dev/null 2>&1; then
+            log_warning "systemctl --user set-environment QML2_IMPORT_PATH failed; log in again to load the Plasma QML path."
+        fi
+        if ! systemctl --user set-environment "QML_IMPORT_PATH=$qml_environment" >/dev/null 2>&1; then
+            log_warning "systemctl --user set-environment QML_IMPORT_PATH failed; log in again to load the Plasma QML path."
+        fi
     fi
 
     log_info "Restart plasmashell to load the widget (the installer does not restart it):"
@@ -920,6 +1198,11 @@ uninstall_sunreactor() {
 
     rm -f "$BIN_DIR/sunreactord" "$BIN_DIR/sunreactorctl"
     erase_line
+
+    if [[ -f "$AUTOSTART_FILE" ]]; then
+        rm -f "$AUTOSTART_FILE"
+        erase_line
+    fi
 
     if [[ $PURGE -eq 1 ]]; then
         rm -rf "$CFG_DIR"
@@ -990,7 +1273,7 @@ main() {
         log_error "Systemd user unit installation failed; rollback will restore the previous installation."
         exit 1
     elif systemd_user_manager_available; then
-        if ! manager_unit_paths=$(systemd_user_unit_paths); then
+        if ! systemd_user_unit_paths >/dev/null; then
             log_info "Running systemd user manager UnitPath could not be inspected; FragmentPath will remain authoritative."
         fi
         if setup_systemd; then
@@ -1000,10 +1283,14 @@ main() {
             exit 1
         fi
     else
-        log_info "No usable systemd user manager found; files installed without a service."
-        log_info "Run $BIN_DIR/sunreactord manually, or enable a compatible service manager."
+        if ! install_autostart_entry; then
+            log_error "XDG autostart fallback installation failed; rollback will restore the previous installation."
+            exit 1
+        fi
+        log_info "No usable systemd user manager found; XDG autostart will start the daemon in the next graphical session."
     fi
     INSTALL_COMMITTED=1
+    print_dependency_hints
     run_plasma_widget_step
     launch_dashboard
 }

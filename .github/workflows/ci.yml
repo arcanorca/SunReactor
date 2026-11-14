@@ -40,6 +40,77 @@ jobs:
       - name: Run release packaging helper test
         run: bash tests/release_test.sh
 
+  musl:
+    name: musl cargo check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install musl toolchain and target
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          rustup target add x86_64-unknown-linux-musl
+      - name: Select musl linker
+        run: |
+          musl_gcc="$(command -v musl-gcc)"
+          target=x86_64-unknown-linux-musl
+          cargo_target="${target//-/_}"
+          {
+            echo "CARGO_TARGET_${cargo_target^^}_LINKER=$musl_gcc"
+            echo "CC_${target}=$musl_gcc"
+            echo "CC_${cargo_target}=$musl_gcc"
+            echo "TARGET_CC=$musl_gcc"
+            echo 'RUSTFLAGS=-C link-arg=-Wl,--no-dynamic-linker'
+          } >> "$GITHUB_ENV"
+      - name: Check musl target
+        run: cargo check --target x86_64-unknown-linux-musl --all-targets --all-features
+
+  installer-containers:
+    name: Installer smoke (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04
+            image: ubuntu:24.04
+            packages: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bash curl tar gawk coreutils findutils
+          - name: Ubuntu 22.04
+            image: ubuntu:22.04
+            packages: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bash curl tar gawk coreutils findutils
+          - name: Fedora
+            image: fedora:latest
+            packages: dnf install -y bash curl tar gawk coreutils findutils
+          - name: openSUSE Tumbleweed
+            image: opensuse/tumbleweed:latest
+            packages: zypper --non-interactive install -y bash curl tar gawk coreutils findutils
+          - name: Alpine
+            image: alpine:latest
+            packages: apk add --no-cache bash curl tar gawk coreutils findutils
+          - name: Arch Linux
+            image: archlinux:latest
+            packages: pacman -Sy --noconfirm bash curl tar gawk coreutils findutils
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run installer tests and dry-run smoke
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -w /work \
+            "${{ matrix.image }}" \
+            sh -euxc '${{ matrix.packages }}; bash tests/installer_test.sh; bash install.sh --dry-run --no-service'
+
+  shellcheck:
+    name: ShellCheck installer scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Check installer scripts
+        run: shellcheck install.sh tests/*.sh
+
   release-artifact-compat:
     name: Cross-Distro Conservative Release Artifact Matrix
     runs-on: ubuntu-22.04
@@ -55,21 +126,21 @@ jobs:
           readelf -d target/release/sunreactord | grep NEEDED
           readelf --version-info target/release/sunreactord | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
       - name: Verify exact artifact executes on Ubuntu 22.04 LTS
-        run: docker run --rm -v $PWD/target/release:/app:ro ubuntu:22.04 /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" ubuntu:22.04 /app/sunreactorctl --help
       - name: Verify exact artifact executes on Ubuntu 24.04 LTS
-        run: docker run --rm -v $PWD/target/release:/app:ro ubuntu:24.04 /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" ubuntu:24.04 /app/sunreactorctl --help
       - name: Verify exact artifact executes on Ubuntu 26.04 LTS
-        run: docker run --rm -v $PWD/target/release:/app:ro ubuntu:26.04 /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" ubuntu:26.04 /app/sunreactorctl --help
       - name: Verify exact artifact executes on Debian 13 (Stable)
-        run: docker run --rm -v $PWD/target/release:/app:ro debian:13 /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" debian:13 /app/sunreactorctl --help
       - name: Verify exact artifact executes on Fedora 43
-        run: docker run --rm -v $PWD/target/release:/app:ro fedora:43 /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" fedora:43 /app/sunreactorctl --help
       - name: Verify exact artifact executes on Fedora 44
-        run: docker run --rm -v $PWD/target/release:/app:ro fedora:44 /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" fedora:44 /app/sunreactorctl --help
       - name: Verify exact artifact executes on openSUSE Tumbleweed
-        run: docker run --rm -v $PWD/target/release:/app:ro registry.opensuse.org/opensuse/tumbleweed:latest /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" registry.opensuse.org/opensuse/tumbleweed:latest /app/sunreactorctl --help
       - name: Verify exact artifact executes on Arch Linux
-        run: docker run --rm -v $PWD/target/release:/app:ro archlinux:latest /app/sunreactorctl --help
+        run: docker run --rm -v "$PWD/target/release:/app:ro" archlinux:latest /app/sunreactorctl --help
 
   windows-native:
     name: Windows Native Platform & Topology Foundation (MSVC x86_64)

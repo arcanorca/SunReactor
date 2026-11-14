@@ -209,7 +209,9 @@ sunreactorctl theme set nord       # Set tui.theme and reload the daemon
 curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh | bash
 ```
 
-*The installer verifies the release SHA-256 manifest and installs unprivileged binaries to `~/.local/bin`. When a systemd user manager is available, it also installs, enables, and starts `sunreactord.service`, then verifies that the daemon answers on IPC. Use `--no-service` to install without starting brightness automation.*
+*The installer verifies the release SHA-256 manifest and installs unprivileged binaries to `~/.local/bin`. When `systemctl --user show-environment` succeeds, it installs, enables, and starts `sunreactord.service`, then verifies that the daemon answers on IPC. On desktops without a usable systemd user manager it writes `~/.config/autostart/sunreactord.desktop` and prints the command to start the daemon now. Use `--no-service` to install without starting brightness automation; `--uninstall` removes both service integration paths.*
+
+*The script requires Bash and can be invoked as `sh install.sh` when Bash is present; on musl and other minimal systems install Bash first. It never assumes `sudo`: dependency hints use `sudo`, `doas`, or `run0` when available and otherwise print the command for you to run. OpenRC and runit examples are in [`contrib/openrc/`](contrib/openrc/) and [`contrib/runit/`](contrib/runit/).*
 
 *From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [KDE Plasma widget](#-kde-plasma-widget).*
 

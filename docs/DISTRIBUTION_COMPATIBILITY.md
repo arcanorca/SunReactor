@@ -7,13 +7,14 @@
 
 ## 1. Support Envelope & Architecture
 
-SunReactor targets modern systemd-based Linux operating environments adhering to the XDG Base Directory Standard, Linux kernel DRM/KMS uevents, and standard hardware control backends:
+SunReactor targets modern Linux operating environments adhering to the XDG Base Directory Standard, Linux kernel DRM/KMS uevents, and standard hardware control backends. Service integration selects systemd when its user manager is usable and otherwise follows the fallback paths documented below:
 
 ```text
 Target Environment:
   Architecture:         x86_64 and aarch64 (release build and smoke-test targets)
   C Library:            GNU C Library (per-artifact GLIBC baseline) or static musl
-  Init / Supervisor:    systemd user session (`systemd --user`, no linger required)
+  Init / Supervisor:    systemd user session (`systemd --user`, no linger required),
+                        XDG autostart fallback, or a documented OpenRC/runit example
   Runtime Directory:    XDG_RUNTIME_DIR (/run/user/$UID)
   Display Recovery:     Linux DRM / KMS uevents via AF_NETLINK (unprivileged)
   Session Power:        systemd-logind via D-Bus (`org.freedesktop.login1`)
@@ -38,9 +39,9 @@ Target Environment:
   * **Nobara Linux:** Compatible derivative inheriting Tier-A Fedora userspace.
 
 * **Tier C — Best-Effort / Unqualified:**
-  * **non-systemd Linux (Alpine, Void, Devuan, Gentoo/OpenRC):** The core calculation engine, CLI, and run-once modes function, but automatic background service supervision and logind power resume require systemd.
-  * **musl-based Linux (Alpine):** Static musl release artifacts are available; automatic service management depends on the host init system.
-  * **Immutable Desktops (Fedora Silverblue, Bazzite, SteamOS):** User-local binary installation (`~/.local/bin`) functions without root. Direct DDC hardware access requires host-side `i2c-dev` module loading and `i2c` group or `uaccess` rules.
+  * **non-systemd Linux (Alpine, Void, Devuan, Gentoo/OpenRC):** The core calculation engine and CLI work. A graphical session gets `~/.config/autostart/sunreactord.desktop`; OpenRC and runit users can copy the examples in `contrib/openrc/` and `contrib/runit/`. Logind power-resume integration remains optional.
+  * **musl-based Linux (Alpine):** Static musl release artifacts are available and the installer works when Bash is installed; service startup uses XDG autostart or the host's OpenRC/runit setup.
+  * **Immutable Desktops (Fedora Silverblue, Bazzite, SteamOS):** User-local binary and QML installation (`~/.local/bin`, `~/.local/lib` or `~/.local/lib64`) functions without root. Direct DDC hardware access requires host-side `i2c-dev` module loading and `i2c` group or `uaccess` rules.
   * **WSL (Windows Subsystem for Linux):** WSL does not expose physical display I2C buses (`/dev/i2c-*`) or native DRM connector hotplug events. WSL is unsupported for physical hardware brightness automation; the native Windows port is the designated solution.
 
 ---
@@ -57,13 +58,19 @@ Target Environment:
 | **Fedora 43** | Current Supported | 2.42 | 258 | 2.2.1 | 0.5.1 | OK | OK | **Container Verified** (Runtime + Installer) |
 | **openSUSE Tumbleweed** | Current Rolling | 2.41 | 257 | 2.2.7 | 0.5.1 | OK | OK | **Container Verified** (Runtime + Installer) |
 | **Ubuntu 22.04 LTS** | Extended LTS | 2.35 | 249 | 1.2.2 | 0.5.1 | OK | OK | **Container & Source Verified** |
-| **Alpine Linux** | Current Stable | musl | OpenRC | 2.2.0 | 0.5.1 | Static-musl artifact | Manual service setup | **Release build and smoke tested** |
+| **Alpine Linux** | Current Stable | musl | OpenRC | 2.2.0 | 0.5.1 | Static-musl artifact | XDG autostart; OpenRC/runit example | **Release build and smoke tested** |
 
 *Note on Evidence Classification:* Full systemd user session lifecycle (PAM login session, logind seat creation, live socket activation) has been physically verified on Arch/CachyOS. On containerized test environments, installer staging, service unit syntax, and binary runtime have been verified via container execution; full-system VM/host lifecycle is marked as Architecture Certified.
 
 ---
 
-## 3. Desktop & Session Matrix
+## 3. Installer Service Fallbacks
+
+The installer probes `systemctl --user show-environment`. A successful probe selects the systemd user unit, enables it, starts (or restarts) it, and verifies IPC readiness. When the probe fails or `systemctl` is absent, the binaries and unit template are still installed and the installer writes `~/.config/autostart/sunreactord.desktop` with `Exec=<home>/.local/bin/sunreactord`, `X-GNOME-Autostart-enabled=true`, and `NoDisplay=true`; it prints the command to start the daemon immediately. `--uninstall` removes this entry as well as the systemd unit.
+
+For sessions managed by another supervisor, `contrib/openrc/sunreactord` and `contrib/runit/sunreactord/run` are user-level examples. They are deliberately examples rather than claims of distro-specific service integration; copy them into the host's user service directory and adjust paths or environment as needed.
+
+## 4. Desktop & Session Matrix
 
 SunReactor's core display lifecycle engine and daemon loop are desktop-environment agnostic. They do not depend on KDE, GNOME, or any specific display manager.
 
@@ -81,7 +88,7 @@ SunReactor's core display lifecycle engine and daemon loop are desktop-environme
 
 ---
 
-## 4. Release Artifact & ABI Contract
+## 5. Release Artifact & ABI Contract
 
 ### Selected GNU/Linux Release Artifact
 
@@ -113,7 +120,7 @@ The release workflow smoke-tests each target's exact packaged binaries with `--v
 
 ---
 
-## 5. ddcutil Compatibility & Fallback Semantics
+## 6. ddcutil Compatibility & Fallback Semantics
 
 SunReactor executes `ddcutil` with explicit, bounded argument forms:
 
@@ -140,7 +147,7 @@ Argument adaptation runs only after ddcutil explicitly reports an unsupported op
 
 ---
 
-## 6. systemd Version Baseline
+## 7. systemd Version Baseline
 
 All directives in `contrib/systemd/sunreactord.service` are supported by **systemd >= 244** (released November 2019):
 - Sandboxing (`NoNewPrivileges`, `PrivateTmp`, `ProtectKernelLogs`, `MemoryDenyWriteExecute`, `RestrictNamespaces`, `SystemCallArchitectures=native`)
