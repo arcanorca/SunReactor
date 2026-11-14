@@ -66,6 +66,9 @@ pub enum Request {
         min_pct: u8,
         max_pct: u8,
     },
+    SetCloudDimming {
+        percent: u8,
+    },
     ClearOverride {
         monitor_id: Option<String>,
         global: bool,
@@ -101,6 +104,7 @@ impl Request {
             Self::IdleWake => "idle_wake",
             Self::SetOverride { .. } => "set_override",
             Self::SetMonitorLimits { .. } => "set_monitor_limits",
+            Self::SetCloudDimming { .. } => "set_cloud_dimming",
             Self::ClearOverride { .. } => "clear_override",
             Self::ReloadConfig => "reload_config",
             Self::RefreshWeather => "refresh_weather",
@@ -555,6 +559,10 @@ pub struct MonitorStatus {
 #[serde(default)]
 pub struct WeatherStatus {
     pub enabled: bool,
+    /// Maximum cloud dimming in percent; omitted by older daemons and then
+    /// deserialised as the default value for wire compatibility.
+    #[serde(default)]
+    pub cloud_dimming_percent: u8,
     #[serde(default)]
     pub state: crate::weather::WeatherState,
     pub active: bool,
@@ -659,6 +667,10 @@ mod tests {
             (
                 Request::DayCurve { monitor_id: None },
                 json!({"version": 1, "request": "day_curve", "monitor_id": null}),
+            ),
+            (
+                Request::SetCloudDimming { percent: 35 },
+                json!({"version": 1, "request": "set_cloud_dimming", "percent": 35}),
             ),
         ];
         for (request, wire) in cases {
