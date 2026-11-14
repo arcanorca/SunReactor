@@ -515,6 +515,24 @@ impl Model {
         }
     }
 
+    /// Move the cloud dimming control in its five-percent keyboard steps and
+    /// commit the value through the daemon when it is connected.
+    pub fn step_cloud_dimming(&mut self, delta: i8) {
+        let current = self
+            .form
+            .cloud_dimming_input
+            .value()
+            .trim()
+            .parse::<u8>()
+            .unwrap_or_else(|_| self.config.weather.cloud_dimming_percent());
+        let next = (i16::from(current) + i16::from(delta) * 5).clamp(0, 50) as u8;
+        if next == current {
+            return;
+        }
+        self.form.cloud_dimming_input = tui_input::Input::default().with_value(next.to_string());
+        let _ = self.commit_cloud_dimming_value(next);
+    }
+
     fn mark_settings_config_dirty(&mut self) {
         self.config_dirty = true;
         self.last_config_mutation = Some(Instant::now());

@@ -21,6 +21,7 @@ pub(crate) struct FormState {
     pub(crate) lon_input: Input,
     pub(crate) timezone_input: Input,
     pub(crate) api_key_input: Input,
+    pub(crate) cloud_dimming_input: Input,
     pub(crate) desktop_idle_timeout_minutes_input: Input,
     pub(crate) suspend_minutes_input: Input,
     pub(crate) fps_input: Input,
@@ -41,6 +42,8 @@ impl FormState {
         let (api_key_value, api_key_source) =
             resolved_weather_api_key_value(config, |env_name| std::env::var(env_name).ok());
         let api_key_input = Input::default().with_value(api_key_value.clone());
+        let cloud_dimming_input =
+            Input::default().with_value(config.weather.cloud_dimming_percent().to_string());
 
         let desktop_idle_timeout_minutes_input =
             Input::default().with_value(if config.daemon.desktop_idle_sync {
@@ -74,6 +77,7 @@ impl FormState {
             lon_input,
             timezone_input,
             api_key_input,
+            cloud_dimming_input,
 
             desktop_idle_timeout_minutes_input,
             suspend_minutes_input,
@@ -121,6 +125,7 @@ impl FormState {
                 settings_index::REFRESH_RATE
                 | settings_index::IDLE_DIM
                 | settings_index::SUSPEND_DURATION => Some(ActiveInputKind::Integer),
+                settings_index::CLOUD_DIMMING => Some(ActiveInputKind::Integer),
                 settings_index::WEATHER_API_KEY => Some(ActiveInputKind::Secret),
                 _ => None,
             },
@@ -147,6 +152,7 @@ impl FormState {
                 settings_index::REFRESH_RATE => Some(&self.fps_input),
                 settings_index::IDLE_DIM => Some(&self.desktop_idle_timeout_minutes_input),
                 settings_index::SUSPEND_DURATION => Some(&self.suspend_minutes_input),
+                settings_index::CLOUD_DIMMING => Some(&self.cloud_dimming_input),
                 settings_index::WEATHER_API_KEY => Some(&self.api_key_input),
                 _ => None,
             },
@@ -173,6 +179,7 @@ impl FormState {
                 settings_index::REFRESH_RATE => Some(&mut self.fps_input),
                 settings_index::IDLE_DIM => Some(&mut self.desktop_idle_timeout_minutes_input),
                 settings_index::SUSPEND_DURATION => Some(&mut self.suspend_minutes_input),
+                settings_index::CLOUD_DIMMING => Some(&mut self.cloud_dimming_input),
                 settings_index::WEATHER_API_KEY => Some(&mut self.api_key_input),
                 _ => None,
             },
@@ -210,6 +217,9 @@ impl FormState {
             self.api_key_source,
             &self.api_key_original_value,
         );
+        if let Ok(percent) = self.cloud_dimming_input.value().trim().parse::<u8>() {
+            let _ = config.weather.set_cloud_dimming_percent(percent);
+        }
     }
 
     pub(crate) fn validate_values(&self, config: &Config) -> Result<(), String> {
@@ -248,6 +258,15 @@ impl FormState {
             .map_err(|_| String::from("idle timeout must be a whole number"))?;
         if idle_minutes > 24 * 60 {
             return Err(String::from("idle timeout must be at most 1440 minutes"));
+        }
+        let cloud_dimming = self
+            .cloud_dimming_input
+            .value()
+            .trim()
+            .parse::<u8>()
+            .map_err(|_| String::from("cloud dimming must be a whole percentage"))?;
+        if cloud_dimming > 50 {
+            return Err(String::from("cloud dimming must be between 0 and 50"));
         }
         for (index, (min_input, max_input)) in self.monitor_inputs.iter().enumerate() {
             let min =
@@ -298,6 +317,8 @@ impl FormState {
                 String::from("0")
             });
         self.fps_input = Input::default().with_value(config.tui.fps.to_string());
+        self.cloud_dimming_input =
+            Input::default().with_value(config.weather.cloud_dimming_percent().to_string());
         self.monitor_inputs = config
             .monitors
             .iter()

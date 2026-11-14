@@ -103,6 +103,22 @@ pub(super) fn handle_editing_key(key: KeyEvent, app: &mut Model) {
             {
                 app.suspend_writes();
                 app.stop_editing();
+            } else if matches!(app.active_tab, Tab::Settings)
+                && app.active_setting == settings_index::CLOUD_DIMMING
+            {
+                let percent = app.form.cloud_dimming_input.value().trim().parse::<u8>();
+                if let Ok(percent) = percent {
+                    if app.commit_cloud_dimming_value(percent) {
+                        app.stop_editing();
+                    }
+                } else {
+                    app.action_state = crate::tui::model::ActionState::Error {
+                        action: crate::tui::model::ActionKind::SetCloudDimming,
+                        category: crate::tui::model::ErrorCategory::Validation,
+                        message: String::from("Cloud dimming must be a whole percentage"),
+                        completed_at: std::time::Instant::now(),
+                    };
+                }
             } else if matches!(app.active_tab, Tab::Monitors) {
                 let is_min = app.monitor_control_index == 0;
                 if app.save_config() {

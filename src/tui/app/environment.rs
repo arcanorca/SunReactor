@@ -145,6 +145,7 @@ impl Model {
             last_milestone_refresh_minute: None,
             monitor_milestones_dirty: false,
             config_dirty: false,
+            pending_cloud_dimming_previous: None,
             last_config_mutation: None,
             active_modal: crate::tui::model::ActiveModal::None,
             motion: {

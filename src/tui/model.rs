@@ -150,6 +150,7 @@ pub enum ActionKind {
     SaveConfig,
     ReloadConfig,
     RefreshWeather,
+    SetCloudDimming,
 }
 
 impl ActionKind {
@@ -161,6 +162,7 @@ impl ActionKind {
             Self::SaveConfig => "Save config",
             Self::ReloadConfig => "Reload config",
             Self::RefreshWeather => "Refresh weather",
+            Self::SetCloudDimming => "Cloud dimming",
         }
     }
 }
@@ -330,8 +332,9 @@ pub(crate) mod settings_index {
     pub const IDLE_DIM: usize = 6;
     pub const SUSPEND_DURATION: usize = 7;
     pub const WEATHER_ENABLED: usize = 8;
-    pub const WEATHER_API_KEY: usize = 9;
-    pub const COUNT: usize = 10;
+    pub const CLOUD_DIMMING: usize = 9;
+    pub const WEATHER_API_KEY: usize = 10;
+    pub const COUNT: usize = 11;
 }
 
 pub struct Model {
@@ -371,6 +374,7 @@ pub struct Model {
     /// It is rebuilt after the active keyboard adjustment settles, not for every key repeat.
     pub(crate) monitor_milestones_dirty: bool,
     pub config_dirty: bool,
+    pub(crate) pending_cloud_dimming_previous: Option<u8>,
     pub last_config_mutation: Option<Instant>,
     pub active_modal: ActiveModal,
     pub motion: super::motion::UiMotionState,
