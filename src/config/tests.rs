@@ -163,7 +163,9 @@ fn rejects_unbounded_operational_timeouts() {
     config.daemon.ddc_timeout_seconds = 61;
     config.daemon.backlight_timeout_seconds = 0;
 
-    let error = config.validate().expect_err("operational limits should fail");
+    let error = config
+        .validate()
+        .expect_err("operational limits should fail");
     let text = error.to_string();
     assert!(text.contains("daemon.desktop_idle_timeout_minutes"));
     assert!(text.contains("daemon.apply_reassert_minutes"));
@@ -177,7 +179,9 @@ fn accepts_disabled_idle_timeout_and_bounded_backend_timeouts() {
     config.daemon.desktop_idle_timeout_minutes = 0;
     config.daemon.ddc_timeout_seconds = 1;
     config.daemon.backlight_timeout_seconds = 60;
-    config.validate().expect("bounded timeout values should pass");
+    config
+        .validate()
+        .expect("bounded timeout values should pass");
 }
 
 #[test]

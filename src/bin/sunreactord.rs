@@ -36,7 +36,11 @@ fn try_main() -> anyhow::Result<()> {
             initialize_tracing()?;
             let shutdown_flag = Arc::new(AtomicBool::new(false));
             install_shutdown_handlers(Arc::clone(&shutdown_flag))?;
-            let mut runtime = DaemonRuntime::bootstrap()?;
+            let mut runtime = if once {
+                DaemonRuntime::bootstrap_once()?
+            } else {
+                DaemonRuntime::bootstrap()?
+            };
 
             if once {
                 println!(

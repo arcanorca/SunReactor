@@ -420,6 +420,16 @@ impl DaemonRuntime {
         Self::bootstrap_with_paths(config, state_path, socket_path)
     }
 
+    /// Bootstraps one-shot mode without resolving or creating the IPC socket
+    /// directory. Hardware apply remains available; only the persistent state
+    /// directory is initialized.
+    pub fn bootstrap_once() -> Result<Self, RuntimeError> {
+        let config = config::load()?;
+        let state_path = paths::state_file()?;
+        let socket_path = state_path.with_file_name("once-control.sock");
+        Self::bootstrap_with_paths_mode(config, state_path, socket_path, false)
+    }
+
     #[must_use]
     /// Generates a human-readable startup message summarizing the active
     /// configuration source, connected monitors, and runtime paths.
@@ -444,6 +454,16 @@ impl DaemonRuntime {
         state_path: PathBuf,
         socket_path: PathBuf,
     ) -> Result<Self, RuntimeError> {
+        Self::bootstrap_with_paths_mode(config, state_path, socket_path, true)
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn bootstrap_with_paths_mode(
+        config: ConfigReport,
+        state_path: PathBuf,
+        socket_path: PathBuf,
+        create_socket_dir: bool,
+    ) -> Result<Self, RuntimeError> {
         for warning in &config.warnings {
             tracing::info!(warning = %warning, "config_compat_warning");
         }
@@ -452,8 +472,10 @@ impl DaemonRuntime {
             create_runtime_dir(state_dir)?;
         }
         #[cfg(target_os = "linux")]
-        if let Some(socket_dir) = socket_path.parent() {
-            create_runtime_dir(socket_dir)?;
+        if create_socket_dir {
+            if let Some(socket_dir) = socket_path.parent() {
+                create_runtime_dir(socket_dir)?;
+            }
         }
 
         let state = RuntimeState::load_from_path(&state_path)?;
@@ -667,6 +689,24 @@ mod tests {
             crate::paths::IpcEndpoint::NamedPipe(socket_path.display().to_string())
         );
         assert_eq!(runtime.state, RuntimeState::default());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn one_shot_bootstrap_does_not_create_socket_directory() {
+        let temp = TempDir::new();
+        let state_path = temp.path().join("state/runtime-state.json");
+        let socket_path = temp.path().join("run/control.sock");
+
+        DaemonRuntime::bootstrap_with_paths_mode(
+            test_config_report(),
+            state_path,
+            socket_path.clone(),
+            false,
+        )
+        .expect("one-shot bootstrap should succeed");
+
+        assert!(!socket_path.parent().expect("socket directory").exists());
     }
 
     #[test]
@@ -1937,12 +1977,9 @@ mod tests {
         let temp = TempDir::new();
         let state_path = temp.path().join("state/runtime-state.json");
         let socket_path = temp.path().join("run/control.sock");
-        let mut runtime = DaemonRuntime::bootstrap_with_paths(
-            test_config_report(),
-            state_path,
-            socket_path,
-        )
-        .expect("runtime should bootstrap");
+        let mut runtime =
+            DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path, socket_path)
+                .expect("runtime should bootstrap");
         let unwritable_path = temp.path().join("config-directory");
         std::fs::create_dir_all(&unwritable_path).expect("config directory");
         runtime.config.path = unwritable_path;

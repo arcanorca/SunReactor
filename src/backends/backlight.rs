@@ -448,12 +448,7 @@ fn apply_with_runner_roots<R: ProcessRunner>(
                 &mapped,
                 BackendError::MissingProgram { program, .. } if program == "brightnessctl"
             ) {
-                return apply_sysfs_fallback_with_roots(
-                    monitor,
-                    percent,
-                    drm_root,
-                    backlight_root,
-                );
+                return apply_sysfs_fallback_with_roots(monitor, percent, drm_root, backlight_root);
             }
             Err(mapped)
         }
@@ -1103,9 +1098,7 @@ mod tests {
     #[test]
     fn apply_with_runner_returns_missing_program_when_brightnessctl_absent() {
         let tmpdir = tempdir_with_backlight("intel_backlight", 1000);
-        let monitor = backlight_monitor(Some(String::from(
-            "/sys/class/backlight/intel_backlight",
-        )));
+        let monitor = backlight_monitor(Some(String::from("/sys/class/backlight/intel_backlight")));
         let runner = FakeRunner::new();
         runner.push_response(
             "brightnessctl",
