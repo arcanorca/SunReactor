@@ -45,6 +45,8 @@ const XPRINTIDLE_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 #[cfg(target_os = "linux")]
 const XPRINTIDLE_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+const WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS: u32 = 60_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IdleSyncAction {
     DelayedSync,
@@ -71,15 +73,21 @@ impl DesktopIdleSync {
     ) -> Self {
         #[cfg(target_os = "linux")]
         let watcher: Option<IdleWatcher> = {
-            if enabled && timeout_minutes > 0 {
+            if enabled {
                 #[cfg(all(target_os = "linux", feature = "wayland"))]
                 if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
                     spawn_wayland_idle(timeout_minutes)
-                } else {
+                } else if timeout_minutes > 0 {
                     spawn(socket_path, timeout_minutes)
+                } else {
+                    None
                 }
                 #[cfg(not(feature = "wayland"))]
-                spawn(socket_path, timeout_minutes)
+                if timeout_minutes > 0 {
+                    spawn(socket_path, timeout_minutes)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -136,7 +144,7 @@ impl DesktopIdleSync {
     }
 
     pub(super) fn maintain_watcher(&mut self, socket_path: &std::path::Path) {
-        if !self.enabled || self.timeout_minutes == 0 {
+        if !self.enabled {
             #[cfg(target_os = "linux")]
             {
                 self.watcher = None;
@@ -146,6 +154,30 @@ impl DesktopIdleSync {
 
         #[cfg(target_os = "linux")]
         {
+            if self.timeout_minutes == 0 {
+                #[cfg(all(target_os = "linux", feature = "wayland"))]
+                if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
+                    let needs_restart = match &self.watcher {
+                        Some(watcher) if watcher.is_wayland_wake_hint() => !watcher.is_alive(),
+                        Some(_) => true,
+                        None => self
+                            .last_spawn_attempt
+                            .is_none_or(|last| last.elapsed() > Duration::from_mins(1)),
+                    };
+                    if needs_restart {
+                        if self.watcher.is_some() {
+                            tracing::info!("idle_watcher_died_restarting");
+                        }
+                        self.last_spawn_attempt = Some(Instant::now());
+                        self.watcher = spawn_wayland_idle(0);
+                    }
+                    return;
+                }
+
+                self.watcher = None;
+                return;
+            }
+
             let needs_restart = match &self.watcher {
                 Some(watcher) => !watcher.is_alive(),
                 None => self
@@ -272,9 +304,17 @@ enum IdleWatcherInner {
     },
     #[cfg(all(target_os = "linux", feature = "wayland"))]
     WaylandThread {
+        mode: WaylandIdleMode,
         shutdown: Arc<AtomicBool>,
         handle: Option<std::thread::JoinHandle<()>>,
     },
+}
+
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WaylandIdleMode {
+    WakeHintOnly,
+    IdleDim,
 }
 
 #[cfg(target_os = "linux")]
@@ -293,11 +333,24 @@ impl IdleWatcher {
                     && handle.as_ref().is_some_and(|h| !h.is_finished())
             }
             #[cfg(all(target_os = "linux", feature = "wayland"))]
-            IdleWatcherInner::WaylandThread { shutdown, handle } => {
+            IdleWatcherInner::WaylandThread {
+                shutdown, handle, ..
+            } => {
                 !shutdown.load(Ordering::Relaxed)
                     && handle.as_ref().is_some_and(|h| !h.is_finished())
             }
         }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
+    fn is_wayland_wake_hint(&self) -> bool {
+        matches!(
+            &self.inner,
+            IdleWatcherInner::WaylandThread {
+                mode: WaylandIdleMode::WakeHintOnly,
+                ..
+            }
+        )
     }
 }
 
@@ -318,7 +371,9 @@ impl Drop for IdleWatcher {
                 }
             }
             #[cfg(all(target_os = "linux", feature = "wayland"))]
-            IdleWatcherInner::WaylandThread { shutdown, handle } => {
+            IdleWatcherInner::WaylandThread {
+                shutdown, handle, ..
+            } => {
                 shutdown.store(true, Ordering::Relaxed);
                 if let Some(handle) = handle.take() {
                     let _ = handle.join();
@@ -373,6 +428,7 @@ pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleW
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 struct WaylandIdleState {
+    mode: WaylandIdleMode,
     shutdown: Arc<AtomicBool>,
     _notification: Option<ExtIdleNotificationV1>,
 }
@@ -424,19 +480,17 @@ impl Dispatch<ExtIdleNotifierV1, ()> for WaylandIdleState {
 #[allow(clippy::ignored_unit_patterns)]
 impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
     fn event(
-        _: &mut Self,
+        state: &mut Self,
         _: &ExtIdleNotificationV1,
         event: IdleNotificationEvent,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        match event {
-            IdleNotificationEvent::Idled => fire_sunreactorctl("idle-dim"),
-            IdleNotificationEvent::Resumed => {
-                INPUT_RESUMED.store(true, Ordering::Release);
-            }
-            _ => {}
+        match wayland_idle_action(state.mode, &event) {
+            WaylandIdleAction::IdleDim => fire_sunreactorctl("idle-dim"),
+            WaylandIdleAction::Resumed => {}
+            WaylandIdleAction::Ignore => {}
         }
     }
 }
@@ -445,7 +499,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
 fn spawn_wayland_idle(timeout_minutes: u64) -> Option<IdleWatcher> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let thread_shutdown = Arc::clone(&shutdown);
-    let timeout_ms = idle_timeout_ms(timeout_minutes)?;
+    let (timeout_ms, mode) = wayland_idle_settings(timeout_minutes)?;
     let handle = std::thread::Builder::new()
         .name(String::from("wayland-idle-notify"))
         .spawn(move || {
@@ -472,6 +526,7 @@ fn spawn_wayland_idle(timeout_minutes: u64) -> Option<IdleWatcher> {
             };
             let notification = notifier.get_input_idle_notification(timeout_ms, &seat, &qh, ());
             let mut state = WaylandIdleState {
+                mode,
                 shutdown: thread_shutdown,
                 _notification: Some(notification),
             };
@@ -485,6 +540,7 @@ fn spawn_wayland_idle(timeout_minutes: u64) -> Option<IdleWatcher> {
     tracing::info!(strategy = "wayland_ext_idle_notify", "idle_watcher_started");
     Some(IdleWatcher {
         inner: IdleWatcherInner::WaylandThread {
+            mode,
             shutdown,
             handle: Some(handle),
         },
@@ -492,12 +548,42 @@ fn spawn_wayland_idle(timeout_minutes: u64) -> Option<IdleWatcher> {
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-fn idle_timeout_ms(timeout_minutes: u64) -> Option<u32> {
-    timeout_minutes
+fn wayland_idle_settings(timeout_minutes: u64) -> Option<(u32, WaylandIdleMode)> {
+    if timeout_minutes == 0 {
+        return Some((
+            WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS,
+            WaylandIdleMode::WakeHintOnly,
+        ));
+    }
+
+    let timeout_ms = timeout_minutes
         .checked_mul(60)?
         .checked_mul(1_000)?
         .try_into()
-        .ok()
+        .ok()?;
+    Some((timeout_ms, WaylandIdleMode::IdleDim))
+}
+
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WaylandIdleAction {
+    IdleDim,
+    Resumed,
+    Ignore,
+}
+
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+fn wayland_idle_action(mode: WaylandIdleMode, event: &IdleNotificationEvent) -> WaylandIdleAction {
+    match event {
+        IdleNotificationEvent::Idled if mode == WaylandIdleMode::IdleDim => {
+            WaylandIdleAction::IdleDim
+        }
+        IdleNotificationEvent::Resumed => {
+            INPUT_RESUMED.store(true, Ordering::Release);
+            WaylandIdleAction::Resumed
+        }
+        _ => WaylandIdleAction::Ignore,
+    }
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
@@ -931,10 +1017,39 @@ mod tests {
 
     #[cfg(feature = "wayland")]
     #[test]
-    fn wayland_idle_timeout_is_checked_before_conversion() {
-        assert_eq!(idle_timeout_ms(1), Some(60_000));
-        assert_eq!(idle_timeout_ms(1_440), Some(86_400_000));
-        assert_eq!(idle_timeout_ms(u64::MAX), None);
+    fn zero_timeout_wayland_watcher_is_wake_hint_only() {
+        let (timeout_ms, mode) = wayland_idle_settings(0).expect("wake hint should be valid");
+        assert_eq!(timeout_ms, WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS);
+        assert_eq!(mode, WaylandIdleMode::WakeHintOnly);
+        assert_eq!(
+            wayland_idle_action(mode, &IdleNotificationEvent::Idled),
+            WaylandIdleAction::Ignore
+        );
+
+        INPUT_RESUMED.store(false, Ordering::Release);
+        assert_eq!(
+            wayland_idle_action(mode, &IdleNotificationEvent::Resumed),
+            WaylandIdleAction::Resumed
+        );
+        assert!(DesktopIdleSync::take_input_resume());
+        assert!(!DesktopIdleSync::take_input_resume());
+    }
+
+    #[cfg(feature = "wayland")]
+    #[test]
+    fn positive_timeout_wayland_watcher_dims_after_threshold() {
+        let (timeout_ms, mode) = wayland_idle_settings(1).expect("configured timeout should fit");
+        assert_eq!(timeout_ms, 60_000);
+        assert_eq!(mode, WaylandIdleMode::IdleDim);
+        assert_eq!(
+            wayland_idle_action(mode, &IdleNotificationEvent::Idled),
+            WaylandIdleAction::IdleDim
+        );
+        assert_eq!(
+            wayland_idle_action(mode, &IdleNotificationEvent::Resumed),
+            WaylandIdleAction::Resumed
+        );
+        assert_eq!(wayland_idle_settings(u64::MAX), None);
     }
 
     #[test]
