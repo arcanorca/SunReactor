@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.13.0] - Unreleased
 
 ### Added
+- **Maximum cloud dimming**: configure the 0..=50% daylight reduction through
+  `weather.min_multiplier`, `sunreactorctl weather cloud-dimming`, the TUI Settings
+  row, or the Plasma plasmoid. The daemon persists the canonical multiplier and
+  applies changes on the next tick.
 - **Theme registry (`src/theme/`)**: a theme is one TOML file with `id`, `name`,
   `aliases`, `family` (`pixel` | `instrument` | `terminal`), `extends`, a ten-colour
   `[palette]`, `[tui]` and `[widget]` tokens. Validation reports every problem in a
