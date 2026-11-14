@@ -21,3 +21,9 @@ absolute path; `ExecStart` and `ExecReload` therefore cannot drift.
 CI renders the template and runs `systemd-analyze --user verify` on Ubuntu
 22.04, Ubuntu 24.04, and the current Ubuntu runner. A real daemon startup is
 still required before describing a particular installed unit as validated.
+
+The unit intentionally does not add `ReadWritePaths` exceptions for
+`/sys/class/backlight` or `/sys/devices`. `systemd-analyze verify` checks unit
+syntax and dependencies, but cannot prove that a particular machine's sysfs
+brightness node is writable under a user manager. Hardware qualification is
+still required before changing the sandbox policy.
