@@ -11,7 +11,7 @@ use std::time::Duration;
 const LISTENER_POLL_TIMEOUT: Duration = Duration::from_millis(250);
 const LISTENER_RETRY_DELAY: Duration = Duration::from_secs(5);
 #[cfg(target_os = "linux")]
-const LOGIND_RETRY_MAX_DELAY: Duration = Duration::from_secs(300);
+const LOGIND_RETRY_MAX_DELAY: Duration = Duration::from_mins(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayRecoveryReason {
@@ -282,11 +282,11 @@ fn logind_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
                 retry_delay = LISTENER_RETRY_DELAY;
             }
             Err(error) => {
-                if !unavailable_logged {
+                if unavailable_logged {
+                    tracing::debug!(error = %error, "logind_event_listener_unavailable");
+                } else {
                     tracing::warn!(error = %error, "logind_event_listener_unavailable");
                     unavailable_logged = true;
-                } else {
-                    tracing::debug!(error = %error, "logind_event_listener_unavailable");
                 }
                 wait_interruptibly(&shutdown, retry_delay);
                 retry_delay = next_logind_retry_delay(retry_delay);

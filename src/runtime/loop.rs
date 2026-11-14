@@ -287,6 +287,28 @@ impl DaemonRuntime {
             Err(error) => log_tick_error(&error),
         }
     }
+
+    fn execute_pending_apply(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        cadence: &mut LoopCadence,
+        desktop_idle: &mut DesktopIdleSync,
+    ) {
+        let Some((force, clear_backoff)) = self.take_pending_apply() else {
+            return;
+        };
+        cadence.note_tick_attempt();
+        desktop_idle.note_tick_attempt(now_utc);
+        let result = if clear_backoff {
+            self.run_resync_at_with_runner(now_utc, &RealProcessRunner, true)
+        } else {
+            self.run_once_at_with_runner(now_utc, &RealProcessRunner, force)
+        };
+        match result {
+            Ok(report) => log_tick(&report),
+            Err(error) => log_tick_error(&error),
+        }
+    }
 }
 
 impl DaemonRuntime {
@@ -329,6 +351,7 @@ impl DaemonRuntime {
             );
         }
 
+        let mut apply_after_drain = false;
         while !shutdown_requested() {
             let _ = self.drain_ipc_requests_with_quantum_impl(
                 &listener,
@@ -338,6 +361,17 @@ impl DaemonRuntime {
 
             if shutdown_requested() {
                 break;
+            }
+
+            if apply_after_drain {
+                apply_after_drain = false;
+                self.execute_pending_apply(Utc::now(), &mut cadence, &mut desktop_idle);
+            }
+            if self.has_pending_apply() {
+                // Give clients that arrive immediately after a mutation one
+                // more bounded IPC drain before a slow hardware apply starts.
+                apply_after_drain = true;
+                continue;
             }
 
             let now_utc = Utc::now();

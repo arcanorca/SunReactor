@@ -73,6 +73,9 @@ pub struct DaemonRuntime {
     /// the policy config and the weather multiplier, so repeated widget
     /// requests are served from memory instead of re-running the policy.
     pub(super) day_curve_cache: Option<(String, crate::ipc::DayCurveResponse)>,
+    pending_apply: bool,
+    pending_apply_force: bool,
+    pending_apply_clear_backoff: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +100,27 @@ pub struct IpcOutcome {
 impl DaemonRuntime {
     pub fn run_once(&mut self) -> Result<TickReport, RuntimeError> {
         self.run_once_at_with_runner(Utc::now(), &RealProcessRunner, false)
+    }
+
+    pub(super) fn mark_pending_apply(&mut self, force: bool, clear_backoff: bool) {
+        self.pending_apply = true;
+        self.pending_apply_force |= force;
+        self.pending_apply_clear_backoff |= clear_backoff;
+    }
+
+    pub(super) fn take_pending_apply(&mut self) -> Option<(bool, bool)> {
+        if !self.pending_apply {
+            return None;
+        }
+        self.pending_apply = false;
+        Some((
+            std::mem::take(&mut self.pending_apply_force),
+            std::mem::take(&mut self.pending_apply_clear_backoff),
+        ))
+    }
+
+    pub(super) fn has_pending_apply(&self) -> bool {
+        self.pending_apply
     }
 
     /// Perform one complete capability observation before a one-shot apply.
@@ -523,6 +547,9 @@ impl DaemonRuntime {
             probe_schedule,
             display_events: None,
             day_curve_cache: None,
+            pending_apply: false,
+            pending_apply_force: false,
+            pending_apply_clear_backoff: false,
         };
 
         runtime.prepare_apply_resync(false);
@@ -624,6 +651,24 @@ mod tests {
     }
 
     struct PanicObservationRunner;
+
+    struct SlowApplyRunner;
+
+    impl ProcessRunner for SlowApplyRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[String],
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            std::thread::sleep(Duration::from_secs(2));
+            Ok(CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            })
+        }
+    }
 
     impl ProcessRunner for PanicObservationRunner {
         fn run(
@@ -1792,7 +1837,8 @@ mod tests {
         assert!(matches!(resume_response.response, Response::Ack { .. }));
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
         assert_eq!(runtime.state.manual_override, None);
-        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(runner.calls().len(), 0);
+        assert!(runtime.pending_apply);
         assert_eq!(
             RuntimeState::load_from_path(&state_path)
                 .expect("state file should load")
@@ -1846,7 +1892,8 @@ mod tests {
         assert!(matches!(resume_response.response, Response::Ack { .. }));
         assert!(!runtime.state.suspend_indefinite);
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
-        assert_eq!(runner.calls().len(), 1);
+        assert_eq!(runner.calls().len(), 0);
+        assert!(runtime.pending_apply);
     }
 
     #[test]
@@ -1890,9 +1937,8 @@ mod tests {
 
         assert!(outcome.tick_attempted);
         assert!(matches!(response.response, Response::Ack { .. }));
-        assert_eq!(runner.calls().len(), 1);
-        assert!(runner.calls()[0]
-            .starts_with("brightnessctl|--quiet|--class|backlight|--device|intel_backlight|set|"));
+        assert_eq!(runner.calls().len(), 0);
+        assert!(runtime.pending_apply);
         assert_eq!(runtime.state.suspend_until_epoch_s, None);
         assert_eq!(runtime.state.manual_override, None);
         assert_eq!(
@@ -1907,7 +1953,7 @@ mod tests {
                 .state
                 .monitor("internal")
                 .and_then(|monitor| monitor.last_applied_at_epoch_s),
-            Some(1_800_000_000)
+            Some(1_799_999_940)
         );
         assert_eq!(
             RuntimeState::load_from_path(&state_path)
@@ -1973,6 +2019,41 @@ mod tests {
         assert!(clear_outcome.tick_attempted);
         assert!(matches!(clear_response.response, Response::Ack { .. }));
         assert_eq!(runtime.state.manual_override, None);
+    }
+
+    #[test]
+    fn deferred_mutation_and_following_status_do_not_wait_for_apply() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        let now = Utc
+            .timestamp_opt(1_800_000_000, 0)
+            .single()
+            .expect("valid time");
+        let runner = SlowApplyRunner;
+
+        let started = std::time::Instant::now();
+        let (set_response, _) = runtime.handle_ipc_request_with_runner(
+            Request::SetOverride {
+                monitor_id: Some(String::from("internal")),
+                percent: 36,
+                minutes: Some(10),
+            },
+            &runner,
+            now,
+        );
+        assert!(started.elapsed() < Duration::from_millis(200));
+        assert!(matches!(set_response.response, Response::Ack { .. }));
+
+        let status_started = std::time::Instant::now();
+        let (status_response, _) =
+            runtime.handle_ipc_request_with_runner(Request::Status, &runner, now);
+        assert!(status_started.elapsed() < Duration::from_millis(200));
+        assert!(matches!(status_response.response, Response::Status { .. }));
     }
 
     #[test]
@@ -2051,11 +2132,8 @@ mod tests {
 
         assert!(outcome.tick_attempted);
 
-        let Response::Error { message, .. } = response.response else {
-            panic!("set_override should surface immediate apply failures");
-        };
-        assert!(message.contains("set manual override for internal to 36%"));
-        assert!(message.contains("immediate apply failed"));
+        assert!(matches!(response.response, Response::Ack { .. }));
+        assert!(runtime.pending_apply);
         assert_eq!(
             runtime.state.manual_override.as_ref().and_then(
                 |manual_override| manual_override.target_percent("internal", 1_800_000_000)
@@ -2161,10 +2239,10 @@ mod tests {
             panic!("run_once request should return a run_once response");
         };
 
-        assert_eq!(run_once.monitors_evaluated, 1);
-        assert_eq!(run_once.writes_attempted, 1);
+        assert_eq!(run_once.monitors_evaluated, 0);
+        assert_eq!(run_once.writes_attempted, 0);
         assert_eq!(run_once.writes_skipped, 0);
-        assert_eq!(run_once.writes_succeeded, 1);
+        assert_eq!(run_once.writes_succeeded, 0);
     }
 
     #[test]

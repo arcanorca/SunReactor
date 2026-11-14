@@ -103,12 +103,13 @@ fn apply_with_runner_in<R: ProcessRunner>(
 
 #[cfg(unix)]
 fn acquire_ddc_lock(timeout: Duration) -> Result<Option<File>, BackendError> {
-    let lock_path = crate::paths::runtime_socket_dir()
-        .map(|path| path.join(DDC_LOCK_FILE_NAME))
-        .unwrap_or_else(|_| {
+    let lock_path = crate::paths::runtime_socket_dir().map_or_else(
+        |_| {
             let uid = unsafe { libc::geteuid() };
             std::path::PathBuf::from(format!("/run/user/{uid}/sunreactor/{DDC_LOCK_FILE_NAME}"))
-        });
+        },
+        |path| path.join(DDC_LOCK_FILE_NAME),
+    );
     acquire_ddc_lock_at(&lock_path, timeout)
 }
 
@@ -714,6 +715,7 @@ mod tests {
         let lock_path = temp.path().join("ddc.lock");
         let holder = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .write(true)
             .open(&lock_path)
             .expect("lock file");
