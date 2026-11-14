@@ -12,6 +12,7 @@
 #include <QUrl>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <utility>
 
 #include <unistd.h>
@@ -52,6 +53,21 @@ const QString kGetTheme = QStringLiteral("get_theme");
 
 /// How long to wait before asking for the theme list again after a failed or empty answer.
 constexpr int kThemeListRetryInterval = 2000;
+constexpr int kMaxRequestQueue = 16;
+constexpr int kInitialReconnectBackoffMs = 250;
+constexpr int kMaxReconnectBackoffMs = 8000;
+constexpr qsizetype kMaxDisplayStringLength = 64;
+
+QString requestMonitorKey(const QJsonObject &request)
+{
+    const QJsonValue monitor = request.value(QStringLiteral("monitor_id"));
+    return monitor.isNull() ? QStringLiteral("<global>") : monitor.toString();
+}
+
+QString displayString(const QJsonValue &value)
+{
+    return value.toString().left(kMaxDisplayStringLength);
+}
 
 } // namespace
 
@@ -67,8 +83,11 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_watchdogTimer(new QTimer(this))
     , m_slowTimer(new QTimer(this))
     , m_themeListRetryTimer(new QTimer(this))
+    , m_reconnectTimer(new QTimer(this))
     , m_customSocketPath(customSocketPath)
 {
+    m_elapsed.start();
+    m_socket->setReadBufferSize(SunReactor::MAX_IPC_MESSAGE_BYTES);
     connect(m_socket, &QLocalSocket::connected, this, &SunReactorClient::onSocketConnected);
     connect(m_socket, &QLocalSocket::readyRead, this, &SunReactorClient::onSocketReadyRead);
     connect(m_socket, &QLocalSocket::disconnected, this, &SunReactorClient::onSocketDisconnected);
@@ -90,6 +109,9 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     m_themeListRetryTimer->setInterval(kThemeListRetryInterval);
     connect(m_themeListRetryTimer, &QTimer::timeout, this, &SunReactorClient::onThemeListRetryTriggered);
 
+    m_reconnectTimer->setSingleShot(true);
+    connect(m_reconnectTimer, &QTimer::timeout, this, &SunReactorClient::onReconnectTimerTriggered);
+
     // Defer the first query so QML can still assign socketPath this tick.
     QTimer::singleShot(0, this, &SunReactorClient::queryStatus);
 }
@@ -100,6 +122,7 @@ SunReactorClient::~SunReactorClient()
     m_watchdogTimer->stop();
     m_slowTimer->stop();
     m_themeListRetryTimer->stop();
+    m_reconnectTimer->stop();
     if (m_socket->isOpen()) {
         m_socket->abort();
     }
@@ -170,6 +193,7 @@ void SunReactorClient::setSocketPath(const QString &path)
     m_requestQueue.clear();
     m_readBuffer.clear();
     m_watchdogTimer->stop();
+    m_reconnectTimer->stop();
     if (m_socket->isOpen()) {
         m_socket->abort();
     }
@@ -200,6 +224,33 @@ void SunReactorClient::setPopupOpen(bool open)
             }
         }
     }
+}
+
+void SunReactorClient::setPollingEnabled(bool enabled)
+{
+    if (m_pollingEnabled == enabled) {
+        return;
+    }
+    m_pollingEnabled = enabled;
+    if (!enabled) {
+        m_pollTimer->stop();
+        m_slowTimer->stop();
+        m_themeListRetryTimer->stop();
+        m_reconnectTimer->stop();
+        m_watchdogTimer->stop();
+        m_requestQueue.clear();
+        m_readBuffer.clear();
+        m_responseHandled = true;
+        if (m_socket->isOpen()) {
+            m_socket->abort();
+        }
+        setBusy(false);
+    } else {
+        m_pollTimer->start();
+        m_slowTimer->start();
+        queryStatus();
+    }
+    Q_EMIT pollingEnabledChanged();
 }
 
 void SunReactorClient::setPinnedThemeId(const QString &id)
@@ -248,15 +299,22 @@ bool SunReactorClient::isQueued(const QString &name, const QString &id) const
         return request.value(QStringLiteral("request")).toString() == name
             && (id.isNull() || request.value(QStringLiteral("id")).toString() == id);
     };
-    if (m_isBusy && matches(m_inFlightRequest)) {
+    if (m_isBusy && !m_responseHandled && matches(m_inFlightRequest)) {
         return true;
     }
-    for (const QJsonObject &queued : std::as_const(m_requestQueue)) {
-        if (matches(queued)) {
+    for (const QueuedRequest &queued : std::as_const(m_requestQueue)) {
+        if (matches(queued.object)) {
             return true;
         }
     }
     return false;
+}
+
+bool SunReactorClient::isMutatingRequest(const QJsonObject &request)
+{
+    const QString name = request.value(QStringLiteral("request")).toString();
+    return name != QStringLiteral("status") && name != kDayCurve && name != kListThemes
+        && name != kGetTheme && name != QStringLiteral("ping");
 }
 
 void SunReactorClient::refreshThemeList()
@@ -275,14 +333,15 @@ bool SunReactorClient::themeListWanted() const
 void SunReactorClient::themeListAnswered(bool gotList)
 {
     m_themeListStale = false;
-    if (!gotList && m_isConnected && m_themeRegistry != CapabilityUnsupported && !m_themeListRetryTimer->isActive()) {
+    if (!gotList && m_pollingEnabled && m_isConnected && m_themeRegistry != CapabilityUnsupported
+        && !m_themeListRetryTimer->isActive()) {
         m_themeListRetryTimer->start();
     }
 }
 
 void SunReactorClient::onThemeListRetryTriggered()
 {
-    if (m_isConnected && (m_themeList.isEmpty() || m_themeListStale)) {
+    if (m_pollingEnabled && m_isConnected && (m_themeList.isEmpty() || m_themeListStale)) {
         refreshThemeList();
     }
 }
@@ -333,7 +392,7 @@ void SunReactorClient::refreshDayCurve()
 
 void SunReactorClient::onSlowTimerTriggered()
 {
-    if (!m_isConnected) {
+    if (!m_pollingEnabled || !m_isConnected) {
         return;
     }
     refreshDayCurve();
@@ -391,6 +450,29 @@ void SunReactorClient::fail(const QString &message)
 {
     m_lastError = message;
     Q_EMIT errorOccurred(m_lastError);
+}
+
+void SunReactorClient::pruneStaleMutatingRequests()
+{
+    if (m_isConnected || m_requestQueue.isEmpty()) {
+        return;
+    }
+    const qint64 now = m_elapsed.elapsed();
+    for (auto it = m_requestQueue.begin(); it != m_requestQueue.end();) {
+        if (isMutatingRequest(it->object) && now - it->queuedAtMs > m_lastBackoffWindowMs) {
+            it = m_requestQueue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void SunReactorClient::scheduleReconnect()
+{
+    const int delay = m_reconnectBackoffMs;
+    m_lastBackoffWindowMs = delay;
+    m_reconnectTimer->start(delay);
+    m_reconnectBackoffMs = std::min(kMaxReconnectBackoffMs, delay * 2);
 }
 
 QJsonObject SunReactorClient::request(const QString &name) const
@@ -599,33 +681,83 @@ void SunReactorClient::openTerminal()
 
 void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
 {
+    if (!m_pollingEnabled) {
+        return;
+    }
     const QString name = requestObj.value(QStringLiteral("request")).toString();
+    const qint64 now = m_elapsed.elapsed();
 
     // Status is idempotent: never queue a second one behind a pending query.
-    if (name == QStringLiteral("status")) {
-        for (const QJsonObject &queued : std::as_const(m_requestQueue)) {
-            if (queued.value(QStringLiteral("request")).toString() == QStringLiteral("status")) {
+    if (name == QStringLiteral("status") && isQueued(name)) {
+        return;
+    }
+
+    // Slider updates and limit edits are replaceable until they reach the
+    // daemon: the latest value for one monitor is the only useful one.
+    if (name == QStringLiteral("set_override") || name == QStringLiteral("set_monitor_limits")) {
+        const QString monitor = requestMonitorKey(requestObj);
+        for (QueuedRequest &queued : m_requestQueue) {
+            if (queued.object.value(QStringLiteral("request")).toString() == name
+                && requestMonitorKey(queued.object) == monitor) {
+                queued.object = requestObj;
+                queued.queuedAtMs = now;
                 return;
             }
         }
     }
 
-    m_requestQueue.enqueue(requestObj);
+    if (m_requestQueue.size() >= kMaxRequestQueue) {
+        if (!isMutatingRequest(requestObj)) {
+            return;
+        }
+        // Preserve the newest command when many different monitor ids are
+        // being edited while the daemon is unavailable.
+        auto oldest = std::find_if(m_requestQueue.cbegin(), m_requestQueue.cend(), [](const QueuedRequest &queued) {
+            return isMutatingRequest(queued.object);
+        });
+        if (oldest == m_requestQueue.cend()) {
+            return;
+        }
+        m_requestQueue.erase(oldest);
+    }
 
-    if (m_socket->state() == QLocalSocket::UnconnectedState) {
+    m_requestQueue.enqueue({requestObj, now});
+
+    if (!m_isBusy && !m_processNextScheduled && !m_reconnectTimer->isActive()
+        && m_socket->state() == QLocalSocket::UnconnectedState) {
         processNextRequest();
     }
 }
 
+void SunReactorClient::prependRequest(const QJsonObject &requestObj)
+{
+    if (!m_pollingEnabled) {
+        return;
+    }
+    if (m_requestQueue.size() >= kMaxRequestQueue) {
+        m_requestQueue.removeLast();
+    }
+    m_requestQueue.prepend({requestObj, m_elapsed.elapsed()});
+}
+
 void SunReactorClient::processNextRequest()
 {
+    m_processNextScheduled = false;
+    if (m_reconnectTimer->isActive() || (m_isBusy && !m_responseHandled)) {
+        return;
+    }
+    pruneStaleMutatingRequests();
     if (m_requestQueue.isEmpty()) {
+        m_responseHandled = true;
         setBusy(false);
         return;
     }
 
     setBusy(true);
-    m_inFlightRequest = m_requestQueue.dequeue();
+    m_responseHandled = false;
+    const QueuedRequest queued = m_requestQueue.dequeue();
+    m_inFlightRequest = queued.object;
+    m_inFlightQueuedAtMs = queued.queuedAtMs;
     m_readBuffer.clear();
 
     m_socket->abort();
@@ -642,10 +774,7 @@ void SunReactorClient::sendInFlightRequest()
 {
     const QByteArray data = QJsonDocument(m_inFlightRequest).toJson(QJsonDocument::Compact) + '\n';
     if (data.size() > SunReactor::MAX_IPC_MESSAGE_BYTES) {
-        m_watchdogTimer->stop();
-        m_socket->abort();
-        fail(QStringLiteral("Outgoing IPC request exceeded 64 KiB ceiling (%1 bytes)").arg(data.size()));
-        processNextRequest();
+        transportError(QStringLiteral("Outgoing IPC request exceeded 64 KiB ceiling (%1 bytes)").arg(data.size()));
         return;
     }
 
@@ -655,41 +784,48 @@ void SunReactorClient::sendInFlightRequest()
 
 void SunReactorClient::onSocketReadyRead()
 {
-    m_readBuffer.append(m_socket->readAll());
-
-    if (m_readBuffer.size() > SunReactor::MAX_IPC_MESSAGE_BYTES) {
-        m_watchdogTimer->stop();
-        m_socket->abort();
-        fail(QStringLiteral("Incoming IPC stream exceeded 64 KiB ceiling (%1 bytes)").arg(m_readBuffer.size()));
-        m_readBuffer.clear();
-        processNextRequest();
+    if (!m_isBusy || m_responseHandled) {
         return;
     }
 
-    int newlineIndex = -1;
-    while ((newlineIndex = m_readBuffer.indexOf('\n')) != -1) {
-        const QByteArray line = m_readBuffer.left(newlineIndex).trimmed();
-        m_readBuffer.remove(0, newlineIndex + 1);
+    const qsizetype remaining = SunReactor::MAX_IPC_MESSAGE_BYTES - m_readBuffer.size();
+    if (remaining <= 0 || m_socket->bytesAvailable() > remaining) {
+        transportError(QStringLiteral("Incoming IPC stream exceeded 64 KiB ceiling"));
+        return;
+    }
+    m_readBuffer.append(m_socket->read(remaining));
 
-        if (line.isEmpty()) {
-            continue;
-        }
+    const int newlineIndex = m_readBuffer.indexOf('\n');
+    if (newlineIndex < 0) {
+        return;
+    }
 
-        m_watchdogTimer->stop();
+    const QByteArray line = m_readBuffer.left(newlineIndex).trimmed();
+    m_readBuffer.clear();
+    if (line.isEmpty()) {
+        transportError(QStringLiteral("Empty response line from daemon"));
+        return;
+    }
 
-        QJsonParseError parseError{};
-        const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-            fail(QStringLiteral("Malformed JSON response from daemon: %1").arg(parseError.errorString()));
-        } else {
-            handleResponse(doc.object());
-        }
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        transportError(QStringLiteral("Malformed JSON response from daemon: %1").arg(parseError.errorString()));
+        return;
+    }
+    if (handleResponse(doc.object())) {
+        completeResponse();
+    } else {
+        transportError();
     }
 }
 
 void SunReactorClient::onSocketDisconnected()
 {
-    m_watchdogTimer->stop();
+    if (!m_isBusy || m_responseHandled) {
+        m_readBuffer.clear();
+        return;
+    }
 
     // A response that arrived without its trailing newline is still valid.
     if (!m_readBuffer.isEmpty()) {
@@ -699,69 +835,80 @@ void SunReactorClient::onSocketDisconnected()
             QJsonParseError parseError{};
             const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
             if (parseError.error == QJsonParseError::NoError && doc.isObject()) {
-                handleResponse(doc.object());
+                if (handleResponse(doc.object())) {
+                    completeResponse();
+                } else {
+                    transportError();
+                }
+                return;
             }
+            transportError(QStringLiteral("Malformed JSON response from daemon: %1").arg(parseError.errorString()));
+            return;
         }
     }
 
-    processNextRequest();
+    transportError(QStringLiteral("Daemon closed the socket before replying"));
 }
 
 void SunReactorClient::onSocketError(QLocalSocket::LocalSocketError socketError)
 {
-    if (socketError == QLocalSocket::PeerClosedError) {
-        // Expected: the daemon closes the connection after each response.
+    if (socketError == QLocalSocket::PeerClosedError && m_responseHandled) {
         return;
     }
 
-    m_watchdogTimer->stop();
-    setConnected(false);
-    fail(m_socket->errorString());
-
-    m_socket->abort();
-    m_readBuffer.clear();
-    processNextRequest();
+    transportError(m_socket->errorString());
 }
 
 void SunReactorClient::onRequestTimeout()
 {
-    m_socket->abort();
-    setConnected(false);
-    fail(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
+    transportError(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
+}
 
-    m_readBuffer.clear();
+void SunReactorClient::onReconnectTimerTriggered()
+{
+    pruneStaleMutatingRequests();
     processNextRequest();
 }
 
 void SunReactorClient::onPollTimerTriggered()
 {
+    if (!m_pollingEnabled) {
+        return;
+    }
     queryStatus();
 }
 
-void SunReactorClient::handleResponse(const QJsonObject &responseObj)
+bool SunReactorClient::handleResponse(const QJsonObject &responseObj)
 {
     const bool listAnswer = m_inFlightRequest.value(QStringLiteral("request")).toString() == kListThemes;
-    dispatchResponse(responseObj);
+    if (!dispatchResponse(responseObj)) {
+        return false;
+    }
     if (listAnswer) {
         const bool gotList = responseObj.value(QStringLiteral("response")).toString() == QLatin1String("themes")
             && !m_themeList.isEmpty();
         themeListAnswered(gotList);
     }
+    return true;
 }
 
-void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
+bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
 {
     const quint32 version = static_cast<quint32>(responseObj.value(QStringLiteral("version")).toInt());
     if (version != SunReactor::PROTOCOL_VERSION) {
         fail(QStringLiteral("Unsupported IPC protocol version %1 (expected %2)")
                  .arg(version)
                  .arg(SunReactor::PROTOCOL_VERSION));
-        return;
+        return false;
     }
 
     const QString type = responseObj.value(QStringLiteral("response")).toString();
 
     const QString sent = m_inFlightRequest.value(QStringLiteral("request")).toString();
+    if (type.isEmpty()) {
+        fail(QStringLiteral("Missing response type from daemon"));
+        return false;
+    }
 
     if (type == QStringLiteral("status")) {
         setConnected(true);
@@ -781,21 +928,21 @@ void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
             if (curveMoves && m_dayCurveSupport != CapabilityUnsupported && !isQueued(kDayCurve)) {
                 QJsonObject curve = request(kDayCurve);
                 curve[QStringLiteral("monitor_id")] = QJsonValue(QJsonValue::Null);
-                m_requestQueue.prepend(curve);
+                prependRequest(curve);
             }
             if (sent == QLatin1String("reload_config")) {
                 // Theme files may have been edited along with the config.
                 if (!m_pinnedThemeId.isEmpty() && m_themeRegistry != CapabilityUnsupported) {
                     QJsonObject pinned = request(kGetTheme);
                     pinned[QStringLiteral("id")] = m_pinnedThemeId;
-                    m_requestQueue.prepend(pinned);
+                    prependRequest(pinned);
                 }
                 // A user theme file may have been added: the list is read again.
                 if (themeListWanted()) {
-                    m_requestQueue.enqueue(request(kListThemes));
+                    enqueueRequest(request(kListThemes));
                 }
             }
-            m_requestQueue.prepend(request(kStatus));
+            enqueueRequest(request(kStatus));
         }
     } else if (type == QStringLiteral("pong")) {
         setConnected(true);
@@ -807,8 +954,10 @@ void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
         setConnected(true);
         setThemeRegistry(CapabilitySupported);
         const QString id = m_inFlightRequest.value(QStringLiteral("id")).toString();
+        QJsonObject boundedTheme = responseObj.value(QStringLiteral("theme")).toObject();
+        boundedTheme[QStringLiteral("name")] = displayString(boundedTheme.value(QStringLiteral("name")));
         const QVariantMap theme = SunReactor::ThemeData::normalizeTheme(
-            responseObj.value(QStringLiteral("theme")).toObject());
+            boundedTheme);
         if (theme.isEmpty()) {
             if (id == m_pinnedThemeId) {
                 setPinned({}, QStringLiteral("not_found"));
@@ -825,8 +974,64 @@ void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
         setDayCurveSupport(CapabilitySupported);
         parseDayCurve(responseObj.value(QStringLiteral("day_curve")).toObject());
     } else if (type == QStringLiteral("error")) {
+        // The transport answered with a valid protocol envelope even though
+        // the requested operation failed; keep connectivity separate from the
+        // daemon's capability/error state.
+        setConnected(true);
         handleError(responseObj);
+    } else {
+        fail(QStringLiteral("Unknown response type from daemon: %1").arg(type));
+        return false;
     }
+    return true;
+}
+
+void SunReactorClient::completeResponse()
+{
+    if (m_responseHandled) {
+        return;
+    }
+    m_responseHandled = true;
+    m_watchdogTimer->stop();
+    m_readBuffer.clear();
+    m_reconnectTimer->stop();
+    m_reconnectBackoffMs = kInitialReconnectBackoffMs;
+    m_lastBackoffWindowMs = kInitialReconnectBackoffMs;
+    // The response line is the complete frame. A daemon that leaves the peer
+    // open must not hold the next request behind a disconnected() signal.
+    m_socket->abort();
+    // Let the abort's disconnected signal drain before arming the next request;
+    // that signal belongs to the completed frame and must not settle the new one.
+    m_processNextScheduled = true;
+    setBusy(false);
+    QMetaObject::invokeMethod(this, [this]() { processNextRequest(); }, Qt::QueuedConnection);
+}
+
+void SunReactorClient::transportError(const QString &message)
+{
+    if (m_responseHandled) {
+        return;
+    }
+    m_responseHandled = true;
+    m_watchdogTimer->stop();
+    m_readBuffer.clear();
+    m_socket->abort();
+    setConnected(false);
+    if (!message.isEmpty()) {
+        fail(message);
+    }
+    if (!m_inFlightRequest.isEmpty()) {
+        const qint64 now = m_elapsed.elapsed();
+        if (!isMutatingRequest(m_inFlightRequest)
+            || now - m_inFlightQueuedAtMs <= m_lastBackoffWindowMs) {
+            if (m_requestQueue.size() >= kMaxRequestQueue) {
+                m_requestQueue.removeLast();
+            }
+            m_requestQueue.prepend({m_inFlightRequest, m_inFlightQueuedAtMs});
+        }
+    }
+    setBusy(false);
+    scheduleReconnect();
 }
 
 void SunReactorClient::handleError(const QJsonObject &responseObj)
@@ -877,13 +1082,43 @@ void SunReactorClient::handleError(const QJsonObject &responseObj)
         return;
     }
 
-    fail(QStringLiteral("%1: %2").arg(code, responseObj.value(QStringLiteral("message")).toString()));
+    fail(QStringLiteral("%1: %2").arg(code, displayString(responseObj.value(QStringLiteral("message")))));
 }
 
 void SunReactorClient::parseStatus(const QJsonObject &statusObj)
 {
     const QString previousThemeId = m_theme.value(QStringLiteral("id")).toString();
     const QString previousWarning = m_themeWarning;
+    const bool previousSuspended = m_isSuspended;
+    const bool previousOverride = m_isOverrideActive;
+    const bool previousIdleDimmed = m_isDesktopIdleDimmed;
+    const bool previousHasElevation = m_hasSolarElevation;
+    const double previousElevation = m_solarElevation;
+    const qint64 previousNow = m_nowEpochS;
+    const qint64 previousSunrise = m_sunriseEpochS;
+    const qint64 previousSunset = m_sunsetEpochS;
+    const qint64 previousSuspendUntil = m_suspendUntilEpochS;
+    const qint64 previousGlobalOverrideUntil = m_globalOverrideUntilEpochS;
+    const qint64 previousMonitorOverrideUntil = m_perMonitorOverrideUntilEpochS;
+    const int previousGlobalPercent = m_globalPercent;
+    const bool previousWeatherEnabled = m_weatherEnabled;
+    const bool previousWeatherStale = m_weatherStale;
+    const bool previousHasWeather = m_hasWeatherReading;
+    const QString previousWeatherState = m_weatherState;
+    const QString previousWeatherCondition = m_weatherCondition;
+    const QString previousWeatherDayPhase = m_weatherDayPhase;
+    const int previousCloudCover = m_cloudCoverPercent;
+    const bool previousHasTemperature = m_hasTemperature;
+    const double previousTemperature = m_temperatureC;
+    const double previousWeatherMultiplier = m_weatherMultiplier;
+    const QString previousThemeName = m_themeName;
+    const QString previousThemeAccent = m_themeAccent;
+    const QString previousThemeSecondaryAccent = m_themeSecondaryAccent;
+    const QString previousThemeBg = m_themeBg;
+    const QString previousThemeFg = m_themeFg;
+    const QString previousThemeTextMuted = m_themeTextMuted;
+    const bool previousDaylight = isDaylight();
+    const bool previousWeatherNight = weatherIsNight();
 
     m_isSuspended = statusObj.value(QStringLiteral("suspended")).toBool(false);
     m_isOverrideActive = statusObj.value(QStringLiteral("manual_override_active")).toBool(false);
@@ -901,7 +1136,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     m_perMonitorOverrideUntilEpochS = optionalEpoch(statusObj, "per_monitor_override_until_epoch_s");
 
     const QJsonObject themeObj = statusObj.value(QStringLiteral("theme")).toObject();
-    m_themeName = themeObj.value(QStringLiteral("name")).toString();
+    m_themeName = displayString(themeObj.value(QStringLiteral("name")));
     m_themeAccent = themeObj.value(QStringLiteral("accent")).toString();
     m_themeSecondaryAccent = themeObj.value(QStringLiteral("secondary_accent")).toString();
     m_themeBg = themeObj.value(QStringLiteral("bg")).toString();
@@ -914,7 +1149,28 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     parseWeather(statusObj);
     parseMonitors(statusObj);
 
-    Q_EMIT statusChanged();
+    if (previousNow != m_nowEpochS) {
+        Q_EMIT nowChanged();
+    }
+    const bool scalarChanged = previousSuspended != m_isSuspended || previousOverride != m_isOverrideActive
+        || previousIdleDimmed != m_isDesktopIdleDimmed || previousHasElevation != m_hasSolarElevation
+        || previousElevation != m_solarElevation || previousSunrise != m_sunriseEpochS
+        || previousSunset != m_sunsetEpochS || previousSuspendUntil != m_suspendUntilEpochS
+        || previousGlobalOverrideUntil != m_globalOverrideUntilEpochS
+        || previousMonitorOverrideUntil != m_perMonitorOverrideUntilEpochS
+        || previousGlobalPercent != m_globalPercent || previousWeatherEnabled != m_weatherEnabled
+        || previousWeatherStale != m_weatherStale || previousHasWeather != m_hasWeatherReading
+        || previousWeatherState != m_weatherState || previousWeatherCondition != m_weatherCondition
+        || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
+        || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
+        || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
+        || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
+        || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
+        || previousThemeTextMuted != m_themeTextMuted || previousWarning != m_themeWarning
+        || previousDaylight != isDaylight() || previousWeatherNight != weatherIsNight();
+    if (scalarChanged) {
+        Q_EMIT statusChanged();
+    }
 
     parseTheme(statusObj);
 
@@ -925,7 +1181,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     }
     // Queued rather than sent: this runs inside a response, and the disconnect that follows starts it.
     if (m_themeListStale && themeListWanted()) {
-        m_requestQueue.enqueue(request(kListThemes));
+        enqueueRequest(request(kListThemes));
     }
 
     // Slow data: once per local day (and on the triggers documented at
@@ -951,7 +1207,8 @@ void SunReactorClient::parseTheme(const QJsonObject &statusObj)
         // A daemon without a theme block tells us nothing either way.
         return;
     }
-    const QJsonObject themeObj = themeValue.toObject();
+    QJsonObject themeObj = themeValue.toObject();
+    themeObj[QStringLiteral("name")] = displayString(themeObj.value(QStringLiteral("name")));
     const bool hasRegistry = themeObj.value(QStringLiteral("palette")).isObject();
     if (hasRegistry && m_themeRegistry == CapabilityUnsupported) {
         // The daemon was upgraded underneath us: ask again for everything new.
@@ -980,7 +1237,9 @@ void SunReactorClient::parseThemeList(const QJsonArray &entries)
 {
     QVariantList list;
     for (const QJsonValue &entry : entries) {
-        const QVariantMap summary = SunReactor::ThemeData::normalizeSummary(entry.toObject());
+        QJsonObject bounded = entry.toObject();
+        bounded[QStringLiteral("name")] = displayString(bounded.value(QStringLiteral("name")));
+        const QVariantMap summary = SunReactor::ThemeData::normalizeSummary(bounded);
         if (!summary.isEmpty()) {
             list.append(summary);
         }
@@ -998,7 +1257,7 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
     QVariantList monitorList;
     for (const QJsonValue &entry : monitors) {
         const QJsonObject monitor = entry.toObject();
-        const QString id = monitor.value(QStringLiteral("monitor_id")).toString();
+        const QString id = displayString(monitor.value(QStringLiteral("monitor_id")));
         if (id.isEmpty()) {
             continue;
         }
@@ -1029,8 +1288,8 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
             }
             milestones.append(QVariantMap{
                 // Stable machine id (rise_50, ...) for translation; label is the TUI's English text.
-                {QStringLiteral("id"), milestone.value(QStringLiteral("id")).toString()},
-                {QStringLiteral("label"), milestone.value(QStringLiteral("label")).toString()},
+                {QStringLiteral("id"), displayString(milestone.value(QStringLiteral("id")))},
+                {QStringLiteral("label"), displayString(milestone.value(QStringLiteral("label")))},
                 {QStringLiteral("t"), t},
                 {QStringLiteral("pct"), optionalPercent(milestone, "pct")},
             });
@@ -1049,7 +1308,7 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
     if (!monitorList.isEmpty()) {
         const QJsonObject sun = curve.value(QStringLiteral("sun")).toObject();
         const QJsonValue multiplier = curve.value(QStringLiteral("weather_multiplier"));
-        out[QStringLiteral("date")] = curve.value(QStringLiteral("date")).toString();
+        out[QStringLiteral("date")] = displayString(curve.value(QStringLiteral("date")));
         out[QStringLiteral("stepMinutes")] = curve.value(QStringLiteral("step_minutes")).toInt(0);
         out[QStringLiteral("generatedAtEpochS")] = optionalEpoch(curve, "generated_at_epoch_s");
         out[QStringLiteral("weatherMultiplier")] = multiplier.isDouble() ? multiplier.toDouble() : 1.0;
@@ -1078,13 +1337,14 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
         m_hasWeatherReading = false;
         m_weatherState.clear();
         m_weatherCondition.clear();
+        m_weatherDescription.clear();
         m_weatherDayPhase.clear();
         m_cloudCoverPercent = UNKNOWN_PERCENT;
         m_hasTemperature = false;
         m_temperatureC = 0.0;
         m_weatherMultiplier = 1.0;
-        m_forecast.clear();
-        m_weatherDetails.clear();
+        parseForecast({});
+        parseDetails({});
         return;
     }
 
@@ -1093,9 +1353,10 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
     // `stale` says the reading is old; the last known values stay on screen,
     // because an hour-old temperature is still better than a blank row.
     m_weatherStale = weather.value(QStringLiteral("stale")).toBool(false);
-    m_weatherState = weather.value(QStringLiteral("state")).toString();
-    m_weatherCondition = weather.value(QStringLiteral("condition")).toString();
-    m_weatherDayPhase = weather.value(QStringLiteral("day_phase")).toString();
+    m_weatherState = displayString(weather.value(QStringLiteral("state")));
+    m_weatherCondition = displayString(weather.value(QStringLiteral("condition")));
+    m_weatherDescription = displayString(weather.value(QStringLiteral("condition_description")));
+    m_weatherDayPhase = displayString(weather.value(QStringLiteral("day_phase")));
     m_cloudCoverPercent = optionalPercent(weather, "cloud_cover_percent");
 
     const QJsonValue temperature = weather.value(QStringLiteral("temperature"));
@@ -1136,9 +1397,9 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         const bool unreachable = backoffUntil > m_nowEpochS;
 
         QVariantMap map;
-        map[QStringLiteral("logicalId")] = monitor.value(QStringLiteral("logical_id")).toString();
-        map[QStringLiteral("backend")] = monitor.value(QStringLiteral("backend")).toString();
-        map[QStringLiteral("topology")] = monitor.value(QStringLiteral("topology")).toString();
+        map[QStringLiteral("logicalId")] = displayString(monitor.value(QStringLiteral("logical_id")));
+        map[QStringLiteral("backend")] = displayString(monitor.value(QStringLiteral("backend")));
+        map[QStringLiteral("topology")] = displayString(monitor.value(QStringLiteral("topology")));
         map[QStringLiteral("enabled")] = enabled;
         map[QStringLiteral("appliedPercent")] = applied;
         map[QStringLiteral("minPct")] = minPct != UNKNOWN_PERCENT ? minPct : 15;
@@ -1159,7 +1420,11 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         }
     }
 
-    m_monitors = monitors;
+    const bool monitorsDiffer = m_monitors != monitors;
+    if (monitorsDiffer) {
+        m_monitors = monitors;
+        Q_EMIT monitorsChanged();
+    }
 
     const int globalOverride = optionalPercent(statusObj, "global_override_percent");
     if (globalOverride != UNKNOWN_PERCENT) {
@@ -1189,14 +1454,21 @@ void SunReactorClient::parseForecast(const QJsonArray &entries)
         QVariantMap map;
         map[QStringLiteral("epochS")] = at;
         map[QStringLiteral("temperatureC")] = temperature.toDouble();
-        map[QStringLiteral("condition")] = point.value(QStringLiteral("condition")).toString();
+        map[QStringLiteral("condition")] = displayString(point.value(QStringLiteral("condition")));
+        const QString description = displayString(point.value(QStringLiteral("condition_description")));
+        if (!description.isEmpty()) {
+            map[QStringLiteral("description")] = description;
+        }
         map[QStringLiteral("isNight")] =
             point.value(QStringLiteral("day_phase")).toString() == QLatin1String("night");
         map[QStringLiteral("cloudCoverPercent")] = optionalPercent(point, "cloud_cover_percent");
         map[QStringLiteral("precipitationPercent")] = optionalPercent(point, "precipitation_percent");
         forecast.append(map);
     }
-    m_forecast = forecast;
+    if (m_forecast != forecast) {
+        m_forecast = forecast;
+        Q_EMIT forecastChanged();
+    }
 }
 
 void SunReactorClient::parseDetails(const QJsonObject &details)
@@ -1224,11 +1496,33 @@ void SunReactorClient::parseDetails(const QJsonObject &details)
         }
     }
 
-    m_weatherDetails = map;
+    if (!m_weatherDescription.isEmpty()) {
+        map[QStringLiteral("conditionDescription")] = m_weatherDescription;
+    }
+
+    if (m_weatherDetails != map) {
+        m_weatherDetails = map;
+        Q_EMIT detailsChanged();
+    }
 }
 
 void SunReactorClient::clearStatus()
 {
+    const bool previousSuspended = m_isSuspended;
+    const bool previousOverride = m_isOverrideActive;
+    const bool previousIdleDimmed = m_isDesktopIdleDimmed;
+    const int previousGlobalPercent = m_globalPercent;
+    const QVariantList previousMonitors = m_monitors;
+    const bool previousHasWeather = m_hasWeatherReading;
+    const QVariantList previousForecast = m_forecast;
+    const QVariantMap previousDetails = m_weatherDetails;
+    const QString previousThemeName = m_themeName;
+    const QString previousThemeAccent = m_themeAccent;
+    const QString previousThemeSecondaryAccent = m_themeSecondaryAccent;
+    const QString previousThemeBg = m_themeBg;
+    const QString previousThemeFg = m_themeFg;
+    const QString previousThemeTextMuted = m_themeTextMuted;
+    const QString previousThemeWarning = m_themeWarning;
     m_isSuspended = false;
     m_isOverrideActive = false;
     m_isDesktopIdleDimmed = false;
@@ -1244,5 +1538,21 @@ void SunReactorClient::clearStatus()
     m_themeFg.clear();
     m_themeTextMuted.clear();
     m_themeWarning.clear();
-    Q_EMIT statusChanged();
+    if (previousMonitors != m_monitors) {
+        Q_EMIT monitorsChanged();
+    }
+    if (previousForecast != m_forecast) {
+        Q_EMIT forecastChanged();
+    }
+    if (previousDetails != m_weatherDetails) {
+        Q_EMIT detailsChanged();
+    }
+    if (previousSuspended != m_isSuspended || previousOverride != m_isOverrideActive
+        || previousIdleDimmed != m_isDesktopIdleDimmed || previousGlobalPercent != m_globalPercent
+        || previousHasWeather != m_hasWeatherReading || previousThemeName != m_themeName
+        || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
+        || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
+        || previousThemeTextMuted != m_themeTextMuted || previousThemeWarning != m_themeWarning) {
+        Q_EMIT statusChanged();
+    }
 }

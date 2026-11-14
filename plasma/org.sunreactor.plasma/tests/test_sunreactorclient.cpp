@@ -23,7 +23,9 @@
 #include <functional>
 #include <utility>
 
+#define private public
 #include "sunreactorclient.h"
+#undef private
 #include "sunreactortypes.h"
 #include "themenormalize.h"
 
@@ -45,6 +47,12 @@ private Q_SLOTS:
     void testFramingAndChunkedStream();
     void test64KiBCeilingGuard();
     void testMalformedJsonRecovery();
+    void testMalformedLineKeepsSocketOpenAndRecovers();
+    void testValidResponseAdvancesWithoutDisconnect();
+    void testOneMiBUnframedInputRecovers();
+    void testOfflineQueueBackoffAndCoalescing();
+    void testErrorResponseMarksConnected();
+    void testIdenticalStatusOnlyEmitsMonitorsOnce();
     void testCommandSequencing();
     void testOverrideRequestsAreWellFormed();
     void testMonitorLimitsRequestsAreWellFormed();
@@ -336,7 +344,6 @@ void TestSunReactorClient::testConnectAndParseStatus()
 
     SunReactorClient client(m_socketPath);
     QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-
     QVERIFY(statusSpy.wait(2000));
     QVERIFY(client.isConnected());
     QCOMPARE(client.themeName(), QStringLiteral("Amber"));
@@ -396,8 +403,8 @@ void TestSunReactorClient::testUnknownBrightnessStaysUnknown()
     serveStatus(status);
 
     SunReactorClient client(m_socketPath);
-    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-    QVERIFY(statusSpy.wait(2000));
+    QSignalSpy monitorsSpy(&client, &SunReactorClient::monitorsChanged);
+    QVERIFY(monitorsSpy.wait(2000));
 
     const QVariantMap first = client.monitors().at(0).toMap();
     QCOMPARE(first.value(QStringLiteral("percent")).toInt(), SunReactor::UNKNOWN_PERCENT);
@@ -618,6 +625,166 @@ void TestSunReactorClient::testMalformedJsonRecovery()
     QVERIFY(client.lastError().contains(QStringLiteral("Malformed JSON")));
 }
 
+void TestSunReactorClient::testMalformedLineKeepsSocketOpenAndRecovers()
+{
+    int connections = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &connections]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, &connections]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            ++connections;
+            if (connections == 1) {
+                socket->write("not-json\n");
+                socket->flush();
+                return; // The client must abort this still-open peer itself.
+            }
+            socket->write(QJsonDocument(statusResponse(QJsonObject{})).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush(); // Deliberately do not close the socket.
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 5000);
+    QVERIFY(connections >= 2);
+}
+
+void TestSunReactorClient::testValidResponseAdvancesWithoutDisconnect()
+{
+    int commands = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &commands]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, &commands]() {
+            const QByteArray data = socket->readAll();
+            if (!data.contains('\n')) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(data).object();
+            const QString name = request.value(QStringLiteral("request")).toString();
+            if (name == QStringLiteral("set_override") || name == QStringLiteral("clear_override")) {
+                ++commands;
+            }
+            const QJsonObject response = name == QStringLiteral("status")
+                ? statusResponse(QJsonObject{})
+                : envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+            socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush(); // The client must advance without disconnected().
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    client.setGlobalOverride(40, 30);
+    client.clearGlobalOverride();
+    QTRY_COMPARE_WITH_TIMEOUT(commands, 2, 4000);
+}
+
+void TestSunReactorClient::testOneMiBUnframedInputRecovers()
+{
+    int connections = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &connections]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, &connections]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            ++connections;
+            if (connections == 1) {
+                socket->write(QByteArray(1024 * 1024, 'X'));
+                socket->flush();
+                return;
+            }
+            socket->write(QJsonDocument(statusResponse(QJsonObject{})).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 6000);
+    QVERIFY(connections >= 2);
+    QVERIFY(client.lastError().contains(QStringLiteral("64 KiB")));
+}
+
+void TestSunReactorClient::testOfflineQueueBackoffAndCoalescing()
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket]() {
+            socket->readAll(); // Accept, then remain silent until the watchdog.
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    for (int i = 0; i < 100; ++i) {
+        client.setMonitorOverride(QStringLiteral("desk"), i % 100, 30);
+        client.setMonitorOverride(QStringLiteral("wall"), (i + 1) % 100, 30);
+    }
+
+    QVERIFY(client.m_requestQueue.size() <= 16);
+    QCOMPARE(client.m_reconnectBackoffMs, 250);
+    bool sawDesk = false;
+    bool sawWall = false;
+    for (const SunReactorClient::QueuedRequest &queued : std::as_const(client.m_requestQueue)) {
+        const QJsonObject request = queued.object;
+        if (request.value(QStringLiteral("monitor_id")).toString() == QStringLiteral("desk")) {
+            sawDesk = request.value(QStringLiteral("percent")).toInt() == 99;
+        }
+        if (request.value(QStringLiteral("monitor_id")).toString() == QStringLiteral("wall")) {
+            sawWall = request.value(QStringLiteral("percent")).toInt() == 0;
+        }
+    }
+    QVERIFY(sawDesk);
+    QVERIFY(sawWall);
+    QTRY_VERIFY_WITH_TIMEOUT(client.m_reconnectBackoffMs > 250, 5000);
+    QVERIFY(client.m_requestQueue.size() <= 16);
+}
+
+void TestSunReactorClient::testErrorResponseMarksConnected()
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            const QJsonObject response = TestSunReactorClient::errorResponse(
+                QStringLiteral("invalid_request"), QStringLiteral("unsupported request"));
+            socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    QVERIFY(client.lastError().contains(QStringLiteral("unsupported request")));
+}
+
+void TestSunReactorClient::testIdenticalStatusOnlyEmitsMonitorsOnce()
+{
+    QJsonObject monitor{{QStringLiteral("logical_id"), QStringLiteral("desk")},
+                        {QStringLiteral("enabled"), true},
+                        {QStringLiteral("last_applied_percent"), 50}};
+    connect(m_server, &QLocalServer::newConnection, this, [this, monitor]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, monitor]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            socket->write(QJsonDocument(statusResponse(
+                {{QStringLiteral("monitors"), QJsonArray{monitor}}})).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy monitorsSpy(&client, &SunReactorClient::monitorsChanged);
+    QTRY_COMPARE_WITH_TIMEOUT(monitorsSpy.count(), 1, 2000);
+    client.queryStatus();
+    QTest::qWait(250);
+    QCOMPARE(monitorsSpy.count(), 1);
+}
+
 void TestSunReactorClient::testCommandSequencing()
 {
     int requestCounter = 0;
@@ -654,15 +821,12 @@ void TestSunReactorClient::testCommandSequencing()
     });
 
     SunReactorClient client(m_socketPath);
-    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-
-    QVERIFY(statusSpy.wait(2000));
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
 
     // An accepted command must be followed by a fresh read of the real state.
     client.suspend(30);
 
-    QVERIFY(statusSpy.wait(3000));
-    QCOMPARE(client.mode(), SunReactorClient::Paused);
+    QTRY_COMPARE_WITH_TIMEOUT(client.mode(), SunReactorClient::Paused, 3000);
     QVERIFY(requestCounter >= 2);
 }
 
@@ -986,7 +1150,8 @@ void TestSunReactorClient::testNewThemeIsNormalized()
     themeSpy.clear();
     client.queryStatus();
     QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-    QVERIFY(statusSpy.wait(2000));
+    QTest::qWait(250);
+    QCOMPARE(statusSpy.count(), 0);
     QCOMPARE(themeSpy.count(), 0);
 }
 
@@ -1358,12 +1523,14 @@ void TestSunReactorClient::testThemeWarningIsOptional()
     *warning = QJsonValue(42);
     statusSpy.clear();
     client.queryStatus();
-    QVERIFY(statusSpy.wait(2000));
+    QTest::qWait(250);
+    QCOMPARE(statusSpy.count(), 0);
     QCOMPARE(client.themeWarning(), QString());
     *warning = QJsonValue(QJsonValue::Null);
     statusSpy.clear();
     client.queryStatus();
-    QVERIFY(statusSpy.wait(2000));
+    QTest::qWait(250);
+    QCOMPARE(statusSpy.count(), 0);
     QCOMPARE(client.themeWarning(), QString());
 
     // Losing the daemon forgets it along with the rest of the status.

@@ -190,9 +190,29 @@ std::vector<PixelGlyphs::Line> PixelGlyphs::layout(bool *elided) const
             return s;
         }
         *elided = true;
-        while (!s.isEmpty() && lineWidth(QString(s + dots)) > m_maxWidth) {
-            s.chop(1);
+        const int trailingGap = m_face == QLatin1String("seg")
+            ? (m_letterSpacing * m_segWidth + 1)
+            : m_letterSpacing * m_pitch;
+        const int dotsWidth = advance(U'\u2026');
+        int prefixAdvance = 0;
+        qsizetype prefixLength = 0;
+        for (qsizetype i = 0; i < s.size();) {
+            const QChar first = s.at(i);
+            char32_t codepoint = first.unicode();
+            qsizetype step = 1;
+            if (first.isHighSurrogate() && i + 1 < s.size() && s.at(i + 1).isLowSurrogate()) {
+                codepoint = QChar::surrogateToUcs4(first, s.at(i + 1));
+                step = 2;
+            }
+            const int candidate = prefixAdvance + advance(codepoint) + dotsWidth - trailingGap;
+            if (candidate > m_maxWidth) {
+                break;
+            }
+            prefixAdvance += advance(codepoint);
+            prefixLength = i + step;
+            i += step;
         }
+        s.truncate(prefixLength);
         while (s.endsWith(QLatin1Char(' '))) {
             s.chop(1);
         }
@@ -870,10 +890,19 @@ QImage PixelSprite::render() const
     if (atlas.isNull()) {
         return {};
     }
-    const int perRow = std::max(1, atlas.width() / m_frameWidth);
-    const int fx = (m_frame % perRow) * m_frameWidth;
-    const int fy = (m_frame / perRow) * m_frameHeight;
-    if (m_frame < 0 || fy + m_frameHeight > atlas.height()) {
+    if (m_frame < 0 || m_frameWidth <= 0 || m_frameHeight <= 0 || atlas.width() <= 0 || atlas.height() <= 0) {
+        return {};
+    }
+    const qint64 perRow = atlas.width() / m_frameWidth;
+    if (perRow <= 0) {
+        return {};
+    }
+    const qint64 frame = m_frame;
+    const qint64 fx = (frame % perRow) * static_cast<qint64>(m_frameWidth);
+    const qint64 fy = (frame / perRow) * static_cast<qint64>(m_frameHeight);
+    if (fx < 0 || fy < 0 || fx > atlas.width() || fy > atlas.height()
+        || fx + static_cast<qint64>(m_frameWidth) > atlas.width()
+        || fy + static_cast<qint64>(m_frameHeight) > atlas.height()) {
         return {};
     }
     QList<QRgb> lut;
@@ -886,8 +915,8 @@ QImage PixelSprite::render() const
     for (int y = 0; y < m_frameHeight; ++y) {
         auto *line = reinterpret_cast<QRgb *>(out.scanLine(y));
         for (int x = 0; x < m_frameWidth; ++x) {
-            const int sx = fx + (m_mirror ? m_frameWidth - 1 - x : x);
-            const int index = atlas.pixelIndex(sx, fy + y);
+            const int sx = static_cast<int>(fx) + (m_mirror ? m_frameWidth - 1 - x : x);
+            const int index = atlas.pixelIndex(sx, static_cast<int>(fy) + y);
             if (index > 0 && index < lut.size()) {
                 line[x] = lut.at(index);
             }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLocalSocket>
@@ -55,6 +56,7 @@ private:
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorOccurred)
     Q_PROPERTY(QString socketPath READ socketPath WRITE setSocketPath NOTIFY socketPathChanged)
     Q_PROPERTY(bool popupOpen READ popupOpen WRITE setPopupOpen NOTIFY popupOpenChanged)
+    Q_PROPERTY(bool pollingEnabled READ pollingEnabled WRITE setPollingEnabled NOTIFY pollingEnabledChanged)
 
     Q_PROPERTY(Mode mode READ mode NOTIFY statusChanged)
     Q_PROPERTY(bool isSuspended READ isSuspended NOTIFY statusChanged)
@@ -64,9 +66,9 @@ private:
 
     /*! Mean applied brightness, or \c UNKNOWN_PERCENT while nothing is known. */
     Q_PROPERTY(int globalPercent READ globalPercent NOTIFY statusChanged)
-    Q_PROPERTY(QVariantList monitors READ monitors NOTIFY statusChanged)
+    Q_PROPERTY(QVariantList monitors READ monitors NOTIFY monitorsChanged)
 
-    Q_PROPERTY(qint64 nowEpochS READ nowEpochS NOTIFY statusChanged)
+    Q_PROPERTY(qint64 nowEpochS READ nowEpochS NOTIFY nowChanged)
     Q_PROPERTY(qint64 sunriseEpochS READ sunriseEpochS NOTIFY statusChanged)
     Q_PROPERTY(qint64 sunsetEpochS READ sunsetEpochS NOTIFY statusChanged)
     /*! Midpoint between sunrise and sunset; zero when either is unknown. */
@@ -90,9 +92,9 @@ private:
     /*! Bounded weather modifier; 1.0 means "no effect on the target". */
     Q_PROPERTY(double weatherMultiplier READ weatherMultiplier NOTIFY statusChanged)
     /*! Upcoming forecast intervals, oldest first, as maps for QML. */
-    Q_PROPERTY(QVariantList forecast READ forecast NOTIFY statusChanged)
+    Q_PROPERTY(QVariantList forecast READ forecast NOTIFY forecastChanged)
     /*! Secondary readings; keys are absent when the provider did not send them. */
-    Q_PROPERTY(QVariantMap weatherDetails READ weatherDetails NOTIFY statusChanged)
+    Q_PROPERTY(QVariantMap weatherDetails READ weatherDetails NOTIFY detailsChanged)
 
     /*! Theme information and colors from the active daemon config. */
     Q_PROPERTY(QString themeName READ themeName NOTIFY statusChanged)
@@ -137,6 +139,7 @@ public:
     [[nodiscard]] QString lastError() const { return m_lastError; }
     [[nodiscard]] QString socketPath() const { return m_customSocketPath; }
     [[nodiscard]] bool popupOpen() const { return m_popupOpen; }
+    [[nodiscard]] bool pollingEnabled() const { return m_pollingEnabled; }
 
     [[nodiscard]] Mode mode() const;
     [[nodiscard]] bool isSuspended() const { return m_isSuspended; }
@@ -187,6 +190,7 @@ public:
 
     void setSocketPath(const QString &path);
     void setPopupOpen(bool open);
+    void setPollingEnabled(bool enabled);
     void setPinnedThemeId(const QString &id);
 
 public Q_SLOTS:
@@ -237,11 +241,16 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void statusChanged();
+    void monitorsChanged();
+    void forecastChanged();
+    void detailsChanged();
+    void nowChanged();
     void connectionChanged(bool connected);
     void errorOccurred(const QString &errorMessage);
     void socketPathChanged();
     void busyChanged();
     void popupOpenChanged();
+    void pollingEnabledChanged();
     void themeChanged();
     void themeListChanged();
     void pinnedThemeIdChanged();
@@ -257,6 +266,7 @@ private Q_SLOTS:
     void onSocketDisconnected();
     void onSocketError(QLocalSocket::LocalSocketError socketError);
     void onRequestTimeout();
+    void onReconnectTimerTriggered();
     void onPollTimerTriggered();
     void onSlowTimerTriggered();
     void onThemeListRetryTriggered();
@@ -264,10 +274,13 @@ private Q_SLOTS:
 private:
     [[nodiscard]] QJsonObject request(const QString &name) const;
     void enqueueRequest(const QJsonObject &requestObj);
+    void prependRequest(const QJsonObject &requestObj);
     void processNextRequest();
     void sendInFlightRequest();
-    void handleResponse(const QJsonObject &responseObj);
-    void dispatchResponse(const QJsonObject &responseObj);
+    [[nodiscard]] bool handleResponse(const QJsonObject &responseObj);
+    [[nodiscard]] bool dispatchResponse(const QJsonObject &responseObj);
+    void completeResponse();
+    void transportError(const QString &message = QString());
     /*! After an answer to list_themes: the list is no longer stale, and a failed or
         empty answer schedules the retry while connected. */
     void themeListAnswered(bool gotList);
@@ -290,6 +303,9 @@ private:
     void setConnected(bool connected);
     void setBusy(bool busy);
     void fail(const QString &message);
+    void scheduleReconnect();
+    void pruneStaleMutatingRequests();
+    [[nodiscard]] static bool isMutatingRequest(const QJsonObject &request);
 
     [[nodiscard]] QString defaultSocketPath() const;
     [[nodiscard]] QString resolvedSocketPath() const;
@@ -299,10 +315,21 @@ private:
     QTimer *m_watchdogTimer = nullptr;
     QTimer *m_slowTimer = nullptr;
     QTimer *m_themeListRetryTimer = nullptr;
+    QTimer *m_reconnectTimer = nullptr;
 
-    QQueue<QJsonObject> m_requestQueue;
+    struct QueuedRequest {
+        QJsonObject object;
+        qint64 queuedAtMs = 0;
+    };
+    QQueue<QueuedRequest> m_requestQueue;
     QJsonObject m_inFlightRequest;
     QByteArray m_readBuffer;
+    bool m_responseHandled = true;
+    bool m_processNextScheduled = false;
+    qint64 m_inFlightQueuedAtMs = 0;
+    QElapsedTimer m_elapsed;
+    int m_reconnectBackoffMs = 250;
+    int m_lastBackoffWindowMs = 250;
 
     QString m_customSocketPath;
     QString m_lastError;
@@ -310,6 +337,7 @@ private:
     bool m_isConnected = false;
     bool m_isBusy = false;
     bool m_popupOpen = false;
+    bool m_pollingEnabled = true;
 
     bool m_isSuspended = false;
     bool m_isOverrideActive = false;
@@ -332,6 +360,7 @@ private:
     bool m_hasWeatherReading = false;
     QString m_weatherState;
     QString m_weatherCondition;
+    QString m_weatherDescription;
     QString m_weatherDayPhase;
     int m_cloudCoverPercent = SunReactor::UNKNOWN_PERCENT;
     bool m_hasTemperature = false;

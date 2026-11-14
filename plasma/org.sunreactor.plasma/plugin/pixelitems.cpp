@@ -109,17 +109,35 @@ void PixelRaster::setArtScale(qreal scale)
 void PixelRaster::invalidate()
 {
     m_imageDirty = true;
-    // Render on the GUI thread right away: implicit sizes must be correct for
-    // the next layout pass, and font rasterisation belongs on this thread.
-    if (isComponentComplete()) {
-        rerender();
+    const bool hasGeometry = width() > 0.0 && height() > 0.0;
+    if (!isComponentComplete() || !isVisible() || (!hasGeometry && !sizesToContent()) || m_rerenderPending) {
+        return;
     }
+    m_rerenderPending = true;
+    QMetaObject::invokeMethod(this, [this]() {
+        m_rerenderPending = false;
+        const bool hasGeometry = width() > 0.0 && height() > 0.0;
+        if (!isComponentComplete() || !isVisible() || (!hasGeometry && !sizesToContent())) {
+            return;
+        }
+        rerender();
+    }, Qt::QueuedConnection);
 }
 
 void PixelRaster::componentComplete()
 {
     QQuickItem::componentComplete();
-    rerender();
+    if (isVisible() && (sizesToContent() || (width() > 0.0 && height() > 0.0))) {
+        rerender();
+    }
+}
+
+void PixelRaster::itemChange(ItemChange change, const ItemChangeData &value)
+{
+    QQuickItem::itemChange(change, value);
+    if (change == ItemVisibleHasChanged && value.boolValue && m_imageDirty) {
+        invalidate();
+    }
 }
 
 void PixelRaster::rerender()
