@@ -11,6 +11,9 @@ desktop_idle_sync = true
 # kernel and cost no monitor traffic. Set to 0 to rely on desktop wake signals
 # only.
 probe_seconds = 15
+# Minutes to respect brightness changed by another controller before
+# resuming automatic control. Set to 0 for legacy always-correct behaviour.
+external_change_hold_minutes = 30
 log_level = "info"
 
 [location]

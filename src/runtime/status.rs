@@ -43,6 +43,14 @@ impl DaemonRuntime {
                         .map(|action| action.name().to_owned()),
                     min_pct: Some(monitor.min_pct),
                     max_pct: Some(monitor.max_pct),
+                    external_hold: self
+                        .external_holds
+                        .get(&monitor.logical_id)
+                        .filter(|hold| hold.until_epoch_s > now_epoch_s)
+                        .map(|hold| ipc::ExternalHoldStatus {
+                            remaining_s: hold.until_epoch_s.saturating_sub(now_epoch_s),
+                            observed_percent: hold.observed_percent,
+                        }),
                 }
             })
             .collect();

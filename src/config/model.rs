@@ -29,6 +29,9 @@ pub struct DaemonConfig {
     pub desktop_idle_timeout_minutes: u64,
     pub log_level: LogLevel,
     pub apply_reassert_minutes: u64,
+    /// Minutes to respect an external brightness change before resuming
+    /// automatic control. Zero preserves the legacy correction behaviour.
+    pub external_change_hold_minutes: u32,
     /// Seconds between brightness read-backs. This is how SunReactor notices
     /// that a monitor woke up or that something else changed its brightness,
     /// without depending on desktop or distribution signals. `0` disables it.
@@ -47,6 +50,7 @@ impl Default for DaemonConfig {
             desktop_idle_timeout_minutes: 0,
             log_level: LogLevel::Info,
             apply_reassert_minutes: 2,
+            external_change_hold_minutes: 30,
             probe_seconds: 15,
             ddc_timeout_seconds: 4,
             backlight_timeout_seconds: 2,

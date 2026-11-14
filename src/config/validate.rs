@@ -52,6 +52,13 @@ impl Config {
             ));
         }
 
+        if self.daemon.external_change_hold_minutes > 1_440 {
+            errors.push(ValidationError::new(
+                "daemon.external_change_hold_minutes",
+                "must be within 0..=1440 minutes",
+            ));
+        }
+
         if !(MIN_BACKEND_TIMEOUT_SECONDS..=MAX_BACKEND_TIMEOUT_SECONDS)
             .contains(&self.daemon.ddc_timeout_seconds)
         {

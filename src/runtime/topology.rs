@@ -76,7 +76,7 @@ impl ReconcileAction {
 ///
 /// Deliberately NOT a persistent schema; exists only for the current
 /// observation/apply cycle.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CapabilitySnapshot {
     /// DDC targets currently qualified (present + brightness-capable).
     pub ddc_present: Vec<DdcMonitorDiscovery>,

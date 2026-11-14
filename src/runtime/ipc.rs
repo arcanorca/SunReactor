@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 
+use crate::apply;
 use crate::backends::{ProcessRunner, RealProcessRunner};
 use crate::config::{self, ConfigError, ConfigReport};
 use crate::ipc;
@@ -185,6 +186,7 @@ impl DaemonRuntime {
                     config_reloaded: false,
                 };
 
+                self.clear_external_holds(None);
                 self.mark_pending_apply(force, false);
                 (
                     ipc::ResponseEnvelope::run_once(
@@ -226,15 +228,54 @@ impl DaemonRuntime {
                 IpcOutcome::default(),
             ),
             ipc::Request::ExternalBrightnessChange => {
-                tracing::info!(
-                    "external_brightness_change_observed_without_identity; no blind reapply"
-                );
-                (
-                    ipc::ResponseEnvelope::ack(
-                        "external brightness change observed; current hardware value preserved",
-                    ),
-                    IpcOutcome::default(),
-                )
+                let response = self
+                    .collect_tick_inputs(now_utc, false)
+                    .and_then(|inputs| self.compute_tick_policy(inputs))
+                    .map_or_else(
+                        |error| {
+                            ipc::ResponseEnvelope::error(
+                                ipc::ErrorCode::InternalError,
+                                error.to_string(),
+                            )
+                        },
+                        |computed| {
+                            if computed.suspended {
+                                return ipc::ResponseEnvelope::ack(
+                                    "external brightness change observed while suspended",
+                                );
+                            }
+                            let settings = self.force_apply_settings();
+                            let summary = apply::probe_and_correct_with_external_state(
+                                &self.config.monitors,
+                                &computed.policy,
+                                &mut self.state,
+                                now_epoch_s,
+                                settings.dry_run,
+                                settings.external_change_hold,
+                                |monitor| {
+                                    crate::apply::dispatch::probe_monitor_percent(
+                                        runner, monitor, &settings,
+                                    )
+                                },
+                                |monitor, target, percent| {
+                                    crate::apply::dispatch::apply_monitor_target(
+                                        runner, monitor, target, percent, &settings,
+                                    )
+                                },
+                                Some(&mut self.external_holds),
+                                self.recovery_until_epoch_s,
+                                Some(&mut self.fade_engine),
+                            );
+                            if summary.corrected > 0 {
+                                let _ = self.persist_state_if_changed();
+                            }
+                            ipc::ResponseEnvelope::ack(format!(
+                                "external brightness change observed; {} monitor(s) held",
+                                self.external_holds.len()
+                            ))
+                        },
+                    );
+                (response, IpcOutcome::default())
             }
         }
     }
@@ -271,9 +312,13 @@ impl DaemonRuntime {
         let previous_suspend_indefinite = self.state.suspend_indefinite;
         let previous_override = self.state.manual_override.take();
         let previous_monitors = self.state.monitors.clone();
+        let previous_holds = self.external_holds.clone();
+        let previous_recovery_until = self.recovery_until_epoch_s;
 
         self.state.suspend_until_epoch_s = None;
         self.state.suspend_indefinite = false;
+        self.clear_external_holds(None);
+        self.open_recovery_window(crate::state::current_epoch_s());
         for monitor in self.state.monitors.values_mut() {
             monitor.backoff = None;
         }
@@ -283,6 +328,8 @@ impl DaemonRuntime {
             self.state.suspend_indefinite = previous_suspend_indefinite;
             self.state.manual_override = previous_override;
             self.state.monitors = previous_monitors;
+            self.external_holds = previous_holds;
+            self.recovery_until_epoch_s = previous_recovery_until;
             return Err(error);
         }
         Ok(())
@@ -339,6 +386,8 @@ impl DaemonRuntime {
             self.state.manual_override = previous_override;
             return Err(error);
         }
+
+        self.clear_external_holds(monitor_id);
 
         Ok(message)
     }
@@ -433,6 +482,8 @@ impl DaemonRuntime {
             return Err(error);
         }
 
+        self.clear_external_holds(monitor_id);
+
         Ok(message)
     }
 
@@ -513,6 +564,17 @@ impl DaemonRuntime {
 
         self.weather_engine
             .sync_config(&self.config.weather, &self.config.location);
+
+        self.external_holds.retain(|logical_id, _| {
+            self.config
+                .monitors
+                .iter()
+                .any(|monitor| monitor.logical_id == *logical_id)
+        });
+        if self.config.daemon.external_change_hold_minutes == 0 {
+            self.clear_external_holds(None);
+        }
+        self.open_recovery_window(crate::state::current_epoch_s());
 
         Ok(())
     }

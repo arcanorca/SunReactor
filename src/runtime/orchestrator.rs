@@ -1,6 +1,7 @@
 use crate::platform::{DisplayEventSources, DisplayRecoveryReason};
 use crate::runtime::fade::{self, FadeEngine};
 use chrono::{DateTime, Utc};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 #[cfg(target_os = "linux")]
@@ -23,7 +24,7 @@ use crate::runtime::topology::CapabilitySnapshot;
 use crate::runtime::wake::{ProbeOutcome, ProbeSchedule, WakeReason};
 use crate::runtime::weather_refresh::WeatherRefreshState;
 use crate::solar::{SolarError, SolarSample};
-use crate::state::{RuntimeState, StateError};
+use crate::state::{self, RuntimeState, StateError};
 use crate::weather;
 
 // --- From mod.rs (Types & Impls) ---
@@ -62,6 +63,11 @@ pub struct DaemonRuntime {
     pub persisted_state_snapshot: RuntimeState,
     pub last_solar_elevation: Option<f64>,
     pub fade_engine: fade::FadeEngine,
+    /// Ephemeral ownership holds for monitors changed by another controller.
+    /// These intentionally disappear when the daemon restarts.
+    pub(super) external_holds: BTreeMap<String, apply::ExternalHold>,
+    /// Shared recovery window opened by lifecycle/topology signals.
+    pub(super) recovery_until_epoch_s: Option<u64>,
     pub weather_engine: weather::WeatherEngine,
     /// Ephemeral capability observation from the last reconciliation.
     /// Not persisted; kept separate from user config.
@@ -123,6 +129,24 @@ impl DaemonRuntime {
         self.pending_apply
     }
 
+    pub(super) fn open_recovery_window(&mut self, now_epoch_s: u64) {
+        let until = now_epoch_s.saturating_add(apply::RECOVERY_WINDOW_SECONDS);
+        self.recovery_until_epoch_s = Some(
+            self.recovery_until_epoch_s
+                .map_or(until, |current| current.max(until)),
+        );
+    }
+
+    pub(super) fn clear_external_holds(&mut self, monitor_id: Option<&str>) {
+        if let Some(monitor_id) = monitor_id {
+            self.external_holds.remove(monitor_id);
+            self.fade_engine.active_fades.remove(monitor_id);
+        } else {
+            self.external_holds.clear();
+            self.fade_engine.cancel_all();
+        }
+    }
+
     /// Perform one complete capability observation before a one-shot apply.
     /// A one-shot invocation has no daemon loop available to perform the
     /// normal asynchronous observation/reconciliation handshake.
@@ -173,8 +197,15 @@ impl DaemonRuntime {
     pub(super) fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
         match self.capability_refresh.publish_completed() {
             Some(CapabilityRefreshPublication::Published(snapshot)) => {
+                let topology_changed = self
+                    .last_capabilities
+                    .as_ref()
+                    .is_some_and(|previous| previous != &snapshot);
                 self.fade_engine.cancel_all();
                 self.last_capabilities = Some(snapshot);
+                if topology_changed {
+                    self.open_recovery_window(state::current_epoch_s());
+                }
                 Some(true)
             }
             Some(
@@ -188,6 +219,15 @@ impl DaemonRuntime {
     /// waking monitor or the desktop restored on its own. Hints are optional:
     /// the schedule finds the same wake by itself, just a little later.
     pub(super) fn request_wake_reassert(&mut self, reason: WakeReason) -> bool {
+        if matches!(
+            reason,
+            WakeReason::WaylandIdleResume
+                | WakeReason::SystemResume
+                | WakeReason::DrmHotplug
+                | WakeReason::DrmConnectorChange
+        ) {
+            self.open_recovery_window(state::current_epoch_s());
+        }
         let opened = self.probe_schedule.signal(reason, Instant::now());
         if opened {
             tracing::info!(reason = ?reason, "probe_fast_window_opened");
@@ -236,13 +276,22 @@ impl DaemonRuntime {
             return ProbeOutcome::default();
         }
         let settings = self.force_apply_settings();
-        let summary = apply::probe_and_correct(
+        let summary = apply::probe_and_correct_with_external_state(
             &self.config.monitors,
-            &settings,
             &computed.policy,
             &mut self.state,
-            runner,
             computed.inputs.now_epoch_s,
+            settings.dry_run,
+            settings.external_change_hold,
+            |monitor| crate::apply::dispatch::probe_monitor_percent(runner, monitor, &settings),
+            |monitor, target, percent| {
+                crate::apply::dispatch::apply_monitor_target(
+                    runner, monitor, target, percent, &settings,
+                )
+            },
+            Some(&mut self.external_holds),
+            self.recovery_until_epoch_s,
+            Some(&mut self.fade_engine),
         );
         tracing::debug!(
             probe = self.probe_schedule.probes(),
@@ -541,6 +590,10 @@ impl DaemonRuntime {
             persisted_state_snapshot,
             last_solar_elevation: None,
             fade_engine: FadeEngine::new(),
+            external_holds: BTreeMap::new(),
+            recovery_until_epoch_s: Some(
+                state::current_epoch_s().saturating_add(apply::RECOVERY_WINDOW_SECONDS),
+            ),
             weather_engine,
             last_capabilities: None,
             capability_refresh: CapabilityRefreshState::default(),
@@ -1364,6 +1417,14 @@ mod tests {
         runtime
             .state
             .record_apply_success("internal", 41, 1_800_000_000);
+        runtime.external_holds.insert(
+            String::from("internal"),
+            apply::ExternalHold {
+                since_epoch_s: 1_800_000_010,
+                until_epoch_s: 1_800_000_090,
+                observed_percent: 23,
+            },
+        );
         runtime.state.weather = Some(crate::state::WeatherSnapshotMetadata {
             provider: String::from("openweather"),
             fetched_at_epoch_s: 1_800_000_000,
@@ -1405,6 +1466,22 @@ mod tests {
         assert!(status.suspended);
         assert!(!status.manual_override_active);
         assert_eq!(status.monitors[0].last_applied_percent, Some(41));
+        assert_eq!(
+            status.monitors[0]
+                .external_hold
+                .map(|hold| (hold.remaining_s, hold.observed_percent)),
+            Some((60, 23))
+        );
+        let wire = serde_json::to_value(ipc::ResponseEnvelope::status(status.clone()))
+            .expect("status should serialize");
+        assert_eq!(
+            wire["status"]["monitors"][0]["external_hold"]["remaining_s"],
+            60
+        );
+        assert_eq!(
+            wire["status"]["monitors"][0]["external_hold"]["observed_percent"],
+            23
+        );
         let weather = status.weather.expect("weather status should exist");
         assert!(weather.active);
         assert!(!weather.stale);
@@ -1997,6 +2074,15 @@ mod tests {
             ),
             Some(36)
         );
+
+        runtime.external_holds.insert(
+            String::from("internal"),
+            apply::ExternalHold {
+                since_epoch_s: 1_800_000_000,
+                until_epoch_s: 1_800_001_800,
+                observed_percent: 20,
+            },
+        );
         assert_eq!(
             RuntimeState::load_from_path(&state_path)
                 .expect("state file should load")
@@ -2019,6 +2105,7 @@ mod tests {
         assert!(clear_outcome.tick_attempted);
         assert!(matches!(clear_response.response, Response::Ack { .. }));
         assert_eq!(runtime.state.manual_override, None);
+        assert!(runtime.external_holds.is_empty());
     }
 
     #[test]
@@ -2335,6 +2422,7 @@ mod tests {
                     desktop_idle_timeout_minutes: 0,
                     log_level: LogLevel::Info,
                     apply_reassert_minutes: 2,
+                    external_change_hold_minutes: 30,
                     probe_seconds: 15,
                     ddc_timeout_seconds: 4,
                     backlight_timeout_seconds: 2,

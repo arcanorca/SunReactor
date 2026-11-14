@@ -3,6 +3,20 @@ use crate::config::Config;
 use serde::Serialize;
 use std::time::Duration;
 
+/// An in-memory quarantine for a monitor whose brightness was changed by
+/// another controller. This is deliberately not part of persisted runtime
+/// state: restarting the daemon starts a fresh ownership observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExternalHold {
+    pub since_epoch_s: u64,
+    pub until_epoch_s: u64,
+    pub observed_percent: u8,
+}
+
+pub const EXTERNAL_CHANGE_THRESHOLD_PCT: u8 = 2;
+pub const OWN_WRITE_GRACE_SECONDS: u64 = 5;
+pub const RECOVERY_WINDOW_SECONDS: u64 = 120;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApplySettings {
     pub min_write_delta_pct: u8,
@@ -13,6 +27,7 @@ pub struct ApplySettings {
     pub min_apply_interval: Duration,
     pub dry_run: bool,
     pub apply_reassert_interval: Duration,
+    pub external_change_hold: Duration,
     pub ddc_timeout: Duration,
     pub backlight_timeout: Duration,
 }
@@ -28,6 +43,9 @@ impl ApplySettings {
             dry_run: config.daemon.dry_run,
             apply_reassert_interval: Duration::from_secs(
                 config.daemon.apply_reassert_minutes.saturating_mul(60),
+            ),
+            external_change_hold: Duration::from_secs(
+                u64::from(config.daemon.external_change_hold_minutes).saturating_mul(60),
             ),
             ddc_timeout: Duration::from_secs(config.daemon.ddc_timeout_seconds),
             backlight_timeout: Duration::from_secs(config.daemon.backlight_timeout_seconds),
