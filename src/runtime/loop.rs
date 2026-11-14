@@ -172,22 +172,46 @@ impl DaemonRuntime {
                 self.execute_scheduled_tick(now_utc, runner, cadence, desktop_idle);
             }
             LoopAction::RunFadeStep => {
+                if self.config.daemon.dry_run {
+                    self.fade_engine.cancel_all();
+                    return;
+                }
                 // Fade steps are hardware writes too.  Do not let the high-
                 // cadence path bypass topology authorization while the first
                 // complete capability observation is still pending.
-                if self.last_capabilities.is_none() {
+                let Some(capabilities) = self.last_capabilities.as_ref() else {
+                    self.fade_engine.cancel_all();
                     wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
                     return;
-                }
+                };
+                let reconcile_actions =
+                    crate::runtime::topology::reconcile(&self.config.monitors, capabilities);
                 let step_start = Instant::now();
                 let steps = self.fade_engine.process_tick();
                 for (monitor_id, percent) in steps {
-                    if let Some(monitor) = self
+                    let Some(monitor_index) = self
                         .config
                         .monitors
                         .iter()
-                        .find(|m| m.logical_id == monitor_id)
-                    {
+                        .position(|monitor| monitor.logical_id == monitor_id)
+                    else {
+                        self.fade_engine.active_fades.remove(&monitor_id);
+                        continue;
+                    };
+                    let action = reconcile_actions
+                        .get(monitor_index)
+                        .copied()
+                        .unwrap_or(crate::runtime::topology::ReconcileAction::AmbiguousOrUnsafe);
+                    if !action.allowed_to_apply() {
+                        tracing::debug!(
+                            monitor = %monitor_id,
+                            action = action.name(),
+                            "fade_step_skipped_topology"
+                        );
+                        self.fade_engine.active_fades.remove(&monitor_id);
+                        continue;
+                    }
+                    if let Some(monitor) = self.config.monitors.get(monitor_index) {
                         let target = crate::policy::PerMonitorTarget {
                             logical_id: monitor_id,
                             percent,

@@ -107,6 +107,7 @@ impl DaemonRuntime {
             &RealProcessRunner,
             std::path::Path::new("/sys/class/backlight"),
         );
+        self.fade_engine.cancel_all();
         self.last_capabilities = Some(CapabilitySnapshot::from_discovery(&report));
     }
 
@@ -148,6 +149,7 @@ impl DaemonRuntime {
     pub(super) fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
         match self.capability_refresh.publish_completed() {
             Some(CapabilityRefreshPublication::Published(snapshot)) => {
+                self.fade_engine.cancel_all();
                 self.last_capabilities = Some(snapshot);
                 Some(true)
             }
@@ -172,6 +174,7 @@ impl DaemonRuntime {
     }
 
     pub(super) fn handle_display_event(&mut self, reason: DisplayRecoveryReason) {
+        self.fade_engine.cancel_all();
         let wake_reason = match reason {
             DisplayRecoveryReason::DrmHotplug => WakeReason::DrmHotplug,
             DisplayRecoveryReason::DrmConnectorChange => WakeReason::DrmConnectorChange,

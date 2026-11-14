@@ -533,6 +533,7 @@ impl DaemonRuntime {
         &mut self,
         new_config: RuntimeConfig,
     ) -> Result<(), RuntimeError> {
+        self.fade_engine.cancel_all();
         let location_changed = self.config.location != new_config.location;
 
         let previous_config = std::mem::replace(&mut self.config, new_config);
