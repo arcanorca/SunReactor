@@ -56,6 +56,7 @@ private:
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorOccurred)
     Q_PROPERTY(QString socketPath READ socketPath WRITE setSocketPath NOTIFY socketPathChanged)
     Q_PROPERTY(bool popupOpen READ popupOpen WRITE setPopupOpen NOTIFY popupOpenChanged)
+    Q_PROPERTY(bool pollingEnabled READ pollingEnabled WRITE setPollingEnabled NOTIFY pollingEnabledChanged)
 
     Q_PROPERTY(Mode mode READ mode NOTIFY statusChanged)
     Q_PROPERTY(bool isSuspended READ isSuspended NOTIFY statusChanged)
@@ -138,6 +139,7 @@ public:
     [[nodiscard]] QString lastError() const { return m_lastError; }
     [[nodiscard]] QString socketPath() const { return m_customSocketPath; }
     [[nodiscard]] bool popupOpen() const { return m_popupOpen; }
+    [[nodiscard]] bool pollingEnabled() const { return m_pollingEnabled; }
 
     [[nodiscard]] Mode mode() const;
     [[nodiscard]] bool isSuspended() const { return m_isSuspended; }
@@ -188,6 +190,7 @@ public:
 
     void setSocketPath(const QString &path);
     void setPopupOpen(bool open);
+    void setPollingEnabled(bool enabled);
     void setPinnedThemeId(const QString &id);
 
 public Q_SLOTS:
@@ -247,6 +250,7 @@ Q_SIGNALS:
     void socketPathChanged();
     void busyChanged();
     void popupOpenChanged();
+    void pollingEnabledChanged();
     void themeChanged();
     void themeListChanged();
     void pinnedThemeIdChanged();
@@ -331,6 +335,7 @@ private:
     bool m_isConnected = false;
     bool m_isBusy = false;
     bool m_popupOpen = false;
+    bool m_pollingEnabled = true;
 
     bool m_isSuspended = false;
     bool m_isOverrideActive = false;

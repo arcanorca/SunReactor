@@ -226,6 +226,33 @@ void SunReactorClient::setPopupOpen(bool open)
     }
 }
 
+void SunReactorClient::setPollingEnabled(bool enabled)
+{
+    if (m_pollingEnabled == enabled) {
+        return;
+    }
+    m_pollingEnabled = enabled;
+    if (!enabled) {
+        m_pollTimer->stop();
+        m_slowTimer->stop();
+        m_themeListRetryTimer->stop();
+        m_reconnectTimer->stop();
+        m_watchdogTimer->stop();
+        m_requestQueue.clear();
+        m_readBuffer.clear();
+        m_responseHandled = true;
+        if (m_socket->isOpen()) {
+            m_socket->abort();
+        }
+        setBusy(false);
+    } else {
+        m_pollTimer->start();
+        m_slowTimer->start();
+        queryStatus();
+    }
+    Q_EMIT pollingEnabledChanged();
+}
+
 void SunReactorClient::setPinnedThemeId(const QString &id)
 {
     const QString trimmed = id.trimmed();
@@ -306,14 +333,15 @@ bool SunReactorClient::themeListWanted() const
 void SunReactorClient::themeListAnswered(bool gotList)
 {
     m_themeListStale = false;
-    if (!gotList && m_isConnected && m_themeRegistry != CapabilityUnsupported && !m_themeListRetryTimer->isActive()) {
+    if (!gotList && m_pollingEnabled && m_isConnected && m_themeRegistry != CapabilityUnsupported
+        && !m_themeListRetryTimer->isActive()) {
         m_themeListRetryTimer->start();
     }
 }
 
 void SunReactorClient::onThemeListRetryTriggered()
 {
-    if (m_isConnected && (m_themeList.isEmpty() || m_themeListStale)) {
+    if (m_pollingEnabled && m_isConnected && (m_themeList.isEmpty() || m_themeListStale)) {
         refreshThemeList();
     }
 }
@@ -364,7 +392,7 @@ void SunReactorClient::refreshDayCurve()
 
 void SunReactorClient::onSlowTimerTriggered()
 {
-    if (!m_isConnected) {
+    if (!m_pollingEnabled || !m_isConnected) {
         return;
     }
     refreshDayCurve();
@@ -656,6 +684,9 @@ void SunReactorClient::openTerminal()
 
 void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
 {
+    if (!m_pollingEnabled) {
+        return;
+    }
     const QString name = requestObj.value(QStringLiteral("request")).toString();
     const qint64 now = m_elapsed.elapsed();
 
@@ -831,6 +862,9 @@ void SunReactorClient::onReconnectTimerTriggered()
 
 void SunReactorClient::onPollTimerTriggered()
 {
+    if (!m_pollingEnabled) {
+        return;
+    }
     queryStatus();
 }
 

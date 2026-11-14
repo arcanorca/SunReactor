@@ -75,12 +75,14 @@ KCM.SimpleKCM {
     SunReactorClient {
         id: preview
         socketPath: root.cfg_socketPath
+        pollingEnabled: root.visible
         pinnedThemeId: root.cfg_themeMode === "pinned" ? root.cfg_pinnedTheme : ""
         onThemeRegistryChanged: {
             if (themeRegistry === SunReactorClient.CapabilitySupported) {
                 refreshThemeList();
             }
         }
+        Component.onDestruction: pollingEnabled = false
     }
 
     // The unsaved look, resolved the way the widget resolves it, for the preview.
