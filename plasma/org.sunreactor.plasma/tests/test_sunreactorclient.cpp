@@ -56,6 +56,9 @@ private Q_SLOTS:
     void testCommandSequencing();
     void testOverrideRequestsAreWellFormed();
     void testMonitorLimitsRequestsAreWellFormed();
+    void testCloudDimmingRequestIsWellFormedAndClamped();
+    void testCloudDimmingRequestsCoalesce();
+    void testCloudDimmingStatusIsParsed();
     void testAcknowledgedStatusDoesNotLoop();
     void testRequestTimeout();
     void testThemeHotSwapping();
@@ -1374,6 +1377,65 @@ void TestSunReactorClient::testDayCurveFollowsLimitChanges()
     client.suspend(30);
     QTest::qWait(500);
     QCOMPARE(countRequests(QStringLiteral("day_curve")), 2);
+}
+
+void TestSunReactorClient::testCloudDimmingRequestIsWellFormedAndClamped()
+{
+    serveAck();
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    m_received.clear();
+
+    client.setCloudDimming(99);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("set_cloud_dimming")), 1, 2000);
+    QJsonObject request;
+    for (const QJsonObject &candidate : std::as_const(m_received)) {
+        if (candidate.value(QStringLiteral("request")).toString() == QStringLiteral("set_cloud_dimming")) {
+            request = candidate;
+            break;
+        }
+    }
+    QCOMPARE(request.value(QStringLiteral("request")).toString(), QStringLiteral("set_cloud_dimming"));
+    QCOMPARE(request.value(QStringLiteral("percent")).toInt(), 50);
+}
+
+void TestSunReactorClient::testCloudDimmingRequestsCoalesce()
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket]() { socket->readAll(); });
+    });
+
+    SunReactorClient client(m_socketPath);
+    for (int value = 0; value < 10; ++value) {
+        client.setCloudDimming(value * 5);
+    }
+
+    int queued = 0;
+    int latest = -1;
+    for (const SunReactorClient::QueuedRequest &request : std::as_const(client.m_requestQueue)) {
+        if (request.object.value(QStringLiteral("request")).toString() == QStringLiteral("set_cloud_dimming")) {
+            ++queued;
+            latest = request.object.value(QStringLiteral("percent")).toInt();
+        }
+    }
+    QCOMPARE(queued, 1);
+    QCOMPARE(latest, 45);
+}
+
+void TestSunReactorClient::testCloudDimmingStatusIsParsed()
+{
+    QJsonObject weather;
+    weather[QStringLiteral("enabled")] = true;
+    weather[QStringLiteral("cloud_dimming_percent")] = 37;
+    weather[QStringLiteral("cloud_cover_percent")] = 40;
+    QJsonObject status;
+    status[QStringLiteral("weather")] = weather;
+    serveStatus(status);
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    QCOMPARE(client.cloudDimmingPercent(), 37);
 }
 
 void TestSunReactorClient::testThemeListAndFetch()
