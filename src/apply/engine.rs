@@ -1,5 +1,8 @@
 use super::dispatch::apply_monitor_target;
-use super::types::{ApplyRecord, ApplySettings, ApplyStatus, ApplySummary};
+use super::types::{
+    ApplyRecord, ApplySettings, ApplyStatus, ApplySummary, ExternalHold,
+    EXTERNAL_CHANGE_THRESHOLD_PCT, OWN_WRITE_GRACE_SECONDS,
+};
 use crate::backends::RealProcessRunner;
 use crate::backends::{BackendError, BackendWrite, ProcessRunner};
 use crate::config::{Config, MonitorConfig};
@@ -77,13 +80,14 @@ pub(crate) struct ProbeSummary {
     pub(crate) unreachable: usize,
 }
 
-/// A wake probe: reads each enabled monitor cheaply and rewrites any whose
-/// brightness differs from its target.
+/// A wake probe: reads each enabled monitor cheaply and reconciles brightness
+/// drift, respecting any active external-change hold.
 ///
 /// A monitor that does not answer yet (still waking, or not cheaply
 /// readable) is skipped quietly with no backoff, so the next probe simply
 /// tries again. Writes bypass step limits because the target is already the
 /// value the policy wants now.
+#[allow(dead_code)]
 pub(crate) fn probe_and_correct<R: ProcessRunner>(
     monitors: &[MonitorConfig],
     settings: &ApplySettings,
@@ -92,25 +96,34 @@ pub(crate) fn probe_and_correct<R: ProcessRunner>(
     runner: &R,
     now_epoch_s: u64,
 ) -> ProbeSummary {
-    probe_and_correct_with(
+    probe_and_correct_with_external_state(
         monitors,
         policy,
         state,
         now_epoch_s,
         settings.dry_run,
+        settings.external_change_hold,
         |monitor| super::dispatch::probe_monitor_percent(runner, monitor, settings),
         |monitor, target, percent| apply_monitor_target(runner, monitor, target, percent, settings),
+        None,
+        None,
+        None,
     )
 }
 
-fn probe_and_correct_with(
+#[allow(clippy::too_many_lines)]
+pub(crate) fn probe_and_correct_with_external_state(
     monitors: &[MonitorConfig],
     policy: &PolicyOutput,
     state: &mut RuntimeState,
     now_epoch_s: u64,
     dry_run: bool,
+    external_change_hold: std::time::Duration,
     read: impl Fn(&MonitorConfig) -> Result<Option<crate::backends::BackendObservation>, BackendError>,
     write: impl Fn(&MonitorConfig, &PerMonitorTarget, u8) -> Result<BackendWrite, BackendError>,
+    mut external_holds: Option<&mut BTreeMap<String, ExternalHold>>,
+    recovery_until_epoch_s: Option<u64>,
+    mut fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
 ) -> ProbeSummary {
     let mut summary = ProbeSummary::default();
     for target in &policy.targets {
@@ -135,10 +148,83 @@ fn probe_and_correct_with(
             }
         };
         summary.answered += 1;
+        let monitor_state = state
+            .monitor(&monitor.logical_id)
+            .cloned()
+            .unwrap_or_default();
+        let own_write_recent = monitor_state
+            .last_applied_at_epoch_s
+            .is_some_and(|at| now_epoch_s < at.saturating_add(OWN_WRITE_GRACE_SECONDS));
+        let in_recovery = recovery_until_epoch_s.is_some_and(|until| now_epoch_s < until);
+        let mut expired_hold = false;
+
+        if let Some(hold) = external_holds
+            .as_deref_mut()
+            .and_then(|holds| holds.get(&monitor.logical_id).copied())
+        {
+            if hold.until_epoch_s > now_epoch_s {
+                if observed.abs_diff(hold.observed_percent) > EXTERNAL_CHANGE_THRESHOLD_PCT
+                    && !own_write_recent
+                {
+                    if let Some(holds) = external_holds.as_deref_mut() {
+                        if let Some(current) = holds.get_mut(&monitor.logical_id) {
+                            current.until_epoch_s =
+                                now_epoch_s.saturating_add(external_change_hold.as_secs());
+                            current.observed_percent = observed;
+                        }
+                    }
+                }
+                state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+                continue;
+            }
+
+            if let Some(holds) = external_holds.as_deref_mut() {
+                holds.remove(&monitor.logical_id);
+            }
+            expired_hold = true;
+            if !dry_run
+                && fade_engine.as_deref_mut().is_some_and(|engine| {
+                    engine.maybe_enqueue(&monitor.logical_id, observed, requested)
+                })
+            {
+                state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+                continue;
+            }
+        }
+
+        let differs_from_last_write = monitor_state
+            .last_applied_percent
+            .is_some_and(|last| observed.abs_diff(last) > EXTERNAL_CHANGE_THRESHOLD_PCT);
+        if external_holds.is_some()
+            && external_change_hold.as_secs() > 0
+            && differs_from_last_write
+            && !own_write_recent
+            && !in_recovery
+            && !expired_hold
+        {
+            let hold = ExternalHold {
+                since_epoch_s: now_epoch_s,
+                until_epoch_s: now_epoch_s.saturating_add(external_change_hold.as_secs()),
+                observed_percent: observed,
+            };
+            if let Some(holds) = external_holds.as_deref_mut() {
+                holds.insert(monitor.logical_id.clone(), hold);
+            }
+            state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+            tracing::info!(
+                logical_id = %monitor.logical_id,
+                observed_percent = observed,
+                until_epoch_s = hold.until_epoch_s,
+                "external_brightness_change_detected"
+            );
+            continue;
+        }
+
         if observed == requested {
             state.record_integrity_check(&monitor.logical_id, now_epoch_s);
             continue;
         }
+
         tracing::info!(
             logical_id = %monitor.logical_id,
             requested_percent = requested,
@@ -175,6 +261,31 @@ fn probe_and_correct_with(
     summary
 }
 
+#[cfg(test)]
+fn probe_and_correct_with(
+    monitors: &[MonitorConfig],
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    now_epoch_s: u64,
+    dry_run: bool,
+    read: impl Fn(&MonitorConfig) -> Result<Option<crate::backends::BackendObservation>, BackendError>,
+    write: impl Fn(&MonitorConfig, &PerMonitorTarget, u8) -> Result<BackendWrite, BackendError>,
+) -> ProbeSummary {
+    probe_and_correct_with_external_state(
+        monitors,
+        policy,
+        state,
+        now_epoch_s,
+        dry_run,
+        std::time::Duration::ZERO,
+        read,
+        write,
+        None,
+        None,
+        None,
+    )
+}
+
 pub(crate) fn apply_policy_with_runner_reconciled_mode<R: ProcessRunner + Sync>(
     monitors: &[MonitorConfig],
     settings: ApplySettings,
@@ -185,6 +296,34 @@ pub(crate) fn apply_policy_with_runner_reconciled_mode<R: ProcessRunner + Sync>(
     capabilities: &CapabilitySnapshot,
     fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
     settings_override: Option<ApplySettings>,
+) -> ApplySummary {
+    apply_policy_with_runner_reconciled_external(
+        monitors,
+        settings,
+        policy,
+        state,
+        runner,
+        now_epoch_s,
+        capabilities,
+        fade_engine,
+        settings_override,
+        None,
+        None,
+    )
+}
+
+pub(crate) fn apply_policy_with_runner_reconciled_external<R: ProcessRunner + Sync>(
+    monitors: &[MonitorConfig],
+    settings: ApplySettings,
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    runner: &R,
+    now_epoch_s: u64,
+    capabilities: &CapabilitySnapshot,
+    fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
+    settings_override: Option<ApplySettings>,
+    external_holds: Option<&mut BTreeMap<String, ExternalHold>>,
+    recovery_until_epoch_s: Option<u64>,
 ) -> ApplySummary {
     let actions = crate::runtime::topology::reconcile(monitors, capabilities);
     apply_policy_with_runner_monitors_impl(
@@ -197,6 +336,8 @@ pub(crate) fn apply_policy_with_runner_reconciled_mode<R: ProcessRunner + Sync>(
         now_epoch_s,
         settings_override,
         &actions,
+        external_holds,
+        recovery_until_epoch_s,
     )
 }
 
@@ -247,6 +388,36 @@ pub(crate) fn apply_policy_with_runner_monitors<R: ProcessRunner + Sync>(
         now_epoch_s,
         settings_override,
         &[],
+        None,
+        None,
+    )
+}
+
+#[allow(dead_code)]
+pub(crate) fn apply_policy_with_runner_monitors_external<R: ProcessRunner + Sync>(
+    monitors: &[MonitorConfig],
+    default_settings: ApplySettings,
+    policy: &PolicyOutput,
+    state: &mut RuntimeState,
+    fade_engine: Option<&mut crate::runtime::fade::FadeEngine>,
+    runner: &R,
+    now_epoch_s: u64,
+    settings_override: Option<ApplySettings>,
+    external_holds: &mut BTreeMap<String, ExternalHold>,
+    recovery_until_epoch_s: Option<u64>,
+) -> ApplySummary {
+    apply_policy_with_runner_monitors_impl(
+        monitors,
+        default_settings,
+        policy,
+        state,
+        fade_engine,
+        runner,
+        now_epoch_s,
+        settings_override,
+        &[],
+        Some(external_holds),
+        recovery_until_epoch_s,
     )
 }
 
@@ -261,6 +432,8 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
     now_epoch_s: u64,
     settings_override: Option<ApplySettings>,
     reconcile_actions: &[ReconcileAction],
+    mut external_holds: Option<&mut BTreeMap<String, ExternalHold>>,
+    recovery_until_epoch_s: Option<u64>,
 ) -> ApplySummary {
     let bypass_backoff = settings_override.is_some();
     let settings = settings_override.unwrap_or(default_settings);
@@ -365,6 +538,74 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
             .monitor(&monitor.logical_id)
             .cloned()
             .unwrap_or_default();
+        let in_recovery = recovery_until_epoch_s.is_some_and(|until| now_epoch_s < until);
+        let own_write_recent = monitor_state
+            .last_applied_at_epoch_s
+            .is_some_and(|at| now_epoch_s < at.saturating_add(OWN_WRITE_GRACE_SECONDS));
+        let mut expired_hold = false;
+
+        if let Some(hold) = external_holds
+            .as_deref_mut()
+            .and_then(|holds| holds.get(&monitor.logical_id).copied())
+        {
+            if hold.until_epoch_s > now_epoch_s {
+                if let Some(engine) = fade_engine.as_deref_mut() {
+                    engine.active_fades.remove(&monitor.logical_id);
+                }
+                work.push(WorkItem::Skip(ApplyRecord {
+                    logical_id: monitor.logical_id.clone(),
+                    backend: Some(monitor.backend),
+                    requested_percent,
+                    applied_percent: hold.observed_percent,
+                    attempts: 0,
+                    failure_kind: None,
+                    consecutive_failures: None,
+                    backoff_until_epoch_s: Some(hold.until_epoch_s),
+                    status: ApplyStatus::SkippedHysteresis,
+                    detail: format!(
+                        "external brightness hold active for {}s",
+                        hold.until_epoch_s.saturating_sub(now_epoch_s)
+                    ),
+                }));
+                continue;
+            }
+
+            if let Some(holds) = external_holds.as_deref_mut() {
+                holds.remove(&monitor.logical_id);
+            }
+            expired_hold = true;
+
+            if !settings.dry_run {
+                if let Ok(observation) =
+                    super::dispatch::read_monitor_percent(runner, monitor, &settings)
+                {
+                    if fade_engine.as_deref_mut().is_some_and(|engine| {
+                        engine.maybe_enqueue(
+                            &monitor.logical_id,
+                            observation.percent,
+                            requested_percent,
+                        )
+                    }) {
+                        work.push(WorkItem::Skip(ApplyRecord {
+                            logical_id: monitor.logical_id.clone(),
+                            backend: Some(monitor.backend),
+                            requested_percent,
+                            applied_percent: requested_percent,
+                            attempts: 1,
+                            failure_kind: None,
+                            consecutive_failures: None,
+                            backoff_until_epoch_s: None,
+                            status: ApplyStatus::Succeeded,
+                            detail: format!(
+                                "external hold expired; fading from {} to {}",
+                                observation.percent, requested_percent
+                            ),
+                        }));
+                        continue;
+                    }
+                }
+            }
+        }
 
         let integrity_reference_epoch_s = monitor_state
             .last_integrity_check_at_epoch_s
@@ -399,6 +640,44 @@ fn apply_policy_with_runner_monitors_impl<R: ProcessRunner + Sync>(
                 }
                 Ok(observation) => {
                     state.record_integrity_check(&monitor.logical_id, now_epoch_s);
+                    if external_holds.is_some()
+                        && settings.external_change_hold.as_secs() > 0
+                        && monitor_state.last_applied_percent.is_some_and(|last| {
+                            observation.percent.abs_diff(last) > EXTERNAL_CHANGE_THRESHOLD_PCT
+                        })
+                        && !own_write_recent
+                        && !in_recovery
+                        && !expired_hold
+                    {
+                        let hold = ExternalHold {
+                            since_epoch_s: now_epoch_s,
+                            until_epoch_s: now_epoch_s
+                                .saturating_add(settings.external_change_hold.as_secs()),
+                            observed_percent: observation.percent,
+                        };
+                        if let Some(holds) = external_holds.as_deref_mut() {
+                            holds.insert(monitor.logical_id.clone(), hold);
+                        }
+                        tracing::info!(
+                            logical_id = %monitor.logical_id,
+                            observed_percent = observation.percent,
+                            until_epoch_s = hold.until_epoch_s,
+                            "external_brightness_change_detected"
+                        );
+                        work.push(WorkItem::Skip(ApplyRecord {
+                            logical_id: monitor.logical_id.clone(),
+                            backend: Some(monitor.backend),
+                            requested_percent,
+                            applied_percent: observation.percent,
+                            attempts: 1,
+                            failure_kind: None,
+                            consecutive_failures: None,
+                            backoff_until_epoch_s: Some(hold.until_epoch_s),
+                            status: ApplyStatus::SkippedHysteresis,
+                            detail: String::from("external brightness change held"),
+                        }));
+                        continue;
+                    }
                     tracing::info!(
                         logical_id = %monitor.logical_id,
                         requested_percent,
@@ -733,6 +1012,7 @@ mod tests {
     use crate::policy::PerMonitorTarget;
     #[cfg(target_os = "linux")]
     use crate::process::{CommandError, CommandOutput, ProcessRunner};
+    use std::collections::BTreeMap;
     #[cfg(target_os = "linux")]
     use std::sync::atomic::{AtomicUsize, Ordering};
     #[cfg(target_os = "linux")]
@@ -1069,7 +1349,34 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn due_reassert_corrects_different_hardware_value() {
+    fn external_change_outside_recovery_window_sets_hold_without_writing() {
+        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
+        let policy = test_policy(vec![("panel", 50)]);
+        let runner = FakeRunner::new().with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "--sn", "SN_panel", "getvcp", "10"],
+            "VCP 10 C 35 100\n",
+        );
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 1_000);
+        let mut holds = BTreeMap::new();
+
+        let mut settings = fast_settings();
+        settings.apply_reassert_interval = Duration::from_mins(2);
+        settings.external_change_hold = Duration::from_mins(30);
+        let summary = apply_policy_with_runner_monitors_external(
+            &monitors, settings, &policy, &mut state, None, &runner, 1_120, None, &mut holds, None,
+        );
+
+        assert_eq!(summary.succeeded, 0);
+        assert_eq!(summary.records[0].status, ApplyStatus::SkippedHysteresis);
+        assert!(runner.calls().iter().all(|call| !call.contains("|setvcp|")));
+        assert_eq!(holds["panel"].observed_percent, 35);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn external_change_within_recovery_window_is_corrected() {
         let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
         let policy = test_policy(vec![("panel", 50)]);
         let runner = FakeRunner::new()
@@ -1093,19 +1400,193 @@ mod tests {
             );
         let mut state = RuntimeState::default();
         state.record_apply_success("panel", 50, 1_000);
-
+        let mut holds = BTreeMap::new();
         let mut settings = fast_settings();
         settings.apply_reassert_interval = Duration::from_mins(2);
-        let summary = apply_policy_with_runner_monitors(
-            &monitors, settings, &policy, &mut state, None, &runner, 1_120, None,
+        settings.external_change_hold = Duration::from_mins(30);
+
+        let summary = apply_policy_with_runner_monitors_external(
+            &monitors,
+            settings,
+            &policy,
+            &mut state,
+            None,
+            &runner,
+            1_120,
+            None,
+            &mut holds,
+            Some(1_200),
         );
 
         assert_eq!(summary.succeeded, 1);
+        assert!(holds.is_empty());
         assert!(runner.calls().iter().any(|call| call.contains("|setvcp|")));
-        assert_eq!(
-            state.monitor("panel").and_then(|m| m.last_applied_percent),
-            Some(50)
+    }
+
+    #[test]
+    fn external_hold_expiry_starts_fade_from_current_readback() {
+        let monitors = vec![test_monitor("panel", BackendKind::Ddc)];
+        let policy = test_policy(vec![("panel", 80)]);
+        let runner = FakeRunner::new().with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "--sn", "SN_panel", "getvcp", "10"],
+            "VCP 10 C 35 100\n",
         );
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 1_000);
+        let mut holds = BTreeMap::from([(
+            String::from("panel"),
+            ExternalHold {
+                since_epoch_s: 900,
+                until_epoch_s: 1_100,
+                observed_percent: 35,
+            },
+        )]);
+        let mut fade_engine = crate::runtime::fade::FadeEngine::new();
+        let mut settings = fast_settings();
+        settings.external_change_hold = Duration::from_mins(30);
+
+        let summary = apply_policy_with_runner_monitors_external(
+            &monitors,
+            settings,
+            &policy,
+            &mut state,
+            Some(&mut fade_engine),
+            &runner,
+            1_120,
+            None,
+            &mut holds,
+            None,
+        );
+
+        assert_eq!(summary.succeeded, 1);
+        assert!(holds.is_empty());
+        assert_eq!(fade_engine.active_fades["panel"].start_percent, 35);
+        assert_eq!(fade_engine.active_fades["panel"].target_percent, 80);
+        assert!(runner.calls().iter().any(|call| call.contains("getvcp")));
+        assert!(runner.calls().iter().all(|call| !call.contains("|setvcp|")));
+    }
+
+    #[test]
+    fn external_hold_readback_change_extends_until_and_updates_observation() {
+        use crate::backends::{BackendObservation, BackendWrite};
+
+        let monitor = MonitorConfig {
+            logical_id: String::from("panel"),
+            ..MonitorConfig::default()
+        };
+        let policy = test_policy(vec![("panel", 50)]);
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 900);
+        let mut holds = BTreeMap::from([(
+            String::from("panel"),
+            ExternalHold {
+                since_epoch_s: 900,
+                until_epoch_s: 1_800,
+                observed_percent: 35,
+            },
+        )]);
+        let summary = probe_and_correct_with_external_state(
+            std::slice::from_ref(&monitor),
+            &policy,
+            &mut state,
+            1_000,
+            false,
+            Duration::from_mins(30),
+            |_| Ok(Some(BackendObservation { percent: 20 })),
+            |_, _, _| {
+                Ok(BackendWrite {
+                    backend: BackendKind::Ddc,
+                    applied_percent: 50,
+                    attempts: 1,
+                    detail: String::new(),
+                })
+            },
+            Some(&mut holds),
+            None,
+            None,
+        );
+
+        assert_eq!(summary.corrected, 0);
+        assert_eq!(holds["panel"].observed_percent, 20);
+        assert_eq!(holds["panel"].until_epoch_s, 2_800);
+    }
+
+    #[test]
+    fn hold_minutes_zero_keeps_legacy_correction() {
+        use crate::backends::{BackendObservation, BackendWrite};
+
+        let monitor = MonitorConfig {
+            logical_id: String::from("panel"),
+            ..MonitorConfig::default()
+        };
+        let policy = test_policy(vec![("panel", 50)]);
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 900);
+        let mut holds = BTreeMap::new();
+        let writes = std::cell::Cell::new(0);
+        let summary = probe_and_correct_with_external_state(
+            std::slice::from_ref(&monitor),
+            &policy,
+            &mut state,
+            1_000,
+            false,
+            Duration::ZERO,
+            |_| Ok(Some(BackendObservation { percent: 20 })),
+            |_, _, percent| {
+                writes.set(writes.get() + 1);
+                Ok(BackendWrite {
+                    backend: BackendKind::Ddc,
+                    applied_percent: percent,
+                    attempts: 1,
+                    detail: String::new(),
+                })
+            },
+            Some(&mut holds),
+            None,
+            None,
+        );
+
+        assert_eq!(summary.corrected, 1);
+        assert_eq!(writes.get(), 1);
+        assert!(holds.is_empty());
+    }
+
+    #[test]
+    fn own_recent_write_with_lagging_readback_is_not_external() {
+        use crate::backends::{BackendObservation, BackendWrite};
+
+        let monitor = MonitorConfig {
+            logical_id: String::from("panel"),
+            ..MonitorConfig::default()
+        };
+        let policy = test_policy(vec![("panel", 50)]);
+        let mut state = RuntimeState::default();
+        state.record_apply_success("panel", 50, 998);
+        let mut holds = BTreeMap::new();
+        let summary = probe_and_correct_with_external_state(
+            std::slice::from_ref(&monitor),
+            &policy,
+            &mut state,
+            1_000,
+            false,
+            Duration::from_mins(30),
+            |_| Ok(Some(BackendObservation { percent: 20 })),
+            |_, _, percent| {
+                Ok(BackendWrite {
+                    backend: BackendKind::Ddc,
+                    applied_percent: percent,
+                    attempts: 1,
+                    detail: String::new(),
+                })
+            },
+            Some(&mut holds),
+            None,
+            None,
+        );
+
+        assert_eq!(summary.corrected, 1);
+        assert!(holds.is_empty());
     }
 
     #[test]
@@ -1138,6 +1619,7 @@ mod tests {
             // Large reassert interval (1 billion seconds ≈ 31 years) so it
             // never fires during the 10k-tick simulation test.
             apply_reassert_interval: Duration::from_secs(1_000_000_000),
+            external_change_hold: Duration::from_mins(30),
             ddc_timeout: Duration::from_secs(10),
             backlight_timeout: Duration::from_secs(2),
         }

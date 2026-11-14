@@ -59,7 +59,7 @@ pub struct DiscoverySummary {
     pub viable_targets: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DdcMonitorDiscovery {
     /// Unique only within one discovery report; not a physical identity.
     #[serde(default)]
@@ -99,7 +99,7 @@ impl DdcMonitorDiscovery {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BacklightDeviceDiscovery {
     pub stable_id: String,
     pub device_name: String,

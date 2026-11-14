@@ -117,7 +117,7 @@ impl DaemonRuntime {
             let monitors = self.config.monitors.as_slice();
             let settings = self.config.apply;
             if let Some(capabilities) = self.last_capabilities.as_ref() {
-                apply::apply_policy_with_runner_reconciled_mode(
+                apply::apply_policy_with_runner_reconciled_external(
                     monitors,
                     settings,
                     &computed.policy,
@@ -127,6 +127,8 @@ impl DaemonRuntime {
                     capabilities,
                     Some(&mut self.fade_engine),
                     settings_override,
+                    Some(&mut self.external_holds),
+                    self.recovery_until_epoch_s,
                 )
             } else {
                 skipped_apply_summary(
@@ -175,6 +177,9 @@ impl DaemonRuntime {
             dry_run: self.config.daemon.dry_run,
             apply_reassert_interval: Duration::from_secs(
                 self.config.daemon.apply_reassert_minutes.saturating_mul(60),
+            ),
+            external_change_hold: Duration::from_secs(
+                u64::from(self.config.daemon.external_change_hold_minutes).saturating_mul(60),
             ),
             ddc_timeout: Duration::from_secs(self.config.daemon.ddc_timeout_seconds),
             backlight_timeout: Duration::from_secs(self.config.daemon.backlight_timeout_seconds),

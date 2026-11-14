@@ -189,6 +189,16 @@ impl DaemonRuntime {
                 let step_start = Instant::now();
                 let steps = self.fade_engine.process_tick();
                 for (monitor_id, percent) in steps {
+                    let now_epoch_s = now_utc.timestamp().max(0) as u64;
+                    if let Some(hold) = self.external_holds.get(&monitor_id).copied() {
+                        if hold.until_epoch_s > now_epoch_s {
+                            self.fade_engine.active_fades.remove(&monitor_id);
+                            continue;
+                        }
+                        self.external_holds.remove(&monitor_id);
+                        self.fade_engine.active_fades.remove(&monitor_id);
+                        continue;
+                    }
                     let Some(monitor_index) = self
                         .config
                         .monitors

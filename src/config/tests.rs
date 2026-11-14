@@ -62,6 +62,21 @@ fn parses_smooth_transition_opt_in() {
 }
 
 #[test]
+fn external_change_hold_defaults_and_accepts_legacy_zero() {
+    let config = parse_str(VALID_CONFIG, Path::new("external-hold-default.toml"))
+        .expect("config should parse");
+    assert_eq!(config.daemon.external_change_hold_minutes, 30);
+
+    let raw = VALID_CONFIG.replace(
+        "dry_run = false",
+        "dry_run = false\nexternal_change_hold_minutes = 0",
+    );
+    let config = parse_str(&raw, Path::new("external-hold-zero.toml"))
+        .expect("zero should preserve legacy behaviour");
+    assert_eq!(config.daemon.external_change_hold_minutes, 0);
+}
+
+#[test]
 fn tui_refresh_rate_is_persisted() {
     let raw = format!("{VALID_CONFIG}\n[tui]\nfps = 8\n");
     let config =
@@ -222,6 +237,7 @@ fn rejects_unbounded_operational_timeouts() {
     let mut config = super::Config::default();
     config.daemon.desktop_idle_timeout_minutes = 1_441;
     config.daemon.apply_reassert_minutes = 1_441;
+    config.daemon.external_change_hold_minutes = 1_441;
     config.daemon.ddc_timeout_seconds = 61;
     config.daemon.backlight_timeout_seconds = 0;
 
@@ -231,6 +247,7 @@ fn rejects_unbounded_operational_timeouts() {
     let text = error.to_string();
     assert!(text.contains("daemon.desktop_idle_timeout_minutes"));
     assert!(text.contains("daemon.apply_reassert_minutes"));
+    assert!(text.contains("daemon.external_change_hold_minutes"));
     assert!(text.contains("daemon.ddc_timeout_seconds"));
     assert!(text.contains("daemon.backlight_timeout_seconds"));
 }

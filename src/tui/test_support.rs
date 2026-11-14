@@ -28,6 +28,7 @@ pub(crate) fn dummy_status(monitor_count: usize) -> StatusResponse {
             topology: None,
             min_pct: Some(15),
             max_pct: Some(60),
+            external_hold: None,
         })
         .collect();
 

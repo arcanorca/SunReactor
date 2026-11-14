@@ -110,15 +110,25 @@ readable on flaky hardware.
 ### Integrity Reconciliation
 
 The configured reassert interval is an integrity deadline, not permission to blindly overwrite
-another controller. When an unchanged policy target reaches that deadline, the daemon reads the
-current hardware value first. A matching value is left untouched; a differing value is treated as
-an externally owned value for that integrity cycle and is also left untouched. If readback is
-unavailable or fails, the existing write-and-backoff recovery path remains the fallback. Genuine
-policy changes and explicit forced recovery actions retain their existing apply semantics.
+another controller. `daemon.external_change_hold_minutes` (30 by default, valid from 0 through
+1440) controls the ownership hand-off. When a probe or due reassert reads a value more than two
+percentage points away from the last value SunReactor wrote, the daemon leaves it untouched and
+places that monitor in an in-memory external hold. A write by SunReactor in the previous five
+seconds suppresses detection so DDC readback lag cannot create a hold. Setting the hold to `0`
+restores the legacy always-correct behaviour.
 
-The identity-less `ExternalBrightnessChange` IPC notification is observational only. It no longer
-forces a full multi-monitor resync because the protocol does not identify a monitor or provide its
-observed value; blindly reapplying policy in that case could overwrite an unrelated display.
+While held, scheduled ticks and fade steps skip the monitor. A later external change refreshes the
+observed value and extends the hold from that observation. When the hold expires, SunReactor reads
+the current value and starts the normal smooth fade engine toward the current automatic target.
+Explicit `set`, `clear-override`, `run-once`, and `resume` commands clear the affected hold(s) and
+win immediately. Holds are memory-only and disappear when the daemon restarts; status clients get
+an optional `external_hold` object with the remaining seconds and observed percentage.
+
+Correction remains authoritative during the 120-second recovery window after daemon start, config
+reload, logind resume, an INPUT_RESUMED hint, or a DRM/topology change. The window exists so monitor
+reset and wake recovery are not mistaken for a user's brightness choice. The existing
+`ExternalBrightnessChange` IPC notification now runs the same readback and hold decision across
+configured monitors rather than blindly reapplying policy.
 
 ### Linux Lifecycle Recovery
 
@@ -133,7 +143,8 @@ The daemon therefore treats the hardware as the source of truth and runs a **pro
 
 - Every `daemon.probe_seconds` (15 by default, `0` disables it) each enabled monitor is read back:
   DDC monitors over their EDID-verified connector bus (about 40 ms, no identity search), backlights
-  through sysfs. A matching value produces no write; a different value is corrected at once.
+  through sysfs. A matching value produces no write; a different value enters the external-change
+  hold policy above unless recovery is active or a recent SunReactor write explains the difference.
 - Before any DDC read, the connector's kernel power state (`status` and `dpms` under
   `/sys/class/drm`) is checked. A display the kernel reports as off or disconnected is counted as
   unreachable without any monitor traffic. This works the same on X11, Wayland, and a bare console.
@@ -155,7 +166,7 @@ the final safety net. A physical monitor DPMS transition does not necessarily ge
 event, so the generic event sources do not claim complete detection of every monitor power-state
 change. Existing idle/wake handling and periodic fallback cover that residual case where available.
 
-The periodic integrity deadline remains authoritative for the active SunReactor policy. It reads
-hardware, skips a matching value, and corrects a differing value to the current policy. It does not
-adopt arbitrary external brightness as persistent ownership. Explicit SunReactor overrides remain
-authoritative through their existing control path.
+The periodic integrity deadline remains the observation point for the active SunReactor policy. It
+reads hardware, skips a matching value, and applies the external-change hold policy to a differing
+value. It does not adopt arbitrary external brightness as persistent ownership. Explicit SunReactor
+overrides remain authoritative through their existing control path.

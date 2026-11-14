@@ -1426,6 +1426,7 @@ mod tests {
                 topology: None,
                 min_pct: Some(15),
                 max_pct: Some(60),
+                external_hold: None,
             }],
             solar_elevation: Some(15.0),
             lunar_phase: None,

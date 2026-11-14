@@ -215,6 +215,15 @@ fn render_monitor_list(f: &mut Frame, app: &Model, area: Rect, styles: &Semantic
                 }
                 _ => detail.push(Span::styled(state_text, styles.text_muted)),
             }
+            if let Some(hold) = status
+                .and_then(|monitor| monitor.external_hold)
+                .filter(|hold| hold.remaining_s > 0)
+            {
+                detail.push(Span::styled(
+                    format!("  external · {}m", hold.remaining_s.saturating_add(59) / 60),
+                    styles.status_warning,
+                ));
+            }
             lines.push(kit::detail_line(detail, styles));
             lines.push(Line::from(""));
         } else {
@@ -351,10 +360,17 @@ fn render_monitor_detail(
         applied.map_or_else(
             || vec![Span::styled("Unknown", styles.text_muted)],
             |value| {
-                vec![
+                let mut value = vec![
                     Span::styled(format!("{} ", kit::DOT), styles.data_value),
                     Span::styled(format!("{value}%"), styles.data_value),
-                ]
+                ];
+                if let Some(hold) = monitor.external_hold.filter(|hold| hold.remaining_s > 0) {
+                    value.push(Span::styled(
+                        format!("  external · {}m", hold.remaining_s.saturating_add(59) / 60),
+                        styles.status_warning,
+                    ));
+                }
+                value
             },
         ),
         styles,

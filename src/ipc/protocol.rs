@@ -553,6 +553,14 @@ pub struct MonitorStatus {
     pub min_pct: Option<u8>,
     #[serde(default)]
     pub max_pct: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_hold: Option<ExternalHoldStatus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalHoldStatus {
+    pub remaining_s: u64,
+    pub observed_percent: u8,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
