@@ -69,6 +69,7 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_themeListRetryTimer(new QTimer(this))
     , m_customSocketPath(customSocketPath)
 {
+    m_socket->setReadBufferSize(SunReactor::MAX_IPC_MESSAGE_BYTES);
     connect(m_socket, &QLocalSocket::connected, this, &SunReactorClient::onSocketConnected);
     connect(m_socket, &QLocalSocket::readyRead, this, &SunReactorClient::onSocketReadyRead);
     connect(m_socket, &QLocalSocket::disconnected, this, &SunReactorClient::onSocketDisconnected);
