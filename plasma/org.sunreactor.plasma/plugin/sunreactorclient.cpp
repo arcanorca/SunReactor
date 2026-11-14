@@ -272,7 +272,7 @@ bool SunReactorClient::isQueued(const QString &name, const QString &id) const
         return request.value(QStringLiteral("request")).toString() == name
             && (id.isNull() || request.value(QStringLiteral("id")).toString() == id);
     };
-    if (m_isBusy && matches(m_inFlightRequest)) {
+    if (m_isBusy && !m_responseHandled && matches(m_inFlightRequest)) {
         return true;
     }
     for (const QueuedRequest &queued : std::as_const(m_requestQueue)) {
@@ -954,7 +954,9 @@ void SunReactorClient::completeResponse()
     // The response line is the complete frame. A daemon that leaves the peer
     // open must not hold the next request behind a disconnected() signal.
     m_socket->abort();
-    processNextRequest();
+    // Let the abort's disconnected signal drain before arming the next request;
+    // that signal belongs to the completed frame and must not settle the new one.
+    QMetaObject::invokeMethod(this, [this]() { processNextRequest(); }, Qt::QueuedConnection);
 }
 
 void SunReactorClient::transportError(const QString &message)
@@ -1039,6 +1041,36 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
 {
     const QString previousThemeId = m_theme.value(QStringLiteral("id")).toString();
     const QString previousWarning = m_themeWarning;
+    const bool previousSuspended = m_isSuspended;
+    const bool previousOverride = m_isOverrideActive;
+    const bool previousIdleDimmed = m_isDesktopIdleDimmed;
+    const bool previousHasElevation = m_hasSolarElevation;
+    const double previousElevation = m_solarElevation;
+    const qint64 previousNow = m_nowEpochS;
+    const qint64 previousSunrise = m_sunriseEpochS;
+    const qint64 previousSunset = m_sunsetEpochS;
+    const qint64 previousSuspendUntil = m_suspendUntilEpochS;
+    const qint64 previousGlobalOverrideUntil = m_globalOverrideUntilEpochS;
+    const qint64 previousMonitorOverrideUntil = m_perMonitorOverrideUntilEpochS;
+    const int previousGlobalPercent = m_globalPercent;
+    const bool previousWeatherEnabled = m_weatherEnabled;
+    const bool previousWeatherStale = m_weatherStale;
+    const bool previousHasWeather = m_hasWeatherReading;
+    const QString previousWeatherState = m_weatherState;
+    const QString previousWeatherCondition = m_weatherCondition;
+    const QString previousWeatherDayPhase = m_weatherDayPhase;
+    const int previousCloudCover = m_cloudCoverPercent;
+    const bool previousHasTemperature = m_hasTemperature;
+    const double previousTemperature = m_temperatureC;
+    const double previousWeatherMultiplier = m_weatherMultiplier;
+    const QString previousThemeName = m_themeName;
+    const QString previousThemeAccent = m_themeAccent;
+    const QString previousThemeSecondaryAccent = m_themeSecondaryAccent;
+    const QString previousThemeBg = m_themeBg;
+    const QString previousThemeFg = m_themeFg;
+    const QString previousThemeTextMuted = m_themeTextMuted;
+    const bool previousDaylight = isDaylight();
+    const bool previousWeatherNight = weatherIsNight();
 
     m_isSuspended = statusObj.value(QStringLiteral("suspended")).toBool(false);
     m_isOverrideActive = statusObj.value(QStringLiteral("manual_override_active")).toBool(false);
@@ -1069,7 +1101,28 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     parseWeather(statusObj);
     parseMonitors(statusObj);
 
-    Q_EMIT statusChanged();
+    if (previousNow != m_nowEpochS) {
+        Q_EMIT nowChanged();
+    }
+    const bool scalarChanged = previousSuspended != m_isSuspended || previousOverride != m_isOverrideActive
+        || previousIdleDimmed != m_isDesktopIdleDimmed || previousHasElevation != m_hasSolarElevation
+        || previousElevation != m_solarElevation || previousSunrise != m_sunriseEpochS
+        || previousSunset != m_sunsetEpochS || previousSuspendUntil != m_suspendUntilEpochS
+        || previousGlobalOverrideUntil != m_globalOverrideUntilEpochS
+        || previousMonitorOverrideUntil != m_perMonitorOverrideUntilEpochS
+        || previousGlobalPercent != m_globalPercent || previousWeatherEnabled != m_weatherEnabled
+        || previousWeatherStale != m_weatherStale || previousHasWeather != m_hasWeatherReading
+        || previousWeatherState != m_weatherState || previousWeatherCondition != m_weatherCondition
+        || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
+        || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
+        || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
+        || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
+        || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
+        || previousThemeTextMuted != m_themeTextMuted || previousWarning != m_themeWarning
+        || previousDaylight != isDaylight() || previousWeatherNight != weatherIsNight();
+    if (scalarChanged) {
+        Q_EMIT statusChanged();
+    }
 
     parseTheme(statusObj);
 
@@ -1241,8 +1294,8 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
         m_hasTemperature = false;
         m_temperatureC = 0.0;
         m_weatherMultiplier = 1.0;
-        m_forecast.clear();
-        m_weatherDetails.clear();
+        parseForecast({});
+        parseDetails({});
         return;
     }
 
@@ -1317,7 +1370,11 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         }
     }
 
-    m_monitors = monitors;
+    const bool monitorsDiffer = m_monitors != monitors;
+    if (monitorsDiffer) {
+        m_monitors = monitors;
+        Q_EMIT monitorsChanged();
+    }
 
     const int globalOverride = optionalPercent(statusObj, "global_override_percent");
     if (globalOverride != UNKNOWN_PERCENT) {
@@ -1354,7 +1411,10 @@ void SunReactorClient::parseForecast(const QJsonArray &entries)
         map[QStringLiteral("precipitationPercent")] = optionalPercent(point, "precipitation_percent");
         forecast.append(map);
     }
-    m_forecast = forecast;
+    if (m_forecast != forecast) {
+        m_forecast = forecast;
+        Q_EMIT forecastChanged();
+    }
 }
 
 void SunReactorClient::parseDetails(const QJsonObject &details)
@@ -1382,11 +1442,29 @@ void SunReactorClient::parseDetails(const QJsonObject &details)
         }
     }
 
-    m_weatherDetails = map;
+    if (m_weatherDetails != map) {
+        m_weatherDetails = map;
+        Q_EMIT detailsChanged();
+    }
 }
 
 void SunReactorClient::clearStatus()
 {
+    const bool previousSuspended = m_isSuspended;
+    const bool previousOverride = m_isOverrideActive;
+    const bool previousIdleDimmed = m_isDesktopIdleDimmed;
+    const int previousGlobalPercent = m_globalPercent;
+    const QVariantList previousMonitors = m_monitors;
+    const bool previousHasWeather = m_hasWeatherReading;
+    const QVariantList previousForecast = m_forecast;
+    const QVariantMap previousDetails = m_weatherDetails;
+    const QString previousThemeName = m_themeName;
+    const QString previousThemeAccent = m_themeAccent;
+    const QString previousThemeSecondaryAccent = m_themeSecondaryAccent;
+    const QString previousThemeBg = m_themeBg;
+    const QString previousThemeFg = m_themeFg;
+    const QString previousThemeTextMuted = m_themeTextMuted;
+    const QString previousThemeWarning = m_themeWarning;
     m_isSuspended = false;
     m_isOverrideActive = false;
     m_isDesktopIdleDimmed = false;
@@ -1402,5 +1480,21 @@ void SunReactorClient::clearStatus()
     m_themeFg.clear();
     m_themeTextMuted.clear();
     m_themeWarning.clear();
-    Q_EMIT statusChanged();
+    if (previousMonitors != m_monitors) {
+        Q_EMIT monitorsChanged();
+    }
+    if (previousForecast != m_forecast) {
+        Q_EMIT forecastChanged();
+    }
+    if (previousDetails != m_weatherDetails) {
+        Q_EMIT detailsChanged();
+    }
+    if (previousSuspended != m_isSuspended || previousOverride != m_isOverrideActive
+        || previousIdleDimmed != m_isDesktopIdleDimmed || previousGlobalPercent != m_globalPercent
+        || previousHasWeather != m_hasWeatherReading || previousThemeName != m_themeName
+        || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
+        || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
+        || previousThemeTextMuted != m_themeTextMuted || previousThemeWarning != m_themeWarning) {
+        Q_EMIT statusChanged();
+    }
 }

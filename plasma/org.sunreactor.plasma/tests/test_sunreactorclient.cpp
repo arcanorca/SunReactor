@@ -336,7 +336,6 @@ void TestSunReactorClient::testConnectAndParseStatus()
 
     SunReactorClient client(m_socketPath);
     QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-
     QVERIFY(statusSpy.wait(2000));
     QVERIFY(client.isConnected());
     QCOMPARE(client.themeName(), QStringLiteral("Amber"));
@@ -396,8 +395,8 @@ void TestSunReactorClient::testUnknownBrightnessStaysUnknown()
     serveStatus(status);
 
     SunReactorClient client(m_socketPath);
-    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-    QVERIFY(statusSpy.wait(2000));
+    QSignalSpy monitorsSpy(&client, &SunReactorClient::monitorsChanged);
+    QVERIFY(monitorsSpy.wait(2000));
 
     const QVariantMap first = client.monitors().at(0).toMap();
     QCOMPARE(first.value(QStringLiteral("percent")).toInt(), SunReactor::UNKNOWN_PERCENT);
@@ -654,15 +653,12 @@ void TestSunReactorClient::testCommandSequencing()
     });
 
     SunReactorClient client(m_socketPath);
-    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-
-    QVERIFY(statusSpy.wait(2000));
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
 
     // An accepted command must be followed by a fresh read of the real state.
     client.suspend(30);
 
-    QVERIFY(statusSpy.wait(3000));
-    QCOMPARE(client.mode(), SunReactorClient::Paused);
+    QTRY_COMPARE_WITH_TIMEOUT(client.mode(), SunReactorClient::Paused, 3000);
     QVERIFY(requestCounter >= 2);
 }
 
@@ -986,7 +982,8 @@ void TestSunReactorClient::testNewThemeIsNormalized()
     themeSpy.clear();
     client.queryStatus();
     QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
-    QVERIFY(statusSpy.wait(2000));
+    QTest::qWait(250);
+    QCOMPARE(statusSpy.count(), 0);
     QCOMPARE(themeSpy.count(), 0);
 }
 
@@ -1358,12 +1355,14 @@ void TestSunReactorClient::testThemeWarningIsOptional()
     *warning = QJsonValue(42);
     statusSpy.clear();
     client.queryStatus();
-    QVERIFY(statusSpy.wait(2000));
+    QTest::qWait(250);
+    QCOMPARE(statusSpy.count(), 0);
     QCOMPARE(client.themeWarning(), QString());
     *warning = QJsonValue(QJsonValue::Null);
     statusSpy.clear();
     client.queryStatus();
-    QVERIFY(statusSpy.wait(2000));
+    QTest::qWait(250);
+    QCOMPARE(statusSpy.count(), 0);
     QCOMPARE(client.themeWarning(), QString());
 
     // Losing the daemon forgets it along with the rest of the status.

@@ -65,9 +65,9 @@ private:
 
     /*! Mean applied brightness, or \c UNKNOWN_PERCENT while nothing is known. */
     Q_PROPERTY(int globalPercent READ globalPercent NOTIFY statusChanged)
-    Q_PROPERTY(QVariantList monitors READ monitors NOTIFY statusChanged)
+    Q_PROPERTY(QVariantList monitors READ monitors NOTIFY monitorsChanged)
 
-    Q_PROPERTY(qint64 nowEpochS READ nowEpochS NOTIFY statusChanged)
+    Q_PROPERTY(qint64 nowEpochS READ nowEpochS NOTIFY nowChanged)
     Q_PROPERTY(qint64 sunriseEpochS READ sunriseEpochS NOTIFY statusChanged)
     Q_PROPERTY(qint64 sunsetEpochS READ sunsetEpochS NOTIFY statusChanged)
     /*! Midpoint between sunrise and sunset; zero when either is unknown. */
@@ -91,9 +91,9 @@ private:
     /*! Bounded weather modifier; 1.0 means "no effect on the target". */
     Q_PROPERTY(double weatherMultiplier READ weatherMultiplier NOTIFY statusChanged)
     /*! Upcoming forecast intervals, oldest first, as maps for QML. */
-    Q_PROPERTY(QVariantList forecast READ forecast NOTIFY statusChanged)
+    Q_PROPERTY(QVariantList forecast READ forecast NOTIFY forecastChanged)
     /*! Secondary readings; keys are absent when the provider did not send them. */
-    Q_PROPERTY(QVariantMap weatherDetails READ weatherDetails NOTIFY statusChanged)
+    Q_PROPERTY(QVariantMap weatherDetails READ weatherDetails NOTIFY detailsChanged)
 
     /*! Theme information and colors from the active daemon config. */
     Q_PROPERTY(QString themeName READ themeName NOTIFY statusChanged)
@@ -238,6 +238,10 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void statusChanged();
+    void monitorsChanged();
+    void forecastChanged();
+    void detailsChanged();
+    void nowChanged();
     void connectionChanged(bool connected);
     void errorOccurred(const QString &errorMessage);
     void socketPathChanged();
