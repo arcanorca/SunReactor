@@ -12,6 +12,7 @@
 #include <QUrl>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <utility>
 
 #include <unistd.h>
@@ -52,6 +53,15 @@ const QString kGetTheme = QStringLiteral("get_theme");
 
 /// How long to wait before asking for the theme list again after a failed or empty answer.
 constexpr int kThemeListRetryInterval = 2000;
+constexpr int kMaxRequestQueue = 16;
+constexpr int kInitialReconnectBackoffMs = 250;
+constexpr int kMaxReconnectBackoffMs = 8000;
+
+QString requestMonitorKey(const QJsonObject &request)
+{
+    const QJsonValue monitor = request.value(QStringLiteral("monitor_id"));
+    return monitor.isNull() ? QStringLiteral("<global>") : monitor.toString();
+}
 
 } // namespace
 
@@ -67,8 +77,10 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_watchdogTimer(new QTimer(this))
     , m_slowTimer(new QTimer(this))
     , m_themeListRetryTimer(new QTimer(this))
+    , m_reconnectTimer(new QTimer(this))
     , m_customSocketPath(customSocketPath)
 {
+    m_elapsed.start();
     m_socket->setReadBufferSize(SunReactor::MAX_IPC_MESSAGE_BYTES);
     connect(m_socket, &QLocalSocket::connected, this, &SunReactorClient::onSocketConnected);
     connect(m_socket, &QLocalSocket::readyRead, this, &SunReactorClient::onSocketReadyRead);
@@ -91,6 +103,9 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     m_themeListRetryTimer->setInterval(kThemeListRetryInterval);
     connect(m_themeListRetryTimer, &QTimer::timeout, this, &SunReactorClient::onThemeListRetryTriggered);
 
+    m_reconnectTimer->setSingleShot(true);
+    connect(m_reconnectTimer, &QTimer::timeout, this, &SunReactorClient::onReconnectTimerTriggered);
+
     // Defer the first query so QML can still assign socketPath this tick.
     QTimer::singleShot(0, this, &SunReactorClient::queryStatus);
 }
@@ -101,6 +116,7 @@ SunReactorClient::~SunReactorClient()
     m_watchdogTimer->stop();
     m_slowTimer->stop();
     m_themeListRetryTimer->stop();
+    m_reconnectTimer->stop();
     if (m_socket->isOpen()) {
         m_socket->abort();
     }
@@ -171,6 +187,7 @@ void SunReactorClient::setSocketPath(const QString &path)
     m_requestQueue.clear();
     m_readBuffer.clear();
     m_watchdogTimer->stop();
+    m_reconnectTimer->stop();
     if (m_socket->isOpen()) {
         m_socket->abort();
     }
@@ -252,12 +269,19 @@ bool SunReactorClient::isQueued(const QString &name, const QString &id) const
     if (m_isBusy && matches(m_inFlightRequest)) {
         return true;
     }
-    for (const QJsonObject &queued : std::as_const(m_requestQueue)) {
-        if (matches(queued)) {
+    for (const QueuedRequest &queued : std::as_const(m_requestQueue)) {
+        if (matches(queued.object)) {
             return true;
         }
     }
     return false;
+}
+
+bool SunReactorClient::isMutatingRequest(const QJsonObject &request)
+{
+    const QString name = request.value(QStringLiteral("request")).toString();
+    return name != QStringLiteral("status") && name != kDayCurve && name != kListThemes
+        && name != kGetTheme && name != QStringLiteral("ping");
 }
 
 void SunReactorClient::refreshThemeList()
@@ -392,6 +416,32 @@ void SunReactorClient::fail(const QString &message)
 {
     m_lastError = message;
     Q_EMIT errorOccurred(m_lastError);
+}
+
+void SunReactorClient::pruneStaleMutatingRequests()
+{
+    if (m_isConnected || m_requestQueue.isEmpty()) {
+        return;
+    }
+    const qint64 now = m_elapsed.elapsed();
+    for (auto it = m_requestQueue.begin(); it != m_requestQueue.end();) {
+        if (isMutatingRequest(it->object) && now - it->queuedAtMs > m_lastBackoffWindowMs) {
+            it = m_requestQueue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void SunReactorClient::scheduleReconnect()
+{
+    if (m_requestQueue.isEmpty()) {
+        return;
+    }
+    const int delay = m_reconnectBackoffMs;
+    m_lastBackoffWindowMs = delay;
+    m_reconnectTimer->start(delay);
+    m_reconnectBackoffMs = std::min(kMaxReconnectBackoffMs, delay * 2);
 }
 
 QJsonObject SunReactorClient::request(const QString &name) const
@@ -601,25 +651,55 @@ void SunReactorClient::openTerminal()
 void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
 {
     const QString name = requestObj.value(QStringLiteral("request")).toString();
+    const qint64 now = m_elapsed.elapsed();
 
     // Status is idempotent: never queue a second one behind a pending query.
-    if (name == QStringLiteral("status")) {
-        for (const QJsonObject &queued : std::as_const(m_requestQueue)) {
-            if (queued.value(QStringLiteral("request")).toString() == QStringLiteral("status")) {
+    if (name == QStringLiteral("status") && isQueued(name)) {
+        return;
+    }
+
+    // Slider updates and limit edits are replaceable until they reach the
+    // daemon: the latest value for one monitor is the only useful one.
+    if (name == QStringLiteral("set_override") || name == QStringLiteral("set_monitor_limits")) {
+        const QString monitor = requestMonitorKey(requestObj);
+        for (QueuedRequest &queued : m_requestQueue) {
+            if (queued.object.value(QStringLiteral("request")).toString() == name
+                && requestMonitorKey(queued.object) == monitor) {
+                queued.object = requestObj;
+                queued.queuedAtMs = now;
                 return;
             }
         }
     }
 
-    m_requestQueue.enqueue(requestObj);
+    if (m_requestQueue.size() >= kMaxRequestQueue) {
+        if (!isMutatingRequest(requestObj)) {
+            return;
+        }
+        // Preserve the newest command when many different monitor ids are
+        // being edited while the daemon is unavailable.
+        auto oldest = std::find_if(m_requestQueue.cbegin(), m_requestQueue.cend(), [](const QueuedRequest &queued) {
+            return isMutatingRequest(queued.object);
+        });
+        if (oldest == m_requestQueue.cend()) {
+            return;
+        }
+        m_requestQueue.erase(oldest);
+    }
 
-    if (m_socket->state() == QLocalSocket::UnconnectedState) {
+    m_requestQueue.enqueue({requestObj, now});
+
+    if (!m_isBusy && !m_reconnectTimer->isActive() && m_socket->state() == QLocalSocket::UnconnectedState) {
         processNextRequest();
     }
 }
 
 void SunReactorClient::processNextRequest()
 {
+    if (m_reconnectTimer->isActive() || (m_isBusy && !m_responseHandled)) {
+        return;
+    }
+    pruneStaleMutatingRequests();
     if (m_requestQueue.isEmpty()) {
         m_responseHandled = true;
         setBusy(false);
@@ -628,7 +708,9 @@ void SunReactorClient::processNextRequest()
 
     setBusy(true);
     m_responseHandled = false;
-    m_inFlightRequest = m_requestQueue.dequeue();
+    const QueuedRequest queued = m_requestQueue.dequeue();
+    m_inFlightRequest = queued.object;
+    m_inFlightQueuedAtMs = queued.queuedAtMs;
     m_readBuffer.clear();
 
     m_socket->abort();
@@ -645,10 +727,7 @@ void SunReactorClient::sendInFlightRequest()
 {
     const QByteArray data = QJsonDocument(m_inFlightRequest).toJson(QJsonDocument::Compact) + '\n';
     if (data.size() > SunReactor::MAX_IPC_MESSAGE_BYTES) {
-        m_watchdogTimer->stop();
-        m_socket->abort();
-        fail(QStringLiteral("Outgoing IPC request exceeded 64 KiB ceiling (%1 bytes)").arg(data.size()));
-        processNextRequest();
+        transportError(QStringLiteral("Outgoing IPC request exceeded 64 KiB ceiling (%1 bytes)").arg(data.size()));
         return;
     }
 
@@ -738,6 +817,12 @@ void SunReactorClient::onRequestTimeout()
     transportError(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
 }
 
+void SunReactorClient::onReconnectTimerTriggered()
+{
+    pruneStaleMutatingRequests();
+    processNextRequest();
+}
+
 void SunReactorClient::onPollTimerTriggered()
 {
     queryStatus();
@@ -793,21 +878,21 @@ bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
             if (curveMoves && m_dayCurveSupport != CapabilityUnsupported && !isQueued(kDayCurve)) {
                 QJsonObject curve = request(kDayCurve);
                 curve[QStringLiteral("monitor_id")] = QJsonValue(QJsonValue::Null);
-                m_requestQueue.prepend(curve);
+                m_requestQueue.prepend({curve, m_elapsed.elapsed()});
             }
             if (sent == QLatin1String("reload_config")) {
                 // Theme files may have been edited along with the config.
                 if (!m_pinnedThemeId.isEmpty() && m_themeRegistry != CapabilityUnsupported) {
                     QJsonObject pinned = request(kGetTheme);
                     pinned[QStringLiteral("id")] = m_pinnedThemeId;
-                    m_requestQueue.prepend(pinned);
+                    m_requestQueue.prepend({pinned, m_elapsed.elapsed()});
                 }
                 // A user theme file may have been added: the list is read again.
                 if (themeListWanted()) {
-                    m_requestQueue.enqueue(request(kListThemes));
+                    enqueueRequest(request(kListThemes));
                 }
             }
-            m_requestQueue.prepend(request(kStatus));
+            enqueueRequest(request(kStatus));
         }
     } else if (type == QStringLiteral("pong")) {
         setConnected(true);
@@ -853,6 +938,9 @@ void SunReactorClient::completeResponse()
     m_responseHandled = true;
     m_watchdogTimer->stop();
     m_readBuffer.clear();
+    m_reconnectTimer->stop();
+    m_reconnectBackoffMs = kInitialReconnectBackoffMs;
+    m_lastBackoffWindowMs = kInitialReconnectBackoffMs;
     // The response line is the complete frame. A daemon that leaves the peer
     // open must not hold the next request behind a disconnected() signal.
     m_socket->abort();
@@ -872,7 +960,18 @@ void SunReactorClient::transportError(const QString &message)
     if (!message.isEmpty()) {
         fail(message);
     }
-    processNextRequest();
+    if (!m_inFlightRequest.isEmpty()) {
+        const qint64 now = m_elapsed.elapsed();
+        if (!isMutatingRequest(m_inFlightRequest)
+            || now - m_inFlightQueuedAtMs <= m_lastBackoffWindowMs) {
+            if (m_requestQueue.size() >= kMaxRequestQueue) {
+                m_requestQueue.removeLast();
+            }
+            m_requestQueue.prepend({m_inFlightRequest, m_inFlightQueuedAtMs});
+        }
+    }
+    setBusy(false);
+    scheduleReconnect();
 }
 
 void SunReactorClient::handleError(const QJsonObject &responseObj)
@@ -971,7 +1070,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     }
     // Queued rather than sent: this runs inside a response, and the disconnect that follows starts it.
     if (m_themeListStale && themeListWanted()) {
-        m_requestQueue.enqueue(request(kListThemes));
+        enqueueRequest(request(kListThemes));
     }
 
     // Slow data: once per local day (and on the triggers documented at

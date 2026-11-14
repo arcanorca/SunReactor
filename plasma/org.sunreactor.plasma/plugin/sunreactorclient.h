@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLocalSocket>
@@ -257,6 +258,7 @@ private Q_SLOTS:
     void onSocketDisconnected();
     void onSocketError(QLocalSocket::LocalSocketError socketError);
     void onRequestTimeout();
+    void onReconnectTimerTriggered();
     void onPollTimerTriggered();
     void onSlowTimerTriggered();
     void onThemeListRetryTriggered();
@@ -292,6 +294,9 @@ private:
     void setConnected(bool connected);
     void setBusy(bool busy);
     void fail(const QString &message);
+    void scheduleReconnect();
+    void pruneStaleMutatingRequests();
+    [[nodiscard]] static bool isMutatingRequest(const QJsonObject &request);
 
     [[nodiscard]] QString defaultSocketPath() const;
     [[nodiscard]] QString resolvedSocketPath() const;
@@ -301,11 +306,20 @@ private:
     QTimer *m_watchdogTimer = nullptr;
     QTimer *m_slowTimer = nullptr;
     QTimer *m_themeListRetryTimer = nullptr;
+    QTimer *m_reconnectTimer = nullptr;
 
-    QQueue<QJsonObject> m_requestQueue;
+    struct QueuedRequest {
+        QJsonObject object;
+        qint64 queuedAtMs = 0;
+    };
+    QQueue<QueuedRequest> m_requestQueue;
     QJsonObject m_inFlightRequest;
     QByteArray m_readBuffer;
     bool m_responseHandled = true;
+    qint64 m_inFlightQueuedAtMs = 0;
+    QElapsedTimer m_elapsed;
+    int m_reconnectBackoffMs = 250;
+    int m_lastBackoffWindowMs = 250;
 
     QString m_customSocketPath;
     QString m_lastError;
