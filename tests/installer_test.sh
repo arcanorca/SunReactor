@@ -16,6 +16,8 @@ assert_contains() {
 
 rendered_unit() {
     local home="$1" config="$2" state="$3" cache="$4"
+    # The nested shell intentionally receives the installer path as $1.
+    # shellcheck disable=SC2016
     HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" XDG_CACHE_HOME="$cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; render_service_unit /dev/stdout' _ "$ROOT_DIR/install.sh"
 }
@@ -23,6 +25,7 @@ rendered_unit() {
 test_default_paths_and_unit() {
     local home unit
     home=$(mktemp -d)
+    # shellcheck disable=SC2016
     unit=$(HOME="$home" env -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; render_service_unit /dev/stdout' _ "$ROOT_DIR/install.sh")
     assert_contains "$unit" "Documentation=https://github.com/arcanorca/SunReactor"
@@ -116,6 +119,52 @@ SHIM
     rm -rf "$home" "$fakebin"
 }
 
+test_no_systemd_installs_autostart_entry() {
+    local home fakebin autostart
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    printf '%s\n' '#!/bin/sh' 'exit 1' >"$fakebin/systemctl"
+    chmod +x "$fakebin/systemctl"
+    PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
+        XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
+        SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-plasma >/dev/null
+        ' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
+    autostart="$home/config/autostart/sunreactord.desktop"
+    [[ -f "$autostart" ]]
+    grep -Fx "Exec=$home/.local/bin/sunreactord" "$autostart" >/dev/null
+    grep -Fx 'X-GNOME-Autostart-enabled=true' "$autostart" >/dev/null
+    grep -Fx 'NoDisplay=true' "$autostart" >/dev/null
+    grep -F 'Start the daemon now' "$home/installer.log" >/dev/null
+
+    PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
+        XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
+        SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; QUIET=1; uninstall_sunreactor' _ "$ROOT_DIR/install.sh" >/dev/null 2>&1
+    [[ ! -e "$autostart" ]]
+    rm -rf "$home" "$fakebin"
+}
+
+test_doas_privilege_helper_selection() {
+    local fakebin
+    if [[ ${EUID:-1} -eq 0 ]]; then
+        printf 'test_doas_privilege_helper_selection: SKIP (root has no privilege helper preference)\n'
+        return 0
+    fi
+    fakebin=$(mktemp -d)
+    printf '%s\n' '#!/bin/sh' 'exit 0' >"$fakebin/doas"
+    chmod +x "$fakebin/doas"
+    PATH="$fakebin:/usr/bin:/bin" HOME=/tmp SUNREACTOR_INSTALLER_LIBRARY=1 \
+        bash -c 'command() { if [[ "$1" == -v && "$2" == sudo ]]; then return 1; fi; builtin command "$@"; }; source "$1"; [[ "$(privilege_helper)" == doas ]]; [[ "$(package_install_command apt)" == "doas apt install ddcutil brightnessctl i2c-tools" ]]' \
+        _ "$ROOT_DIR/install.sh"
+    rm -rf "$fakebin"
+}
+
 test_systemd_setup_failure_restores_previous_installation() {
     local home fakebin marker
     home=$(mktemp -d)
@@ -156,8 +205,8 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main --no-plasma >/dev/null 2>"$HOME/installer.log"
-        ' _ "$ROOT_DIR/install.sh"
+            main --no-plasma >/dev/null
+        ' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
     status=$?
     set -e
     if [[ $status -eq 0 ]]; then
@@ -217,8 +266,8 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main --no-plasma >/dev/null 2>"$HOME/installer.log"
-        ' _ "$ROOT_DIR/install.sh"
+            main --no-plasma >/dev/null
+        ' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
     local status=$?
     set -e
 
@@ -268,8 +317,8 @@ SHIM
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
             launch_dashboard() { :; }
-            main --no-plasma >/dev/null 2>"$HOME/installer.log"
-        ' _ "$ROOT_DIR/install.sh"
+            main --no-plasma >/dev/null
+        ' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
     status=$?
     set -e
 
@@ -330,14 +379,17 @@ esac
 SHIM
     chmod +x "$fakebin/systemctl"
     set +e
-    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/custom-config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main --no-plasma >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
+    SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/custom-config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main --no-plasma >/dev/null' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
     local status=$?
     set -e
     [[ $status -ne 0 ]]
     [[ ! -e "$home/custom-config/systemd/user/sunreactord.service" ]]
     [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     grep -Fx -- '--user show --property=FragmentPath --value sunreactord.service' "$marker" >/dev/null
-    ! grep -E -- '--user (enable|start)' "$marker" >/dev/null
+    if grep -E -- '--user (enable|start)' "$marker" >/dev/null; then
+        printf 'service setup ran after manager path mismatch\n' >&2
+        exit 1
+    fi
     grep -F 'previous installation was restored' "$home/installer.log" >/dev/null
     rm -rf "$home" "$fakebin"
 }
@@ -374,7 +426,7 @@ exit 99
 SHIM
     chmod +x "$fakebin/systemctl" "$fakebin/systemd-analyze"
     SYSTEMCTL_MARKER="$marker" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
-        XDG_CONFIG_HOME= XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
+        XDG_CONFIG_HOME='' XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
             source "$1"
             source "$SCRIPT_DIR/tests/installer_test_support.sh"
@@ -473,8 +525,8 @@ SHIM
             fetch_latest_version() { printf "%s\n" test; }
             download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
             extract_archive() { prepare_installer_test_artifacts; }
-            main --no-plasma >/dev/null 2>"$HOME/installer.log"
-        ' _ "$ROOT_DIR/install.sh"
+            main --no-plasma >/dev/null
+        ' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
     status=$?
     set -e
     [[ $status -ne 0 ]]
@@ -502,14 +554,17 @@ esac
 SHIM
     chmod +x "$fakebin/systemctl"
     set +e
-    SYSTEMCTL_MARKER="$marker" TEST_SYSTEMD_DIR="$home/config/systemd/user" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main --no-plasma >/dev/null 2>"$HOME/installer.log"' _ "$ROOT_DIR/install.sh"
+    SYSTEMCTL_MARKER="$marker" TEST_SYSTEMD_DIR="$home/config/systemd/user" PATH="$fakebin:/usr/bin:/bin" HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; source "$SCRIPT_DIR/tests/installer_test_support.sh"; fetch_latest_version(){ printf test; }; download_release(){ printf "%s/x" "$TMP_DIR"; }; extract_archive(){ prepare_installer_test_artifacts; }; main --no-plasma >/dev/null' _ "$ROOT_DIR/install.sh" 2>"$home/installer.log"
     local status=$?
     set -e
     [[ $status -ne 0 ]]
     [[ ! -e "$home/config/systemd/user/sunreactord.service" ]]
     [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     grep -Fx -- '--user show --property=FragmentPath --value sunreactord.service' "$marker" >/dev/null
-    ! grep -E -- '--user (enable|start)' "$marker" >/dev/null
+    if grep -E -- '--user (enable|start)' "$marker" >/dev/null; then
+        printf 'service setup ran after discoverability failure\n' >&2
+        exit 1
+    fi
     grep -F 'unexpected unit' "$home/installer.log" >/dev/null
     rm -rf "$home" "$fakebin"
 }
@@ -557,6 +612,8 @@ test_default_paths_and_unit
 test_custom_paths_and_uninstall_paths
 test_invalid_xdg_path_is_rejected
 test_no_service_and_unavailable_manager
+test_no_systemd_installs_autostart_entry
+test_doas_privilege_helper_selection
 test_systemd_setup_failure_restores_previous_installation
 test_daemon_readiness_failure_restores_previous_installation
 test_incomplete_rollback_retains_recovery_files
@@ -613,18 +670,23 @@ printf '%s\n' "$*" >>"${CMAKE_STUB_LOG:-/dev/null}"
 case "${1:-}" in
     --build) exit 0 ;;
     --install)
+        qml_relative="${CMAKE_STUB_QML_RELATIVE:-lib/qt6/qml}"
         root="${DESTDIR:?}$HOME/.local"
-        mkdir -p "$root/lib/qml/org/sunreactor/plasma" \
+        mkdir -p "$root/lib" "$root/$qml_relative/org/sunreactor/plasma" \
             "$root/share/plasma/plasmoids/org.sunreactor.plasma/contents/ui"
         printf 'new plugin\n' >"$root/lib/libsunreactorplugin.so"
-        printf 'new qml plugin\n' >"$root/lib/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so"
-        printf 'module org.sunreactor.plasma\n' >"$root/lib/qml/org/sunreactor/plasma/qmldir"
+        printf 'new qml plugin\n' >"$root/$qml_relative/org/sunreactor/plasma/libsunreactorpluginplugin.so"
+        printf 'module org.sunreactor.plasma\n' >"$root/$qml_relative/org/sunreactor/plasma/qmldir"
         printf 'staged package, never copied\n' \
             >"$root/share/plasma/plasmoids/org.sunreactor.plasma/contents/ui/ignored.qml"
         exit 0 ;;
     *)
+        build_dir=""
         while [[ $# -gt 0 ]]; do
-            [[ "$1" == -B ]] && mkdir -p "$2"
+            if [[ "$1" == -B ]]; then
+                build_dir="$2"
+                mkdir -p "$build_dir"
+            fi
             shift
         done
         exit 0 ;;
@@ -637,6 +699,7 @@ SHIM
 
 # Hides one tool from `command -v` inside a test shell: merged-/usr systems
 # would otherwise still find a real plasmashell on /usr/bin.
+# shellcheck disable=SC2016
 HIDE_TOOL_SNIPPET='command() { if [[ "$1" == -v && "$2" == "${HIDE_TOOL:-}" ]]; then return 1; fi; builtin command "$@"; }'
 
 test_plasma_flags_and_decision() {
@@ -729,6 +792,53 @@ test_plasma_no_plasma_never_builds() {
     rm -rf "$home" "$fakebin"
 }
 
+test_plasma_environment_is_idempotent() {
+    local home sentinel env_file
+    home=$(mktemp -d)
+    sentinel='keep this file untouched'
+    HOME="$home" XDG_CONFIG_HOME="$home/config" SUNREACTOR_INSTALLER_LIBRARY=1 \
+        bash -c 'source "$1"; mkdir -p "$CONFIG_HOME/environment.d"; printf "%s\n" "$2" >"$CONFIG_HOME/environment.d/10-qml-import-path.conf"; write_plasma_environment "$HOME/.local/lib64/qt6/qml"' \
+        _ "$ROOT_DIR/install.sh" "$sentinel"
+    env_file="$home/config/plasma-workspace/env/sunreactor.sh"
+    [[ -x "$env_file" ]]
+    grep -Fx "$sentinel" "$home/config/environment.d/10-qml-import-path.conf" >/dev/null
+    HOME="$home" XDG_CONFIG_HOME="$home/config" bash -c '
+        QML_IMPORT_PATH="/existing:$HOME/.local/lib64/qt6/qml:/tail"
+        QML2_IMPORT_PATH="/other"
+        . "$1"
+        . "$1"
+        [[ "$QML_IMPORT_PATH" == "/existing:$HOME/.local/lib64/qt6/qml:/tail" ]]
+        [[ "$QML2_IMPORT_PATH" == "$HOME/.local/lib64/qt6/qml:/other" ]]
+    ' _ "$env_file"
+    rm -rf "$home"
+}
+
+test_qtpaths6_lib64_layout() {
+    local home fakebin marker
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    marker="$home/cmake-calls"
+    plasma_shims "$fakebin"
+    printf '%s\n' '#!/bin/sh' 'printf "%s\n" /usr/lib64/qt6/qml' >"$fakebin/qtpaths6"
+    chmod +x "$fakebin/qtpaths6"
+    CMAKE_STUB_LOG="$marker" CMAKE_STUB_QML_RELATIVE=lib64/qt6/qml HOME="$home" XDG_CONFIG_HOME="$home/config" \
+        XDG_STATE_HOME="$home/state" XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    grep -F -- '-DKDE_INSTALL_QMLDIR=lib64/qt6/qml' "$marker" >/dev/null
+    [[ -f "$home/.local/lib64/qt6/qml/org/sunreactor/plasma/qmldir" ]]
+    grep -Fx "$home/.local/lib64/qt6/qml" "$home/config/sunreactor/plasma-qml-dir" >/dev/null
+    grep -F "$home/.local/lib64/qt6/qml" "$home/config/plasma-workspace/env/sunreactor.sh" >/dev/null
+    rm -rf "$home" "$fakebin"
+}
+
 test_plasma_widget_success_is_atomic_and_keeps_backup() {
     local home fakebin data status
     home=$(mktemp -d)
@@ -762,8 +872,8 @@ test_plasma_widget_success_is_atomic_and_keeps_backup() {
     cmp -s "$ROOT_DIR/plasma/org.sunreactor.plasma/package/metadata.json" \
         "$data/plasma/plasmoids/org.sunreactor.plasma/metadata.json"
     grep -Fx 'new plugin' "$home/.local/lib/libsunreactorplugin.so" >/dev/null
-    grep -Fx 'new qml plugin' "$home/.local/lib/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so" >/dev/null
-    grep -Fx 'module org.sunreactor.plasma' "$home/.local/lib/qml/org/sunreactor/plasma/qmldir" >/dev/null
+    grep -Fx 'new qml plugin' "$home/.local/lib/qt6/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so" >/dev/null
+    grep -Fx 'module org.sunreactor.plasma' "$home/.local/lib/qt6/qml/org/sunreactor/plasma/qmldir" >/dev/null
     [[ ! -e "$data/plasma/plasmoids/org.sunreactor.plasma/contents/ui/ignored.qml" ]]
     grep -Fx 'old package' "$(find "$data/sunreactor-backups" -name metadata.json | head -n 1)" >/dev/null
     grep -Fx 'old plugin' "$(find "$data/sunreactor-backups" -name libsunreactorplugin.so | head -n 1)" >/dev/null
@@ -833,7 +943,10 @@ with tarfile.open(sys.argv[1], 'w:gz') as tar:
     info.size = 3
     tar.addfile(info, __import__('io').BytesIO(b'bad'))
 PY
-    ! (SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; extract_archive "$2"' _ "$ROOT_DIR/install.sh" "$archive")
+    if SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; extract_archive "$2"' _ "$ROOT_DIR/install.sh" "$archive"; then
+        printf 'unsafe archive was accepted\n' >&2
+        exit 1
+    fi
     rm -rf "$home"
 }
 
@@ -841,6 +954,8 @@ test_plasma_flags_and_decision
 test_plasma_dry_run_changes_nothing
 test_plasma_auto_skips_without_plasmashell
 test_plasma_no_plasma_never_builds
+test_plasma_environment_is_idempotent
+test_qtpaths6_lib64_layout
 test_plasma_widget_success_is_atomic_and_keeps_backup
 test_plasma_failure_never_fails_install
 

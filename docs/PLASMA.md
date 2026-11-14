@@ -30,6 +30,12 @@ From a clone of the repository, the installer builds and installs the widget:
 systemctl --user restart plasma-plasmashell.service   # the installer never restarts plasmashell
 ```
 
+The widget step is independent of daemon service supervision. On a desktop
+without a usable systemd user manager, the daemon installer uses
+`~/.config/autostart/sunreactord.desktop`; the Plasma QML environment file
+above is still generated and the suggested plasmashell restart command is
+printed for the user.
+
 The step builds the plugin with CMake in a temporary directory, copies the plugin and the QML module under `~/.local`, replaces the widget package in one piece, and keeps the previous widget in `~/.local/share/sunreactor-backups/`. A failed widget step is reported and never fails the installation or rolls back the daemon.
 
 By hand, from the repository root:
@@ -46,11 +52,13 @@ systemctl --user restart plasma-plasmashell.service
 | Part | Location |
 |---|---|
 | C++ plugin | `~/.local/lib/libsunreactorplugin.so` |
-| QML module | `~/.local/lib/qt6/qml/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
+| QML module | `~/.local/<Qt QML relative path>/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
 | Widget package | `~/.local/share/plasma/plasmoids/org.sunreactor.plasma/` |
 | Application icon | `~/.local/share/icons/hicolor/scalable/apps/` |
 
-The installer passes `-DKDE_INSTALL_QMLDIR=lib/qt6/qml`, the Qt 6 layout; Plasma must find that directory on its QML import path (add `~/.local/lib/qt6/qml` to `QML2_IMPORT_PATH` in a `~/.config/plasma-workspace/env/*.sh` file if it is not there already).
+The installer derives the system Qt 6 QML directory in this order: `qtpaths6 --query QT_INSTALL_QML`, `qmake6 -query QT_INSTALL_QML`, then a distro layout fallback (`/usr/lib64/qt6/qml`, `/usr/lib/qt6/qml`, or the matching `/lib*` path). It passes the relative part (for example `lib/qt6/qml` or `lib64/qt6/qml`) as `-DKDE_INSTALL_QMLDIR`, so the user plugin follows the host's `lib` versus `lib64` layout. The selected path is recorded in `~/.config/sunreactor/plasma-qml-dir` and in `~/.config/environment.d/10-qml-import-path.conf` when that file does not already exist.
+
+The installer owns `~/.config/plasma-workspace/env/sunreactor.sh`. It exports both `QML_IMPORT_PATH` and `QML2_IMPORT_PATH`, prepending the selected directory only when it is not already present; rerunning the installer therefore does not add duplicates or overwrite other environment files. If a running systemd user manager rejects `systemctl --user set-environment`, the installer reports a warning and the session file remains the recovery path.
 
 **KF6 partial-upgrade caveat.** If CMake prints `Plasma not found: the plasmoid package will not be installed`, it could not load Plasma's CMake package. That usually means a half-finished upgrade of the KDE Frameworks and Plasma set. The plugin still builds and installs. Finish the upgrade and run CMake again, or install the package with `kpackagetool6 --type Plasma/Applet --install plasma/org.sunreactor.plasma/package`. The installer does not depend on Plasma's CMake package: it copies the package itself and validates it with `kpackagetool6` when that is present.
 
@@ -75,7 +83,7 @@ Plasma stores a popup size for each applet as `popupWidth` and `popupHeight` in 
 ### Troubleshooting
 - **The popup does not fit, or keeps a wrong height.** Stop plasmashell (`systemctl --user stop plasma-plasmashell.service`). Delete the `popupHeight=` and `popupWidth=` lines in the `[Containments][N][Applets][M][Configuration]` section of the widget's applet (the one whose `plugin=org.sunreactor.plasma`). Start plasmashell again. Do not edit the file while plasmashell runs, because it rewrites the file.
 - **Text or art looks wrong after a scale change.** Text and pixel art follow Plasma's display scale and font DPI. Pixel themes size their art to the device pixel ratio while `pixelScale` is 0; set it to 1 to 6 to choose a size. If text clips at a fractional scale, check Plasma's display scale and font settings first.
-- **Plasma reports a QML import error for `org.sunreactor.plasma`.** Plasma cannot see the QML module directory. Check `systemctl --user show-environment | grep QML`. The directory from the table above must be on `QML2_IMPORT_PATH` or `QML_IMPORT_PATH`. Add it with a file in `~/.config/environment.d/` and log in again.
+- **Plasma reports a QML import error for `org.sunreactor.plasma`.** Plasma cannot see the QML module directory. Check `~/.config/sunreactor/plasma-qml-dir`, `~/.config/plasma-workspace/env/sunreactor.sh`, and (when systemd is available) `systemctl --user show-environment | grep QML`. Log in again after changing the environment file.
 - **The daemon is older than the widget.** The widget keeps running. It uses the theme in the daemon's flat fields, hides the light cycle because there is no day curve, and shows a pinned theme as followed, with a note in the settings. To get themes and the day curve, install `sunreactord` from this version and restart it with `systemctl --user restart sunreactord.service`.
 - **The widget shows offline.** Check `systemctl --user status sunreactord.service` and `sunreactorctl status`.
 

@@ -27,5 +27,7 @@ SH
     chmod 755 "$artifact_dir/sunreactord" "$artifact_dir/sunreactorctl"
     cp "$SCRIPT_DIR/contrib/systemd/sunreactord.service" \
         "$artifact_dir/sunreactord.service"
+    # Exported through the sourced installer for the caller's fixture setup.
+    # shellcheck disable=SC2034
     ARTIFACT_DIR="$artifact_dir"
 }

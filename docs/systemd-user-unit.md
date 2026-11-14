@@ -27,3 +27,17 @@ The unit intentionally does not add `ReadWritePaths` exceptions for
 syntax and dependencies, but cannot prove that a particular machine's sysfs
 brightness node is writable under a user manager. Hardware qualification is
 still required before changing the sandbox policy.
+
+## When no user manager is available
+
+The installer does not assume systemd. If `systemctl --user show-environment`
+fails, it keeps the rendered unit for a future user manager and writes
+`~/.config/autostart/sunreactord.desktop` instead. The entry is hidden from
+desktop menus (`NoDisplay=true`), starts the installed user binary, and is
+removed by `./install.sh --uninstall`. The installer prints the direct command
+for starting the daemon immediately.
+
+OpenRC and runit users can use the user-level examples in
+`contrib/openrc/sunreactord` and `contrib/runit/sunreactord/run`. They are
+templates: install them in the supervisor's user service directory and adjust
+the service environment to match the host.
