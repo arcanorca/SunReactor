@@ -442,7 +442,21 @@ fn apply_with_runner_roots<R: ProcessRunner>(
             "brightnessctl",
             &output,
         )),
-        Err(error) => Err(map_command_error(BackendKind::Backlight, error)),
+        Err(error) => {
+            let mapped = map_command_error(BackendKind::Backlight, error);
+            if matches!(
+                &mapped,
+                BackendError::MissingProgram { program, .. } if program == "brightnessctl"
+            ) {
+                return apply_sysfs_fallback_with_roots(
+                    monitor,
+                    percent,
+                    drm_root,
+                    backlight_root,
+                );
+            }
+            Err(mapped)
+        }
     }
 }
 
@@ -456,9 +470,24 @@ pub(crate) fn apply_sysfs_fallback(
     monitor: &MonitorConfig,
     percent: u8,
 ) -> Result<BackendWrite, BackendError> {
+    apply_sysfs_fallback_with_roots(
+        monitor,
+        percent,
+        Path::new("/sys/class/drm"),
+        Path::new(SYSFS_BACKLIGHT_ROOT),
+    )
+}
+
+fn apply_sysfs_fallback_with_roots(
+    monitor: &MonitorConfig,
+    percent: u8,
+    drm_root: &Path,
+    backlight_root: &Path,
+) -> Result<BackendWrite, BackendError> {
     let percent = clamp_percent(percent);
-    let device_name = resolve_device_name(&monitor.selector)?;
-    let device_dir = sysfs_device_dir(&device_name);
+    let (device_name, _) =
+        resolve_backlight_device_name_with_roots(&monitor.selector, drm_root, backlight_root)?;
+    let device_dir = backlight_root.join(&device_name);
 
     let max_brightness = read_max_brightness(&device_dir, &device_name)?;
     let raw_value = (u64::from(percent) * max_brightness) / 100;
@@ -554,7 +583,7 @@ mod tests {
     use crate::config::{MonitorConfig, MonitorSelector};
     use crate::process::CommandError;
 
-    use super::apply_with_runner;
+    use super::{apply_with_runner, apply_with_runner_roots_for_test};
 
     #[test]
     fn applies_absolute_percentage_to_specific_device() {
@@ -1073,9 +1102,10 @@ mod tests {
 
     #[test]
     fn apply_with_runner_returns_missing_program_when_brightnessctl_absent() {
-        // Verify that apply_with_runner itself propagates MissingProgram
-        // (the actual fallback happens in apply(), not apply_with_runner())
-        let monitor = backlight_monitor(Some(String::from("/sys/class/backlight/intel_backlight")));
+        let tmpdir = tempdir_with_backlight("intel_backlight", 1000);
+        let monitor = backlight_monitor(Some(String::from(
+            "/sys/class/backlight/intel_backlight",
+        )));
         let runner = FakeRunner::new();
         runner.push_response(
             "brightnessctl",
@@ -1093,12 +1123,22 @@ mod tests {
             }),
         );
 
-        let err = apply_with_runner(&runner, &monitor, 50, std::time::Duration::from_secs(2))
-            .expect_err("should return MissingProgram");
+        let result = apply_with_runner_roots_for_test(
+            &runner,
+            &monitor,
+            50,
+            std::time::Duration::from_secs(2),
+            Path::new("/nonexistent/drm"),
+            tmpdir.path(),
+        )
+        .expect("missing brightnessctl should use sysfs fallback");
 
-        assert!(
-            matches!(err, BackendError::MissingProgram { .. }),
-            "expected MissingProgram, got: {err:?}",
+        assert_eq!(result.applied_percent, 50);
+        assert!(result.detail.contains("sysfs direct write"));
+        assert_eq!(
+            fs::read_to_string(tmpdir.path().join("intel_backlight/brightness"))
+                .expect("fallback should write brightness"),
+            "500"
         );
     }
 
