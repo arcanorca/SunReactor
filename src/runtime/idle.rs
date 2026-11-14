@@ -74,16 +74,14 @@ impl DesktopIdleSync {
     ) -> Self {
         #[cfg(target_os = "linux")]
         let watcher: Option<IdleWatcher> = {
-            #[cfg(all(target_os = "linux", feature = "wayland"))]
-            if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
-                spawn_wayland_idle()
-            } else if enabled {
-                spawn(socket_path, timeout_minutes)
-            } else {
-                None
-            }
-            #[cfg(not(feature = "wayland"))]
-            if enabled {
+            if enabled && timeout_minutes > 0 {
+                #[cfg(all(target_os = "linux", feature = "wayland"))]
+                if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
+                    spawn_wayland_idle()
+                } else {
+                    spawn(socket_path, timeout_minutes)
+                }
+                #[cfg(not(feature = "wayland"))]
                 spawn(socket_path, timeout_minutes)
             } else {
                 None
@@ -137,7 +135,11 @@ impl DesktopIdleSync {
     }
 
     pub(super) fn maintain_watcher(&mut self, socket_path: &std::path::Path) {
-        if !self.enabled {
+        if !self.enabled || self.timeout_minutes == 0 {
+            #[cfg(target_os = "linux")]
+            {
+                self.watcher = None;
+            }
             return;
         }
 
@@ -333,6 +335,10 @@ impl Drop for IdleWatcher {
 ///    `DesktopIdleSync::due_action`)
 #[cfg(target_os = "linux")]
 pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleWatcher> {
+    if timeout_minutes == 0 {
+        return None;
+    }
+
     #[cfg(all(target_os = "linux", feature = "wayland"))]
     if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
         if let Some(watcher) = spawn_wayland_idle() {
@@ -520,7 +526,7 @@ fn dispatch_wayland_once(
 /// Returns `None` if swayidle is not installed or fails to start.
 #[cfg(target_os = "linux")]
 fn spawn_swayidle(timeout_minutes: u64) -> Option<IdleWatcher> {
-    let timeout_seconds = timeout_minutes * 60;
+    let timeout_seconds = timeout_minutes.checked_mul(60)?;
 
     // SAFETY: pre_exec sets PR_SET_PDEATHSIG so the child is killed when the
     // daemon exits. This is called between fork() and exec() where only
@@ -572,6 +578,10 @@ fn spawn_swayidle(timeout_minutes: u64) -> Option<IdleWatcher> {
 /// installed or the session is not X11.
 #[cfg(target_os = "linux")]
 fn spawn_xprintidle_poll(timeout_minutes: u64) -> Option<IdleWatcher> {
+    if timeout_minutes == 0 {
+        return None;
+    }
+
     // Only try on X11 sessions: DISPLAY must be set, WAYLAND_DISPLAY must not.
     let has_display = std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty());
     let has_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty());
@@ -596,7 +606,7 @@ fn spawn_xprintidle_poll(timeout_minutes: u64) -> Option<IdleWatcher> {
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
-    let timeout_ms = timeout_minutes * 60 * 1000;
+    let timeout_ms = timeout_minutes.checked_mul(60)?.checked_mul(1000)?;
 
     let handle = std::thread::Builder::new()
         .name("xprintidle-poll".into())
@@ -890,6 +900,13 @@ mod tests {
             enabled.due_action(now, std::time::Duration::from_mins(1)),
             Some(IdleSyncAction::DelayedSync)
         );
+    }
+
+    #[test]
+    fn zero_timeout_never_starts_an_idle_watcher() {
+        assert!(spawn(PathBuf::from("/tmp/control.sock"), 0).is_none());
+        let idle_sync = DesktopIdleSync::new_with_watcher(true, None, 60, 0);
+        assert!(idle_sync.watcher.is_none());
     }
 
     #[test]
