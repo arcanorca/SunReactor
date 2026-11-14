@@ -56,11 +56,17 @@ constexpr int kThemeListRetryInterval = 2000;
 constexpr int kMaxRequestQueue = 16;
 constexpr int kInitialReconnectBackoffMs = 250;
 constexpr int kMaxReconnectBackoffMs = 8000;
+constexpr qsizetype kMaxDisplayStringLength = 64;
 
 QString requestMonitorKey(const QJsonObject &request)
 {
     const QJsonValue monitor = request.value(QStringLiteral("monitor_id"));
     return monitor.isNull() ? QStringLiteral("<global>") : monitor.toString();
+}
+
+QString displayString(const QJsonValue &value)
+{
+    return value.toString().left(kMaxDisplayStringLength);
 }
 
 } // namespace
@@ -1026,7 +1032,7 @@ void SunReactorClient::handleError(const QJsonObject &responseObj)
         return;
     }
 
-    fail(QStringLiteral("%1: %2").arg(code, responseObj.value(QStringLiteral("message")).toString()));
+    fail(QStringLiteral("%1: %2").arg(code, displayString(responseObj.value(QStringLiteral("message")))));
 }
 
 void SunReactorClient::parseStatus(const QJsonObject &statusObj)
@@ -1050,7 +1056,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     m_perMonitorOverrideUntilEpochS = optionalEpoch(statusObj, "per_monitor_override_until_epoch_s");
 
     const QJsonObject themeObj = statusObj.value(QStringLiteral("theme")).toObject();
-    m_themeName = themeObj.value(QStringLiteral("name")).toString();
+    m_themeName = displayString(themeObj.value(QStringLiteral("name")));
     m_themeAccent = themeObj.value(QStringLiteral("accent")).toString();
     m_themeSecondaryAccent = themeObj.value(QStringLiteral("secondary_accent")).toString();
     m_themeBg = themeObj.value(QStringLiteral("bg")).toString();
@@ -1100,7 +1106,8 @@ void SunReactorClient::parseTheme(const QJsonObject &statusObj)
         // A daemon without a theme block tells us nothing either way.
         return;
     }
-    const QJsonObject themeObj = themeValue.toObject();
+    QJsonObject themeObj = themeValue.toObject();
+    themeObj[QStringLiteral("name")] = displayString(themeObj.value(QStringLiteral("name")));
     const bool hasRegistry = themeObj.value(QStringLiteral("palette")).isObject();
     if (hasRegistry && m_themeRegistry == CapabilityUnsupported) {
         // The daemon was upgraded underneath us: ask again for everything new.
@@ -1129,7 +1136,9 @@ void SunReactorClient::parseThemeList(const QJsonArray &entries)
 {
     QVariantList list;
     for (const QJsonValue &entry : entries) {
-        const QVariantMap summary = SunReactor::ThemeData::normalizeSummary(entry.toObject());
+        QJsonObject bounded = entry.toObject();
+        bounded[QStringLiteral("name")] = displayString(bounded.value(QStringLiteral("name")));
+        const QVariantMap summary = SunReactor::ThemeData::normalizeSummary(bounded);
         if (!summary.isEmpty()) {
             list.append(summary);
         }
@@ -1147,7 +1156,7 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
     QVariantList monitorList;
     for (const QJsonValue &entry : monitors) {
         const QJsonObject monitor = entry.toObject();
-        const QString id = monitor.value(QStringLiteral("monitor_id")).toString();
+        const QString id = displayString(monitor.value(QStringLiteral("monitor_id")));
         if (id.isEmpty()) {
             continue;
         }
@@ -1178,8 +1187,8 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
             }
             milestones.append(QVariantMap{
                 // Stable machine id (rise_50, ...) for translation; label is the TUI's English text.
-                {QStringLiteral("id"), milestone.value(QStringLiteral("id")).toString()},
-                {QStringLiteral("label"), milestone.value(QStringLiteral("label")).toString()},
+                {QStringLiteral("id"), displayString(milestone.value(QStringLiteral("id")))},
+                {QStringLiteral("label"), displayString(milestone.value(QStringLiteral("label")))},
                 {QStringLiteral("t"), t},
                 {QStringLiteral("pct"), optionalPercent(milestone, "pct")},
             });
@@ -1198,7 +1207,7 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
     if (!monitorList.isEmpty()) {
         const QJsonObject sun = curve.value(QStringLiteral("sun")).toObject();
         const QJsonValue multiplier = curve.value(QStringLiteral("weather_multiplier"));
-        out[QStringLiteral("date")] = curve.value(QStringLiteral("date")).toString();
+        out[QStringLiteral("date")] = displayString(curve.value(QStringLiteral("date")));
         out[QStringLiteral("stepMinutes")] = curve.value(QStringLiteral("step_minutes")).toInt(0);
         out[QStringLiteral("generatedAtEpochS")] = optionalEpoch(curve, "generated_at_epoch_s");
         out[QStringLiteral("weatherMultiplier")] = multiplier.isDouble() ? multiplier.toDouble() : 1.0;
@@ -1242,9 +1251,9 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
     // `stale` says the reading is old; the last known values stay on screen,
     // because an hour-old temperature is still better than a blank row.
     m_weatherStale = weather.value(QStringLiteral("stale")).toBool(false);
-    m_weatherState = weather.value(QStringLiteral("state")).toString();
-    m_weatherCondition = weather.value(QStringLiteral("condition")).toString();
-    m_weatherDayPhase = weather.value(QStringLiteral("day_phase")).toString();
+    m_weatherState = displayString(weather.value(QStringLiteral("state")));
+    m_weatherCondition = displayString(weather.value(QStringLiteral("condition")));
+    m_weatherDayPhase = displayString(weather.value(QStringLiteral("day_phase")));
     m_cloudCoverPercent = optionalPercent(weather, "cloud_cover_percent");
 
     const QJsonValue temperature = weather.value(QStringLiteral("temperature"));
@@ -1285,9 +1294,9 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         const bool unreachable = backoffUntil > m_nowEpochS;
 
         QVariantMap map;
-        map[QStringLiteral("logicalId")] = monitor.value(QStringLiteral("logical_id")).toString();
-        map[QStringLiteral("backend")] = monitor.value(QStringLiteral("backend")).toString();
-        map[QStringLiteral("topology")] = monitor.value(QStringLiteral("topology")).toString();
+        map[QStringLiteral("logicalId")] = displayString(monitor.value(QStringLiteral("logical_id")));
+        map[QStringLiteral("backend")] = displayString(monitor.value(QStringLiteral("backend")));
+        map[QStringLiteral("topology")] = displayString(monitor.value(QStringLiteral("topology")));
         map[QStringLiteral("enabled")] = enabled;
         map[QStringLiteral("appliedPercent")] = applied;
         map[QStringLiteral("minPct")] = minPct != UNKNOWN_PERCENT ? minPct : 15;
@@ -1338,7 +1347,7 @@ void SunReactorClient::parseForecast(const QJsonArray &entries)
         QVariantMap map;
         map[QStringLiteral("epochS")] = at;
         map[QStringLiteral("temperatureC")] = temperature.toDouble();
-        map[QStringLiteral("condition")] = point.value(QStringLiteral("condition")).toString();
+        map[QStringLiteral("condition")] = displayString(point.value(QStringLiteral("condition")));
         map[QStringLiteral("isNight")] =
             point.value(QStringLiteral("day_phase")).toString() == QLatin1String("night");
         map[QStringLiteral("cloudCoverPercent")] = optionalPercent(point, "cloud_cover_percent");

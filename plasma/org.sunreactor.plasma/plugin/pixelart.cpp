@@ -190,9 +190,29 @@ std::vector<PixelGlyphs::Line> PixelGlyphs::layout(bool *elided) const
             return s;
         }
         *elided = true;
-        while (!s.isEmpty() && lineWidth(QString(s + dots)) > m_maxWidth) {
-            s.chop(1);
+        const int trailingGap = m_face == QLatin1String("seg")
+            ? (m_letterSpacing * m_segWidth + 1)
+            : m_letterSpacing * m_pitch;
+        const int dotsWidth = advance(U'\u2026');
+        int prefixAdvance = 0;
+        qsizetype prefixLength = 0;
+        for (qsizetype i = 0; i < s.size();) {
+            const QChar first = s.at(i);
+            char32_t codepoint = first.unicode();
+            qsizetype step = 1;
+            if (first.isHighSurrogate() && i + 1 < s.size() && s.at(i + 1).isLowSurrogate()) {
+                codepoint = QChar::surrogateToUcs4(first, s.at(i + 1));
+                step = 2;
+            }
+            const int candidate = prefixAdvance + advance(codepoint) + dotsWidth - trailingGap;
+            if (candidate > m_maxWidth) {
+                break;
+            }
+            prefixAdvance += advance(codepoint);
+            prefixLength = i + step;
+            i += step;
         }
+        s.truncate(prefixLength);
         while (s.endsWith(QLatin1Char(' '))) {
             s.chop(1);
         }
