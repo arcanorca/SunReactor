@@ -106,7 +106,11 @@ impl DesktopIdleSync {
             enabled,
             #[cfg(target_os = "linux")]
             watcher,
-            delayed_sync_at: enabled.then_some(Instant::now() + STARTUP_WAKE_SYNC_DELAY),
+            delayed_sync_at: enabled.then_some(
+                Instant::now()
+                    .checked_add(STARTUP_WAKE_SYNC_DELAY)
+                    .unwrap_or_else(Instant::now),
+            ),
             last_tick_utc: Utc::now()
                 .checked_sub_signed(chrono::Duration::seconds(tick_seconds as i64))
                 .unwrap_or_else(Utc::now),
@@ -223,7 +227,11 @@ impl DesktopIdleSync {
         let drift_seconds = elapsed_real.saturating_sub(elapsed_since_tick.as_secs());
 
         if drift_seconds > SUSPEND_DRIFT_THRESHOLD_SECONDS {
-            self.delayed_sync_at = Some(Instant::now() + FOLLOWUP_WAKE_SYNC_DELAY);
+            self.delayed_sync_at = Some(
+                Instant::now()
+                    .checked_add(FOLLOWUP_WAKE_SYNC_DELAY)
+                    .unwrap_or_else(Instant::now),
+            );
             return Some(IdleSyncAction::DriftRecovery { drift_seconds });
         }
 
@@ -709,7 +717,9 @@ fn xprintidle_poll_loop(shutdown: &Arc<AtomicBool>, timeout_ms: u64) {
         // interval rather than flapping state.
 
         // Sleep in short increments so shutdown is responsive.
-        let deadline = Instant::now() + XPRINTIDLE_POLL_INTERVAL;
+        let deadline = Instant::now()
+            .checked_add(XPRINTIDLE_POLL_INTERVAL)
+            .unwrap_or_else(Instant::now);
         while Instant::now() < deadline {
             if shutdown.load(Ordering::Relaxed) {
                 return;

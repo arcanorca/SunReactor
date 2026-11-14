@@ -156,6 +156,31 @@ fn rejects_tick_rate_that_busy_polls() {
 }
 
 #[test]
+fn rejects_unbounded_operational_timeouts() {
+    let mut config = super::Config::default();
+    config.daemon.desktop_idle_timeout_minutes = 1_441;
+    config.daemon.apply_reassert_minutes = 1_441;
+    config.daemon.ddc_timeout_seconds = 61;
+    config.daemon.backlight_timeout_seconds = 0;
+
+    let error = config.validate().expect_err("operational limits should fail");
+    let text = error.to_string();
+    assert!(text.contains("daemon.desktop_idle_timeout_minutes"));
+    assert!(text.contains("daemon.apply_reassert_minutes"));
+    assert!(text.contains("daemon.ddc_timeout_seconds"));
+    assert!(text.contains("daemon.backlight_timeout_seconds"));
+}
+
+#[test]
+fn accepts_disabled_idle_timeout_and_bounded_backend_timeouts() {
+    let mut config = super::Config::default();
+    config.daemon.desktop_idle_timeout_minutes = 0;
+    config.daemon.ddc_timeout_seconds = 1;
+    config.daemon.backlight_timeout_seconds = 60;
+    config.validate().expect("bounded timeout values should pass");
+}
+
+#[test]
 fn accepts_desktop_idle_sync_override() {
     let raw = VALID_CONFIG.replace("desktop_idle_sync = true", "desktop_idle_sync = false");
     let config = parse_str(&raw, Path::new("desktop-idle-sync.toml")).expect("config should parse");

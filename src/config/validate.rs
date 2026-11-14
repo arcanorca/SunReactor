@@ -13,6 +13,9 @@ const MIN_TICK_SECONDS: u64 = 5;
 const MIN_PROBE_SECONDS: u64 = 2;
 const MAX_PROBE_SECONDS: u64 = 3600;
 const MIN_WEATHER_REFRESH_MINUTES: u32 = 10;
+const MAX_OPERATIONAL_MINUTES: u64 = 24 * 60;
+const MIN_BACKEND_TIMEOUT_SECONDS: u64 = 1;
+const MAX_BACKEND_TIMEOUT_SECONDS: u64 = 60;
 
 impl Config {
     #[allow(clippy::too_many_lines)]
@@ -32,6 +35,42 @@ impl Config {
             errors.push(ValidationError::new(
                 "daemon.probe_seconds",
                 format!("must be 0 (disabled) or within {MIN_PROBE_SECONDS}..={MAX_PROBE_SECONDS}"),
+            ));
+        }
+
+        if self.daemon.desktop_idle_timeout_minutes > MAX_OPERATIONAL_MINUTES {
+            errors.push(ValidationError::new(
+                "daemon.desktop_idle_timeout_minutes",
+                format!("must be 0 (disabled) or at most {MAX_OPERATIONAL_MINUTES} minutes"),
+            ));
+        }
+
+        if self.daemon.apply_reassert_minutes > MAX_OPERATIONAL_MINUTES {
+            errors.push(ValidationError::new(
+                "daemon.apply_reassert_minutes",
+                format!("must be at most {MAX_OPERATIONAL_MINUTES} minutes"),
+            ));
+        }
+
+        if !(MIN_BACKEND_TIMEOUT_SECONDS..=MAX_BACKEND_TIMEOUT_SECONDS)
+            .contains(&self.daemon.ddc_timeout_seconds)
+        {
+            errors.push(ValidationError::new(
+                "daemon.ddc_timeout_seconds",
+                format!(
+                    "must be within {MIN_BACKEND_TIMEOUT_SECONDS}..={MAX_BACKEND_TIMEOUT_SECONDS} seconds"
+                ),
+            ));
+        }
+
+        if !(MIN_BACKEND_TIMEOUT_SECONDS..=MAX_BACKEND_TIMEOUT_SECONDS)
+            .contains(&self.daemon.backlight_timeout_seconds)
+        {
+            errors.push(ValidationError::new(
+                "daemon.backlight_timeout_seconds",
+                format!(
+                    "must be within {MIN_BACKEND_TIMEOUT_SECONDS}..={MAX_BACKEND_TIMEOUT_SECONDS} seconds"
+                ),
             ));
         }
 

@@ -228,7 +228,9 @@ fn read_bounded_message<S: IpcStream>(
     target: &str,
     timeout: Duration,
 ) -> Result<Vec<u8>, IpcError> {
-    let deadline = Instant::now() + timeout;
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .unwrap_or_else(Instant::now);
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; FRAME_READ_CHUNK_BYTES];
 

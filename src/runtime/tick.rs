@@ -174,7 +174,7 @@ impl DaemonRuntime {
             min_apply_interval: Duration::ZERO,
             dry_run: self.config.daemon.dry_run,
             apply_reassert_interval: Duration::from_secs(
-                self.config.daemon.apply_reassert_minutes * 60,
+                self.config.daemon.apply_reassert_minutes.saturating_mul(60),
             ),
             ddc_timeout: Duration::from_secs(self.config.daemon.ddc_timeout_seconds),
             backlight_timeout: Duration::from_secs(self.config.daemon.backlight_timeout_seconds),
