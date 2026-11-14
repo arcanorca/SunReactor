@@ -109,13 +109,15 @@ void PixelRaster::setArtScale(qreal scale)
 void PixelRaster::invalidate()
 {
     m_imageDirty = true;
-    if (!isComponentComplete() || !isVisible() || width() <= 0.0 || height() <= 0.0 || m_rerenderPending) {
+    const bool hasGeometry = width() > 0.0 && height() > 0.0;
+    if (!isComponentComplete() || !isVisible() || (!hasGeometry && !sizesToContent()) || m_rerenderPending) {
         return;
     }
     m_rerenderPending = true;
     QMetaObject::invokeMethod(this, [this]() {
         m_rerenderPending = false;
-        if (!isComponentComplete() || !isVisible() || width() <= 0.0 || height() <= 0.0) {
+        const bool hasGeometry = width() > 0.0 && height() > 0.0;
+        if (!isComponentComplete() || !isVisible() || (!hasGeometry && !sizesToContent())) {
             return;
         }
         rerender();
@@ -125,7 +127,9 @@ void PixelRaster::invalidate()
 void PixelRaster::componentComplete()
 {
     QQuickItem::componentComplete();
-    rerender();
+    if (isVisible() && (sizesToContent() || (width() > 0.0 && height() > 0.0))) {
+        rerender();
+    }
 }
 
 void PixelRaster::itemChange(ItemChange change, const ItemChangeData &value)

@@ -726,13 +726,26 @@ void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
 
     m_requestQueue.enqueue({requestObj, now});
 
-    if (!m_isBusy && !m_reconnectTimer->isActive() && m_socket->state() == QLocalSocket::UnconnectedState) {
+    if (!m_isBusy && !m_processNextScheduled && !m_reconnectTimer->isActive()
+        && m_socket->state() == QLocalSocket::UnconnectedState) {
         processNextRequest();
     }
 }
 
+void SunReactorClient::prependRequest(const QJsonObject &requestObj)
+{
+    if (!m_pollingEnabled) {
+        return;
+    }
+    if (m_requestQueue.size() >= kMaxRequestQueue) {
+        m_requestQueue.removeLast();
+    }
+    m_requestQueue.prepend({requestObj, m_elapsed.elapsed()});
+}
+
 void SunReactorClient::processNextRequest()
 {
+    m_processNextScheduled = false;
     if (m_reconnectTimer->isActive() || (m_isBusy && !m_responseHandled)) {
         return;
     }
@@ -918,14 +931,14 @@ bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
             if (curveMoves && m_dayCurveSupport != CapabilityUnsupported && !isQueued(kDayCurve)) {
                 QJsonObject curve = request(kDayCurve);
                 curve[QStringLiteral("monitor_id")] = QJsonValue(QJsonValue::Null);
-                m_requestQueue.prepend({curve, m_elapsed.elapsed()});
+                prependRequest(curve);
             }
             if (sent == QLatin1String("reload_config")) {
                 // Theme files may have been edited along with the config.
                 if (!m_pinnedThemeId.isEmpty() && m_themeRegistry != CapabilityUnsupported) {
                     QJsonObject pinned = request(kGetTheme);
                     pinned[QStringLiteral("id")] = m_pinnedThemeId;
-                    m_requestQueue.prepend({pinned, m_elapsed.elapsed()});
+                    prependRequest(pinned);
                 }
                 // A user theme file may have been added: the list is read again.
                 if (themeListWanted()) {
@@ -944,8 +957,10 @@ bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
         setConnected(true);
         setThemeRegistry(CapabilitySupported);
         const QString id = m_inFlightRequest.value(QStringLiteral("id")).toString();
+        QJsonObject boundedTheme = responseObj.value(QStringLiteral("theme")).toObject();
+        boundedTheme[QStringLiteral("name")] = displayString(boundedTheme.value(QStringLiteral("name")));
         const QVariantMap theme = SunReactor::ThemeData::normalizeTheme(
-            responseObj.value(QStringLiteral("theme")).toObject());
+            boundedTheme);
         if (theme.isEmpty()) {
             if (id == m_pinnedThemeId) {
                 setPinned({}, QStringLiteral("not_found"));
@@ -990,6 +1005,8 @@ void SunReactorClient::completeResponse()
     m_socket->abort();
     // Let the abort's disconnected signal drain before arming the next request;
     // that signal belongs to the completed frame and must not settle the new one.
+    m_processNextScheduled = true;
+    setBusy(false);
     QMetaObject::invokeMethod(this, [this]() { processNextRequest(); }, Qt::QueuedConnection);
 }
 
@@ -1323,6 +1340,7 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
         m_hasWeatherReading = false;
         m_weatherState.clear();
         m_weatherCondition.clear();
+        m_weatherDescription.clear();
         m_weatherDayPhase.clear();
         m_cloudCoverPercent = UNKNOWN_PERCENT;
         m_hasTemperature = false;
@@ -1340,6 +1358,7 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
     m_weatherStale = weather.value(QStringLiteral("stale")).toBool(false);
     m_weatherState = displayString(weather.value(QStringLiteral("state")));
     m_weatherCondition = displayString(weather.value(QStringLiteral("condition")));
+    m_weatherDescription = displayString(weather.value(QStringLiteral("condition_description")));
     m_weatherDayPhase = displayString(weather.value(QStringLiteral("day_phase")));
     m_cloudCoverPercent = optionalPercent(weather, "cloud_cover_percent");
 
@@ -1439,6 +1458,10 @@ void SunReactorClient::parseForecast(const QJsonArray &entries)
         map[QStringLiteral("epochS")] = at;
         map[QStringLiteral("temperatureC")] = temperature.toDouble();
         map[QStringLiteral("condition")] = displayString(point.value(QStringLiteral("condition")));
+        const QString description = displayString(point.value(QStringLiteral("condition_description")));
+        if (!description.isEmpty()) {
+            map[QStringLiteral("description")] = description;
+        }
         map[QStringLiteral("isNight")] =
             point.value(QStringLiteral("day_phase")).toString() == QLatin1String("night");
         map[QStringLiteral("cloudCoverPercent")] = optionalPercent(point, "cloud_cover_percent");
@@ -1474,6 +1497,10 @@ void SunReactorClient::parseDetails(const QJsonObject &details)
         if (index.isDouble()) {
             map[QStringLiteral("airQualityIndex")] = index.toInt();
         }
+    }
+
+    if (!m_weatherDescription.isEmpty()) {
+        map[QStringLiteral("conditionDescription")] = m_weatherDescription;
     }
 
     if (m_weatherDetails != map) {

@@ -274,6 +274,7 @@ private Q_SLOTS:
 private:
     [[nodiscard]] QJsonObject request(const QString &name) const;
     void enqueueRequest(const QJsonObject &requestObj);
+    void prependRequest(const QJsonObject &requestObj);
     void processNextRequest();
     void sendInFlightRequest();
     [[nodiscard]] bool handleResponse(const QJsonObject &responseObj);
@@ -324,6 +325,7 @@ private:
     QJsonObject m_inFlightRequest;
     QByteArray m_readBuffer;
     bool m_responseHandled = true;
+    bool m_processNextScheduled = false;
     qint64 m_inFlightQueuedAtMs = 0;
     QElapsedTimer m_elapsed;
     int m_reconnectBackoffMs = 250;
@@ -358,6 +360,7 @@ private:
     bool m_hasWeatherReading = false;
     QString m_weatherState;
     QString m_weatherCondition;
+    QString m_weatherDescription;
     QString m_weatherDayPhase;
     int m_cloudCoverPercent = SunReactor::UNKNOWN_PERCENT;
     bool m_hasTemperature = false;
