@@ -922,6 +922,10 @@ bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
         setDayCurveSupport(CapabilitySupported);
         parseDayCurve(responseObj.value(QStringLiteral("day_curve")).toObject());
     } else if (type == QStringLiteral("error")) {
+        // The transport answered with a valid protocol envelope even though
+        // the requested operation failed; keep connectivity separate from the
+        // daemon's capability/error state.
+        setConnected(true);
         handleError(responseObj);
     } else {
         fail(QStringLiteral("Unknown response type from daemon: %1").arg(type));
