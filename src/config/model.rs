@@ -198,6 +198,25 @@ pub struct WeatherConfig {
     pub min_multiplier: f64,
 }
 
+impl WeatherConfig {
+    /// Maximum daylight reduction at full cloud cover, as a user-facing percent.
+    #[must_use]
+    pub fn cloud_dimming_percent(&self) -> u8 {
+        ((1.0 - self.min_multiplier) * 100.0)
+            .round()
+            .clamp(0.0, 100.0) as u8
+    }
+
+    /// Set the maximum daylight reduction and preserve the canonical persisted field.
+    pub fn set_cloud_dimming_percent(&mut self, percent: u8) -> Result<(), String> {
+        if percent > 50 {
+            return Err(String::from("cloud dimming percent must be within 0..=50"));
+        }
+        self.min_multiplier = 1.0 - f64::from(percent) / 100.0;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]

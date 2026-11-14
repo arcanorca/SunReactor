@@ -244,12 +244,12 @@ impl Config {
         }
 
         if !self.weather.min_multiplier.is_finite()
-            || self.weather.min_multiplier <= 0.0
+            || self.weather.min_multiplier < 0.5
             || self.weather.min_multiplier > 1.0
         {
             errors.push(ValidationError::new(
                 "weather.min_multiplier",
-                "must be finite and within 0 < min_multiplier <= 1",
+                "must be finite and within 0.5 <= min_multiplier <= 1 (cloud dimming is limited to 0..=50%)",
             ));
         }
 

@@ -136,6 +136,38 @@ fn rejects_low_weather_refresh() {
 }
 
 #[test]
+fn cloud_dimming_helpers_round_trip_the_canonical_multiplier() {
+    let mut weather = super::WeatherConfig::default();
+    assert_eq!(weather.cloud_dimming_percent(), 25);
+    weather
+        .set_cloud_dimming_percent(50)
+        .expect("50% should be accepted");
+    assert_eq!(weather.min_multiplier, 0.5);
+    assert_eq!(weather.cloud_dimming_percent(), 50);
+    weather
+        .set_cloud_dimming_percent(0)
+        .expect("0% should be accepted");
+    assert_eq!(weather.min_multiplier, 1.0);
+}
+
+#[test]
+fn rejects_cloud_dimming_above_fifty_percent() {
+    let mut weather = super::WeatherConfig::default();
+    let error = weather
+        .set_cloud_dimming_percent(51)
+        .expect_err("51% must be rejected");
+    assert!(error.contains("0..=50"));
+}
+
+#[test]
+fn rejects_min_multiplier_below_half() {
+    let mut config = super::Config::default();
+    config.weather.min_multiplier = 0.49;
+    let error = config.validate().expect_err("values below 0.5 must fail");
+    assert!(error.to_string().contains("0.5 <= min_multiplier <= 1"));
+}
+
+#[test]
 fn rejects_removed_legacy_global_min_max_fields() {
     let raw = VALID_CONFIG.replace(
         "[solar_policy]\n",
