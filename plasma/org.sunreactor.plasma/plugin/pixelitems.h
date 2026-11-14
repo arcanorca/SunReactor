@@ -112,6 +112,7 @@ protected:
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void componentComplete() override;
+    void itemChange(ItemChange change, const ItemChangeData &value) override;
 
 private:
     void rerender();
@@ -120,6 +121,7 @@ private:
     qreal m_artScale = 1.0;
     bool m_imageDirty = true;
     bool m_textureDirty = true;
+    bool m_rerenderPending = false;
 };
 
 /*!

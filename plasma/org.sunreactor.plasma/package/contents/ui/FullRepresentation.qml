@@ -508,7 +508,10 @@ PlasmaExtras.Representation {
             Repeater {
                 model: root.modulesOn(panel.modelData)
 
-                delegate: ModuleSlot {}
+                delegate: ModuleSlot {
+                    pageSlot: true
+                    pageCurrent: panel.modelData === root.shownPage
+                }
             }
         }
     }
@@ -519,18 +522,22 @@ PlasmaExtras.Representation {
         id: slot
 
         required property string modelData
+        property bool pageSlot: false
+        property bool pageCurrent: true
         // The file depends on the theme (skins per renderer / id),
         // so a theme change can swap it after creation.
         readonly property string moduleSource: Modules.file(modelData).length > 0
             ? Modules.source(modelData, root.theme.themeId, root.theme.renderer) : ""
 
         function load() {
-            if (moduleSource.length > 0) {
+            if (active && moduleSource.length > 0) {
                 setSource(Qt.resolvedUrl(moduleSource), {
                     theme: root.theme,
                     client: root.client,
                     settings: moduleSettings,
                 });
+            } else {
+                source = "";
             }
         }
 
@@ -542,9 +549,10 @@ PlasmaExtras.Representation {
         // Every module exposes `available` (modules/Modules.js); the
         // loaded type is only known at run time.
         visible: status === Loader.Ready && item.available === true // qmllint disable missing-property
-        active: moduleSource.length > 0
+        active: moduleSource.length > 0 && (!pageSlot || (root.client.popupOpen && pageCurrent))
 
         onModuleSourceChanged: load()
+        onActiveChanged: load()
         Component.onCompleted: load()
     }
 
