@@ -45,9 +45,6 @@ const XPRINTIDLE_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 #[cfg(target_os = "linux")]
 const XPRINTIDLE_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(all(target_os = "linux", feature = "wayland"))]
-const WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS: u32 = 60_000;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IdleSyncAction {
     DelayedSync,
@@ -77,7 +74,7 @@ impl DesktopIdleSync {
             if enabled && timeout_minutes > 0 {
                 #[cfg(all(target_os = "linux", feature = "wayland"))]
                 if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
-                    spawn_wayland_idle()
+                    spawn_wayland_idle(timeout_minutes)
                 } else {
                     spawn(socket_path, timeout_minutes)
                 }
@@ -341,7 +338,7 @@ pub(super) fn spawn(_socket_path: PathBuf, timeout_minutes: u64) -> Option<IdleW
 
     #[cfg(all(target_os = "linux", feature = "wayland"))]
     if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
-        if let Some(watcher) = spawn_wayland_idle() {
+        if let Some(watcher) = spawn_wayland_idle(timeout_minutes) {
             return Some(watcher);
         }
     }
@@ -426,17 +423,21 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if matches!(event, IdleNotificationEvent::Resumed) {
-            INPUT_RESUMED.store(true, Ordering::Release);
+        match event {
+            IdleNotificationEvent::Idled => fire_sunreactorctl("idle-dim"),
+            IdleNotificationEvent::Resumed => {
+                INPUT_RESUMED.store(true, Ordering::Release);
+            }
+            _ => {}
         }
     }
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-fn spawn_wayland_idle() -> Option<IdleWatcher> {
+fn spawn_wayland_idle(timeout_minutes: u64) -> Option<IdleWatcher> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let thread_shutdown = Arc::clone(&shutdown);
-    let timeout_ms = WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS;
+    let timeout_ms = idle_timeout_ms(timeout_minutes)?;
     let handle = std::thread::Builder::new()
         .name(String::from("wayland-idle-notify"))
         .spawn(move || {
@@ -480,6 +481,15 @@ fn spawn_wayland_idle() -> Option<IdleWatcher> {
             handle: Some(handle),
         },
     })
+}
+
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+fn idle_timeout_ms(timeout_minutes: u64) -> Option<u32> {
+    timeout_minutes
+        .checked_mul(60)?
+        .checked_mul(1_000)?
+        .try_into()
+        .ok()
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
@@ -907,6 +917,14 @@ mod tests {
         assert!(spawn(PathBuf::from("/tmp/control.sock"), 0).is_none());
         let idle_sync = DesktopIdleSync::new_with_watcher(true, None, 60, 0);
         assert!(idle_sync.watcher.is_none());
+    }
+
+    #[cfg(feature = "wayland")]
+    #[test]
+    fn wayland_idle_timeout_is_checked_before_conversion() {
+        assert_eq!(idle_timeout_ms(1), Some(60_000));
+        assert_eq!(idle_timeout_ms(1_440), Some(86_400_000));
+        assert_eq!(idle_timeout_ms(u64::MAX), None);
     }
 
     #[test]
