@@ -142,12 +142,12 @@ fn cloud_dimming_helpers_round_trip_the_canonical_multiplier() {
     weather
         .set_cloud_dimming_percent(50)
         .expect("50% should be accepted");
-    assert_eq!(weather.min_multiplier, 0.5);
+    assert!((weather.min_multiplier - 0.5).abs() < f64::EPSILON);
     assert_eq!(weather.cloud_dimming_percent(), 50);
     weather
         .set_cloud_dimming_percent(0)
         .expect("0% should be accepted");
-    assert_eq!(weather.min_multiplier, 1.0);
+    assert!((weather.min_multiplier - 1.0).abs() < f64::EPSILON);
 }
 
 #[test]

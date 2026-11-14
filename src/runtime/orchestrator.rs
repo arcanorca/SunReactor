@@ -2116,7 +2116,7 @@ mod tests {
             &config_path,
         )
         .expect("persisted config should validate");
-        assert_eq!(persisted.weather.min_multiplier, 0.6);
+        assert!((persisted.weather.min_multiplier - 0.6).abs() < f64::EPSILON);
         let status = runtime.status_response(1_800_000_000);
         assert_eq!(
             status
