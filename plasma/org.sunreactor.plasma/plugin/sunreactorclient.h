@@ -266,8 +266,10 @@ private:
     void enqueueRequest(const QJsonObject &requestObj);
     void processNextRequest();
     void sendInFlightRequest();
-    void handleResponse(const QJsonObject &responseObj);
-    void dispatchResponse(const QJsonObject &responseObj);
+    [[nodiscard]] bool handleResponse(const QJsonObject &responseObj);
+    [[nodiscard]] bool dispatchResponse(const QJsonObject &responseObj);
+    void completeResponse();
+    void transportError(const QString &message = QString());
     /*! After an answer to list_themes: the list is no longer stale, and a failed or
         empty answer schedules the retry while connected. */
     void themeListAnswered(bool gotList);
@@ -303,6 +305,7 @@ private:
     QQueue<QJsonObject> m_requestQueue;
     QJsonObject m_inFlightRequest;
     QByteArray m_readBuffer;
+    bool m_responseHandled = true;
 
     QString m_customSocketPath;
     QString m_lastError;

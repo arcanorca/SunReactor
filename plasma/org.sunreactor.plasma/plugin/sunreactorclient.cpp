@@ -620,11 +620,13 @@ void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
 void SunReactorClient::processNextRequest()
 {
     if (m_requestQueue.isEmpty()) {
+        m_responseHandled = true;
         setBusy(false);
         return;
     }
 
     setBusy(true);
+    m_responseHandled = false;
     m_inFlightRequest = m_requestQueue.dequeue();
     m_readBuffer.clear();
 
@@ -655,41 +657,48 @@ void SunReactorClient::sendInFlightRequest()
 
 void SunReactorClient::onSocketReadyRead()
 {
-    m_readBuffer.append(m_socket->readAll());
-
-    if (m_readBuffer.size() > SunReactor::MAX_IPC_MESSAGE_BYTES) {
-        m_watchdogTimer->stop();
-        m_socket->abort();
-        fail(QStringLiteral("Incoming IPC stream exceeded 64 KiB ceiling (%1 bytes)").arg(m_readBuffer.size()));
-        m_readBuffer.clear();
-        processNextRequest();
+    if (!m_isBusy || m_responseHandled) {
         return;
     }
 
-    int newlineIndex = -1;
-    while ((newlineIndex = m_readBuffer.indexOf('\n')) != -1) {
-        const QByteArray line = m_readBuffer.left(newlineIndex).trimmed();
-        m_readBuffer.remove(0, newlineIndex + 1);
+    const qsizetype remaining = SunReactor::MAX_IPC_MESSAGE_BYTES - m_readBuffer.size();
+    if (remaining <= 0 || m_socket->bytesAvailable() > remaining) {
+        transportError(QStringLiteral("Incoming IPC stream exceeded 64 KiB ceiling"));
+        return;
+    }
+    m_readBuffer.append(m_socket->read(remaining));
 
-        if (line.isEmpty()) {
-            continue;
-        }
+    const int newlineIndex = m_readBuffer.indexOf('\n');
+    if (newlineIndex < 0) {
+        return;
+    }
 
-        m_watchdogTimer->stop();
+    const QByteArray line = m_readBuffer.left(newlineIndex).trimmed();
+    m_readBuffer.clear();
+    if (line.isEmpty()) {
+        transportError(QStringLiteral("Empty response line from daemon"));
+        return;
+    }
 
-        QJsonParseError parseError{};
-        const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-            fail(QStringLiteral("Malformed JSON response from daemon: %1").arg(parseError.errorString()));
-        } else {
-            handleResponse(doc.object());
-        }
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        transportError(QStringLiteral("Malformed JSON response from daemon: %1").arg(parseError.errorString()));
+        return;
+    }
+    if (handleResponse(doc.object())) {
+        completeResponse();
+    } else {
+        transportError();
     }
 }
 
 void SunReactorClient::onSocketDisconnected()
 {
-    m_watchdogTimer->stop();
+    if (!m_isBusy || m_responseHandled) {
+        m_readBuffer.clear();
+        return;
+    }
 
     // A response that arrived without its trailing newline is still valid.
     if (!m_readBuffer.isEmpty()) {
@@ -699,38 +708,33 @@ void SunReactorClient::onSocketDisconnected()
             QJsonParseError parseError{};
             const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
             if (parseError.error == QJsonParseError::NoError && doc.isObject()) {
-                handleResponse(doc.object());
+                if (handleResponse(doc.object())) {
+                    completeResponse();
+                } else {
+                    transportError();
+                }
+                return;
             }
+            transportError(QStringLiteral("Malformed JSON response from daemon: %1").arg(parseError.errorString()));
+            return;
         }
     }
 
-    processNextRequest();
+    transportError(QStringLiteral("Daemon closed the socket before replying"));
 }
 
 void SunReactorClient::onSocketError(QLocalSocket::LocalSocketError socketError)
 {
-    if (socketError == QLocalSocket::PeerClosedError) {
-        // Expected: the daemon closes the connection after each response.
+    if (socketError == QLocalSocket::PeerClosedError && m_responseHandled) {
         return;
     }
 
-    m_watchdogTimer->stop();
-    setConnected(false);
-    fail(m_socket->errorString());
-
-    m_socket->abort();
-    m_readBuffer.clear();
-    processNextRequest();
+    transportError(m_socket->errorString());
 }
 
 void SunReactorClient::onRequestTimeout()
 {
-    m_socket->abort();
-    setConnected(false);
-    fail(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
-
-    m_readBuffer.clear();
-    processNextRequest();
+    transportError(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
 }
 
 void SunReactorClient::onPollTimerTriggered()
@@ -738,30 +742,37 @@ void SunReactorClient::onPollTimerTriggered()
     queryStatus();
 }
 
-void SunReactorClient::handleResponse(const QJsonObject &responseObj)
+bool SunReactorClient::handleResponse(const QJsonObject &responseObj)
 {
     const bool listAnswer = m_inFlightRequest.value(QStringLiteral("request")).toString() == kListThemes;
-    dispatchResponse(responseObj);
+    if (!dispatchResponse(responseObj)) {
+        return false;
+    }
     if (listAnswer) {
         const bool gotList = responseObj.value(QStringLiteral("response")).toString() == QLatin1String("themes")
             && !m_themeList.isEmpty();
         themeListAnswered(gotList);
     }
+    return true;
 }
 
-void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
+bool SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
 {
     const quint32 version = static_cast<quint32>(responseObj.value(QStringLiteral("version")).toInt());
     if (version != SunReactor::PROTOCOL_VERSION) {
         fail(QStringLiteral("Unsupported IPC protocol version %1 (expected %2)")
                  .arg(version)
                  .arg(SunReactor::PROTOCOL_VERSION));
-        return;
+        return false;
     }
 
     const QString type = responseObj.value(QStringLiteral("response")).toString();
 
     const QString sent = m_inFlightRequest.value(QStringLiteral("request")).toString();
+    if (type.isEmpty()) {
+        fail(QStringLiteral("Missing response type from daemon"));
+        return false;
+    }
 
     if (type == QStringLiteral("status")) {
         setConnected(true);
@@ -826,7 +837,41 @@ void SunReactorClient::dispatchResponse(const QJsonObject &responseObj)
         parseDayCurve(responseObj.value(QStringLiteral("day_curve")).toObject());
     } else if (type == QStringLiteral("error")) {
         handleError(responseObj);
+    } else {
+        fail(QStringLiteral("Unknown response type from daemon: %1").arg(type));
+        return false;
     }
+    return true;
+}
+
+void SunReactorClient::completeResponse()
+{
+    if (m_responseHandled) {
+        return;
+    }
+    m_responseHandled = true;
+    m_watchdogTimer->stop();
+    m_readBuffer.clear();
+    // The response line is the complete frame. A daemon that leaves the peer
+    // open must not hold the next request behind a disconnected() signal.
+    m_socket->abort();
+    processNextRequest();
+}
+
+void SunReactorClient::transportError(const QString &message)
+{
+    if (m_responseHandled) {
+        return;
+    }
+    m_responseHandled = true;
+    m_watchdogTimer->stop();
+    m_readBuffer.clear();
+    m_socket->abort();
+    setConnected(false);
+    if (!message.isEmpty()) {
+        fail(message);
+    }
+    processNextRequest();
 }
 
 void SunReactorClient::handleError(const QJsonObject &responseObj)
