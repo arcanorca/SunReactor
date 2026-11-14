@@ -469,9 +469,6 @@ void SunReactorClient::pruneStaleMutatingRequests()
 
 void SunReactorClient::scheduleReconnect()
 {
-    if (m_requestQueue.isEmpty()) {
-        return;
-    }
     const int delay = m_reconnectBackoffMs;
     m_lastBackoffWindowMs = delay;
     m_reconnectTimer->start(delay);
