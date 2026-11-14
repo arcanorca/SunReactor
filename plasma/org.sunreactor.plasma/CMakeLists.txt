@@ -168,6 +168,31 @@ target_link_libraries(test_dotmatrix PRIVATE
 
 add_test(NAME test_dotmatrix COMMAND test_dotmatrix)
 
+# Pixel glyph layout regression: a daemon-controlled long label must not make
+# elision rescan the whole string once per character.
+add_executable(test_pixelart
+    tests/test_pixelart.cpp
+    plugin/pixelart.cpp
+    plugin/pixelitems.cpp
+    plugin/glyphtables.cpp
+)
+
+target_include_directories(test_pixelart PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin
+)
+
+target_link_libraries(test_pixelart PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::Test
+)
+
+add_test(NAME test_pixelart COMMAND test_pixelart)
+set_tests_properties(test_pixelart PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")
+
 # Theme engine tests: QML TestCase against the plugin in the build tree.
 find_program(QMLTESTRUNNER_EXECUTABLE NAMES qmltestrunner6 qmltestrunner
     HINTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}" /usr/lib/qt6/bin)
