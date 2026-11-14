@@ -108,6 +108,9 @@ Commands:
   discover                  Probe brightness-capable devices locally
   discover --apply          Add viable devices transactionally and reload
   doctor [--json]           Diagnose Linux brightness access and runtime health
+  weather cloud-dimming     Show maximum cloud dimming
+  weather cloud-dimming <percent>
+                            Set maximum cloud dimming (0..=50%)
   test-brightness --monitor-id <id>
                             Execute a controlled, reversible hardware brightness test
   config init               Write the default config template
