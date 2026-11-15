@@ -276,8 +276,10 @@ impl ThemeId {
 impl Config {
     /// Normalize values that remain backward compatible but exceed the
     /// current user-facing control range before validation and runtime use.
-    pub(crate) fn normalize(&mut self) {
+    /// Returns warnings for the config report.
+    pub(crate) fn normalize(&mut self) -> Vec<String> {
         self.weather.normalize();
+        self.daemon.clamp_legacy_operational_values()
     }
 
     /// Strict check of `tui.theme` for `sunreactorctl config validate` and

@@ -37,6 +37,69 @@ impl Config {
     }
 }
 
+impl DaemonConfig {
+    /// Clamps operational values that predate their bounds so configs written
+    /// by older releases keep loading (strict validation would otherwise stop
+    /// the daemon). Returns one warning per clamped field. Structured saves
+    /// still validate without clamping.
+    pub(super) fn clamp_legacy_operational_values(&mut self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        clamp_legacy(
+            &mut warnings,
+            "daemon.desktop_idle_timeout_minutes",
+            &mut self.desktop_idle_timeout_minutes,
+            0,
+            MAX_OPERATIONAL_MINUTES,
+            "minutes",
+        );
+        clamp_legacy(
+            &mut warnings,
+            "daemon.apply_reassert_minutes",
+            &mut self.apply_reassert_minutes,
+            0,
+            MAX_OPERATIONAL_MINUTES,
+            "minutes",
+        );
+        clamp_legacy(
+            &mut warnings,
+            "daemon.ddc_timeout_seconds",
+            &mut self.ddc_timeout_seconds,
+            MIN_BACKEND_TIMEOUT_SECONDS,
+            MAX_BACKEND_TIMEOUT_SECONDS,
+            "seconds",
+        );
+        clamp_legacy(
+            &mut warnings,
+            "daemon.backlight_timeout_seconds",
+            &mut self.backlight_timeout_seconds,
+            MIN_BACKEND_TIMEOUT_SECONDS,
+            MAX_BACKEND_TIMEOUT_SECONDS,
+            "seconds",
+        );
+        warnings
+    }
+}
+
+fn clamp_legacy(
+    warnings: &mut Vec<String>,
+    field: &str,
+    value: &mut u64,
+    min: u64,
+    max: u64,
+    unit: &str,
+) {
+    let clamped = (*value).clamp(min, max);
+    if clamped != *value {
+        let warning = format!(
+            "{field} = {} is outside {min}..={max} {unit}; clamped to {clamped} (update the config file to silence this warning)",
+            *value
+        );
+        tracing::warn!("{warning}");
+        warnings.push(warning);
+        *value = clamped;
+    }
+}
+
 // Each section validator appends to `errors` in a fixed order; the overall
 // order (daemon, location, solar policy, monitors, weather) is part of the
 // user-visible error report.

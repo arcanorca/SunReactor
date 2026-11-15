@@ -477,3 +477,60 @@ fn characterization_validation_error_order_and_messages() {
         Some("weather: enabled weather requires api_key_env or api_key")
     );
 }
+
+/// Configs written before the operational bounds existed must still load:
+/// out-of-range values are clamped with a report warning, and the file on
+/// disk is left untouched.
+#[test]
+fn loads_legacy_out_of_range_operational_values_clamped_with_warnings() {
+    let raw = VALID_CONFIG.replace(
+        "tick_seconds = 60\n",
+        "tick_seconds = 60\ndesktop_idle_timeout_minutes = 5000\napply_reassert_minutes = 2000\nddc_timeout_seconds = 0\nbacklight_timeout_seconds = 120\n",
+    );
+    let path = std::env::temp_dir().join(format!(
+        "sunreactor-config-legacy-bounds-{}.toml",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be valid")
+            .as_nanos()
+    ));
+    fs::write(&path, &raw).expect("fixture config should be writable");
+
+    let report = load_from_path(&path).expect("legacy operational values should load");
+    let daemon = &report.config.daemon;
+    assert_eq!(daemon.desktop_idle_timeout_minutes, 1_440);
+    assert_eq!(daemon.apply_reassert_minutes, 1_440);
+    assert_eq!(daemon.ddc_timeout_seconds, 1);
+    assert_eq!(daemon.backlight_timeout_seconds, 60);
+    for field in [
+        "daemon.desktop_idle_timeout_minutes",
+        "daemon.apply_reassert_minutes",
+        "daemon.ddc_timeout_seconds",
+        "daemon.backlight_timeout_seconds",
+    ] {
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains(field)),
+            "missing clamp warning for {field}: {:?}",
+            report.warnings
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(&path).expect("fixture should remain readable"),
+        raw
+    );
+    fs::remove_file(path).expect("fixture should be removed");
+}
+
+/// Our own structured save path still rejects out-of-range values.
+#[test]
+fn save_rejects_out_of_range_operational_values() {
+    let mut config = super::Config::default();
+    config.daemon.ddc_timeout_seconds = 0;
+    let path = std::env::temp_dir().join("sunreactor-config-never-written.toml");
+    let error = super::save_to_path(&config, &path).expect_err("save must validate strictly");
+    assert!(error.to_string().contains("daemon.ddc_timeout_seconds"));
+    assert!(!path.exists());
+}
