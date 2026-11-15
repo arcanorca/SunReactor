@@ -45,6 +45,24 @@ impl RequestEnvelope {
     }
 }
 
+/// Longest error message carried on the wire. Decode errors echo
+/// attacker-controlled text (e.g. unknown variant names); without a cap a
+/// near-limit request produced an error reply over the frame limit that could
+/// not be written, leaving the client with a silent hang-up.
+const MAX_ERROR_MESSAGE_BYTES: usize = 2048;
+
+fn truncate_error_message(mut message: String) -> String {
+    if message.len() > MAX_ERROR_MESSAGE_BYTES {
+        let mut end = MAX_ERROR_MESSAGE_BYTES;
+        while !message.is_char_boundary(end) {
+            end -= 1;
+        }
+        message.truncate(end);
+        message.push_str("...");
+    }
+    message
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "request", rename_all = "snake_case")]
 pub enum Request {
@@ -197,7 +215,7 @@ impl ResponseEnvelope {
             version: PROTOCOL_VERSION,
             response: Response::Error {
                 code,
-                message: message.into(),
+                message: truncate_error_message(message.into()),
             },
         }
     }

@@ -24,6 +24,8 @@ pub mod ddcutil;
 pub mod discovery;
 #[cfg(target_os = "linux")]
 pub mod doctor;
+#[cfg(target_os = "linux")]
+pub mod doctor_report;
 pub mod ipc;
 pub mod paths;
 pub mod platform;
@@ -108,6 +110,7 @@ Commands:
   discover                  Probe brightness-capable devices locally
   discover --apply          Add viable devices transactionally and reload
   doctor [--json]           Diagnose Linux brightness access and runtime health
+  doctor --report [PATH]    Write a redacted Markdown bug-report bundle (stdout if no PATH)
   weather cloud-dimming     Show maximum cloud dimming
   weather cloud-dimming <percent>
                             Set maximum cloud dimming (0..=50%)

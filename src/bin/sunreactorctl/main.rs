@@ -95,7 +95,11 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
             run_ipc_command(Request::ClearExternalHold { monitor })
         }
         #[cfg(target_os = "linux")]
-        CliCommand::Doctor { json } => run_doctor_command(json),
+        CliCommand::Doctor {
+            report: Some(dest), ..
+        } => run_doctor_report_command(&dest),
+        #[cfg(target_os = "linux")]
+        CliCommand::Doctor { json, report: None } => run_doctor_command(json),
         #[cfg(feature = "tui")]
         CliCommand::Tui => sunreactor::tui::run().map_err(|e| anyhow::anyhow!("{e}")),
     }
@@ -194,6 +198,21 @@ fn run_test_brightness_command(monitor_id: &str, json: bool) -> anyhow::Result<S
     {
         let _ = (monitor_id, json);
         anyhow::bail!("test-brightness is only available on Windows for native external monitors");
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_doctor_report_command(dest: &parse::DoctorReportDest) -> anyhow::Result<String> {
+    use sunreactor::doctor_report::{collect_inputs, render_report, RedactionContext};
+
+    let report = render_report(&collect_inputs(), &RedactionContext::from_environment());
+    match dest {
+        parse::DoctorReportDest::Stdout => Ok(report),
+        parse::DoctorReportDest::File(path) => {
+            std::fs::write(path, &report)
+                .map_err(|error| anyhow::anyhow!("failed to write report to {path}: {error}"))?;
+            Ok(format!("wrote bug report to {path}"))
+        }
     }
 }
 

@@ -66,9 +66,18 @@ pub(crate) enum CliCommand {
     #[cfg(target_os = "linux")]
     Doctor {
         json: bool,
+        report: Option<DoctorReportDest>,
     },
     #[cfg(feature = "tui")]
     Tui,
+}
+
+/// Where `doctor --report` writes its Markdown bundle.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DoctorReportDest {
+    Stdout,
+    File(String),
 }
 
 pub(crate) fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -228,14 +237,31 @@ pub(crate) fn parse_discover_command(args: &[String]) -> anyhow::Result<CliComma
 
 #[cfg(target_os = "linux")]
 pub(crate) fn parse_doctor_command(args: &[String]) -> anyhow::Result<CliCommand> {
+    const USAGE: &str = "usage: sunreactorctl doctor [--json | --report [PATH]]";
     let mut json = false;
-    for arg in args {
+    let mut report = None;
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--json" | "-j" => json = true,
-            _ => anyhow::bail!("usage: sunreactorctl doctor [--json]"),
+            "--report" => {
+                report = Some(match iter.next_if(|next| !next.starts_with('-')) {
+                    Some(path) => DoctorReportDest::File(path.clone()),
+                    None => DoctorReportDest::Stdout,
+                });
+            }
+            other => match other.strip_prefix("--report=") {
+                Some(path) if !path.is_empty() => {
+                    report = Some(DoctorReportDest::File(path.to_owned()));
+                }
+                _ => anyhow::bail!(USAGE),
+            },
         }
     }
-    Ok(CliCommand::Doctor { json })
+    if json && report.is_some() {
+        anyhow::bail!("--json and --report cannot be combined; {USAGE}");
+    }
+    Ok(CliCommand::Doctor { json, report })
 }
 
 pub(crate) fn parse_test_brightness_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -360,6 +386,32 @@ mod tests {
 
     fn parse(args: &[&str]) -> anyhow::Result<CliCommand> {
         parse_command(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_doctor_flags() {
+        use super::DoctorReportDest::{File, Stdout};
+        let doctor = |json, report| CliCommand::Doctor { json, report };
+        assert_eq!(parse(&["doctor"]).unwrap(), doctor(false, None));
+        assert_eq!(parse(&["doctor", "--json"]).unwrap(), doctor(true, None));
+        assert_eq!(
+            parse(&["doctor", "--report"]).unwrap(),
+            doctor(false, Some(Stdout))
+        );
+        assert_eq!(
+            parse(&["doctor", "--report", "out.md"]).unwrap(),
+            doctor(false, Some(File("out.md".into())))
+        );
+        assert_eq!(
+            parse(&["doctor", "--report=/tmp/r.md"]).unwrap(),
+            doctor(false, Some(File("/tmp/r.md".into())))
+        );
+        assert!(parse(&["doctor", "--report", "--json"]).is_err());
+        assert!(parse(&["doctor", "--json", "--report", "x"]).is_err());
+        assert!(parse(&["doctor", "--report="]).is_err());
+        assert!(parse(&["doctor", "--bogus"]).is_err());
+        assert!(parse(&["doctor", "--report", "a", "b"]).is_err());
     }
 
     #[test]
