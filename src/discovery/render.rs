@@ -43,6 +43,7 @@ pub(super) fn importable_monitor_configs(report: &DiscoveryReport) -> Vec<Monito
         .collect()
 }
 
+// Linear, table-like report rendering; splitting would only scatter the layout.
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_human(report: &DiscoveryReport) -> String {
     let backend_rows = vec![
@@ -281,6 +282,7 @@ fn build_notes(
     notes
 }
 
+// Linear TOML snippet emission, one block per candidate kind.
 #[allow(clippy::too_many_lines)]
 fn build_monitor_config_candidates(
     ddc_monitors: &[DdcMonitorDiscovery],

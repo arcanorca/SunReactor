@@ -67,6 +67,8 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
     }
 }
 
+// Left whole on purpose: one sequential ddcutil detect/probe pass whose
+// fallbacks share local state; out of this refactor's listed targets.
 #[allow(clippy::too_many_lines)]
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,

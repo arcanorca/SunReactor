@@ -115,6 +115,7 @@ pub(crate) fn solar_elevation_utc(
 /// `(latitude_deg, longitude_deg)`. It uses exactly the same NOAA terms as
 /// [`solar_elevation_utc`], so a day/night boundary derived from it agrees
 /// with the elevation the policy engine uses.
+// Only the TUI day/night map consumes this; headless builds compile it unused.
 #[cfg_attr(not(feature = "tui"), allow(dead_code))]
 pub(crate) fn subsolar_point_utc(datetime: DateTime<Utc>) -> (f64, f64) {
     let (declination_rad, equation_of_time_minutes) = solar_position_terms(datetime);

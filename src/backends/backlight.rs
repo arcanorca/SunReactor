@@ -1,3 +1,7 @@
+// The sysfs/brightnessctl backend only drives hardware on Linux; Windows
+// builds compile it for shared selector types but never dispatch to it.
+#![cfg_attr(target_os = "windows", allow(dead_code))]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,6 +23,8 @@ const SYSFS_BACKLIGHT_ROOT: &str = "/sys/class/backlight";
 /// physical identity. Logical duplication safety must come from the config
 /// validator: it can only prove two monitored backlight targets are distinct
 /// when both pin an explicit `sysfs_path`, and both pins differ.
+// Not yet wired into config validation; kept with its tests as the only
+// sound backlight disjointness rule (see doc above).
 #[allow(dead_code)]
 pub(crate) fn backlight_selectors_disjoint(
     left: &MonitorSelector,
@@ -46,7 +52,7 @@ pub(crate) fn backlight_selectors_disjoint(
 /// multiple backlight devices exist and has no encoding in the generated
 /// config, so callers cannot detect ambiguous pins.  Discovery always
 /// writes an explicit `sysfs_path`, so real users never lose a panel.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn resolve_backlight_device_name(
     selector: &MonitorSelector,
 ) -> Result<String, BackendError> {
@@ -64,8 +70,7 @@ pub(crate) fn resolve_backlight_device_name(
 ///    kernel/driver topology evidence (`/sys/class/drm/<connector>/ddcci_backlight`),
 ///    never through heuristics.
 /// 4. Anything else (loose serial/model/edid, or nothing) fails closed.
-#[allow(dead_code)]
-#[allow(clippy::unnecessary_lazy_evaluations)]
+#[cfg(test)]
 fn resolve_backlight_device_name_with_diagnostic(
     selector: &MonitorSelector,
 ) -> Result<(String, Option<String>), BackendError> {
@@ -119,7 +124,7 @@ fn resolve_backlight_device_name_with_roots(
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn resolve_device_name(selector: &MonitorSelector) -> Result<String, BackendError> {
     resolve_backlight_device_name(selector)
 }
@@ -323,7 +328,6 @@ pub(crate) fn resolve_explicit_sysfs_path(raw_path: &str) -> Result<String, Back
         })
 }
 
-#[allow(dead_code)]
 pub(crate) fn apply_with_runner<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -405,7 +409,6 @@ pub(crate) fn read_with_runner<R: ProcessRunner>(
     })
 }
 
-#[allow(dead_code)]
 fn apply_with_runner_roots<R: ProcessRunner>(
     runner: &R,
     monitor: &MonitorConfig,
@@ -460,6 +463,8 @@ fn apply_with_runner_roots<R: ProcessRunner>(
 /// Reads `max_brightness` from the device directory and writes the
 /// computed raw value to the `brightness` file. Intended as a fallback
 /// when `brightnessctl` is not installed.
+// Fallback for hosts without brightnessctl; not yet selected by dispatch,
+// exercised by tests.
 #[allow(dead_code)]
 pub(crate) fn apply_sysfs_fallback(
     monitor: &MonitorConfig,
@@ -497,13 +502,12 @@ fn apply_sysfs_fallback_with_roots(
 }
 
 /// Returns the sysfs device directory path for a given backlight device name.
-#[allow(dead_code)]
+#[cfg(test)]
 fn sysfs_device_dir(device_name: &str) -> PathBuf {
     Path::new(SYSFS_BACKLIGHT_ROOT).join(device_name)
 }
 
 /// Reads and parses the `max_brightness` value from sysfs.
-#[allow(dead_code)]
 fn read_max_brightness(device_dir: &Path, _device_name: &str) -> Result<u64, BackendError> {
     let path = device_dir.join("max_brightness");
     let content = fs::read_to_string(&path).map_err(|err| BackendError::Io {
@@ -530,7 +534,6 @@ fn read_max_brightness(device_dir: &Path, _device_name: &str) -> Result<u64, Bac
 }
 
 /// Writes a raw brightness value to the sysfs `brightness` file.
-#[allow(dead_code)]
 fn write_brightness(
     device_dir: &Path,
     _device_name: &str,
@@ -551,7 +554,6 @@ fn write_brightness(
 }
 
 /// Maps std::io::ErrorKind to a human-readable label for sysfs errors.
-#[allow(dead_code)]
 fn classify_io_error(err: &std::io::Error) -> &'static str {
     match err.kind() {
         std::io::ErrorKind::NotFound => "file not found",
