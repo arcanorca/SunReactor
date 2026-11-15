@@ -57,6 +57,8 @@ constexpr int kMaxRequestQueue = 16;
 constexpr int kInitialReconnectBackoffMs = 250;
 constexpr int kMaxReconnectBackoffMs = 8000;
 constexpr qsizetype kMaxDisplayStringLength = 64;
+constexpr qsizetype kMaxRequestIdentifierLength = 1024;
+constexpr int kMaxReadTransportRetries = 1;
 
 QString requestMonitorKey(const QJsonObject &request)
 {
@@ -67,6 +69,11 @@ QString requestMonitorKey(const QJsonObject &request)
 QString displayString(const QJsonValue &value)
 {
     return value.toString().left(kMaxDisplayStringLength);
+}
+
+bool validRequestIdentifier(const QString &id)
+{
+    return !id.isEmpty() && id.size() <= kMaxRequestIdentifierLength;
 }
 
 } // namespace
@@ -424,6 +431,9 @@ void SunReactorClient::setBusy(bool busy)
 
 void SunReactorClient::setConnected(bool connected)
 {
+    if (!connected && (m_isConnected || m_disconnectedAtMs < 0)) {
+        m_disconnectedAtMs = m_elapsed.elapsed();
+    }
     if (m_isConnected == connected) {
         return;
     }
@@ -454,16 +464,24 @@ void SunReactorClient::fail(const QString &message)
 
 void SunReactorClient::pruneStaleMutatingRequests()
 {
-    if (m_isConnected || m_requestQueue.isEmpty()) {
+    if (m_isConnected || m_requestQueue.isEmpty() || m_disconnectedAtMs < 0) {
         return;
     }
     const qint64 now = m_elapsed.elapsed();
+    int dropped = 0;
     for (auto it = m_requestQueue.begin(); it != m_requestQueue.end();) {
-        if (isMutatingRequest(it->object) && now - it->queuedAtMs > m_lastBackoffWindowMs) {
+        if (isMutatingRequest(it->object) && it->queuedAtMs > m_disconnectedAtMs
+            && now - it->queuedAtMs > m_lastBackoffWindowMs) {
             it = m_requestQueue.erase(it);
+            ++dropped;
         } else {
             ++it;
         }
+    }
+    if (dropped > 0) {
+        fail(QStringLiteral("Dropped %1 queued command%2 while offline")
+                 .arg(dropped)
+                 .arg(dropped == 1 ? QString() : QStringLiteral("s")));
     }
 }
 
@@ -513,6 +531,10 @@ void SunReactorClient::setMonitorOverride(const QString &monitorId, int percent,
         setGlobalOverride(percent, durationMinutes);
         return;
     }
+    if (!validRequestIdentifier(id)) {
+        fail(QStringLiteral("Monitor id exceeds the 1 KiB request limit"));
+        return;
+    }
 
     QJsonObject req = request(QStringLiteral("set_override"));
     req[QStringLiteral("monitor_id")] = id;
@@ -526,6 +548,10 @@ void SunReactorClient::setMonitorLimits(const QString &monitorId, int minPct, in
 {
     const QString id = monitorId.trimmed();
     if (id.isEmpty()) {
+        return;
+    }
+    if (!validRequestIdentifier(id)) {
+        fail(QStringLiteral("Monitor id exceeds the 1 KiB request limit"));
         return;
     }
 
@@ -563,6 +589,10 @@ void SunReactorClient::clearMonitorOverride(const QString &monitorId)
     const QString id = monitorId.trimmed();
     if (id.isEmpty()) {
         clearGlobalOverride();
+        return;
+    }
+    if (!validRequestIdentifier(id)) {
+        fail(QStringLiteral("Monitor id exceeds the 1 KiB request limit"));
         return;
     }
 
@@ -715,12 +745,14 @@ void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
     // daemon: the latest value for one monitor is the only useful one.
     if (name == QStringLiteral("set_override") || name == QStringLiteral("set_monitor_limits")) {
         const QString monitor = requestMonitorKey(requestObj);
-        for (QueuedRequest &queued : m_requestQueue) {
+        for (auto it = m_requestQueue.begin(); it != m_requestQueue.end(); ++it) {
+            const QueuedRequest &queued = *it;
             if (queued.object.value(QStringLiteral("request")).toString() == name
                 && requestMonitorKey(queued.object) == monitor) {
-                queued.object = requestObj;
-                queued.queuedAtMs = now;
-                return;
+                // Removing the old edit before appending keeps commands for
+                // the same monitor in the order the user issued them.
+                m_requestQueue.erase(it);
+                break;
             }
         }
     }
@@ -750,7 +782,7 @@ void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
         m_requestQueue.erase(oldest);
     }
 
-    m_requestQueue.enqueue({requestObj, now});
+    m_requestQueue.enqueue({requestObj, now, 0});
 
     if (!m_isBusy && !m_processNextScheduled && !m_reconnectTimer->isActive()
         && m_socket->state() == QLocalSocket::UnconnectedState) {
@@ -766,7 +798,7 @@ void SunReactorClient::prependRequest(const QJsonObject &requestObj)
     if (m_requestQueue.size() >= kMaxRequestQueue) {
         m_requestQueue.removeLast();
     }
-    m_requestQueue.prepend({requestObj, m_elapsed.elapsed()});
+    m_requestQueue.prepend({requestObj, m_elapsed.elapsed(), 0});
 }
 
 void SunReactorClient::processNextRequest()
@@ -787,6 +819,7 @@ void SunReactorClient::processNextRequest()
     const QueuedRequest queued = m_requestQueue.dequeue();
     m_inFlightRequest = queued.object;
     m_inFlightQueuedAtMs = queued.queuedAtMs;
+    m_inFlightAttempts = queued.attempts;
     m_readBuffer.clear();
 
     m_socket->abort();
@@ -1053,12 +1086,34 @@ void SunReactorClient::transportError(const QString &message)
     }
     if (!m_inFlightRequest.isEmpty()) {
         const qint64 now = m_elapsed.elapsed();
-        if (!isMutatingRequest(m_inFlightRequest)
-            || now - m_inFlightQueuedAtMs <= m_lastBackoffWindowMs) {
+        const QString requestName = m_inFlightRequest.value(QStringLiteral("request")).toString();
+        const bool mutating = isMutatingRequest(m_inFlightRequest);
+        bool requeued = false;
+        if (!mutating && m_inFlightAttempts < kMaxReadTransportRetries) {
             if (m_requestQueue.size() >= kMaxRequestQueue) {
                 m_requestQueue.removeLast();
             }
-            m_requestQueue.prepend({m_inFlightRequest, m_inFlightQueuedAtMs});
+            m_requestQueue.prepend({m_inFlightRequest, m_inFlightQueuedAtMs, m_inFlightAttempts + 1});
+            requeued = true;
+        } else if (mutating
+                   && (m_inFlightQueuedAtMs <= m_disconnectedAtMs
+                       || now - m_inFlightQueuedAtMs <= m_lastBackoffWindowMs)) {
+            if (m_requestQueue.size() >= kMaxRequestQueue) {
+                m_requestQueue.removeLast();
+            }
+            m_requestQueue.prepend({m_inFlightRequest, m_inFlightQueuedAtMs, m_inFlightAttempts});
+            requeued = true;
+        }
+        if (!requeued) {
+            // Keep the original transport error in lastError, but make a
+            // capped read retry or a stale command visible to the UI too.
+            const QString droppedMessage = QStringLiteral("Dropped %1 request after transport failure")
+                .arg(requestName.isEmpty() ? QStringLiteral("unknown") : requestName);
+            if (message.isEmpty()) {
+                fail(droppedMessage);
+            } else {
+                Q_EMIT errorOccurred(droppedMessage);
+            }
         }
     }
     setBusy(false);
@@ -1290,8 +1345,10 @@ void SunReactorClient::parseDayCurve(const QJsonObject &curve)
     QVariantList monitorList;
     for (const QJsonValue &entry : monitors) {
         const QJsonObject monitor = entry.toObject();
-        const QString id = displayString(monitor.value(QStringLiteral("monitor_id")));
-        if (id.isEmpty()) {
+        // Monitor ids are machine keys: preserve them for QML lookups and
+        // reject only values too large to send back in a bounded request.
+        const QString id = monitor.value(QStringLiteral("monitor_id")).toString();
+        if (!validRequestIdentifier(id)) {
             continue;
         }
         QVariantList samples;
@@ -1434,7 +1491,13 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         const bool unreachable = backoffUntil > m_nowEpochS;
 
         QVariantMap map;
-        map[QStringLiteral("logicalId")] = displayString(monitor.value(QStringLiteral("logical_id")));
+        // QML sends this value back to the daemon, so it must not use the
+        // display-only 64-character bound applied to descriptive strings.
+        const QString logicalId = monitor.value(QStringLiteral("logical_id")).toString();
+        if (!validRequestIdentifier(logicalId)) {
+            continue;
+        }
+        map[QStringLiteral("logicalId")] = logicalId;
         map[QStringLiteral("backend")] = displayString(monitor.value(QStringLiteral("backend")));
         map[QStringLiteral("topology")] = displayString(monitor.value(QStringLiteral("topology")));
         map[QStringLiteral("enabled")] = enabled;

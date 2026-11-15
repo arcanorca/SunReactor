@@ -51,6 +51,10 @@ private Q_SLOTS:
     void testValidResponseAdvancesWithoutDisconnect();
     void testOneMiBUnframedInputRecovers();
     void testOfflineQueueBackoffAndCoalescing();
+    void testCoalescingPreservesIntentOrder();
+    void testConnectedMutationsSurviveTimeout();
+    void testReadRetryIsBoundedAndQueueAdvances();
+    void testLongMonitorIdsRemainAddressable();
     void testErrorResponseMarksConnected();
     void testIdenticalStatusOnlyEmitsMonitorsOnce();
     void testCommandSequencing();
@@ -741,6 +745,169 @@ void TestSunReactorClient::testOfflineQueueBackoffAndCoalescing()
     QVERIFY(sawWall);
     QTRY_VERIFY_WITH_TIMEOUT(client.m_reconnectBackoffMs > 250, 5000);
     QVERIFY(client.m_requestQueue.size() <= 16);
+}
+
+void TestSunReactorClient::testCoalescingPreservesIntentOrder()
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket]() { socket->readAll(); });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isBusy(), 1000);
+
+    client.setMonitorOverride(QStringLiteral("desk"), 40, 30);
+    client.clearMonitorOverride(QStringLiteral("desk"));
+    client.setMonitorOverride(QStringLiteral("desk"), 60, 30);
+
+    QCOMPARE(client.m_requestQueue.size(), 2);
+    QCOMPARE(client.m_requestQueue.at(0).object.value(QStringLiteral("request")).toString(),
+             QStringLiteral("clear_override"));
+    QCOMPARE(client.m_requestQueue.at(1).object.value(QStringLiteral("request")).toString(),
+             QStringLiteral("set_override"));
+    QCOMPARE(client.m_requestQueue.at(1).object.value(QStringLiteral("percent")).toInt(), 60);
+}
+
+void TestSunReactorClient::testConnectedMutationsSurviveTimeout()
+{
+    int commandAttempts = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &commandAttempts]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        auto buffer = std::make_shared<QByteArray>();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, buffer, &commandAttempts]() {
+            buffer->append(socket->readAll());
+            const int newline = buffer->indexOf('\n');
+            if (newline < 0) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(newline)).object();
+            m_received.append(request);
+            const QString name = request.value(QStringLiteral("request")).toString();
+            if (name == QStringLiteral("set_override")) {
+                ++commandAttempts;
+                if (commandAttempts == 1) {
+                    return; // The watchdog must requeue this command.
+                }
+            }
+
+            const QJsonObject response = name == QStringLiteral("status")
+                ? statusResponse(QJsonObject{})
+                : envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+            socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+            socket->disconnectFromServer();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    client.setMonitorOverride(QStringLiteral("desk"), 42, 30);
+
+    QTRY_VERIFY_WITH_TIMEOUT(commandAttempts >= 2, 8000);
+    QVERIFY(client.isConnected());
+}
+
+void TestSunReactorClient::testReadRetryIsBoundedAndQueueAdvances()
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        auto buffer = std::make_shared<QByteArray>();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, buffer]() {
+            buffer->append(socket->readAll());
+            const int newline = buffer->indexOf('\n');
+            if (newline < 0) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(newline)).object();
+            m_received.append(request);
+            if (request.value(QStringLiteral("request")).toString() == QStringLiteral("day_curve")) {
+                socket->write(QByteArray(65 * 1024 + 1, 'X'));
+            } else {
+                socket->write(QJsonDocument(statusResponse(QJsonObject{})).toJson(QJsonDocument::Compact) + '\n');
+            }
+            socket->flush();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    client.refreshDayCurve();
+
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("day_curve")), 2, 7000);
+    QTest::qWait(1200);
+    QCOMPARE(countRequests(QStringLiteral("day_curve")), 2);
+
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QVERIFY(countRequests(QStringLiteral("status")) >= 2);
+}
+
+void TestSunReactorClient::testLongMonitorIdsRemainAddressable()
+{
+    const QString logicalId = QStringLiteral("monitor-") + QString(80, QLatin1Char('x'));
+    QJsonObject monitor{{QStringLiteral("logical_id"), logicalId},
+                        {QStringLiteral("enabled"), true},
+                        {QStringLiteral("last_applied_percent"), 50}};
+
+    connect(m_server, &QLocalServer::newConnection, this, [this, monitor, logicalId]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        auto buffer = std::make_shared<QByteArray>();
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, buffer, monitor, logicalId]() {
+            buffer->append(socket->readAll());
+            const int newline = buffer->indexOf('\n');
+            if (newline < 0) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(newline)).object();
+            m_received.append(request);
+            const QString name = request.value(QStringLiteral("request")).toString();
+            if (name == QStringLiteral("day_curve")) {
+                const QJsonObject curve{{QStringLiteral("monitors"),
+                                         QJsonArray{QJsonObject{{QStringLiteral("monitor_id"), logicalId}}}}};
+                const QJsonObject response = envelope(QStringLiteral("day_curve"),
+                                                       {{QStringLiteral("day_curve"), curve}});
+                socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+            } else if (name == QStringLiteral("status")) {
+                socket->write(QJsonDocument(statusResponse(
+                    {{QStringLiteral("monitors"), QJsonArray{monitor}}})).toJson(QJsonDocument::Compact) + '\n');
+            } else {
+                const QJsonObject response = envelope(QStringLiteral("ack"),
+                                                       {{QStringLiteral("message"), QStringLiteral("ok")}});
+                socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+            }
+            socket->flush();
+            socket->disconnectFromServer();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    const QVariantList monitors = client.monitors();
+    QCOMPARE(monitors.size(), 1);
+    QCOMPARE(monitors.first().toMap().value(QStringLiteral("logicalId")).toString(), logicalId);
+
+    client.setMonitorOverride(monitors.first().toMap().value(QStringLiteral("logicalId")).toString(), 42, 30);
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("set_override")), 1, 2000);
+    for (const QJsonObject &request : std::as_const(m_received)) {
+        if (request.value(QStringLiteral("request")).toString() == QStringLiteral("set_override")) {
+            QCOMPARE(request.value(QStringLiteral("monitor_id")).toString(), logicalId);
+            break;
+        }
+    }
+
+    QSignalSpy errorSpy(&client, &SunReactorClient::errorOccurred);
+    const QString malformedId(1025, QLatin1Char('m'));
+    client.setMonitorOverride(malformedId, 42, 30);
+    QTRY_COMPARE_WITH_TIMEOUT(errorSpy.count(), 1, 500);
+    QCOMPARE(countRequests(QStringLiteral("set_override")), 1);
+
+    client.refreshDayCurve();
+    QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("day_curve")), 1, 2000);
+    QCOMPARE(client.dayCurve().value(QStringLiteral("monitors")).toList().first().toMap()
+                 .value(QStringLiteral("monitorId"))
+                 .toString(),
+             logicalId);
 }
 
 void TestSunReactorClient::testErrorResponseMarksConnected()
