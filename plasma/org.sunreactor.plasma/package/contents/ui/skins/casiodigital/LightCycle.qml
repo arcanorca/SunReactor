@@ -18,7 +18,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "Casio.js" as Casio
 
 Item {
@@ -44,8 +44,8 @@ Item {
     readonly property real t0: samples.length > 0 ? samples[0].t : 0
     readonly property real t1: samples.length > 0 ? samples[samples.length - 1].t : 1
     readonly property real now: client.nowEpochS
-    readonly property real targetNow: current ? Curve.valueAt(samples, now, "pct") : -1
-    readonly property real appliedNow: appliedFor(current ? current.monitorId : "")
+    readonly property real targetNow: current ? DayCurve.valueAt(samples, now, "pct") : -1
+    readonly property real appliedNow: DayCurve.appliedFor(root.client.monitors, current ? current.monitorId : "")
     readonly property var clock: Casio.clockParts(Format.timeText(now))
 
     readonly property int slots: 30
@@ -54,7 +54,7 @@ Item {
         const out = [];
         const span = Math.max(1, t1 - t0);
         for (let i = 0; i < slots; ++i) {
-            const v = Curve.valueAt(samples, t0 + (i + 0.5) * span / slots, "pct");
+            const v = DayCurve.valueAt(samples, t0 + (i + 0.5) * span / slots, "pct");
             out.push(v < 0 ? -1 : v);
         }
         return out;
@@ -62,15 +62,6 @@ Item {
     /*! The slot of now, or -1 outside the day. */
     readonly property int nowSlot: now >= t0 && now <= t1 && t1 > t0
         ? Math.min(slots - 1, Math.floor((now - t0) / (t1 - t0) * slots)) : -1
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
 
     implicitWidth: bezel.implicitWidth
     implicitHeight: bezel.implicitHeight
@@ -101,7 +92,7 @@ Item {
                     id: flag
 
                     style: root.style
-                    text: Curve.shortName(chip.modelData.monitorId)
+                    text: DayCurve.shortName(chip.modelData.monitorId)
                     lit: root.selected === chip.index
                 }
                 MouseArea {

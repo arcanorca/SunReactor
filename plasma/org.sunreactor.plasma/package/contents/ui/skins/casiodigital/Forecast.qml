@@ -15,6 +15,7 @@ import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
 import "Casio.js" as Casio
+import "../../modules/ForecastRules.js" as ForecastRules
 
 Item {
     id: root
@@ -29,18 +30,7 @@ Item {
     readonly property string domain: settings.domain
     property int slots: 5
 
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === slots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
 
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
