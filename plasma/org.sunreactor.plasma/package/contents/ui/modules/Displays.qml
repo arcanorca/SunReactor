@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 
 import "../engine"
 import "../components"
+import "Monitors.js" as Monitors
 
 ColumnLayout {
     id: root
@@ -55,8 +56,7 @@ ColumnLayout {
 
             required property var modelData
 
-            readonly property bool unavailable: modelData.unreachable
-                || modelData.topology === "temporarily_unavailable"
+            readonly property bool unavailable: Monitors.unavailable(modelData)
 
             theme: root.theme
             text: modelData.logicalId

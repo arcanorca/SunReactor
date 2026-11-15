@@ -26,6 +26,7 @@ import org.sunreactor.plasma
 
 import "../engine"
 import "../Format.js" as Format
+import "DayCurve.js" as DayCurve
 
 ColumnLayout {
     id: root
@@ -49,34 +50,9 @@ ColumnLayout {
     readonly property real t1: available ? curves[0].samples[curves[0].samples.length - 1].t : 1
     readonly property real now: client.nowEpochS
 
-    /*! Linear interpolation of a sample field at time t; -1 outside the day. */
-    function valueAt(samples, t, field) {
-        if (!samples || samples.length === 0 || t < samples[0].t || t > samples[samples.length - 1].t) {
-            return -1;
-        }
-        for (let i = 1; i < samples.length; ++i) {
-            const b = samples[i];
-            if (b.t >= t) {
-                const a = samples[i - 1];
-                const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-                return a[field] + (b[field] - a[field]) * f;
-            }
-        }
-        return samples[samples.length - 1][field];
-    }
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
-
-    readonly property real targetNow: current ? valueAt(current.samples, now, "pct") : -1
+    readonly property real targetNow: current ? DayCurve.valueAt(current.samples, now, "pct") : -1
     readonly property real costNow: current
-        ? valueAt(current.samples, now, "pctNoWeather") - valueAt(current.samples, now, "pct") : 0
+        ? DayCurve.valueAt(current.samples, now, "pctNoWeather") - DayCurve.valueAt(current.samples, now, "pct") : 0
 
     spacing: root.theme.spacing
 
@@ -136,7 +112,7 @@ ColumnLayout {
             elide: Text.ElideRight
             text: {
                 if (scrub.active && root.current) {
-                    const pct = root.valueAt(root.current.samples, scrub.time, "pct");
+                    const pct = DayCurve.valueAt(root.current.samples, scrub.time, "pct");
                     return i18ndc(root.domain, "Time of day, then the brightness the curve targets then",
                                   "%1 · %2%", Format.timeText(scrub.time), Math.round(pct));
                 }
@@ -267,7 +243,7 @@ ColumnLayout {
         }
 
         Rectangle {
-            readonly property real applied: root.current ? root.appliedFor(root.current.monitorId) : -1
+            readonly property real applied: root.current ? DayCurve.appliedFor(root.client.monitors, root.current.monitorId) : -1
             visible: !root.showAll && applied >= 0 && root.now >= root.t0 && root.now <= root.t1
             width: root.theme.spacing * 3
             height: width

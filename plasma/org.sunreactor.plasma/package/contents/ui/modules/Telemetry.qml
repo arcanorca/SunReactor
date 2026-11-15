@@ -14,6 +14,8 @@ import org.sunreactor.plasma
 
 import "../engine"
 import "../Format.js" as Format
+import "DayCurve.js" as DayCurve
+import "../components"
 
 Item {
     id: root
@@ -25,24 +27,10 @@ Item {
     readonly property string domain: settings.domain
     readonly property bool available: client.isConnected
 
-    readonly property string stateText: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return i18ndc(domain, "Daemon state in the status line", "OFFLINE");
-        case SunReactorClient.Paused:
-            return i18ndc(domain, "Daemon state in the status line", "PAUSED");
-        case SunReactorClient.Manual:
-            return i18ndc(domain, "Daemon state in the status line", "MANUAL");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Daemon state in the status line", "IDLE");
-        default:
-            return i18ndc(domain, "Daemon state in the status line", "LIVE");
-        }
-    }
+    readonly property string stateText: stateWords.label(client.mode)
 
-    function shortName(logicalId) {
-        const head = String(logicalId).split(/[-_ .]/)[0] || String(logicalId);
-        return head.slice(0, 4).toUpperCase();
+    StateText {
+        id: stateWords
     }
 
     readonly property string lineText: {
@@ -50,9 +38,9 @@ Item {
         for (const monitor of client.monitors) {
             parts.push(monitor.appliedPercent >= 0
                 ? i18ndc(domain, "Short display name, then its applied brightness", "%1 %2%",
-                         shortName(monitor.logicalId), monitor.appliedPercent)
+                         DayCurve.shortName(monitor.logicalId), monitor.appliedPercent)
                 : i18ndc(domain, "Short display name whose brightness is unknown", "%1 —",
-                         shortName(monitor.logicalId)));
+                         DayCurve.shortName(monitor.logicalId)));
         }
         if (client.hasTemperature) {
             parts.push(i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°C",
