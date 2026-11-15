@@ -14,6 +14,7 @@ import "../../engine"
 import "../../modules"
 import "../../components/weathericons"
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 Item {
     id: root
@@ -27,18 +28,7 @@ Item {
     }
     readonly property string domain: settings.domain
     readonly property int maxSlots: 5
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === maxSlots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, maxSlots)
     readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
 
     /*! What the daemon's bounded weather multiplier does to the targets, in words. */

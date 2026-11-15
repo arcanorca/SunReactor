@@ -14,7 +14,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "../../Format.js" as Format
 
 Item {
@@ -40,11 +40,11 @@ Item {
     readonly property real now: client.nowEpochS
     readonly property real t0: available ? curves[0].samples[0].t : 0
     readonly property real t1: available ? curves[0].samples[curves[0].samples.length - 1].t : 1
-    readonly property real targetNow: samples.length > 1 ? Curve.valueAt(samples, now, "pct") : -1
+    readonly property real targetNow: samples.length > 1 ? DayCurve.valueAt(samples, now, "pct") : -1
     property real scrubTime: -1
     readonly property bool scrubbing: scrubTime >= 0 && samples.length > 1
-    readonly property real heroValue: scrubbing ? Curve.valueAt(samples, scrubTime, "pct") : targetNow
-    readonly property int applied: current && !showAll ? appliedFor(current.monitorId) : -1
+    readonly property real heroValue: scrubbing ? DayCurve.valueAt(samples, scrubTime, "pct") : targetNow
+    readonly property int applied: current && !showAll ? DayCurve.appliedFor(root.client.monitors, current.monitorId) : -1
     readonly property string title: showAll
         ? i18ndc(domain, "Show the curves of every display", "All")
         : (current ? String(current.monitorId) : "")
@@ -74,15 +74,6 @@ Item {
         ? Math.max(plotX0, Math.min(plotX1, xAt(sun.sunrise))) : plotX0
     readonly property real setX: samples.length > 1 && sun.sunset > 0
         ? Math.max(plotX0, Math.min(plotX1, xAt(sun.sunset))) : plotX1
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
 
     function xAt(t) {
         return plotX0 + (t - t0) / Math.max(1, t1 - t0) * (plotX1 - plotX0);
