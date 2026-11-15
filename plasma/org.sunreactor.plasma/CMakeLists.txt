@@ -23,7 +23,19 @@ qt_policy(SET QTP0001 NEW)
 
 # Plasma 6 package
 if (Plasma_FOUND)
-    plasma_install_package(package org.sunreactor.plasma)
+    # Keep design briefs and skin brand notes in the source tree only.  The
+    # package installer otherwise copies every file below package verbatim.
+    install(
+        DIRECTORY package/
+        DESTINATION ${KDE_INSTALL_DATADIR}/plasma/plasmoids/org.sunreactor.plasma
+        PATTERN ".svn" EXCLUDE
+        PATTERN "*.qmlc" EXCLUDE
+        PATTERN "CMakeLists.txt" EXCLUDE
+        PATTERN "Messages.sh" EXCLUDE
+        PATTERN "dummydata" EXCLUDE
+        PATTERN "*.md" EXCLUDE
+        PATTERN "*.MD" EXCLUDE
+    )
 else()
     message(WARNING "Plasma not found: the plasmoid package will not be installed")
 endif()
@@ -88,11 +100,6 @@ if (TARGET sunreactorpluginplugin)
         INSTALL_RPATH "$ORIGIN;${CMAKE_INSTALL_PREFIX}/lib;${CMAKE_INSTALL_PREFIX}/lib/qt6/qml/org/sunreactor/plasma"
     )
 endif()
-
-install(
-    TARGETS sunreactorplugin
-    DESTINATION ${KDE_INSTALL_LIBDIR}
-)
 
 install(
     TARGETS sunreactorplugin sunreactorpluginplugin
