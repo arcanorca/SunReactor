@@ -384,7 +384,8 @@ mod tests {
             .spawn()
             .expect("child should spawn");
 
-        for _ in 0..50 {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
             if child_exited_without_reaping(&child).expect("waitid should work") {
                 let status = child.wait().expect("final wait should reap child");
                 assert_eq!(status.code(), Some(23));
@@ -417,7 +418,8 @@ mod tests {
             .expect("pid should be recorded")
             .parse()
             .expect("pid should be numeric");
-        for _ in 0..50 {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
             if !process_exists(pid) {
                 return;
             }
@@ -473,7 +475,8 @@ mod tests {
             .expect("descendant pid should be recorded")
             .parse()
             .expect("descendant pid should be numeric");
-        for _ in 0..50 {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
             if !std::path::Path::new("/proc").join(pid.to_string()).exists() {
                 return;
             }

@@ -529,7 +529,8 @@ fn loads_legacy_out_of_range_operational_values_clamped_with_warnings() {
 fn save_rejects_out_of_range_operational_values() {
     let mut config = super::Config::default();
     config.daemon.ddc_timeout_seconds = 0;
-    let path = std::env::temp_dir().join("sunreactor-config-never-written.toml");
+    let temp = tempfile::tempdir().expect("test temp dir should be created");
+    let path = temp.path().join("config.toml");
     let error = super::save_to_path(&config, &path).expect_err("save must validate strictly");
     assert!(error.to_string().contains("daemon.ddc_timeout_seconds"));
     assert!(!path.exists());

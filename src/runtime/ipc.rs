@@ -676,15 +676,21 @@ impl DaemonRuntime {
                         return IpcOutcome::default();
                     }
                 }
-                tracing::error!(error = %error, "ipc_read_failed");
-                let _ = ipc::write_response(
+                tracing::error!(target = %target, error = %error, "ipc_read_failed");
+                if let Err(write_error) = ipc::write_response(
                     &mut stream,
                     &ipc::ResponseEnvelope::error(
                         ipc::ErrorCode::InvalidRequest,
                         error.to_string(),
                     ),
                     &target,
-                );
+                ) {
+                    tracing::debug!(
+                        target = %target,
+                        error = %write_error,
+                        "ipc_error_response_write_failed"
+                    );
+                }
                 return IpcOutcome::default();
             }
         };
@@ -693,7 +699,11 @@ impl DaemonRuntime {
             Ok(request) => request,
             Err(response) => {
                 if let Err(error) = ipc::write_response(&mut stream, response.as_ref(), &target) {
-                    tracing::error!(error = %error, "ipc_write_failed");
+                    tracing::debug!(
+                        target = %target,
+                        error = %error,
+                        "ipc_validation_response_write_failed"
+                    );
                 }
                 return IpcOutcome::default();
             }
@@ -709,7 +719,8 @@ impl DaemonRuntime {
         };
 
         if let Err(error) = ipc::write_response(&mut stream, &response, &target) {
-            tracing::error!(
+            tracing::warn!(
+                target = %target,
                 request = %request_name,
                 response = %response_kind,
                 error = %error,

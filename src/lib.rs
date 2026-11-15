@@ -49,7 +49,15 @@ pub const SYSTEMD_USER_UNIT: &str = "sunreactord.service";
 
 #[must_use]
 pub fn version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+    env!("SUNREACTOR_VERSION")
+}
+
+#[cfg(test)]
+fn format_version(package_version: &str, git_hash: Option<&str>) -> String {
+    match git_hash.filter(|hash| !hash.is_empty()) {
+        Some(hash) => format!("{package_version} ({hash})"),
+        None => package_version.to_owned(),
+    }
 }
 
 #[must_use]
@@ -145,4 +153,23 @@ Themes:
         socket = paths::SOCKET_PATH_TEMPLATE,
         themes = paths::THEMES_DIR,
     )
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::format_version;
+
+    #[test]
+    fn version_without_git_hash_is_the_package_version() {
+        assert_eq!(format_version("0.13.0", None), "0.13.0");
+        assert_eq!(format_version("0.13.0", Some("")), "0.13.0");
+    }
+
+    #[test]
+    fn version_with_git_hash_includes_the_build_identity() {
+        assert_eq!(
+            format_version("0.13.0", Some("458415287a49-dirty")),
+            "0.13.0 (458415287a49-dirty)"
+        );
+    }
 }

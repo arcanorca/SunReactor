@@ -2,6 +2,7 @@
 name = "sunreactor"
 version = "0.13.0"
 edition = "2021"
+build = "build.rs"
 description = "sunreactor daemon and CLI for adaptive brightness control"
 license = "GPL-3.0-or-later"
 
