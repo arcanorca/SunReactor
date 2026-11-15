@@ -87,6 +87,11 @@ Item {
     readonly property color textGhost: Qt.rgba(panelText.r, panelText.g, panelText.b, 0.055)
     /*! Nothing: the dot pitch of a panel graphic (twelve dots across the graphic box, a whole device pixel each). */
     readonly property real dotPitch: Math.max(3, Math.floor(graphicSize * dpr / 12)) / dpr
+    /*! Nothing's dotted graphics (the dot branches of Readout, Ring and Sparkline). Off, as they
+        have always been in effect: `view.dotted` named a property this view did not have, so
+        the generic marks were drawn. Set it to `theme.themeId === "nothing"` to switch them on
+        (PanelLabels already does that for its own figures). */
+    readonly property bool dotted: false
     /*! Pixel tiles: the palette colour that reads best on the theme bg. */
     readonly property color tileInk: PanelData.bestOn([theme.fg, theme.accent, theme.secondaryAccent], theme.bg)
     readonly property color tileState: {

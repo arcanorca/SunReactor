@@ -191,8 +191,8 @@ Rectangle {
                 id: dial
 
                 Layout.alignment: Qt.AlignVCenter
-                width: ring.implicitWidth
-                height: ring.implicitHeight
+                implicitWidth: ring.implicitWidth
+                implicitHeight: ring.implicitHeight
 
                 // The dotted gauge: the lit arc is the target, the red head is the one signal.
                 DotRing {
