@@ -2518,6 +2518,10 @@ mod tests {
         assert_eq!(run_once.writes_attempted, 0);
         assert_eq!(run_once.writes_skipped, 0);
         assert_eq!(run_once.writes_succeeded, 0);
+        assert!(
+            run_once.queued,
+            "deferred apply must not look like real stats"
+        );
     }
 
     #[test]

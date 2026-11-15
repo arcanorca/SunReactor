@@ -814,6 +814,9 @@ fn render_ipc_response(response: ipc::ResponseEnvelope) -> anyhow::Result<String
     match response.response {
         Response::Pong { message } | Response::Ack { message } => Ok(message),
         Response::Status { status } => Ok(render_status(&status)),
+        Response::RunOnce { run_once, message } if run_once.queued => {
+            Ok(format!("{message}\nqueued — apply runs in background"))
+        }
         Response::RunOnce { run_once, message } => Ok([
             message,
             format!("tick_duration_ms: {}", run_once.tick_duration_ms),
@@ -1080,12 +1083,12 @@ fn optional_u64(value: Option<u64>) -> String {
 mod tests {
     use sunreactor::{
         backends::BackendKind,
-        ipc::{MonitorStatus, StatusResponse, WeatherStatus},
+        ipc::{self, MonitorStatus, StatusResponse, WeatherStatus},
     };
 
     use super::{
-        parse_command, render_status, render_theme, set_theme_at, CliCommand, OverrideTarget,
-        ThemeCommand, WeatherCommand,
+        parse_command, render_ipc_response, render_status, render_theme, set_theme_at, CliCommand,
+        OverrideTarget, ThemeCommand, WeatherCommand,
     };
 
     fn parse(args: &[&str]) -> anyhow::Result<CliCommand> {
@@ -1249,6 +1252,26 @@ mod tests {
             CliCommand::Suspend { minutes } => assert_eq!(minutes, Some(15)),
             _ => panic!("expected suspend command"),
         }
+    }
+
+    #[test]
+    fn queued_run_once_response_does_not_print_fake_counters() {
+        let rendered = render_ipc_response(ipc::ResponseEnvelope::run_once(
+            ipc::RunOnceResponse {
+                tick_duration_ms: 0,
+                monitors_evaluated: 0,
+                writes_attempted: 0,
+                writes_skipped: 0,
+                writes_succeeded: 0,
+                writes_failed: 0,
+                queued: true,
+            },
+            "daemon tick queued",
+        ))
+        .expect("queued run-once should render");
+        assert!(rendered.contains("queued — apply runs in background"));
+        assert!(!rendered.contains("writes_"));
+        assert!(!rendered.contains("tick_duration_ms"));
     }
 
     #[test]

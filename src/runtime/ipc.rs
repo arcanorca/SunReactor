@@ -658,6 +658,7 @@ fn queued_run_once_response() -> ipc::RunOnceResponse {
         writes_skipped: 0,
         writes_succeeded: 0,
         writes_failed: 0,
+        queued: true,
     }
 }
 
