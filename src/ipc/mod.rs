@@ -1,3 +1,5 @@
+#[cfg(all(test, target_os = "linux"))]
+mod fuzz_tests;
 pub mod protocol;
 #[cfg(target_os = "linux")]
 pub mod socket;
