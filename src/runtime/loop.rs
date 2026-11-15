@@ -327,7 +327,6 @@ impl DaemonRuntime {
     /// This function handles IPC requests, idle state transitions, and
     /// applies hardware brightness targets asynchronously until
     /// `shutdown_requested` returns true.
-    #[allow(clippy::too_many_lines)]
     pub fn run_loop<F>(&mut self, mut shutdown_requested: F) -> Result<(), RuntimeError>
     where
         F: FnMut() -> bool,
@@ -343,23 +342,7 @@ impl DaemonRuntime {
         let mut cadence = LoopCadence::new(self.config.daemon.tick_seconds);
         self.display_events = Some(DisplayEventSources::spawn());
 
-        tracing::info!(
-            mode = "daemon",
-            tick_seconds = %self.config.daemon.tick_seconds,
-            desktop_idle_sync = %desktop_idle_sync,
-            startup = %self.startup_message(),
-            "startup"
-        );
-
-        if self.config.location.latitude == 0.0
-            && self.config.location.longitude == 0.0
-            && self.config.location.timezone_name == "UTC"
-        {
-            tracing::warn!(
-                "using default equatorial location (0.0, 0.0, UTC) — \
-                 set your coordinates in config.toml or via the TUI for accurate brightness"
-            );
-        }
+        self.log_startup(desktop_idle_sync);
 
         let mut apply_after_drain = false;
         while !shutdown_requested() {
@@ -385,14 +368,7 @@ impl DaemonRuntime {
             }
 
             let now_utc = Utc::now();
-            let pending_event = self
-                .display_events
-                .as_ref()
-                .and_then(DisplayEventSources::drain);
-            if let Some(request) = pending_event {
-                tracing::info!(reason = ?request.reason, "display_recovery_requested");
-                self.handle_display_event(request.reason);
-            }
+            self.handle_pending_display_event();
             #[cfg(target_os = "linux")]
             desktop_idle.maintain_watcher(&self.socket.path);
             #[cfg(not(target_os = "linux"))]
@@ -411,13 +387,7 @@ impl DaemonRuntime {
                 continue;
             }
 
-            let next_deadline = [
-                desktop_idle.next_deadline(),
-                self.probe_schedule.next_deadline(),
-            ]
-            .into_iter()
-            .flatten()
-            .min();
+            let next_deadline = self.next_wake_deadline(&desktop_idle);
             let action = cadence.next_action(next_deadline, self.fade_engine.is_fading());
             // Phase 9 uses periodic observation only. Refresh immediately
             // before scheduled ticks, not on every idle loop iteration.
@@ -461,6 +431,47 @@ impl DaemonRuntime {
 
         tracing::info!(mode = "daemon", reason = "signal", "shutdown");
         Ok(())
+    }
+
+    fn log_startup(&self, desktop_idle_sync: bool) {
+        tracing::info!(
+            mode = "daemon",
+            tick_seconds = %self.config.daemon.tick_seconds,
+            desktop_idle_sync = %desktop_idle_sync,
+            startup = %self.startup_message(),
+            "startup"
+        );
+
+        if self.config.location.latitude == 0.0
+            && self.config.location.longitude == 0.0
+            && self.config.location.timezone_name == "UTC"
+        {
+            tracing::warn!(
+                "using default equatorial location (0.0, 0.0, UTC) — \
+             set your coordinates in config.toml or via the TUI for accurate brightness"
+            );
+        }
+    }
+
+    fn handle_pending_display_event(&mut self) {
+        let pending_event = self
+            .display_events
+            .as_ref()
+            .and_then(DisplayEventSources::drain);
+        if let Some(request) = pending_event {
+            tracing::info!(reason = ?request.reason, "display_recovery_requested");
+            self.handle_display_event(request.reason);
+        }
+    }
+
+    fn next_wake_deadline(&self, desktop_idle: &DesktopIdleSync) -> Option<Instant> {
+        [
+            desktop_idle.next_deadline(),
+            self.probe_schedule.next_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 }
 
