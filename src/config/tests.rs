@@ -360,3 +360,120 @@ fn tui_effects_defaults_and_round_trips() {
     let with_invalid = format!("{VALID_CONFIG}\n[tui]\neffects = \"unknown_motion\"\n");
     assert!(parse_str(&with_invalid, Path::new("invalid.toml")).is_err());
 }
+
+fn config_invalid_in_every_section() -> super::Config {
+    use super::{MonitorConfig, MonitorMilestoneAdjustment};
+    use crate::backends::BackendKind;
+
+    let mut config = super::Config::default();
+    config.daemon.tick_seconds = 1;
+    config.daemon.probe_seconds = 1;
+    config.daemon.desktop_idle_timeout_minutes = 1_441;
+    config.daemon.apply_reassert_minutes = 1_441;
+    config.daemon.external_change_hold_minutes = 1_441;
+    config.daemon.ddc_timeout_seconds = 0;
+    config.daemon.backlight_timeout_seconds = 61;
+    config.location.latitude = 91.0;
+    config.location.longitude = -181.0;
+    config.location.timezone = String::from("Nope/Zone");
+    config.solar_policy.max_step_pct_per_tick = 0;
+    config.solar_policy.min_write_delta_pct = 101;
+    config.solar_policy.twilight_elevation_start = 30.0;
+    config.solar_policy.day_elevation_full = 10.0;
+
+    let mut broken = MonitorConfig {
+        logical_id: String::from("  "),
+        transition_gamma: f64::NAN,
+        min_pct: 110,
+        max_pct: 105,
+        gain: 5.0,
+        ..MonitorConfig::default()
+    };
+    broken.milestone_adjustments = vec![
+        MonitorMilestoneAdjustment::default(),
+        MonitorMilestoneAdjustment {
+            minutes_offset: 800,
+            ..MonitorMilestoneAdjustment::default()
+        },
+    ];
+    let ddc = |id: &str, address: Option<u16>| {
+        let mut monitor = MonitorConfig {
+            logical_id: id.to_owned(),
+            backend: BackendKind::Ddc,
+            ..MonitorConfig::default()
+        };
+        monitor.selector.ddc_bus = Some(3);
+        monitor.selector.ddc_address = address;
+        monitor
+    };
+    config.monitors = vec![
+        broken,
+        ddc("dup", Some(200)),
+        ddc("dup", None),
+        ddc("other", None),
+    ];
+    config.weather.enabled = true;
+    config.weather.provider = None;
+    config.weather.api_key_env = Some(String::from("  "));
+    config.weather.api_key = Some(String::new());
+    config.weather.refresh_minutes = 1;
+    config.weather.min_multiplier = f64::NAN;
+    config
+}
+
+/// Characterization: pins the exact field, message and order of every
+/// validation error when all sections are invalid at once.
+#[test]
+fn characterization_validation_error_order_and_messages() {
+    let mut config = config_invalid_in_every_section();
+    let Err(ConfigError::Validation(errors)) = config.validate() else {
+        panic!("every section is invalid");
+    };
+    let lines = errors.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(
+        lines,
+        vec![
+            "daemon.tick_seconds: must be at least 5 to avoid busy polling",
+            "daemon.probe_seconds: must be 0 (disabled) or within 2..=3600",
+            "daemon.desktop_idle_timeout_minutes: must be 0 (disabled) or at most 1440 minutes",
+            "daemon.apply_reassert_minutes: must be at most 1440 minutes",
+            "daemon.external_change_hold_minutes: must be within 0..=1440 minutes",
+            "daemon.ddc_timeout_seconds: must be within 1..=60 seconds",
+            "daemon.backlight_timeout_seconds: must be within 1..=60 seconds",
+            "location.latitude: must be within -90..=90",
+            "location.longitude: must be within -180..=180",
+            "location.timezone: invalid timezone `Nope/Zone` (must be a valid IANA zone or POSIX string)",
+            "solar_policy.min_write_delta_pct: must be within 0..=100",
+            "solar_policy: twilight_elevation_start must be lower than day_elevation_full",
+            "solar_policy.max_step_pct_per_tick: must be greater than 0",
+            "monitors[0].transition_gamma: must be finite and within 0 < gamma <= 4",
+            "monitors[0].logical_id: must not be empty",
+            "monitors[0].min_pct: must be within 0..=100",
+            "monitors[0].max_pct: must be within 0..=100",
+            "monitors[0].min_pct: must be less than or equal to max_pct",
+            "monitors[0].gain: must be finite and within 0 < gain <= 4",
+            "monitors[0].selector: enabled monitors must define at least one selector field",
+            "monitors[0].milestone_adjustments[1].milestone: duplicate milestone `rise_start`",
+            "monitors[0].milestone_adjustments[1].minutes_offset: must stay within -720..=720 minutes",
+            "monitors[1].ddc_address: must fit within the 7-bit I2C address range",
+            "monitors[1].selector: Ddc selector `ddc_address` is invalid: only the standard DDC/CI slave address 55 is supported",
+            "monitors[2].logical_id: duplicate logical id `dup`",
+            "monitors[3].selector: monitors[2] and monitors[3] use DDC selectors that may address the same display (Equal): `[\"--bus\", \"3\"]` overlaps `[\"--bus\", \"3\"]`; use pairwise disjoint selectors",
+            "weather.refresh_minutes: must be at least 10 minutes to keep refresh bounded",
+            "weather.min_multiplier: must be finite and within 0 < min_multiplier <= 1",
+            "weather.provider: must be set when weather is enabled",
+            "weather.api_key_env: must not be empty when set",
+            "weather.api_key: must not be empty when set",
+        ]
+    );
+
+    config.weather.api_key_env = None;
+    config.weather.api_key = None;
+    let Err(ConfigError::Validation(errors)) = config.validate() else {
+        panic!("every section is invalid");
+    };
+    assert_eq!(
+        errors.last().map(ToString::to_string).as_deref(),
+        Some("weather: enabled weather requires api_key_env or api_key")
+    );
+}
