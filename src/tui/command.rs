@@ -624,82 +624,38 @@ const HELP_MODAL_COMMANDS: &[CommandSpec] = &[
 ];
 
 fn commands_for(context: UiCommandContext) -> ContextCommands {
-    match context {
-        UiCommandContext::TabBar => ContextCommands {
-            context,
-            current_commands: TAB_BAR_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::AutomationSelector => ContextCommands {
-            context,
-            current_commands: AUTOMATION_SELECTOR_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::MonitorsList => ContextCommands {
-            context,
-            current_commands: MONITORS_LIST_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::MonitorsDetail => ContextCommands {
-            context,
-            current_commands: MONITORS_DETAIL_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::MonitorsEdit => ContextCommands {
-            context,
-            current_commands: MONITORS_EDIT_COMMANDS,
-            global_commands: &[], // Keystrokes absorbed by buffer
-        },
-        UiCommandContext::Automation => ContextCommands {
-            context,
-            current_commands: AUTOMATION_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::AutomationCurve => ContextCommands {
-            context,
-            current_commands: AUTOMATION_CURVE_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::AutomationEdit => ContextCommands {
-            context,
-            current_commands: AUTOMATION_EDIT_COMMANDS,
-            global_commands: &[],
-        },
-        UiCommandContext::LocationNav => ContextCommands {
-            context,
-            current_commands: LOCATION_NAV_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::LocationCityEdit => ContextCommands {
-            context,
-            current_commands: LOCATION_CITY_EDIT_COMMANDS,
-            global_commands: &[],
-        },
-        UiCommandContext::LocationFieldEdit => ContextCommands {
-            context,
-            current_commands: LOCATION_FIELD_EDIT_COMMANDS,
-            global_commands: &[],
-        },
-        UiCommandContext::WeatherObservational => ContextCommands {
-            context,
-            current_commands: WEATHER_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::SettingsNav => ContextCommands {
-            context,
-            current_commands: SETTINGS_NAV_COMMANDS,
-            global_commands: GLOBAL_COMMANDS,
-        },
-        UiCommandContext::SettingsEdit => ContextCommands {
-            context,
-            current_commands: SETTINGS_EDIT_COMMANDS,
-            global_commands: &[],
-        },
-        UiCommandContext::HelpModal => ContextCommands {
-            context,
-            current_commands: HELP_MODAL_COMMANDS,
-            global_commands: &[],
-        },
+    use UiCommandContext as C;
+    let current_commands = match context {
+        C::TabBar => TAB_BAR_COMMANDS,
+        C::AutomationSelector => AUTOMATION_SELECTOR_COMMANDS,
+        C::MonitorsList => MONITORS_LIST_COMMANDS,
+        C::MonitorsDetail => MONITORS_DETAIL_COMMANDS,
+        C::MonitorsEdit => MONITORS_EDIT_COMMANDS,
+        C::Automation => AUTOMATION_COMMANDS,
+        C::AutomationCurve => AUTOMATION_CURVE_COMMANDS,
+        C::AutomationEdit => AUTOMATION_EDIT_COMMANDS,
+        C::LocationNav => LOCATION_NAV_COMMANDS,
+        C::LocationCityEdit => LOCATION_CITY_EDIT_COMMANDS,
+        C::LocationFieldEdit => LOCATION_FIELD_EDIT_COMMANDS,
+        C::WeatherObservational => WEATHER_COMMANDS,
+        C::SettingsNav => SETTINGS_NAV_COMMANDS,
+        C::SettingsEdit => SETTINGS_EDIT_COMMANDS,
+        C::HelpModal => HELP_MODAL_COMMANDS,
+    };
+    // Edit contexts and the help modal absorb keystrokes, so global commands do not apply.
+    let global_commands = match context {
+        C::MonitorsEdit
+        | C::AutomationEdit
+        | C::LocationCityEdit
+        | C::LocationFieldEdit
+        | C::SettingsEdit
+        | C::HelpModal => &[],
+        _ => GLOBAL_COMMANDS,
+    };
+    ContextCommands {
+        context,
+        current_commands,
+        global_commands,
     }
 }
 

@@ -1,5 +1,3 @@
-#![allow(clippy::items_after_test_module)]
-
 use crate::backends::ProcessRunner;
 use crate::runtime::orchestrator::DaemonRuntime;
 use crate::runtime::r#loop::LoopCadence;
@@ -439,7 +437,7 @@ impl Dispatch<wl_registry::WlRegistry, wayland_client::globals::GlobalListConten
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-#[allow(clippy::ignored_unit_patterns)]
+#[allow(clippy::ignored_unit_patterns)] // `_: &()` is dictated by the wayland-client Dispatch signature
 impl Dispatch<WlSeat, ()> for WaylandIdleState {
     fn event(
         _: &mut Self,
@@ -453,7 +451,7 @@ impl Dispatch<WlSeat, ()> for WaylandIdleState {
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-#[allow(clippy::ignored_unit_patterns)]
+#[allow(clippy::ignored_unit_patterns)] // `_: &()` is dictated by the wayland-client Dispatch signature
 impl Dispatch<ExtIdleNotifierV1, ()> for WaylandIdleState {
     fn event(
         _: &mut Self,
@@ -467,7 +465,7 @@ impl Dispatch<ExtIdleNotifierV1, ()> for WaylandIdleState {
 }
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-#[allow(clippy::ignored_unit_patterns)]
+#[allow(clippy::ignored_unit_patterns)] // `_: &()` is dictated by the wayland-client Dispatch signature
 impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
     fn event(
         state: &mut Self,
@@ -609,6 +607,7 @@ fn dispatch_wayland_once(
         events: libc::POLLIN,
         revents: 0,
     };
+    // SAFETY: `pollfd` is a valid, exclusively borrowed pollfd and nfds is 1.
     let result = unsafe { libc::poll(&raw mut pollfd, 1, 100) };
     if state.shutdown.load(Ordering::Relaxed) {
         drop(read_guard);

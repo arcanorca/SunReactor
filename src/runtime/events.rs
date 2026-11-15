@@ -58,7 +58,7 @@ impl DisplayEventSources {
             let drm_pending = Arc::clone(&pending);
             if let Ok(handle) = thread::Builder::new()
                 .name(String::from("sunreactor-drm-events"))
-                .spawn(move || drm_listener(drm_pending, drm_shutdown))
+                .spawn(move || drm_listener(&drm_pending, &drm_shutdown))
             {
                 handles.push(handle);
                 tracing::info!("drm_event_listener_started");
@@ -70,7 +70,7 @@ impl DisplayEventSources {
             let logind_pending = Arc::clone(&pending);
             if let Ok(handle) = thread::Builder::new()
                 .name(String::from("sunreactor-logind-events"))
-                .spawn(move || logind_listener(logind_pending, logind_shutdown))
+                .spawn(move || logind_listener(&logind_pending, &logind_shutdown))
             {
                 handles.push(handle);
                 tracing::info!("logind_event_listener_started");
@@ -114,14 +114,13 @@ fn send_request(pending: &PendingRequest, reason: DisplayRecoveryReason) {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(clippy::needless_pass_by_value)]
-fn drm_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
+fn drm_listener(pending: &PendingRequest, shutdown: &AtomicBool) {
     while !shutdown.load(Ordering::Acquire) {
-        match drm_listener_once(&pending, &shutdown) {
+        match drm_listener_once(pending, shutdown) {
             Ok(()) => {}
             Err(error) => tracing::warn!(error = %error, "drm_event_listener_unavailable"),
         }
-        wait_interruptibly(&shutdown, LISTENER_RETRY_DELAY);
+        wait_interruptibly(shutdown, LISTENER_RETRY_DELAY);
     }
 }
 
@@ -129,6 +128,7 @@ fn drm_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
 fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io::Result<()> {
     use std::mem::size_of;
 
+    // SAFETY: socket() takes only integer constants; the returned fd is checked and then owned by `CloseFd`.
     let fd = unsafe {
         libc::socket(
             libc::AF_NETLINK,
@@ -141,10 +141,12 @@ fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io
     }
     let close_fd = CloseFd(fd);
 
+    // SAFETY: sockaddr_nl is plain-old-data for which the all-zero bit pattern is valid.
     let mut address: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     address.nl_family = libc::AF_NETLINK as u16;
     address.nl_pid = 0;
     address.nl_groups = 1;
+    // SAFETY: `address` is a valid sockaddr_nl and the length passed equals its size; the fd is open.
     let bind_result = unsafe {
         libc::bind(
             close_fd.0,
@@ -164,6 +166,7 @@ fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io
     let mut buffer = [0_u8; 4096];
     while !shutdown.load(Ordering::Acquire) {
         let result =
+            // SAFETY: `pollfd` is a valid, exclusively borrowed pollfd and nfds is 1.
             unsafe { libc::poll(&raw mut pollfd, 1, LISTENER_POLL_TIMEOUT.as_millis() as i32) };
         if result < 0 {
             let error = std::io::Error::last_os_error();
@@ -175,6 +178,7 @@ fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io
         if result == 0 {
             continue;
         }
+        // SAFETY: the pointer and length describe the writable local `buffer`; the fd is open.
         let length = unsafe {
             libc::recv(
                 close_fd.0,
@@ -211,6 +215,7 @@ struct CloseFd(std::os::fd::RawFd);
 #[cfg(target_os = "linux")]
 impl Drop for CloseFd {
     fn drop(&mut self) {
+        // SAFETY: `self.0` is a descriptor owned exclusively by this guard and closed exactly once here.
         unsafe {
             libc::close(self.0);
         }
@@ -272,12 +277,11 @@ fn connector_id(payload: &[u8]) -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(clippy::needless_pass_by_value)]
-fn logind_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
+fn logind_listener(pending: &PendingRequest, shutdown: &AtomicBool) {
     let mut retry_delay = LISTENER_RETRY_DELAY;
     let mut unavailable_logged = false;
     while !shutdown.load(Ordering::Acquire) {
-        match logind_listener_once(&pending, &shutdown) {
+        match logind_listener_once(pending, shutdown) {
             Ok(()) => {
                 retry_delay = LISTENER_RETRY_DELAY;
             }
@@ -288,12 +292,12 @@ fn logind_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
                     tracing::warn!(error = %error, "logind_event_listener_unavailable");
                     unavailable_logged = true;
                 }
-                wait_interruptibly(&shutdown, retry_delay);
+                wait_interruptibly(shutdown, retry_delay);
                 retry_delay = next_logind_retry_delay(retry_delay);
                 continue;
             }
         }
-        wait_interruptibly(&shutdown, retry_delay);
+        wait_interruptibly(shutdown, retry_delay);
     }
 }
 
