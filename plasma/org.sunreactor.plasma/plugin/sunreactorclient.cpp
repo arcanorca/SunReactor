@@ -60,8 +60,11 @@ constexpr qsizetype kMaxDisplayStringLength = 64;
 
 QString requestMonitorKey(const QJsonObject &request)
 {
-    const QJsonValue monitor = request.value(QStringLiteral("monitor_id"));
-    return monitor.isNull() ? QStringLiteral("<global>") : monitor.toString();
+    const QString key = request.contains(QStringLiteral("monitor"))
+        ? QStringLiteral("monitor")
+        : QStringLiteral("monitor_id");
+    const QJsonValue monitor = request.value(key);
+    return monitor.isNull() || monitor.isUndefined() ? QStringLiteral("<global>") : monitor.toString();
 }
 
 QString displayString(const QJsonValue &value)
@@ -572,6 +575,14 @@ void SunReactorClient::clearMonitorOverride(const QString &monitorId)
     enqueueRequest(req);
 }
 
+void SunReactorClient::clearExternalHold(const QString &monitorId)
+{
+    const QString id = monitorId.trimmed();
+    QJsonObject req = request(QStringLiteral("clear_external_hold"));
+    req[QStringLiteral("monitor")] = id.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(id);
+    enqueueRequest(req);
+}
+
 void SunReactorClient::clearAllOverrides()
 {
     // The daemon reads an empty monitor id with `global` unset as "drop every
@@ -711,9 +722,10 @@ void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
         return;
     }
 
-    // Slider updates and limit edits are replaceable until they reach the
-    // daemon: the latest value for one monitor is the only useful one.
-    if (name == QStringLiteral("set_override") || name == QStringLiteral("set_monitor_limits")) {
+    // Per-monitor mutations are replaceable until they reach the daemon: the
+    // latest value or hold action for one monitor is the only useful one.
+    if (name == QStringLiteral("set_override") || name == QStringLiteral("set_monitor_limits")
+        || name == QStringLiteral("clear_external_hold")) {
         const QString monitor = requestMonitorKey(requestObj);
         for (QueuedRequest &queued : m_requestQueue) {
             if (queued.object.value(QStringLiteral("request")).toString() == name
@@ -1448,6 +1460,19 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         map[QStringLiteral("percent")] = overridePercent != UNKNOWN_PERCENT ? overridePercent : applied;
         map[QStringLiteral("unreachable")] = unreachable;
         map[QStringLiteral("backoffRemainingS")] = unreachable ? backoffUntil - m_nowEpochS : 0;
+
+        const QJsonValue externalHoldValue = monitor.value(QStringLiteral("external_hold"));
+        if (externalHoldValue.isObject()) {
+            const QJsonObject externalHold = externalHoldValue.toObject();
+            const qint64 remaining = optionalEpoch(externalHold, "remaining_s");
+            const int observed = optionalPercent(externalHold, "observed_percent");
+            if (remaining > 0 && observed != UNKNOWN_PERCENT) {
+                QVariantMap hold;
+                hold[QStringLiteral("remainingS")] = remaining;
+                hold[QStringLiteral("observedPercent")] = observed;
+                map[QStringLiteral("externalHold")] = hold;
+            }
+        }
 
         monitors.append(map);
 

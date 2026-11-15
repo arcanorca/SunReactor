@@ -219,6 +219,31 @@ impl DaemonRuntime {
                     outcome,
                 )
             }
+            ipc::Request::ClearExternalHold { monitor } => {
+                let outcome = IpcOutcome {
+                    tick_attempted: true,
+                    config_reloaded: false,
+                };
+                if let Some(monitor_id) = monitor.as_deref() {
+                    if let Err(error) = self.ensure_configured_monitor(monitor_id) {
+                        return (ipc_error_response(&error), IpcOutcome::default());
+                    }
+                }
+
+                self.clear_external_holds(monitor.as_deref());
+                // The hold cancellation follows the same deferred apply path as
+                // RunOnce, but keeps force=false so configured smoothing remains
+                // active while the daemon writes after the reply.
+                self.mark_pending_apply(false, false);
+                let message = monitor.map_or_else(
+                    || String::from("cleared external brightness holds"),
+                    |monitor_id| format!("cleared external brightness hold for {monitor_id}"),
+                );
+                (
+                    ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                    outcome,
+                )
+            }
             ipc::Request::IdleDim => {
                 let outcome = IpcOutcome {
                     tick_attempted: true,

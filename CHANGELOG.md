@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immediately, and status/TUI expose active holds.
 
 ### Added
+- External-hold controls: `sunreactorctl hold clear [MONITOR]` and a Plasma
+  badge with one-click cancellation now let users return a display to automatic
+  brightness before its external-change cooldown expires.
 - **Maximum cloud dimming**: configure the 0..=50% daylight reduction through
   `weather.min_multiplier`, `sunreactorctl weather cloud-dimming`, the TUI Settings
   row, or the Plasma plasmoid. The daemon persists the canonical multiplier and

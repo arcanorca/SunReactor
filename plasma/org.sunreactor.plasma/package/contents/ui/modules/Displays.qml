@@ -66,6 +66,7 @@ ColumnLayout {
             minPct: modelData.minPct !== undefined ? modelData.minPct : 15
             maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
             hasLimits: true
+            externalHold: modelData.externalHold !== undefined ? modelData.externalHold : null
             hasOverride: modelData.hasOverride === true
             controllable: modelData.enabled && !unavailable
             hint: {
@@ -85,6 +86,23 @@ ColumnLayout {
                                                                    root.settings.overrideMinutes)
             onLimitsRequested: (minVal, maxVal) => root.client.setMonitorLimits(modelData.logicalId, minVal, maxVal)
             onClearOverrideRequested: () => root.client.clearMonitorOverride(modelData.logicalId)
+            onClearExternalHoldRequested: () => root.client.clearExternalHold(modelData.logicalId)
+
+            Connections {
+                target: root.client
+
+                function resetExternalHoldDismissal() {
+                    display.externalHoldDismissed = false;
+                }
+
+                function onMonitorsChanged() {
+                    resetExternalHoldDismissal();
+                }
+
+                function onNowChanged() {
+                    resetExternalHoldDismissal();
+                }
+            }
         }
     }
 }

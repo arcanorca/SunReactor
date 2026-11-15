@@ -204,6 +204,7 @@ public Q_SLOTS:
     void setMonitorOverride(const QString &monitorId, int percent, int durationMinutes);
     void setMonitorLimits(const QString &monitorId, int minPct, int maxPct);
     void clearMonitorOverride(const QString &monitorId);
+    void clearExternalHold(const QString &monitorId);
     void clearAllOverrides();
     void suspend(int minutes);
     void resume();
