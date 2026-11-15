@@ -1,0 +1,16 @@
+post_install() {
+  cat <<'MSG'
+==> SunReactor is a per-user service. Enable it in your login session:
+      systemctl --user enable --now sunreactord.service
+==> External monitors (DDC/CI) need ddcutil and access to /dev/i2c-*:
+      sudo pacman -S ddcutil
+      echo i2c-dev | sudo tee /etc/modules-load.d/i2c-dev.conf
+      sudo usermod -aG i2c "$USER"   # then log out and back in
+    Run `sunreactorctl doctor` to verify the setup.
+==> Plasma widget: install plasma6-applets-sunreactor, then add it to a panel.
+MSG
+}
+
+post_upgrade() {
+  echo '==> Restart the daemon after upgrading: systemctl --user restart sunreactord.service'
+}

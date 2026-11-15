@@ -1,0 +1,98 @@
+# Maintainer: arcanorca <https://github.com/arcanorca>
+#
+# Split package: `sunreactor-git` (daemon, CLI/TUI, systemd user unit) and
+# `plasma6-applets-sunreactor-git` (Plasma 6 plasmoid + QML plugin). The plasmoid
+# pulls in Qt/KF6/Plasma libraries that headless or non-KDE users do not want,
+# so it is a separate package that depends on `sunreactor-git`.
+
+pkgbase=sunreactor-git
+pkgname=(sunreactor-git plasma6-applets-sunreactor-git)
+pkgver=0.13.0.r0.g0000000
+pkgrel=1
+pkgdesc='Adaptive screen brightness daemon that follows the sun (DDC/CI and backlight), with CLI/TUI'
+arch=(x86_64 aarch64)
+url='https://github.com/arcanorca/SunReactor'
+license=(GPL-3.0-or-later)
+options=(!lto)  # makepkg's -flto CFLAGS break linking of C/asm objects in ring (rustls) under Rust fat LTO
+makedepends=(git cargo cmake extra-cmake-modules qt6-base qt6-declarative libplasma)
+source=("$pkgbase::git+$url.git")
+sha256sums=('SKIP')  # VCS sources are not checksummed
+
+_srcdir() { echo "$srcdir/$pkgbase"; }
+
+pkgver() {
+  cd "$(_srcdir)"
+  git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+prepare() {
+  cd "$(_srcdir)"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$(_srcdir)"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+
+  cmake -S plasma/org.sunreactor.plasma -B build-plasma \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DBUILD_TESTING=ON
+  cmake --build build-plasma
+}
+
+check() {
+  cd "$(_srcdir)"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build-plasma --output-on-failure
+}
+
+package_sunreactor-git() {
+  provides=(sunreactor)
+  conflicts=(sunreactor)
+  depends=(gcc-libs glibc)
+  optdepends=(
+    'ddcutil: DDC/CI brightness control for external monitors (needs access to /dev/i2c-*)'
+    'brightnessctl: backlight control for internal laptop panels'
+    'xprintidle: idle detection on X11 sessions'
+    'swayidle: idle detection on wlroots compositors'
+    'plasma6-applets-sunreactor-git: Plasma 6 widget'
+  )
+  install=sunreactor-git.install
+
+  cd "$(_srcdir)"
+  install -Dm755 target/release/sunreactord -t "$pkgdir/usr/bin/"
+  install -Dm755 target/release/sunreactorctl -t "$pkgdir/usr/bin/"
+
+  # The template carries installer placeholders; render it for system paths.
+  # The XDG_*_HOME overrides are dropped so the daemon uses the real user dirs.
+  sed -e '/^Environment=XDG_.*@.*@$/d' \
+      -e 's|"@BIN_DIR@/|"/usr/bin/|g' \
+      contrib/systemd/sunreactord.service > sunreactord.service.rendered
+  install -Dm644 sunreactord.service.rendered \
+    "$pkgdir/usr/lib/systemd/user/sunreactord.service"
+
+  install -Dm644 examples/config.toml "$pkgdir/usr/share/doc/sunreactor/config.toml.example"
+  install -Dm644 README.md CHANGELOG.md docs/PLASMA.md docs/systemd-user-unit.md \
+    docs/RELIABILITY.md docs/THEMES.md -t "$pkgdir/usr/share/doc/sunreactor/"
+}
+
+package_plasma6-applets-sunreactor-git() {
+  pkgdesc='Plasma 6 widget for SunReactor adaptive brightness'
+  provides=(plasma6-applets-sunreactor)
+  conflicts=(plasma6-applets-sunreactor)
+  depends=(sunreactor qt6-base qt6-declarative libplasma kirigami kcmutils)
+
+  cd "$(_srcdir)"
+  DESTDIR="$pkgdir" cmake --install build-plasma
+  # Fonts bundled with the plasmoid carry their own licenses (OFL etc.).
+  install -Dm644 plasma/org.sunreactor.plasma/package/contents/fonts/FONTS-LICENSES.txt \
+    -t "$pkgdir/usr/share/licenses/$pkgname/"
+  install -Dm644 plasma/org.sunreactor.plasma/package/contents/fonts/OFL-*.txt \
+    -t "$pkgdir/usr/share/licenses/$pkgname/"
+}
