@@ -336,6 +336,108 @@ impl DaemonRuntime {
 }
 
 impl DaemonRuntime {
+    fn initialize_loop(
+        &mut self,
+    ) -> Result<(BoundControlSocket, DesktopIdleSync, LoopCadence), RuntimeError> {
+        let listener = self.socket.bind_listener()?;
+        let desktop_idle_sync = self.config.daemon.desktop_idle_sync;
+        let desktop_idle = DesktopIdleSync::new(
+            desktop_idle_sync,
+            PathBuf::from(self.socket.display_target()),
+            self.config.daemon.tick_seconds,
+            self.config.daemon.desktop_idle_timeout_minutes,
+        );
+        let cadence = LoopCadence::new(self.config.daemon.tick_seconds);
+        self.display_events = Some(DisplayEventSources::spawn());
+
+        self.log_startup(desktop_idle_sync);
+
+        Ok((listener, desktop_idle, cadence))
+    }
+
+    fn run_loop_iteration<F>(
+        &mut self,
+        listener: &BoundControlSocket,
+        cadence: &mut LoopCadence,
+        desktop_idle: &mut DesktopIdleSync,
+        apply_after_drain: &mut bool,
+        shutdown_requested: &mut F,
+    ) -> Result<bool, RuntimeError>
+    where
+        F: FnMut() -> bool,
+    {
+        let _ = self.drain_ipc_requests_with_quantum_impl(listener, cadence, desktop_idle)?;
+
+        if shutdown_requested() {
+            return Ok(false);
+        }
+
+        if *apply_after_drain {
+            *apply_after_drain = false;
+            self.execute_pending_apply(Utc::now(), cadence, desktop_idle);
+        }
+        if self.has_pending_apply() {
+            // Give clients that arrive immediately after a mutation one more
+            // bounded IPC drain before a slow hardware apply starts.
+            *apply_after_drain = true;
+            return Ok(true);
+        }
+
+        let now_utc = Utc::now();
+        self.handle_pending_display_event();
+        #[cfg(target_os = "linux")]
+        desktop_idle.maintain_watcher(&self.socket.path);
+        #[cfg(not(target_os = "linux"))]
+        desktop_idle.maintain_watcher(Path::new(""));
+        if desktop_idle.perform_due_action(self, now_utc, &RealProcessRunner, cadence) {
+            return Ok(true);
+        }
+
+        if DesktopIdleSync::take_input_resume() {
+            let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
+        }
+        let probe_at = Instant::now();
+        if self.probe_schedule.take_due_probe(probe_at) {
+            let outcome = self.run_wake_probe(now_utc, &RealProcessRunner);
+            self.probe_schedule.note_outcome(outcome, Instant::now());
+            return Ok(true);
+        }
+
+        let next_deadline = self.next_wake_deadline(desktop_idle);
+        let action = cadence.next_action(next_deadline, self.fade_engine.is_fading());
+        // Phase 9 uses periodic observation only. Refresh immediately before
+        // scheduled ticks, not on every idle loop iteration.
+        if let Some(result) = self.publish_completed_capability_snapshot() {
+            if self.capability_refresh.take_pending() {
+                if result {
+                    self.execute_scheduled_tick(now_utc, &RealProcessRunner, cadence, desktop_idle);
+                }
+                return Ok(true);
+            }
+        }
+        if self.capability_refresh.is_pending() {
+            wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
+            return Ok(true);
+        }
+
+        if matches!(action, LoopAction::RunTick) {
+            self.capability_refresh.set_pending();
+            self.begin_capability_refresh_with_runner(RealProcessRunner);
+            wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
+            return Ok(true);
+        }
+
+        self.perform_loop_action(
+            action,
+            now_utc,
+            &RealProcessRunner,
+            cadence,
+            desktop_idle,
+            listener,
+        );
+        Ok(true)
+    }
+
     /// Starts the main daemon event loop.
     ///
     /// This function handles IPC requests, idle state transitions, and
@@ -345,99 +447,19 @@ impl DaemonRuntime {
     where
         F: FnMut() -> bool,
     {
-        let listener = self.socket.bind_listener()?;
-        let desktop_idle_sync = self.config.daemon.desktop_idle_sync;
-        let mut desktop_idle = DesktopIdleSync::new(
-            desktop_idle_sync,
-            PathBuf::from(self.socket.display_target()),
-            self.config.daemon.tick_seconds,
-            self.config.daemon.desktop_idle_timeout_minutes,
-        );
-        let mut cadence = LoopCadence::new(self.config.daemon.tick_seconds);
-        self.display_events = Some(DisplayEventSources::spawn());
-
-        self.log_startup(desktop_idle_sync);
+        let (listener, mut desktop_idle, mut cadence) = self.initialize_loop()?;
 
         let mut apply_after_drain = false;
         while !shutdown_requested() {
-            let _ = self.drain_ipc_requests_with_quantum_impl(
+            if !self.run_loop_iteration(
                 &listener,
                 &mut cadence,
                 &mut desktop_idle,
-            )?;
-
-            if shutdown_requested() {
+                &mut apply_after_drain,
+                &mut shutdown_requested,
+            )? {
                 break;
             }
-
-            if apply_after_drain {
-                apply_after_drain = false;
-                self.execute_pending_apply(Utc::now(), &mut cadence, &mut desktop_idle);
-            }
-            if self.has_pending_apply() {
-                // Give clients that arrive immediately after a mutation one
-                // more bounded IPC drain before a slow hardware apply starts.
-                apply_after_drain = true;
-                continue;
-            }
-
-            let now_utc = Utc::now();
-            self.handle_pending_display_event();
-            #[cfg(target_os = "linux")]
-            desktop_idle.maintain_watcher(&self.socket.path);
-            #[cfg(not(target_os = "linux"))]
-            desktop_idle.maintain_watcher(Path::new(""));
-            if desktop_idle.perform_due_action(self, now_utc, &RealProcessRunner, &mut cadence) {
-                continue;
-            }
-
-            if DesktopIdleSync::take_input_resume() {
-                let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
-            }
-            let probe_at = Instant::now();
-            if self.probe_schedule.take_due_probe(probe_at) {
-                let outcome = self.run_wake_probe(now_utc, &RealProcessRunner);
-                self.probe_schedule.note_outcome(outcome, Instant::now());
-                continue;
-            }
-
-            let next_deadline = self.next_wake_deadline(&desktop_idle);
-            let action = cadence.next_action(next_deadline, self.fade_engine.is_fading());
-            // Phase 9 uses periodic observation only. Refresh immediately
-            // before scheduled ticks, not on every idle loop iteration.
-            if let Some(result) = self.publish_completed_capability_snapshot() {
-                if self.capability_refresh.take_pending() {
-                    if result {
-                        self.execute_scheduled_tick(
-                            now_utc,
-                            &RealProcessRunner,
-                            &mut cadence,
-                            &mut desktop_idle,
-                        );
-                    }
-                    continue;
-                }
-            }
-            if self.capability_refresh.is_pending() {
-                wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
-                continue;
-            }
-
-            if matches!(action, LoopAction::RunTick) {
-                self.capability_refresh.set_pending();
-                self.begin_capability_refresh_with_runner(RealProcessRunner);
-                wait_for_ipc_or_sleep(&listener, Duration::from_millis(16));
-                continue;
-            }
-
-            self.perform_loop_action(
-                action,
-                now_utc,
-                &RealProcessRunner,
-                &mut cadence,
-                &mut desktop_idle,
-                &listener,
-            );
         }
 
         let _ = self.persist_state_if_changed();

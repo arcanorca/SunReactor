@@ -292,7 +292,6 @@ fn build_notes(
 }
 
 // Linear TOML snippet emission, one block per candidate kind.
-#[allow(clippy::too_many_lines)]
 fn build_monitor_config_candidates(
     ddc_monitors: &[DdcMonitorDiscovery],
     backlight_devices: &[BacklightDeviceDiscovery],
@@ -305,6 +304,25 @@ fn build_monitor_config_candidates(
         .filter(|monitor| monitor.backend_viable)
         .map(|monitor| (monitor, discovery_selector(monitor)))
         .collect::<Vec<_>>();
+    let withheld =
+        withhold_ambiguous_ddc_candidates(&candidates, ddc_monitors, &mut ambiguity_notes);
+    append_ddc_candidates(
+        &candidates,
+        &withheld,
+        &mut used_ids,
+        &mut ambiguity_notes,
+        &mut configs,
+    );
+    append_backlight_candidates(backlight_devices, ddc_monitors, &mut used_ids, &mut configs);
+
+    (configs, ambiguity_notes)
+}
+
+fn withhold_ambiguous_ddc_candidates(
+    candidates: &[(&DdcMonitorDiscovery, MonitorSelector)],
+    ddc_monitors: &[DdcMonitorDiscovery],
+    ambiguity_notes: &mut Vec<String>,
+) -> HashSet<usize> {
     let mut withheld = HashSet::new();
     for (candidate_index, (monitor, selector)) in candidates.iter().enumerate() {
         let match_count = selector_match_count(selector, ddc_monitors);
@@ -342,12 +360,21 @@ fn build_monitor_config_candidates(
             }
         }
     }
+    withheld
+}
 
+fn append_ddc_candidates(
+    candidates: &[(&DdcMonitorDiscovery, MonitorSelector)],
+    withheld: &HashSet<usize>,
+    used_ids: &mut HashSet<String>,
+    ambiguity_notes: &mut Vec<String>,
+    configs: &mut Vec<MonitorConfig>,
+) {
     for (candidate_index, (monitor, selector)) in candidates.iter().enumerate() {
         if withheld.contains(&candidate_index) {
             continue;
         }
-        let logical_id = allocate_logical_id(ddc_logical_id_base(monitor), &mut used_ids);
+        let logical_id = allocate_logical_id(ddc_logical_id_base(monitor), used_ids);
         let effective_bus_only = selector_plan(selector).is_ok_and(|plan| plan.is_bus_only());
         let enabled = !effective_bus_only;
         if effective_bus_only {
@@ -372,12 +399,19 @@ fn build_monitor_config_candidates(
             ..MonitorConfig::default()
         });
     }
+}
 
+fn append_backlight_candidates(
+    backlight_devices: &[BacklightDeviceDiscovery],
+    ddc_monitors: &[DdcMonitorDiscovery],
+    used_ids: &mut HashSet<String>,
+    configs: &mut Vec<MonitorConfig>,
+) {
     for device in backlight_devices.iter().filter(|device| {
         device.backend_viable && !super::is_ddcci_alias_of_viable_ddc(device, ddc_monitors)
     }) {
         configs.push(MonitorConfig {
-            logical_id: allocate_logical_id(backlight_logical_id_base(device), &mut used_ids),
+            logical_id: allocate_logical_id(backlight_logical_id_base(device), used_ids),
             backend: crate::backends::BackendKind::Backlight,
             enabled: true,
             min_pct: 0,
@@ -390,8 +424,6 @@ fn build_monitor_config_candidates(
             ..MonitorConfig::default()
         });
     }
-
-    (configs, ambiguity_notes)
 }
 
 fn render_config_snippet(configs: &[MonitorConfig]) -> String {

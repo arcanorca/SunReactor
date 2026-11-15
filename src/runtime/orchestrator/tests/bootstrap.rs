@@ -1,6 +1,14 @@
 //! Bootstrap paths and background capability observation.
 
 use super::*;
+#[cfg(target_os = "linux")]
+use crate::ipc;
+#[cfg(target_os = "linux")]
+use std::io::Write;
+#[cfg(target_os = "linux")]
+use std::net::Shutdown;
+#[cfg(target_os = "linux")]
+use std::os::unix::net::UnixStream;
 
 #[test]
 fn bootstrap_creates_state_dir_and_configures_platform_ipc() {
@@ -24,6 +32,164 @@ fn bootstrap_creates_state_dir_and_configures_platform_ipc() {
         crate::paths::IpcEndpoint::NamedPipe(socket_path.display().to_string())
     );
     assert_eq!(runtime.state, RuntimeState::default());
+}
+
+#[cfg(target_os = "linux")]
+fn accept_with_deadline(listener: &crate::ipc::BoundControlSocket) -> UnixStream {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match listener.accept().expect("listener accept should work") {
+            Some(stream) => return stream,
+            None if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(1)),
+            None => panic!("timed out waiting for hostile IPC connection"),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn assert_next_ping(
+    runtime: &mut DaemonRuntime,
+    listener: &crate::ipc::BoundControlSocket,
+    path: &Path,
+) {
+    let target = path.display().to_string();
+    let mut client = UnixStream::connect(path).expect("valid client should connect");
+    ipc::transport::configure_client_stream(&client, &target).expect("client should configure");
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("client read timeout should set");
+    ipc::transport::write_json_message(
+        &mut client,
+        &ipc::RequestEnvelope::new(ipc::Request::Ping),
+        &target,
+    )
+    .expect("valid request should write");
+
+    let server = accept_with_deadline(listener);
+    let started = Instant::now();
+    runtime.handle_ipc_stream(server);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "valid IPC request should not hang"
+    );
+    let response = ipc::transport::read_response(&mut client, &target)
+        .expect("valid response should be readable");
+    assert_eq!(response, ipc::ResponseEnvelope::pong());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn hostile_ipc_connections_do_not_poison_the_next_valid_request() {
+    let temp = TempDir::new();
+    let state_path = temp.path().join("state/runtime-state.json");
+    let socket_path = temp.path().join("run/control.sock");
+    let mut runtime = DaemonRuntime::bootstrap_with_paths(
+        test_dry_run_config_report(),
+        state_path,
+        socket_path.clone(),
+    )
+    .expect("runtime should bootstrap");
+    let socket = crate::ipc::ControlSocket {
+        path: socket_path.clone(),
+    };
+    let listener = socket.bind_listener().expect("listener should bind");
+    let target = socket_path.display().to_string();
+
+    // A complete oversized frame is rejected before it can consume the next
+    // connection, and the peer is closed so the error reply exercises the
+    // server's failed-write path.
+    let mut oversized = UnixStream::connect(&socket_path).expect("oversized client should connect");
+    oversized
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .expect("oversized client write timeout should set");
+    oversized
+        .write_all(&vec![b'x'; 64 * 1024 + 1])
+        .expect("oversized frame should write");
+    oversized
+        .write_all(b"\n")
+        .expect("oversized delimiter should write");
+    oversized
+        .shutdown(Shutdown::Both)
+        .expect("oversized client should close");
+    let server = accept_with_deadline(&listener);
+    let started = Instant::now();
+    runtime.handle_ipc_stream(server);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_next_ping(&mut runtime, &listener, &socket_path);
+
+    // Malformed JSON with a closed peer must produce no panic and leave the
+    // listener able to accept a subsequent valid request.
+    let mut malformed = UnixStream::connect(&socket_path).expect("malformed client should connect");
+    malformed
+        .write_all(b"not-json\n")
+        .expect("malformed frame should write");
+    malformed
+        .shutdown(Shutdown::Both)
+        .expect("malformed client should close");
+    let server = accept_with_deadline(&listener);
+    let started = Instant::now();
+    runtime.handle_ipc_stream(server);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_next_ping(&mut runtime, &listener, &socket_path);
+
+    // A slow drip must be bounded by the server read timeout.
+    let drip = UnixStream::connect(&socket_path).expect("slow client should connect");
+    let drip_thread = std::thread::spawn(move || {
+        let mut drip = drip;
+        let _ = drip.write_all(b"{");
+        std::thread::sleep(Duration::from_millis(150));
+        let _ = drip.write_all(b"\"version\":1}\n");
+    });
+    let server = accept_with_deadline(&listener);
+    let started = Instant::now();
+    runtime.handle_ipc_stream(server);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "slow-drip IPC request should time out"
+    );
+    drip_thread.join().expect("slow client should finish");
+    assert_next_ping(&mut runtime, &listener, &socket_path);
+
+    // A request whose write half is closed is still a complete frame and must
+    // receive a normal response.
+    let mut half_closed =
+        UnixStream::connect(&socket_path).expect("half-closed client should connect");
+    ipc::transport::configure_client_stream(&half_closed, &target)
+        .expect("half-closed client should configure");
+    ipc::transport::write_json_message(
+        &mut half_closed,
+        &ipc::RequestEnvelope::new(ipc::Request::Ping),
+        &target,
+    )
+    .expect("half-closed request should write");
+    half_closed
+        .shutdown(Shutdown::Write)
+        .expect("half-closed write side should close");
+    let server = accept_with_deadline(&listener);
+    runtime.handle_ipc_stream(server);
+    assert_eq!(
+        ipc::transport::read_response(&mut half_closed, &target)
+            .expect("half-closed response should be readable"),
+        ipc::ResponseEnvelope::pong()
+    );
+    assert_next_ping(&mut runtime, &listener, &socket_path);
+
+    // The peer can disappear after the request has been accepted and before
+    // the reply is written; this is a normal connection failure, not a daemon
+    // failure.
+    let mut closed = UnixStream::connect(&socket_path).expect("closed client should connect");
+    ipc::transport::write_json_message(
+        &mut closed,
+        &ipc::RequestEnvelope::new(ipc::Request::Ping),
+        &target,
+    )
+    .expect("closed request should write");
+    let server = accept_with_deadline(&listener);
+    drop(closed);
+    let started = Instant::now();
+    runtime.handle_ipc_stream(server);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_next_ping(&mut runtime, &listener, &socket_path);
 }
 
 #[cfg(target_os = "linux")]
