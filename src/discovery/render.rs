@@ -601,3 +601,178 @@ fn render_row(cells: &[String], widths: &[usize]) -> String {
         .collect::<Vec<_>>()
         .join("  ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discovery::model::{
+        DiscoveryBackends, PhysicalIdentityStatus, WindowsDisplayDiscovery,
+    };
+
+    fn status(name: &str, kind: BackendStatusKind, message: &str) -> BackendStatus {
+        BackendStatus {
+            backend: name.to_owned(),
+            status: kind,
+            available: kind == BackendStatusKind::Ok,
+            message: message.to_owned(),
+            guidance: None,
+        }
+    }
+
+    fn windows_display(number: u32) -> WindowsDisplayDiscovery {
+        WindowsDisplayDiscovery {
+            display_number: number,
+            canonical_id: None,
+            display_label: None,
+            stable_id: None,
+            identity_quality: String::from("strong"),
+            mutation_eligibility: String::from("eligible"),
+            name: None,
+            kind: String::from("external_monitor"),
+            active: true,
+            target_available: true,
+            is_primary: false,
+            output_technology: String::from("DisplayPort"),
+            gdi_device_name: None,
+            adapter_luid: String::from("0x1"),
+            source_id: 0,
+            target_id: 4,
+            connector_instance: 2,
+            container_id: None,
+            device_instance_id: None,
+            hardware_ids: Vec::new(),
+            edid_manufacturer: None,
+            edid_product_code: None,
+            physical_monitors_count: 1,
+            physical_monitor_description: None,
+            desktop_rect: None,
+            note: None,
+            brightness_capable: None,
+            native_min: None,
+            native_current: None,
+            native_max: None,
+            normalized_current_percent: None,
+            capability_note: None,
+        }
+    }
+
+    fn representative_report(with_devices: bool) -> DiscoveryReport {
+        let mut report = DiscoveryReport {
+            summary: DiscoverySummary {
+                ddc_monitors: 0,
+                backlight_devices: 0,
+                viable_targets: 0,
+            },
+            backends: DiscoveryBackends {
+                ddcutil: status("ddcutil", BackendStatusKind::Ok, "ddcutil 2.1.4"),
+                brightnessctl: status("brightnessctl", BackendStatusKind::Missing, ""),
+                sysfs: status("sysfs", BackendStatusKind::Unavailable, "no devices"),
+            },
+            ddc_observation_complete: true,
+            ddc_monitors: Vec::new(),
+            backlight_devices: Vec::new(),
+            windows_displays: Vec::new(),
+            notes: Vec::new(),
+            config_snippet: String::from("# No viable brightness-capable devices were discovered."),
+        };
+        if !with_devices {
+            return report;
+        }
+        report.summary = DiscoverySummary {
+            ddc_monitors: 2,
+            backlight_devices: 1,
+            viable_targets: 2,
+        };
+        report.ddc_monitors = vec![
+            DdcMonitorDiscovery {
+                occurrence_id: String::from("a"),
+                stable_id: String::from("dell-u2720q-abc"),
+                identity_status: PhysicalIdentityStatus::Unique,
+                manufacturer: Some(String::from("DEL")),
+                model: Some(String::from("DELL U2720Q")),
+                serial: Some(String::from("ABC123")),
+                display_number: 1,
+                bus_number: Some(5),
+                connector: Some(String::from("card1-DP-1")),
+                brightness_vcp_supported: Some(true),
+                backend_viable: true,
+                note: None,
+            },
+            DdcMonitorDiscovery {
+                occurrence_id: String::from("b"),
+                stable_id: String::from("bus-7"),
+                identity_status: PhysicalIdentityStatus::Insufficient,
+                manufacturer: None,
+                model: None,
+                serial: None,
+                display_number: 2,
+                bus_number: None,
+                connector: None,
+                brightness_vcp_supported: None,
+                backend_viable: false,
+                note: Some(String::from("capabilities probe timed out")),
+            },
+        ];
+        report.backlight_devices = vec![BacklightDeviceDiscovery {
+            stable_id: String::from("intel-backlight"),
+            device_name: String::from("intel_backlight"),
+            class: String::from("backlight"),
+            max_brightness: Some(96000),
+            backlight_type: None,
+            probe_source: String::from("sysfs"),
+            sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+            ddcci_connector: None,
+            backend_viable: true,
+            note: None,
+        }];
+        report.notes = vec![String::from("first note"), String::from("second note")];
+        report
+    }
+
+    #[test]
+    fn render_human_empty_report_is_pinned() {
+        let text = render_human(&representative_report(false));
+        assert_eq!(text, EXPECTED_EMPTY);
+    }
+
+    #[test]
+    fn render_human_populated_report_is_pinned() {
+        let text = render_human(&representative_report(true));
+        assert_eq!(text, EXPECTED_POPULATED);
+    }
+
+    #[test]
+    fn render_human_windows_topology_is_pinned() {
+        let mut report = representative_report(false);
+        let mut full = windows_display(1);
+        full.name = Some(String::from("Dell U2720Q"));
+        full.is_primary = true;
+        full.gdi_device_name = Some(String::from("\\\\.\\DISPLAY1"));
+        full.desktop_rect = Some(String::from("0,0 2560x1440"));
+        full.container_id = Some(String::from("{container}"));
+        full.device_instance_id = Some(String::from("DISPLAY\\DEL\\1"));
+        full.canonical_id = Some(String::from("canon-1"));
+        full.display_label = Some(String::from("Desk left"));
+        full.brightness_capable = Some(true);
+        full.native_min = Some(0);
+        full.native_current = Some(30);
+        full.native_max = Some(100);
+        full.normalized_current_percent = Some(30);
+        full.note = Some(String::from("primary note"));
+        let mut unavailable = windows_display(2);
+        unavailable.target_available = false;
+        unavailable.gdi_device_name = Some(String::from("\\\\.\\DISPLAY2"));
+        unavailable.brightness_capable = Some(false);
+        unavailable.capability_note = Some(String::from("DXVA2 unsupported"));
+        let mut inactive = windows_display(3);
+        inactive.active = false;
+        inactive.capability_note = Some(String::from("no handle"));
+        report.windows_displays = vec![full, unavailable, inactive];
+        let text = render_human(&report);
+        assert_eq!(text, EXPECTED_WINDOWS);
+    }
+
+    const EXPECTED_EMPTY: &str = "Discovery summary\nviable targets: 0\nexternal monitors: 0\nbacklight devices: 0\n\nBackend status\nbackend        status       detail       \n-------------  -----------  -------------\nddcutil        ok           ddcutil 2.1.4\nbrightnessctl  missing                   \nsysfs          unavailable  no devices   \n\nDDC monitors\nNo external monitors reported.\n\nBacklight devices\nNo internal backlight devices reported.\n\nCandidate config snippet\n# No viable brightness-capable devices were discovered.";
+    const EXPECTED_POPULATED: &str = "Discovery summary\nviable targets: 2\nexternal monitors: 2\nbacklight devices: 1\n\nBackend status\nbackend        status       detail       \n-------------  -----------  -------------\nddcutil        ok           ddcutil 2.1.4\nbrightnessctl  missing                   \nsysfs          unavailable  no devices   \n\nDDC monitors\ndisplay  bus  manufacturer  model        serial  connector   vcp_0x10  viable  note                        \n-------  ---  ------------  -----------  ------  ----------  --------  ------  ----------------------------\n1        5    DEL           DELL U2720Q  ABC123  card1-DP-1  yes       yes     -                           \n2        -    -             -            -       -           unknown   no      capabilities probe timed out\n\nBacklight devices\ndevice           class      type  max    source  viable  sysfs_path                            note\n---------------  ---------  ----  -----  ------  ------  ------------------------------------  ----\nintel_backlight  backlight  -     96000  sysfs   yes     /sys/class/backlight/intel_backlight  -   \n\nNotes\nfirst note\nsecond note\n\nCandidate config snippet\n# No viable brightness-capable devices were discovered.";
+    const EXPECTED_WINDOWS: &str = "Discovery summary\nviable targets: 0\nexternal monitors: 0\nbacklight devices: 0\n\nBackend status\nbackend        status       detail       \n-------------  -----------  -------------\nddcutil        ok           ddcutil 2.1.4\nbrightnessctl  missing                   \nsysfs          unavailable  no devices   \n\nDDC monitors\nNo external monitors reported.\n\nBacklight devices\nNo internal backlight devices reported.\n\nWindows display topology\n  [1] Dell U2720Q (Primary)\n      Kind:              external_monitor (DisplayPort)\n      Status:            Active / Connected\n      GDI Device:        \\\\.\\DISPLAY1 (0,0 2560x1440)\n      CCD Path:          Adapter 0x1 / Target 4 (Connector #2)\n      Physical Monitors: 1 (Handles transient & destroyed via RAII)\n      Container ID:      {container}\n      Device Instance:   DISPLAY\\DEL\\1\n      Identity Quality:  strong\n      W3 Mutation Tier:  eligible\n      Canonical ID:      canon-1\n      Display Label:     Desk left\n      Brightness Backend: Capable (DXVA2 High-Level, Native: 0..100, Current: 30 [30%])\n      Note:              primary note\n\n  [2] Display\n      Kind:              external_monitor (DisplayPort)\n      Status:            Active / Temporarily Unavailable\n      GDI Device:        \\\\.\\DISPLAY2 (coordinates unknown)\n      CCD Path:          Adapter 0x1 / Target 4 (Connector #2)\n      Physical Monitors: 1 (Handles transient & destroyed via RAII)\n      Identity Quality:  strong\n      W3 Mutation Tier:  eligible\n      Brightness Backend: DXVA2 unsupported\n\n  [3] Display\n      Kind:              external_monitor (DisplayPort)\n      Status:            Inactive\n      CCD Path:          Adapter 0x1 / Target 4 (Connector #2)\n      Physical Monitors: 1 (Handles transient & destroyed via RAII)\n      Identity Quality:  strong\n      W3 Mutation Tier:  eligible\n      Brightness Backend: no handle\n\nCandidate config snippet\n# No viable brightness-capable devices were discovered.";
+}
