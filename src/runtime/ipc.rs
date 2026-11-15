@@ -15,15 +15,25 @@ pub(crate) type NativeIpcStream = std::os::unix::net::UnixStream;
 #[cfg(target_os = "windows")]
 pub(crate) type NativeIpcStream = crate::platform::windows::pipe::NamedPipeStream;
 
+/// Reply plus loop bookkeeping produced by one IPC request.
+type IpcReply = (ipc::ResponseEnvelope, IpcOutcome);
+
+/// Outcome of a request that queued (or tried to queue) a daemon apply.
+const QUEUED_APPLY: IpcOutcome = IpcOutcome {
+    tick_attempted: true,
+    config_reloaded: false,
+};
+
 impl DaemonRuntime {
-    #[allow(clippy::too_many_lines)]
+    /// Routes one request to its handler. Handlers only mutate state and
+    /// queue work via `mark_pending_apply`; the daemon loop performs the
+    /// hardware write after the reply has been sent.
     pub(super) fn handle_ipc_request_with_runner<R: ProcessRunner + Sync>(
         &mut self,
         request: ipc::Request,
         runner: &R,
         now_utc: DateTime<Utc>,
-    ) -> (ipc::ResponseEnvelope, IpcOutcome) {
-        let _ = runner;
+    ) -> IpcReply {
         let now_epoch_s = now_utc.timestamp().max(0) as u64;
 
         match request {
@@ -31,303 +41,270 @@ impl DaemonRuntime {
                 ipc::ResponseEnvelope::status(self.status_response(now_epoch_s)),
                 IpcOutcome::default(),
             ),
-            ipc::Request::Suspend { minutes } => {
-                if minutes == Some(0) {
-                    return (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InvalidRequest,
-                            "suspend minutes must be greater than zero",
-                        ),
-                        IpcOutcome::default(),
-                    );
-                }
-
-                match self.suspend(now_epoch_s, minutes) {
-                    Ok(message) => {
-                        self.mark_pending_apply(false, false);
-                        (ipc::ResponseEnvelope::ack(message), IpcOutcome::default())
-                    }
-                    Err(error) => (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InternalError,
-                            error.to_string(),
-                        ),
-                        IpcOutcome::default(),
-                    ),
-                }
-            }
-            ipc::Request::Resume => match self.resume() {
-                Ok(()) => {
-                    self.mark_pending_apply(true, true);
-                    (
-                        ipc::ResponseEnvelope::ack(
-                            "resumed automatic apply and cleared manual overrides; apply queued",
-                        ),
-                        IpcOutcome {
-                            tick_attempted: true,
-                            config_reloaded: false,
-                        },
-                    )
-                }
-                Err(error) => (
-                    ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, error.to_string()),
-                    IpcOutcome::default(),
-                ),
-            },
+            ipc::Request::Suspend { minutes } => self.handle_suspend(now_epoch_s, minutes),
+            ipc::Request::Resume => self.handle_resume(),
             ipc::Request::SetOverride {
                 monitor_id,
                 percent,
                 minutes,
             } => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-                match self.set_override(now_epoch_s, monitor_id.as_deref(), percent, minutes) {
-                    Ok(message) => {
-                        self.mark_pending_apply(true, false);
-                        (
-                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
-                            outcome,
-                        )
-                    }
-                    Err(error) => (ipc_error_response(&error), outcome),
-                }
+                let result =
+                    self.set_override(now_epoch_s, monitor_id.as_deref(), percent, minutes);
+                self.forced_apply_reply(result, QUEUED_APPLY)
             }
             ipc::Request::SetMonitorLimits {
                 monitor_id,
                 min_pct,
                 max_pct,
             } => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-                match self.set_monitor_limits(&monitor_id, min_pct, max_pct) {
-                    Ok(message) => {
-                        self.mark_pending_apply(true, false);
-                        (
-                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
-                            outcome,
-                        )
-                    }
-                    Err(error) => (ipc_error_response(&error), outcome),
-                }
+                let result = self.set_monitor_limits(&monitor_id, min_pct, max_pct);
+                self.forced_apply_reply(result, QUEUED_APPLY)
             }
-            ipc::Request::SetCloudDimming { percent } => {
-                if percent > 50 {
-                    return (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InvalidRequest,
-                            "cloud dimming percent must be within 0..=50",
-                        ),
-                        IpcOutcome::default(),
-                    );
-                }
-                match self.set_cloud_dimming(percent) {
-                    Ok(message) => {
-                        // The next daemon tick observes the new multiplier. Keep the
-                        // request path free of a synchronous hardware apply.
-                        self.mark_pending_apply(true, false);
-                        (
-                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
-                            IpcOutcome::default(),
-                        )
-                    }
-                    Err(error) => (ipc_error_response(&error), IpcOutcome::default()),
-                }
-            }
+            ipc::Request::SetCloudDimming { percent } => self.handle_set_cloud_dimming(percent),
             ipc::Request::ClearOverride { monitor_id, global } => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-                match self.clear_override(monitor_id.as_deref(), global) {
-                    Ok(message) => {
-                        self.mark_pending_apply(true, false);
-                        (
-                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
-                            outcome,
-                        )
-                    }
-                    Err(error) => (ipc_error_response(&error), outcome),
-                }
+                let result = self.clear_override(monitor_id.as_deref(), global);
+                self.forced_apply_reply(result, QUEUED_APPLY)
             }
             ipc::Request::ReloadConfig => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: true,
-                };
-                match self.reload_config() {
-                    Ok(()) => {
-                        let message =
-                            format!("reloaded config from {}", self.config.path.display());
-                        self.mark_pending_apply(true, false);
-                        (
-                            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
-                            outcome,
-                        )
-                    }
-                    Err(error) => (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InternalError,
-                            error.to_string(),
-                        ),
-                        IpcOutcome::default(),
-                    ),
-                }
+                let result = self.reload_config();
+                self.reload_config_reply(result)
             }
-            ipc::Request::RefreshWeather => {
-                if !self.config.weather.enabled {
-                    return (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InvalidRequest,
-                            "weather is disabled in configuration",
-                        ),
-                        IpcOutcome::default(),
-                    );
-                }
-                if self.weather_engine.request_refresh() {
-                    (
-                        ipc::ResponseEnvelope::ack("weather refresh requested"),
-                        IpcOutcome::default(),
-                    )
-                } else {
-                    (
-                        ipc::ResponseEnvelope::error(
-                            ipc::ErrorCode::InternalError,
-                            "weather refresh could not be scheduled",
-                        ),
-                        IpcOutcome::default(),
-                    )
-                }
-            }
+            ipc::Request::RefreshWeather => self.handle_refresh_weather(),
             ipc::Request::Ping => (ipc::ResponseEnvelope::pong(), IpcOutcome::default()),
-            ipc::Request::RunOnce { force } => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-
-                self.clear_external_holds(None);
-                self.mark_pending_apply(force, false);
-                (
-                    ipc::ResponseEnvelope::run_once(
-                        queued_run_once_response(),
-                        "daemon tick queued",
-                    ),
-                    outcome,
-                )
-            }
-            ipc::Request::ClearExternalHold { monitor } => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-                if let Some(monitor_id) = monitor.as_deref() {
-                    if let Err(error) = self.ensure_configured_monitor(monitor_id) {
-                        return (ipc_error_response(&error), IpcOutcome::default());
-                    }
-                }
-
-                self.clear_external_holds(monitor.as_deref());
-                // The hold cancellation follows the same deferred apply path as
-                // RunOnce, but keeps force=false so configured smoothing remains
-                // active while the daemon writes after the reply.
-                self.mark_pending_apply(false, false);
-                let message = monitor.map_or_else(
-                    || String::from("cleared external brightness holds"),
-                    |monitor_id| format!("cleared external brightness hold for {monitor_id}"),
-                );
-                (
-                    ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
-                    outcome,
-                )
-            }
-            ipc::Request::IdleDim => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-                self.state.desktop_idle_dimmed = true;
-                self.mark_pending_apply(true, false);
-                (
-                    ipc::ResponseEnvelope::ack("desktop idle dimming active; apply queued"),
-                    outcome,
-                )
-            }
-            ipc::Request::IdleWake => {
-                let outcome = IpcOutcome {
-                    tick_attempted: true,
-                    config_reloaded: false,
-                };
-                self.state.desktop_idle_dimmed = false;
-                let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
-                self.mark_pending_apply(true, false);
-                (
-                    ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
-                    outcome,
-                )
-            }
+            ipc::Request::RunOnce { force } => self.handle_run_once(force),
+            ipc::Request::ClearExternalHold { monitor } => self.handle_clear_external_hold(monitor),
+            ipc::Request::IdleDim => self.handle_idle_dim(),
+            ipc::Request::IdleWake => self.handle_idle_wake(),
             ipc::Request::ListThemes => (Self::theme_list_response(), IpcOutcome::default()),
             ipc::Request::GetTheme { id } => (Self::theme_response(&id), IpcOutcome::default()),
             ipc::Request::DayCurve { monitor_id } => (
                 self.day_curve_response(monitor_id.as_deref(), now_utc),
                 IpcOutcome::default(),
             ),
-            ipc::Request::ExternalBrightnessChange => {
-                let response = self
-                    .collect_tick_inputs(now_utc, false)
-                    .and_then(|inputs| self.compute_tick_policy(inputs))
-                    .map_or_else(
-                        |error| {
-                            ipc::ResponseEnvelope::error(
-                                ipc::ErrorCode::InternalError,
-                                error.to_string(),
-                            )
-                        },
-                        |computed| {
-                            if computed.suspended {
-                                return ipc::ResponseEnvelope::ack(
-                                    "external brightness change observed while suspended",
-                                );
-                            }
-                            let settings = self.force_apply_settings();
-                            let summary = apply::probe_and_correct_with_external_state(
-                                &self.config.monitors,
-                                &computed.policy,
-                                &mut self.state,
-                                now_epoch_s,
-                                settings.dry_run,
-                                settings.external_change_hold,
-                                |monitor| {
-                                    crate::apply::dispatch::probe_monitor_percent(
-                                        runner, monitor, &settings,
-                                    )
-                                },
-                                |monitor, target, percent| {
-                                    crate::apply::dispatch::apply_monitor_target(
-                                        runner, monitor, target, percent, &settings,
-                                    )
-                                },
-                                Some(&mut self.external_holds),
-                                self.recovery_until_epoch_s,
-                                Some(&mut self.fade_engine),
-                            );
-                            if summary.corrected > 0 {
-                                let _ = self.persist_state_if_changed();
-                            }
-                            ipc::ResponseEnvelope::ack(format!(
-                                "external brightness change observed; {} monitor(s) held",
-                                self.external_holds.len()
-                            ))
-                        },
-                    );
-                (response, IpcOutcome::default())
-            }
+            ipc::Request::ExternalBrightnessChange => (
+                self.handle_external_brightness_change(runner, now_utc, now_epoch_s),
+                IpcOutcome::default(),
+            ),
         }
     }
 
+    /// Shared tail of the state/config edits that queue a forced apply:
+    /// success acks with "; apply queued", failure maps via
+    /// `ipc_error_response`. `outcome` is reported either way.
+    fn forced_apply_reply(
+        &mut self,
+        result: Result<String, RuntimeError>,
+        outcome: IpcOutcome,
+    ) -> IpcReply {
+        match result {
+            Ok(message) => {
+                self.mark_pending_apply(true, false);
+                (
+                    ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                    outcome,
+                )
+            }
+            Err(error) => (ipc_error_response(&error), outcome),
+        }
+    }
+
+    fn handle_suspend(&mut self, now_epoch_s: u64, minutes: Option<u64>) -> IpcReply {
+        if minutes == Some(0) {
+            return (
+                ipc::ResponseEnvelope::error(
+                    ipc::ErrorCode::InvalidRequest,
+                    "suspend minutes must be greater than zero",
+                ),
+                IpcOutcome::default(),
+            );
+        }
+
+        match self.suspend(now_epoch_s, minutes) {
+            Ok(message) => {
+                self.mark_pending_apply(false, false);
+                (ipc::ResponseEnvelope::ack(message), IpcOutcome::default())
+            }
+            Err(error) => (
+                ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, error.to_string()),
+                IpcOutcome::default(),
+            ),
+        }
+    }
+
+    fn handle_resume(&mut self) -> IpcReply {
+        match self.resume() {
+            Ok(()) => {
+                self.mark_pending_apply(true, true);
+                (
+                    ipc::ResponseEnvelope::ack(
+                        "resumed automatic apply and cleared manual overrides; apply queued",
+                    ),
+                    QUEUED_APPLY,
+                )
+            }
+            Err(error) => (
+                ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, error.to_string()),
+                IpcOutcome::default(),
+            ),
+        }
+    }
+
+    fn handle_set_cloud_dimming(&mut self, percent: u8) -> IpcReply {
+        if percent > 50 {
+            return (
+                ipc::ResponseEnvelope::error(
+                    ipc::ErrorCode::InvalidRequest,
+                    "cloud dimming percent must be within 0..=50",
+                ),
+                IpcOutcome::default(),
+            );
+        }
+        // The next daemon tick observes the new multiplier. Keep the
+        // request path free of a synchronous hardware apply.
+        let result = self.set_cloud_dimming(percent);
+        self.forced_apply_reply(result, IpcOutcome::default())
+    }
+
+    /// Reply for a finished reload; split from the reload itself so tests can
+    /// drive it with an injected loader.
+    pub(super) fn reload_config_reply(&mut self, result: Result<(), RuntimeError>) -> IpcReply {
+        match result {
+            Ok(()) => {
+                let message = format!("reloaded config from {}", self.config.path.display());
+                self.mark_pending_apply(true, false);
+                (
+                    ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+                    IpcOutcome {
+                        tick_attempted: true,
+                        config_reloaded: true,
+                    },
+                )
+            }
+            Err(error) => (
+                ipc::ResponseEnvelope::error(ipc::ErrorCode::InternalError, error.to_string()),
+                IpcOutcome::default(),
+            ),
+        }
+    }
+
+    fn handle_refresh_weather(&mut self) -> IpcReply {
+        let response = if !self.config.weather.enabled {
+            ipc::ResponseEnvelope::error(
+                ipc::ErrorCode::InvalidRequest,
+                "weather is disabled in configuration",
+            )
+        } else if self.weather_engine.request_refresh() {
+            ipc::ResponseEnvelope::ack("weather refresh requested")
+        } else {
+            ipc::ResponseEnvelope::error(
+                ipc::ErrorCode::InternalError,
+                "weather refresh could not be scheduled",
+            )
+        };
+        (response, IpcOutcome::default())
+    }
+
+    fn handle_run_once(&mut self, force: bool) -> IpcReply {
+        self.clear_external_holds(None);
+        self.mark_pending_apply(force, false);
+        (
+            ipc::ResponseEnvelope::run_once(queued_run_once_response(), "daemon tick queued"),
+            QUEUED_APPLY,
+        )
+    }
+
+    fn handle_clear_external_hold(&mut self, monitor: Option<String>) -> IpcReply {
+        if let Some(monitor_id) = monitor.as_deref() {
+            if let Err(error) = self.ensure_configured_monitor(monitor_id) {
+                return (ipc_error_response(&error), IpcOutcome::default());
+            }
+        }
+
+        self.clear_external_holds(monitor.as_deref());
+        // The hold cancellation follows the same deferred apply path as
+        // RunOnce, but keeps force=false so configured smoothing remains
+        // active while the daemon writes after the reply.
+        self.mark_pending_apply(false, false);
+        let message = monitor.map_or_else(
+            || String::from("cleared external brightness holds"),
+            |monitor_id| format!("cleared external brightness hold for {monitor_id}"),
+        );
+        (
+            ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
+            QUEUED_APPLY,
+        )
+    }
+
+    fn handle_idle_dim(&mut self) -> IpcReply {
+        self.state.desktop_idle_dimmed = true;
+        self.mark_pending_apply(true, false);
+        (
+            ipc::ResponseEnvelope::ack("desktop idle dimming active; apply queued"),
+            QUEUED_APPLY,
+        )
+    }
+
+    fn handle_idle_wake(&mut self) -> IpcReply {
+        self.state.desktop_idle_dimmed = false;
+        let _ = self.request_wake_reassert(WakeReason::WaylandIdleResume);
+        self.mark_pending_apply(true, false);
+        (
+            ipc::ResponseEnvelope::ack("desktop idle wake queued for re-observation"),
+            QUEUED_APPLY,
+        )
+    }
+
+    /// The one request that touches hardware before replying: it probes the
+    /// monitors to learn which ones another controller changed.
+    fn handle_external_brightness_change<R: ProcessRunner + Sync>(
+        &mut self,
+        runner: &R,
+        now_utc: DateTime<Utc>,
+        now_epoch_s: u64,
+    ) -> ipc::ResponseEnvelope {
+        let computed = match self
+            .collect_tick_inputs(now_utc, false)
+            .and_then(|inputs| self.compute_tick_policy(inputs))
+        {
+            Ok(computed) => computed,
+            Err(error) => {
+                return ipc::ResponseEnvelope::error(
+                    ipc::ErrorCode::InternalError,
+                    error.to_string(),
+                );
+            }
+        };
+        if computed.suspended {
+            return ipc::ResponseEnvelope::ack(
+                "external brightness change observed while suspended",
+            );
+        }
+        let settings = self.force_apply_settings();
+        let summary = apply::probe_and_correct_with_external_state(
+            &self.config.monitors,
+            &computed.policy,
+            &mut self.state,
+            now_epoch_s,
+            settings.dry_run,
+            settings.external_change_hold,
+            |monitor| crate::apply::dispatch::probe_monitor_percent(runner, monitor, &settings),
+            |monitor, target, percent| {
+                crate::apply::dispatch::apply_monitor_target(
+                    runner, monitor, target, percent, &settings,
+                )
+            },
+            Some(&mut self.external_holds),
+            self.recovery_until_epoch_s,
+            Some(&mut self.fade_engine),
+        );
+        if summary.corrected > 0 {
+            let _ = self.persist_state_if_changed();
+        }
+        ipc::ResponseEnvelope::ack(format!(
+            "external brightness change observed; {} monitor(s) held",
+            self.external_holds.len()
+        ))
+    }
     pub(super) fn reload_config_with<F>(&mut self, loader: F) -> Result<(), RuntimeError>
     where
         F: FnOnce() -> Result<ConfigReport, ConfigError>,

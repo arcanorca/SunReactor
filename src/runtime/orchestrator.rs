@@ -2984,6 +2984,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ipc_characterization_reload_config_reply_reports_path_and_reload_outcome() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_dry_run_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+
+        let result = runtime.reload_config_with(|| Ok(test_dry_run_config_report()));
+        let (response, outcome) = runtime.reload_config_reply(result);
+        assert_eq!(
+            serde_json::to_string(&response).expect("response serializes"),
+            r#"{"version":1,"response":"ack","message":"reloaded config from /tmp/sunreactor-config.toml; apply queued"}"#
+        );
+        assert_eq!(
+            outcome,
+            IpcOutcome {
+                tick_attempted: true,
+                config_reloaded: true,
+            }
+        );
+        assert_eq!(runtime.take_pending_apply(), Some((true, false)));
+
+        let result = runtime.reload_config_with(|| {
+            Err(ConfigError::AlreadyExists(PathBuf::from(
+                "/tmp/invalid.toml",
+            )))
+        });
+        let (response, outcome) = runtime.reload_config_reply(result);
+        let Response::Error { code, message } = response.response else {
+            panic!("reload failure must reply with an error");
+        };
+        assert_eq!(code, ipc::ErrorCode::InternalError);
+        assert!(message.contains("config file already exists"));
+        assert_eq!(outcome, IpcOutcome::default());
+        assert_eq!(runtime.take_pending_apply(), None);
+    }
+
     fn test_config_report() -> ConfigReport {
         ConfigReport {
             path: PathBuf::from("/tmp/sunreactor-config.toml"),
