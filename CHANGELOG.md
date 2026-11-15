@@ -125,6 +125,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directories are gone too.
 
 ### Fixed
+- On Wayland with `desktop_idle_timeout_minutes > 0`, returning input now wakes
+  idle-dimmed screens instead of leaving them dimmed until the next IPC wake.
+- With `desktop_idle_sync = false`, the Wayland wake-hint watcher still runs, so
+  monitors waking from DPMS get their brightness re-asserted.
+- Setting monitor limits or maximum cloud dimming over IPC changes only that
+  setting in the running daemon; other edits in `config.toml` wait for `reload`
+  instead of being adopted silently without reload handling.
+- `sunreactorctl run-once` reports `queued — apply runs in background` instead of
+  zero counters; the response carries a wire-compatible `queued` flag.
 - A broken user theme never stops automatic brightness. The daemon falls back to
   the built-in with the same id (or `amber`) and reports `theme_warning`.
 - The widget's theme picker fills in as the daemon's theme list arrives.

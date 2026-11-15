@@ -73,21 +73,18 @@ impl DesktopIdleSync {
     ) -> Self {
         #[cfg(target_os = "linux")]
         let watcher: Option<IdleWatcher> = {
-            if enabled {
-                #[cfg(all(target_os = "linux", feature = "wayland"))]
-                if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
-                    spawn_wayland_idle(timeout_minutes)
-                } else if timeout_minutes > 0 {
-                    spawn(socket_path, timeout_minutes)
-                } else {
-                    None
-                }
-                #[cfg(not(feature = "wayland"))]
-                if timeout_minutes > 0 {
-                    spawn(socket_path, timeout_minutes)
-                } else {
-                    None
-                }
+            let watch_timeout = effective_watcher_timeout(enabled, timeout_minutes);
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
+            if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
+                spawn_wayland_idle(watch_timeout)
+            } else if watch_timeout > 0 {
+                spawn(socket_path, watch_timeout)
+            } else {
+                None
+            }
+            #[cfg(not(feature = "wayland"))]
+            if watch_timeout > 0 {
+                spawn(socket_path, watch_timeout)
             } else {
                 None
             }
@@ -144,17 +141,10 @@ impl DesktopIdleSync {
     }
 
     pub(super) fn maintain_watcher(&mut self, socket_path: &std::path::Path) {
-        if !self.enabled {
-            #[cfg(target_os = "linux")]
-            {
-                self.watcher = None;
-            }
-            return;
-        }
-
         #[cfg(target_os = "linux")]
         {
-            if self.timeout_minutes == 0 {
+            let watch_timeout = effective_watcher_timeout(self.enabled, self.timeout_minutes);
+            if watch_timeout == 0 {
                 #[cfg(all(target_os = "linux", feature = "wayland"))]
                 if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) {
                     let needs_restart = match &self.watcher {
@@ -190,7 +180,7 @@ impl DesktopIdleSync {
                     tracing::info!("idle_watcher_died_restarting");
                 }
                 self.last_spawn_attempt = Some(Instant::now());
-                self.watcher = spawn(socket_path.to_path_buf(), self.timeout_minutes);
+                self.watcher = spawn(socket_path.to_path_buf(), watch_timeout);
             }
         }
         #[cfg(not(target_os = "linux"))]
@@ -489,6 +479,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
     ) {
         match wayland_idle_action(state.mode, &event) {
             WaylandIdleAction::IdleDim => fire_sunreactorctl("idle-dim"),
+            WaylandIdleAction::IdleWake => fire_sunreactorctl("idle-wake"),
             WaylandIdleAction::Resumed => {}
             WaylandIdleAction::Ignore => {}
         }
@@ -547,6 +538,17 @@ fn spawn_wayland_idle(timeout_minutes: u64) -> Option<IdleWatcher> {
     })
 }
 
+/// Idle-dim threshold the watcher should use; zero means wake hints only.
+/// Disabled idle sync still keeps the Wayland wake-hint watcher alive.
+#[cfg(target_os = "linux")]
+fn effective_watcher_timeout(enabled: bool, timeout_minutes: u64) -> u64 {
+    if enabled {
+        timeout_minutes
+    } else {
+        0
+    }
+}
+
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 fn wayland_idle_settings(timeout_minutes: u64) -> Option<(u32, WaylandIdleMode)> {
     if timeout_minutes == 0 {
@@ -568,6 +570,10 @@ fn wayland_idle_settings(timeout_minutes: u64) -> Option<(u32, WaylandIdleMode)>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WaylandIdleAction {
     IdleDim,
+    /// Input resumed after an idle-dim: clear the dim via `idle-wake`, which
+    /// also requests the wake re-assert.
+    IdleWake,
+    /// Input resumed in wake-hint-only mode: re-assert brightness only.
     Resumed,
     Ignore,
 }
@@ -577,6 +583,9 @@ fn wayland_idle_action(mode: WaylandIdleMode, event: &IdleNotificationEvent) -> 
     match event {
         IdleNotificationEvent::Idled if mode == WaylandIdleMode::IdleDim => {
             WaylandIdleAction::IdleDim
+        }
+        IdleNotificationEvent::Resumed if mode == WaylandIdleMode::IdleDim => {
+            WaylandIdleAction::IdleWake
         }
         IdleNotificationEvent::Resumed => {
             INPUT_RESUMED.store(true, Ordering::Release);
@@ -1045,11 +1054,34 @@ mod tests {
             wayland_idle_action(mode, &IdleNotificationEvent::Idled),
             WaylandIdleAction::IdleDim
         );
+        assert_eq!(wayland_idle_settings(u64::MAX), None);
+    }
+
+    #[cfg(feature = "wayland")]
+    #[test]
+    fn disabled_idle_sync_keeps_wayland_wake_hint_watcher() {
+        // Idle dimming off must still watch Wayland input resume so monitors
+        // waking from DPMS get their brightness re-asserted.
+        let timeout = effective_watcher_timeout(false, 15);
+        assert_eq!(timeout, 0);
+        let (timeout_ms, mode) = wayland_idle_settings(timeout).expect("wake hint should be valid");
+        assert_eq!(timeout_ms, WAYLAND_WAKE_HINT_IDLE_TIMEOUT_MS);
+        assert_eq!(mode, WaylandIdleMode::WakeHintOnly);
+        assert_eq!(effective_watcher_timeout(true, 15), 15);
+        assert_eq!(effective_watcher_timeout(true, 0), 0);
+    }
+
+    #[cfg(feature = "wayland")]
+    #[test]
+    fn idle_dim_wayland_watcher_wakes_on_resume() {
+        let (_, mode) = wayland_idle_settings(5).expect("configured timeout should fit");
+        assert_eq!(mode, WaylandIdleMode::IdleDim);
+        // Resuming after an idle-dim must clear the dim like swayidle's
+        // `resume ... idle-wake`, not merely hint the wake re-assert.
         assert_eq!(
             wayland_idle_action(mode, &IdleNotificationEvent::Resumed),
-            WaylandIdleAction::Resumed
+            WaylandIdleAction::IdleWake
         );
-        assert_eq!(wayland_idle_settings(u64::MAX), None);
     }
 
     #[test]

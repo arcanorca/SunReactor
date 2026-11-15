@@ -604,6 +604,10 @@ pub struct RunOnceResponse {
     pub writes_skipped: u32,
     pub writes_succeeded: u32,
     pub writes_failed: u32,
+    /// True when the daemon only queued the apply: it replies before the
+    /// hardware write, so the counters above carry no real results.
+    #[serde(default)]
+    pub queued: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -791,6 +795,16 @@ mod tests {
             serde_json::to_string(&ThemeStatus::from_theme(registry.get("nord").unwrap())).unwrap();
         let legacy: LegacyThemeStatus = serde_json::from_str(&new).unwrap();
         assert_eq!(legacy.name, "Nord");
+    }
+
+    #[test]
+    fn run_once_response_without_queued_field_parses_as_not_queued() {
+        let raw = serde_json::json!({
+            "tick_duration_ms": 12, "monitors_evaluated": 1, "writes_attempted": 1,
+            "writes_skipped": 0, "writes_succeeded": 1, "writes_failed": 0
+        });
+        let parsed: super::RunOnceResponse = serde_json::from_value(raw).expect("legacy payload");
+        assert!(!parsed.queued);
     }
 
     #[test]
