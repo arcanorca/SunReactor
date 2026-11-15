@@ -212,7 +212,7 @@ pub(crate) fn resolve_connector_backlight_legacy(
 
     match candidates.len() {
         1 => {
-            let device_name = candidates.into_iter().next().expect("len==1");
+            let device_name = candidates.into_iter().next().expect("invariant: this arm matched candidates.len() == 1");
             let diagnostic = format!(
                 "connector-only backlight targeting via `connector=\"{connector_name}\"` is \
                  deprecated: it resolved through the kernel/driver `ddcci_backlight` link; \
@@ -288,7 +288,7 @@ fn resolve_relative_device_name(device_name: &str) -> Result<String, BackendErro
     Ok(Path::new(&path)
         .file_name()
         .and_then(|value| value.to_str())
-        .expect("canonical backlight path has one valid device component")
+        .expect("invariant: canonical_configured_sysfs_path yields a UTF-8 device component")
         .to_owned())
 }
 

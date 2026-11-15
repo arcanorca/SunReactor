@@ -297,7 +297,8 @@ fn parse_brightness_output(
                 attempts: 1,
             }
         })?;
-    let percent = u8::try_from(value.current.min(100)).expect("clamped brightness fits in u8");
+    let percent =
+        u8::try_from(value.current.min(100)).expect("invariant: value clamped to 100 fits in u8");
     Ok(super::BackendObservation {
         percent: percent.min(100),
     })

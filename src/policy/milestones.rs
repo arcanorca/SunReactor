@@ -2,7 +2,7 @@ use crate::policy::{
     compute_monitor_target_percent, linear_daylight_factor_at_local, solar_elevation_at_utc,
     PolicyContext, PolicyError,
 };
-use crate::solar::{self, Location};
+use crate::solar::{self, Location, SolarError};
 use chrono::{DateTime, Duration, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -336,8 +336,7 @@ pub(crate) fn resolve_base_milestone_context_for_date(
 ) -> Result<BaseMilestoneContext, PolicyError> {
     let start_of_day = resolve_local_minute_of_day(date, 0, input.location)?;
     let end_of_day = resolve_local_minute_of_day(
-        date.succ_opt()
-            .expect("policy date should remain within chrono's supported range"),
+        date.succ_opt().ok_or(SolarError::DateOutOfRange)?,
         0,
         input.location,
     )?;
@@ -397,18 +396,14 @@ pub(crate) fn resolve_base_milestone_context(
 
     if now_local < rise_start {
         // We are before today's sunrise, so we actually belong to yesterday's cycle.
-        date = date
-            .pred_opt()
-            .expect("policy date should remain within chrono's supported range");
+        date = date.pred_opt().ok_or(SolarError::DateOutOfRange)?;
         context = resolve_base_milestone_context_for_date(input, date)?;
 
         // Yesterday's NightFloor can be pushed up to 1 minute before today's sunrise.
         context.day_end_local = rise_start - Duration::minutes(1);
     } else {
         // We are within today's cycle.
-        let tomorrow = date
-            .succ_opt()
-            .expect("policy date should remain within chrono's supported range");
+        let tomorrow = date.succ_opt().ok_or(SolarError::DateOutOfRange)?;
         let tomorrow_context = resolve_base_milestone_context_for_date(input, tomorrow)?;
         let tomorrow_rise = find_rise_start(input, &tomorrow_context);
 
@@ -565,7 +560,7 @@ pub(crate) fn relevant_evening_events(
     let yesterday = now_local
         .date_naive()
         .pred_opt()
-        .expect("policy date should remain within chrono's supported range");
+        .ok_or(SolarError::DateOutOfRange)?;
     Ok(Some(solar::get_sun_events(yesterday, location)?))
 }
 pub(crate) fn resolve_auto_minimum_brightness_start(
@@ -583,7 +578,7 @@ pub(crate) fn resolve_local_minute_of_day(
     location: &Location,
 ) -> Result<DateTime<chrono::FixedOffset>, PolicyError> {
     let time = local_time_from_minute_of_day(minute_of_day)
-        .expect("validated minute-of-day should produce a local time");
+        .expect("invariant: callers pass a minute_of_day below 24 * 60");
     let datetime = date.and_time(time);
     solar::local_datetime(datetime, location).map_err(Into::into)
 }

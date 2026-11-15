@@ -29,8 +29,10 @@ pub(crate) fn daylight_factor_with_adjustments(
     let adjusted = adjusted_milestones(monitor, context, base_milestones);
     let first = adjusted
         .first()
-        .expect("milestone list should not be empty");
-    let last = adjusted.last().expect("milestone list should not be empty");
+        .expect("invariant: adjusted_milestones keeps all nine base milestones");
+    let last = adjusted
+        .last()
+        .expect("invariant: adjusted_milestones keeps all nine base milestones");
 
     if now_local <= first.adjusted_time_local || now_local >= last.adjusted_time_local {
         return Ok(0.0);
