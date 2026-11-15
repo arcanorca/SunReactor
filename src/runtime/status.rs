@@ -4,7 +4,6 @@ use crate::runtime::topology;
 use crate::weather;
 
 impl DaemonRuntime {
-    #[allow(clippy::too_many_lines)]
     pub(super) fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
         let control = self.state.effective_control(now_epoch_s);
         let weather = self.weather_status(now_epoch_s);

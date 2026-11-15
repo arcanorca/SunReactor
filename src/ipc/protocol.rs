@@ -234,7 +234,7 @@ impl ResponseEnvelope {
 #[serde(tag = "response", rename_all = "snake_case")]
 // Keep the status payload inline: this preserves the existing public response
 // shape and avoids changing the IPC response construction API just for layout.
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant)] // inline status payload keeps the wire/API shape stable
 pub enum Response {
     Pong {
         message: String,
@@ -1017,7 +1017,7 @@ mod tests {
     #[test]
     fn old_status_json_without_theme_engine_fields_still_parses() {
         #[derive(serde::Deserialize)]
-        #[allow(dead_code)]
+        #[allow(dead_code)] // fields exist only to require the legacy keys during deserialization
         struct LegacyThemeStatus {
             name: String,
             accent: String,

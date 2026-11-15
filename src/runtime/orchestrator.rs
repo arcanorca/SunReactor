@@ -524,7 +524,6 @@ impl DaemonRuntime {
     }
     /// Performs the internal setup steps, including creating the runtime socket directory,
     /// loading the persistent state file, and normalizing monitor configurations.
-    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn bootstrap_with_paths(
         config: ConfigReport,
         state_path: PathBuf,
@@ -533,7 +532,6 @@ impl DaemonRuntime {
         Self::bootstrap_with_paths_mode(config, state_path, socket_path, true)
     }
 
-    #[allow(clippy::needless_pass_by_value)]
     fn bootstrap_with_paths_mode(
         config: ConfigReport,
         state_path: PathBuf,

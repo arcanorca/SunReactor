@@ -58,7 +58,7 @@ impl DisplayEventSources {
             let drm_pending = Arc::clone(&pending);
             if let Ok(handle) = thread::Builder::new()
                 .name(String::from("sunreactor-drm-events"))
-                .spawn(move || drm_listener(drm_pending, drm_shutdown))
+                .spawn(move || drm_listener(&drm_pending, &drm_shutdown))
             {
                 handles.push(handle);
                 tracing::info!("drm_event_listener_started");
@@ -70,7 +70,7 @@ impl DisplayEventSources {
             let logind_pending = Arc::clone(&pending);
             if let Ok(handle) = thread::Builder::new()
                 .name(String::from("sunreactor-logind-events"))
-                .spawn(move || logind_listener(logind_pending, logind_shutdown))
+                .spawn(move || logind_listener(&logind_pending, &logind_shutdown))
             {
                 handles.push(handle);
                 tracing::info!("logind_event_listener_started");
@@ -114,14 +114,13 @@ fn send_request(pending: &PendingRequest, reason: DisplayRecoveryReason) {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(clippy::needless_pass_by_value)]
-fn drm_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
+fn drm_listener(pending: &PendingRequest, shutdown: &AtomicBool) {
     while !shutdown.load(Ordering::Acquire) {
-        match drm_listener_once(&pending, &shutdown) {
+        match drm_listener_once(pending, shutdown) {
             Ok(()) => {}
             Err(error) => tracing::warn!(error = %error, "drm_event_listener_unavailable"),
         }
-        wait_interruptibly(&shutdown, LISTENER_RETRY_DELAY);
+        wait_interruptibly(shutdown, LISTENER_RETRY_DELAY);
     }
 }
 
@@ -278,12 +277,11 @@ fn connector_id(payload: &[u8]) -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(clippy::needless_pass_by_value)]
-fn logind_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
+fn logind_listener(pending: &PendingRequest, shutdown: &AtomicBool) {
     let mut retry_delay = LISTENER_RETRY_DELAY;
     let mut unavailable_logged = false;
     while !shutdown.load(Ordering::Acquire) {
-        match logind_listener_once(&pending, &shutdown) {
+        match logind_listener_once(pending, shutdown) {
             Ok(()) => {
                 retry_delay = LISTENER_RETRY_DELAY;
             }
@@ -294,12 +292,12 @@ fn logind_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
                     tracing::warn!(error = %error, "logind_event_listener_unavailable");
                     unavailable_logged = true;
                 }
-                wait_interruptibly(&shutdown, retry_delay);
+                wait_interruptibly(shutdown, retry_delay);
                 retry_delay = next_logind_retry_delay(retry_delay);
                 continue;
             }
         }
-        wait_interruptibly(&shutdown, retry_delay);
+        wait_interruptibly(shutdown, retry_delay);
     }
 }
 

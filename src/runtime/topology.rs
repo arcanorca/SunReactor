@@ -47,7 +47,7 @@ pub enum ReconcileAction {
     /// unconfigured hardware. Never emitted by the configured-target apply
     /// path (the apply gate only classifies configured monitors), so it may
     /// appear unused by dead-code analysis until those diagnostics exist.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // reserved variant, not yet constructed (see doc above)
     UnconfiguredObserved,
 }
 
