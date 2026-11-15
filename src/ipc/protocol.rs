@@ -644,8 +644,254 @@ pub enum IpcError {
 mod tests {
     use super::{
         DayCurveMilestone, DayCurveMonitor, DayCurveResponse, DayCurveSample, DayCurveSun,
-        ErrorCode, Request, RequestEnvelope, Response, ResponseEnvelope, ThemeStatus, ThemeSummary,
+        ErrorCode, ExternalHoldStatus, MonitorStatus, Request, RequestEnvelope, Response,
+        ResponseEnvelope, RunOnceResponse, StatusResponse, ThemePaletteStatus, ThemeStatus,
+        ThemeSummary, ThemeWidgetStatus, WeatherStatus,
     };
+
+    fn every_request_variant() -> Vec<Request> {
+        vec![
+            Request::Status,
+            Request::Suspend { minutes: None },
+            Request::Suspend { minutes: Some(15) },
+            Request::Resume,
+            Request::IdleDim,
+            Request::IdleWake,
+            Request::SetOverride {
+                monitor_id: Some(String::from("desk")),
+                percent: 40,
+                minutes: Some(10),
+            },
+            Request::SetOverride {
+                monitor_id: None,
+                percent: 0,
+                minutes: None,
+            },
+            Request::SetMonitorLimits {
+                monitor_id: String::from("desk"),
+                min_pct: 5,
+                max_pct: 95,
+            },
+            Request::SetCloudDimming { percent: 20 },
+            Request::ClearOverride {
+                monitor_id: Some(String::from("desk")),
+                global: false,
+            },
+            Request::ReloadConfig,
+            Request::RefreshWeather,
+            Request::Ping,
+            Request::RunOnce { force: true },
+            Request::ClearExternalHold { monitor: None },
+            Request::ExternalBrightnessChange,
+            Request::ListThemes,
+            Request::GetTheme {
+                id: String::from("nord"),
+            },
+            Request::DayCurve {
+                monitor_id: Some(String::from("desk")),
+            },
+        ]
+    }
+
+    fn every_response_variant() -> Vec<ResponseEnvelope> {
+        let status = StatusResponse {
+            daemon_alive: true,
+            config_path: String::from("/c.toml"),
+            tick_seconds: 60,
+            dry_run: false,
+            suspended: true,
+            desktop_idle_dimmed: false,
+            suspend_until_epoch_s: Some(7),
+            manual_override_active: false,
+            per_monitor_override_until_epoch_s: None,
+            global_override_percent: Some(30),
+            global_override_until_epoch_s: None,
+            configured_monitors: 1,
+            stateful_monitors: 1,
+            weather: Some(WeatherStatus::default()),
+            monitors: vec![MonitorStatus {
+                logical_id: String::from("desk"),
+                backend: crate::backends::BackendKind::Ddc,
+                enabled: true,
+                override_percent: None,
+                last_applied_percent: Some(50),
+                last_applied_at_epoch_s: Some(3),
+                backoff_until_epoch_s: None,
+                topology: Some(String::from("ddc")),
+                min_pct: Some(1),
+                max_pct: Some(99),
+                external_hold: Some(ExternalHoldStatus {
+                    remaining_s: 60,
+                    observed_percent: 22,
+                }),
+            }],
+            solar_elevation: Some(12.5),
+            now_epoch_s: 100,
+            sunrise_epoch_s: Some(1),
+            sunset_epoch_s: None,
+            lunar_phase: Some(crate::solar::LunarPhase::FullMoon),
+            theme: None,
+            theme_warning: Some(String::from("fallback")),
+        };
+        vec![
+            ResponseEnvelope::pong(),
+            ResponseEnvelope::ack("done"),
+            ResponseEnvelope::status(status),
+            ResponseEnvelope::run_once(
+                RunOnceResponse {
+                    tick_duration_ms: 0,
+                    monitors_evaluated: 0,
+                    writes_attempted: 0,
+                    writes_skipped: 0,
+                    writes_succeeded: 0,
+                    writes_failed: 0,
+                    queued: true,
+                },
+                "daemon tick queued",
+            ),
+            ResponseEnvelope::themes(vec![ThemeSummary {
+                id: String::from("nord"),
+                name: String::from("Nord"),
+                family: String::from("terminal"),
+                bg: String::from("#000000"),
+                fg: String::from("#ffffff"),
+                accent: String::from("#111111"),
+                secondary_accent: String::from("#222222"),
+            }]),
+            ResponseEnvelope::theme(ThemeStatus {
+                name: String::from("Amber"),
+                accent: String::from("#ffb000"),
+                secondary_accent: String::from("#dc8c00"),
+                bg: String::from("#0f0a05"),
+                fg: String::from("#ffd296"),
+                text_muted: String::from("#b47832"),
+                id: Some(String::from("amber")),
+                family: None,
+                glyph_style: None,
+                palette: Some(ThemePaletteStatus::default()),
+                widget: Some(ThemeWidgetStatus::default()),
+            }),
+            ResponseEnvelope::day_curve(DayCurveResponse {
+                date: String::from("2026-10-13"),
+                step_minutes: 10,
+                generated_at_epoch_s: 5,
+                weather_multiplier: None,
+                sun: DayCurveSun::default(),
+                monitors: Vec::new(),
+                milestones_error: Some(String::from("polar night")),
+            }),
+            ResponseEnvelope::error(ErrorCode::InvalidRequest, "bad"),
+            ResponseEnvelope::error(ErrorCode::UnsupportedVersion, "old"),
+            ResponseEnvelope::error(ErrorCode::InternalError, "boom"),
+        ]
+    }
+
+    /// Exhaustive on purpose: adding a `Request` variant fails to compile
+    /// here until the snapshot below covers it.
+    fn request_variant_index(request: &Request) -> usize {
+        match request {
+            Request::Status => 0,
+            Request::Suspend { .. } => 1,
+            Request::Resume => 2,
+            Request::IdleDim => 3,
+            Request::IdleWake => 4,
+            Request::SetOverride { .. } => 5,
+            Request::SetMonitorLimits { .. } => 6,
+            Request::SetCloudDimming { .. } => 7,
+            Request::ClearOverride { .. } => 8,
+            Request::ReloadConfig => 9,
+            Request::RefreshWeather => 10,
+            Request::Ping => 11,
+            Request::RunOnce { .. } => 12,
+            Request::ClearExternalHold { .. } => 13,
+            Request::ExternalBrightnessChange => 14,
+            Request::ListThemes => 15,
+            Request::GetTheme { .. } => 16,
+            Request::DayCurve { .. } => 17,
+        }
+    }
+
+    fn response_variant_index(response: &Response) -> usize {
+        match response {
+            Response::Pong { .. } => 0,
+            Response::Ack { .. } => 1,
+            Response::Status { .. } => 2,
+            Response::RunOnce { .. } => 3,
+            Response::Themes { .. } => 4,
+            Response::Theme { .. } => 5,
+            Response::DayCurve { .. } => 6,
+            Response::Error { .. } => 7,
+        }
+    }
+
+    #[test]
+    fn every_request_variant_has_a_byte_identical_wire_snapshot() {
+        let expected = [
+            r#"{"version":1,"request":"status"}"#,
+            r#"{"version":1,"request":"suspend","minutes":null}"#,
+            r#"{"version":1,"request":"suspend","minutes":15}"#,
+            r#"{"version":1,"request":"resume"}"#,
+            r#"{"version":1,"request":"idle_dim"}"#,
+            r#"{"version":1,"request":"idle_wake"}"#,
+            r#"{"version":1,"request":"set_override","monitor_id":"desk","percent":40,"minutes":10}"#,
+            r#"{"version":1,"request":"set_override","monitor_id":null,"percent":0,"minutes":null}"#,
+            r#"{"version":1,"request":"set_monitor_limits","monitor_id":"desk","min_pct":5,"max_pct":95}"#,
+            r#"{"version":1,"request":"set_cloud_dimming","percent":20}"#,
+            r#"{"version":1,"request":"clear_override","monitor_id":"desk","global":false}"#,
+            r#"{"version":1,"request":"reload_config"}"#,
+            r#"{"version":1,"request":"refresh_weather"}"#,
+            r#"{"version":1,"request":"ping"}"#,
+            r#"{"version":1,"request":"run_once","force":true}"#,
+            r#"{"version":1,"request":"clear_external_hold","monitor":null}"#,
+            r#"{"version":1,"request":"external_brightness_change"}"#,
+            r#"{"version":1,"request":"list_themes"}"#,
+            r#"{"version":1,"request":"get_theme","id":"nord"}"#,
+            r#"{"version":1,"request":"day_curve","monitor_id":"desk"}"#,
+        ];
+        let requests = every_request_variant();
+        assert_eq!(requests.len(), expected.len());
+        let mut covered = [false; 18];
+        for (request, wire) in requests.into_iter().zip(expected) {
+            covered[request_variant_index(&request)] = true;
+            let envelope = RequestEnvelope::new(request);
+            assert_eq!(serde_json::to_string(&envelope).unwrap(), wire);
+            let parsed: RequestEnvelope = serde_json::from_str(wire).unwrap();
+            assert_eq!(parsed, envelope);
+        }
+        assert!(
+            covered.iter().all(|seen| *seen),
+            "uncovered request variant"
+        );
+    }
+
+    #[test]
+    fn every_response_variant_has_a_byte_identical_wire_snapshot() {
+        let expected = [
+            r#"{"version":1,"response":"pong","message":"pong"}"#,
+            r#"{"version":1,"response":"ack","message":"done"}"#,
+            r#"{"version":1,"response":"status","status":{"daemon_alive":true,"config_path":"/c.toml","tick_seconds":60,"dry_run":false,"suspended":true,"desktop_idle_dimmed":false,"suspend_until_epoch_s":7,"manual_override_active":false,"per_monitor_override_until_epoch_s":null,"global_override_percent":30,"global_override_until_epoch_s":null,"configured_monitors":1,"stateful_monitors":1,"weather":{"enabled":false,"cloud_dimming_percent":0,"state":"disabled","active":false,"stale":false,"provider":null,"fetched_at_epoch_s":null,"valid_at_epoch_s":null,"source_kind":null,"last_refresh_attempt_epoch_s":null,"next_refresh_at_epoch_s":null,"consecutive_failures":0,"last_error":null,"cloud_cover_percent":null,"temperature":null,"condition":"unknown","condition_description":null,"day_phase":null,"forecast":[],"multiplier":null,"details":{"feels_like":null,"humidity_percent":null,"pressure_hpa":null,"wind_speed_mps":null,"wind_direction_deg":null,"visibility_m":null,"precipitation_percent":null,"air_quality":null}},"monitors":[{"logical_id":"desk","backend":"ddc","enabled":true,"override_percent":null,"last_applied_percent":50,"last_applied_at_epoch_s":3,"backoff_until_epoch_s":null,"topology":"ddc","min_pct":1,"max_pct":99,"external_hold":{"remaining_s":60,"observed_percent":22}}],"solar_elevation":12.5,"now_epoch_s":100,"sunrise_epoch_s":1,"sunset_epoch_s":null,"lunar_phase":"full_moon","theme_warning":"fallback"}}"#,
+            r#"{"version":1,"response":"run_once","run_once":{"tick_duration_ms":0,"monitors_evaluated":0,"writes_attempted":0,"writes_skipped":0,"writes_succeeded":0,"writes_failed":0,"queued":true},"message":"daemon tick queued"}"#,
+            r##"{"version":1,"response":"themes","themes":[{"id":"nord","name":"Nord","family":"terminal","bg":"#000000","fg":"#ffffff","accent":"#111111","secondary_accent":"#222222"}]}"##,
+            r##"{"version":1,"response":"theme","theme":{"name":"Amber","accent":"#ffb000","secondary_accent":"#dc8c00","bg":"#0f0a05","fg":"#ffd296","text_muted":"#b47832","id":"amber","palette":{"bg":"","fg":"","accent":"","secondary_accent":"","border_active":"","border_inactive":"","text_muted":"","success":"","warning":"","error":""},"widget":{"renderer":"","font":"","pixel_scale":0,"shades":[],"density":"","border":"","radius":0,"dither":"","glow":0.0,"modules":[]}}}"##,
+            r#"{"version":1,"response":"day_curve","day_curve":{"date":"2026-10-13","step_minutes":10,"generated_at_epoch_s":5,"weather_multiplier":null,"sun":{"dawn":null,"sunrise":null,"solar_noon":null,"sunset":null,"dusk":null},"monitors":[],"milestones_error":"polar night"}}"#,
+            r#"{"version":1,"response":"error","code":"invalid_request","message":"bad"}"#,
+            r#"{"version":1,"response":"error","code":"unsupported_version","message":"old"}"#,
+            r#"{"version":1,"response":"error","code":"internal_error","message":"boom"}"#,
+        ];
+        let responses = every_response_variant();
+        assert_eq!(responses.len(), expected.len());
+        let mut covered = [false; 8];
+        for (envelope, wire) in responses.into_iter().zip(expected) {
+            covered[response_variant_index(&envelope.response)] = true;
+            assert_eq!(serde_json::to_string(&envelope).unwrap(), wire);
+            let parsed: ResponseEnvelope = serde_json::from_str(wire).unwrap();
+            assert_eq!(parsed, envelope);
+        }
+        assert!(
+            covered.iter().all(|seen| *seen),
+            "uncovered response variant"
+        );
+    }
 
     #[test]
     fn request_validation_rejects_wrong_protocol_version() {
