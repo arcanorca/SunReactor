@@ -51,11 +51,6 @@ Item {
         return out;
     }
 
-    /*! The status sentence and the idle note, joined: one line that may wrap. */
-    readonly property string statusLine: root.control.hinting || root.control.note.length === 0
-        ? root.control.displayText
-        : root.control.displayText + " · " + root.control.note
-
     function keyFor(id) {
         for (let i = 0; i < keyRepeater.count; ++i) {
             const key = keyRepeater.itemAt(i);
@@ -78,12 +73,6 @@ Item {
         if (key) {
             key.forceActiveFocus(Qt.TabFocusReason);
         }
-    }
-
-    function openDurations(key) {
-        durations.x = Math.max(0, key.mapToItem(root, 0, 0).x);
-        durations.y = key.mapToItem(root, 0, key.height).y;
-        durations.open();
     }
 
     Shortcut {
@@ -161,7 +150,7 @@ Item {
                         Keys.onRightPressed: root.focusCell(key.index + 1)
                         Keys.onDownPressed: {
                             if (key.choiceId === "paused") {
-                                root.openDurations(key);
+                                durations.openBelow(key, root);
                             }
                         }
 
@@ -172,7 +161,7 @@ Item {
 
             C64Text {
                 ink: root.control.hinting ? style.hot : style.ink
-                text: root.statusLine
+                text: root.control.statusLine
                 maximumArtWidth: body.width
                 maximumLines: 3
             }

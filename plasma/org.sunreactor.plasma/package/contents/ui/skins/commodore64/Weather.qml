@@ -41,35 +41,7 @@ Item {
         return client.hasWeatherReading && text.length > 0 ? text : i18nd(root.domain, "No weather reading");
     }
 
-    readonly property string effect: {
-        if (!client.hasWeatherReading) {
-            switch (client.weatherState) {
-            case "no_api_key":
-                return i18nd(root.domain, "No API key is configured");
-            case "loading":
-                return i18nd(root.domain, "Looking up the current conditions…");
-            case "unauthorized":
-                return i18nd(root.domain, "The weather provider rejected the API key");
-            case "rate_limited":
-                return i18nd(root.domain, "The weather provider is rate limiting requests");
-            case "network_error":
-                return i18nd(root.domain, "The weather provider could not be reached");
-            default:
-                return i18nd(root.domain, "No reading yet");
-            }
-        }
-        if (client.weatherStale) {
-            return i18nd(root.domain, "Last reading is out of date");
-        }
-        const change = Math.round((1.0 - client.weatherMultiplier) * 100);
-        if (change >= 2) {
-            return i18ndc(root.domain, "Placeholder is a percentage", "Dimming displays by %1%", change);
-        }
-        if (change <= -2) {
-            return i18ndc(root.domain, "Placeholder is a percentage", "Brightening displays by %1%", -change);
-        }
-        return i18nd(root.domain, "Not changing brightness right now");
-    }
+    readonly property string effect: weatherText.effect(client)
 
     implicitHeight: surface.implicitHeight
 
