@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use super::model::{
     slugify, BackendStatus, BackendStatusKind, BacklightDeviceDiscovery, DdcMonitorDiscovery,
-    DiscoveryReport, DiscoverySnapshot, DiscoverySummary,
+    DiscoveryReport, DiscoverySnapshot, DiscoverySummary, WindowsDisplayDiscovery,
 };
 use crate::backends::ddc::{
     selector_match_count, selector_plan, selector_relation, DdcSelectorRelation,
@@ -43,27 +43,60 @@ pub(super) fn importable_monitor_configs(report: &DiscoveryReport) -> Vec<Monito
         .collect()
 }
 
-// Linear, table-like report rendering; splitting would only scatter the layout.
-#[allow(clippy::too_many_lines)]
 pub(super) fn render_human(report: &DiscoveryReport) -> String {
-    let backend_rows = vec![
-        vec![
-            report.backends.ddcutil.backend.clone(),
-            backend_status_label(report.backends.ddcutil.status).to_owned(),
-            backend_detail(&report.backends.ddcutil),
-        ],
-        vec![
-            report.backends.brightnessctl.backend.clone(),
-            backend_status_label(report.backends.brightnessctl.status).to_owned(),
-            backend_detail(&report.backends.brightnessctl),
-        ],
-        vec![
-            report.backends.sysfs.backend.clone(),
-            backend_status_label(report.backends.sysfs.status).to_owned(),
-            backend_detail(&report.backends.sysfs),
-        ],
+    let mut sections = vec![
+        render_summary_section(report),
+        render_backend_section(report),
+        render_ddc_section(report),
+        render_backlight_section(report),
     ];
+    if !report.notes.is_empty() {
+        sections.push(format!("Notes\n{}", report.notes.join("\n")));
+    }
+    if !report.windows_displays.is_empty() {
+        sections.push(render_windows_section(&report.windows_displays));
+    }
+    sections.push(format!(
+        "Candidate config snippet\n{}",
+        report.config_snippet
+    ));
+    sections.join("\n\n")
+}
 
+fn render_summary_section(report: &DiscoveryReport) -> String {
+    format!(
+        "Discovery summary\nviable targets: {}\nexternal monitors: {}\nbacklight devices: {}",
+        report.summary.viable_targets,
+        report.summary.ddc_monitors,
+        report.summary.backlight_devices,
+    )
+}
+
+fn render_backend_section(report: &DiscoveryReport) -> String {
+    let backend_rows = [
+        &report.backends.ddcutil,
+        &report.backends.brightnessctl,
+        &report.backends.sysfs,
+    ]
+    .into_iter()
+    .map(|backend| {
+        vec![
+            backend.backend.clone(),
+            backend_status_label(backend.status).to_owned(),
+            backend_detail(backend),
+        ]
+    })
+    .collect::<Vec<_>>();
+    format!(
+        "Backend status\n{}",
+        render_table(&["backend", "status", "detail"], &backend_rows)
+    )
+}
+
+fn render_ddc_section(report: &DiscoveryReport) -> String {
+    if report.ddc_monitors.is_empty() {
+        return String::from("DDC monitors\nNo external monitors reported.");
+    }
     let ddc_rows = report
         .ddc_monitors
         .iter()
@@ -81,7 +114,29 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
             ]
         })
         .collect::<Vec<_>>();
+    format!(
+        "DDC monitors\n{}",
+        render_table(
+            &[
+                "display",
+                "bus",
+                "manufacturer",
+                "model",
+                "serial",
+                "connector",
+                "vcp_0x10",
+                "viable",
+                "note",
+            ],
+            &ddc_rows,
+        )
+    )
+}
 
+fn render_backlight_section(report: &DiscoveryReport) -> String {
+    if report.backlight_devices.is_empty() {
+        return String::from("Backlight devices\nNo internal backlight devices reported.");
+    }
     let backlight_rows = report
         .backlight_devices
         .iter()
@@ -101,157 +156,111 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
             ]
         })
         .collect::<Vec<_>>();
+    format!(
+        "Backlight devices\n{}",
+        render_table(
+            &[
+                "device",
+                "class",
+                "type",
+                "max",
+                "source",
+                "viable",
+                "sysfs_path",
+                "note",
+            ],
+            &backlight_rows,
+        )
+    )
+}
 
-    let mut sections = Vec::new();
-    sections.push(format!(
-        "Discovery summary\nviable targets: {}\nexternal monitors: {}\nbacklight devices: {}",
-        report.summary.viable_targets,
-        report.summary.ddc_monitors,
-        report.summary.backlight_devices,
-    ));
-    sections.push(format!(
-        "Backend status\n{}",
-        render_table(&["backend", "status", "detail"], &backend_rows)
-    ));
+fn render_windows_section(displays: &[WindowsDisplayDiscovery]) -> String {
+    let mut section = String::from("Windows display topology\n");
+    for disp in displays {
+        write_windows_display(&mut section, disp);
+        section.push('\n');
+    }
+    section.trim_end().to_string()
+}
 
-    if ddc_rows.is_empty() {
-        sections.push(String::from("DDC monitors\nNo external monitors reported."));
+fn write_windows_display(out: &mut String, disp: &WindowsDisplayDiscovery) {
+    use std::fmt::Write;
+    let primary_tag = if disp.is_primary { " (Primary)" } else { "" };
+    let title = disp.name.as_deref().unwrap_or("Display");
+    let num = disp.display_number;
+    let _ = writeln!(out, "  [{num}] {title}{primary_tag}");
+    let _ = writeln!(
+        out,
+        "      Kind:              {} ({})",
+        disp.kind, disp.output_technology
+    );
+    let status = if disp.active && disp.target_available {
+        "Active / Connected"
+    } else if disp.active {
+        "Active / Temporarily Unavailable"
     } else {
-        sections.push(format!(
-            "DDC monitors\n{}",
-            render_table(
-                &[
-                    "display",
-                    "bus",
-                    "manufacturer",
-                    "model",
-                    "serial",
-                    "connector",
-                    "vcp_0x10",
-                    "viable",
-                    "note",
-                ],
-                &ddc_rows,
-            )
-        ));
+        "Inactive"
+    };
+    let _ = writeln!(out, "      Status:            {status}");
+    if let Some(ref gdi) = disp.gdi_device_name {
+        let rect = disp
+            .desktop_rect
+            .as_deref()
+            .unwrap_or("coordinates unknown");
+        let _ = writeln!(out, "      GDI Device:        {gdi} ({rect})");
     }
-
-    if backlight_rows.is_empty() {
-        sections.push(String::from(
-            "Backlight devices\nNo internal backlight devices reported.",
-        ));
-    } else {
-        sections.push(format!(
-            "Backlight devices\n{}",
-            render_table(
-                &[
-                    "device",
-                    "class",
-                    "type",
-                    "max",
-                    "source",
-                    "viable",
-                    "sysfs_path",
-                    "note",
-                ],
-                &backlight_rows,
-            )
-        ));
+    let _ = writeln!(
+        out,
+        "      CCD Path:          Adapter {} / Target {} (Connector #{})",
+        disp.adapter_luid, disp.target_id, disp.connector_instance
+    );
+    let _ = writeln!(
+        out,
+        "      Physical Monitors: {} (Handles transient & destroyed via RAII)",
+        disp.physical_monitors_count
+    );
+    if let Some(ref cid) = disp.container_id {
+        let _ = writeln!(out, "      Container ID:      {cid}");
     }
-
-    if !report.notes.is_empty() {
-        sections.push(format!("Notes\n{}", report.notes.join("\n")));
+    if let Some(ref inst) = disp.device_instance_id {
+        let _ = writeln!(out, "      Device Instance:   {inst}");
     }
+    let _ = writeln!(out, "      Identity Quality:  {}", disp.identity_quality);
+    let _ = writeln!(
+        out,
+        "      W3 Mutation Tier:  {}",
+        disp.mutation_eligibility
+    );
+    if let Some(ref cid) = disp.canonical_id {
+        let _ = writeln!(out, "      Canonical ID:      {cid}");
+    }
+    if let Some(ref label) = disp.display_label {
+        let _ = writeln!(out, "      Display Label:     {label}");
+    }
+    write_windows_brightness(out, disp);
+    if let Some(ref note) = disp.note {
+        let _ = writeln!(out, "      Note:              {note}");
+    }
+}
 
-    if !report.windows_displays.is_empty() {
-        use std::fmt::Write;
-        let mut win_section = String::from("Windows display topology\n");
-        for disp in &report.windows_displays {
-            let primary_tag = if disp.is_primary { " (Primary)" } else { "" };
-            let title = disp.name.as_deref().unwrap_or("Display");
-            let num = disp.display_number;
-            let _ = writeln!(win_section, "  [{num}] {title}{primary_tag}");
+fn write_windows_brightness(out: &mut String, disp: &WindowsDisplayDiscovery) {
+    use std::fmt::Write;
+    if let Some(ref capable) = disp.brightness_capable {
+        if *capable {
+            let min = disp.native_min.unwrap_or(0);
+            let cur = disp.native_current.unwrap_or(0);
+            let max = disp.native_max.unwrap_or(100);
+            let pct = disp.normalized_current_percent.unwrap_or(0);
             let _ = writeln!(
-                win_section,
-                "      Kind:              {} ({})",
-                disp.kind, disp.output_technology
+                out,
+                "      Brightness Backend: Capable (DXVA2 High-Level, Native: {min}..{max}, Current: {cur} [{pct}%])"
             );
-            let status = if disp.active && disp.target_available {
-                "Active / Connected"
-            } else if disp.active {
-                "Active / Temporarily Unavailable"
-            } else {
-                "Inactive"
-            };
-            let _ = writeln!(win_section, "      Status:            {status}");
-            if let Some(ref gdi) = disp.gdi_device_name {
-                let rect = disp
-                    .desktop_rect
-                    .as_deref()
-                    .unwrap_or("coordinates unknown");
-                let _ = writeln!(win_section, "      GDI Device:        {gdi} ({rect})");
-            }
-            let _ = writeln!(
-                win_section,
-                "      CCD Path:          Adapter {} / Target {} (Connector #{})",
-                disp.adapter_luid, disp.target_id, disp.connector_instance
-            );
-            let _ = writeln!(
-                win_section,
-                "      Physical Monitors: {} (Handles transient & destroyed via RAII)",
-                disp.physical_monitors_count
-            );
-            if let Some(ref cid) = disp.container_id {
-                let _ = writeln!(win_section, "      Container ID:      {cid}");
-            }
-            if let Some(ref inst) = disp.device_instance_id {
-                let _ = writeln!(win_section, "      Device Instance:   {inst}");
-            }
-            let _ = writeln!(
-                win_section,
-                "      Identity Quality:  {}",
-                disp.identity_quality
-            );
-            let _ = writeln!(
-                win_section,
-                "      W3 Mutation Tier:  {}",
-                disp.mutation_eligibility
-            );
-            if let Some(ref cid) = disp.canonical_id {
-                let _ = writeln!(win_section, "      Canonical ID:      {cid}");
-            }
-            if let Some(ref label) = disp.display_label {
-                let _ = writeln!(win_section, "      Display Label:     {label}");
-            }
-            if let Some(ref capable) = disp.brightness_capable {
-                if *capable {
-                    let min = disp.native_min.unwrap_or(0);
-                    let cur = disp.native_current.unwrap_or(0);
-                    let max = disp.native_max.unwrap_or(100);
-                    let pct = disp.normalized_current_percent.unwrap_or(0);
-                    let _ = writeln!(
-                        win_section,
-                        "      Brightness Backend: Capable (DXVA2 High-Level, Native: {min}..{max}, Current: {cur} [{pct}%])"
-                    );
-                } else if let Some(ref note) = disp.capability_note {
-                    let _ = writeln!(win_section, "      Brightness Backend: {note}");
-                }
-            } else if let Some(ref note) = disp.capability_note {
-                let _ = writeln!(win_section, "      Brightness Backend: {note}");
-            }
-            if let Some(ref note) = disp.note {
-                let _ = writeln!(win_section, "      Note:              {note}");
-            }
-            win_section.push('\n');
+            return;
         }
-        sections.push(win_section.trim_end().to_string());
     }
-
-    sections.push(format!(
-        "Candidate config snippet\n{}",
-        report.config_snippet
-    ));
-    sections.join("\n\n")
+    if let Some(ref note) = disp.capability_note {
+        let _ = writeln!(out, "      Brightness Backend: {note}");
+    }
 }
 
 pub(super) fn render_json(report: &DiscoveryReport) -> String {

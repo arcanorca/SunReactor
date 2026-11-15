@@ -9,6 +9,7 @@ use super::model::{
 };
 use super::runner::{command_failure_detail, CommandError, ProcessRunner};
 use crate::ddcutil::DdcutilClient;
+use crate::process::CommandOutput;
 
 // `ddcutil detect` probes every I2C bus and routinely takes five seconds or
 // more on multi-output GPUs, so the limit leaves generous headroom.
@@ -67,9 +68,6 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
     }
 }
 
-// Left whole on purpose: one sequential ddcutil detect/probe pass whose
-// fallbacks share local state; out of this refactor's listed targets.
-#[allow(clippy::too_many_lines)]
 fn discover_ddc_monitors<R: ProcessRunner>(
     runner: &R,
 ) -> (BackendStatus, Vec<DdcMonitorDiscovery>, bool) {
@@ -81,166 +79,183 @@ fn discover_ddc_monitors<R: ProcessRunner>(
             getvcp: DDCUTIL_GETVCP_TIMEOUT,
         },
     );
-    let detect_result = client.detect_output();
 
-    match detect_result {
-        Ok(output) if output.success() => {
-            let mut monitors = crate::ddcutil::parser::parse_ddc_detect(&output.stdout)
-                .into_iter()
-                .map(super::model::RawDdcMonitor::into_discovery)
-                .collect::<Vec<_>>();
-            let observation_complete = !has_invalid_display_record(&output.stdout);
-            super::assign_ddc_occurrence_ids(&mut monitors);
-            let mut capability_failures = 0usize;
+    match client.detect_output() {
+        Ok(output) if output.success() => probe_detected_monitors(&client, &output),
+        Ok(output) => ddc_detect_failed(&output),
+        Err(CommandError::Missing { .. }) => ddc_unavailable(
+            BackendStatusKind::Missing,
+            false,
+            String::from("ddcutil is not installed."),
+            "Install `ddcutil` to discover external monitors and verify VCP 0x10 brightness support.",
+        ),
+        Err(CommandError::Timeout { after, .. }) => ddc_unavailable(
+            BackendStatusKind::Timeout,
+            true,
+            format!("ddcutil detect timed out after {}s.", after.as_secs()),
+            "Retry when the I2C bus is idle; busy or wedged DDC busses can stall discovery.",
+        ),
+        Err(error) => ddc_unavailable(
+            BackendStatusKind::Error,
+            true,
+            error.to_string(),
+            "Check ddcutil access and monitor cabling, then rerun discovery.",
+        ),
+    }
+}
 
-            for monitor in &mut monitors {
-                // `--display N` makes ddcutil repeat the full bus scan; the bus
-                // reported by `detect` addresses the same display directly.
-                let (selector_flag, selector_value) = monitor.bus_number.map_or_else(
-                    || ("--display", monitor.display_number.to_string()),
-                    |bus| ("--bus", bus.to_string()),
-                );
-                let selection_args = vec![String::from(selector_flag), selector_value];
-                let cap_result = client.capabilities_output_for_selection(&selection_args);
+/// A failed ddcutil detection: no monitors, and an incomplete observation.
+fn ddc_unavailable(
+    status: BackendStatusKind,
+    available: bool,
+    message: String,
+    guidance: &str,
+) -> (BackendStatus, Vec<DdcMonitorDiscovery>, bool) {
+    (
+        BackendStatus {
+            backend: String::from("ddcutil"),
+            status,
+            available,
+            message,
+            guidance: Some(String::from(guidance)),
+        },
+        Vec::new(),
+        false,
+    )
+}
 
-                match cap_result {
-                    Ok(capabilities) if capabilities.success() => {
-                        let supported =
-                            crate::ddcutil::parser::parse_brightness_vcp_support(&capabilities.stdout);
-                        monitor.brightness_vcp_supported = Some(supported);
-                        monitor.backend_viable = supported;
-                    }
-                    Ok(capabilities) => {
-                        capability_failures += 1;
-                        monitor.note = Some(format!(
-                            "capabilities probe failed: {}",
-                            command_failure_detail(&capabilities)
-                        ));
-                    }
-                    Err(CommandError::Timeout { after, .. }) => {
-                        capability_failures += 1;
-                        monitor.note = Some(format!(
-                            "capabilities probe timed out after {}s",
-                            after.as_secs()
-                        ));
-                    }
-                    Err(error) => {
-                        capability_failures += 1;
-                        monitor.note = Some(error.to_string());
-                    }
-                }
+/// `ddcutil detect` ran but exited non-zero: map the output to guidance.
+fn ddc_detect_failed(output: &CommandOutput) -> (BackendStatus, Vec<DdcMonitorDiscovery>, bool) {
+    let detail = command_failure_detail(output);
+    let guidance = if detail.contains("i2c-dev")
+        || output.stderr.contains("i2c-dev")
+        || output.stdout.contains("i2c-dev")
+        || detail.contains("No /dev/i2c devices exist")
+    {
+        "Kernel module `i2c-dev` is not loaded. Load it with `sudo modprobe i2c-dev` or add it to `/etc/modules-load.d/i2c.conf`."
+    } else if detail.contains("Permission denied") || output.stderr.contains("Permission denied") {
+        "Permission denied accessing /dev/i2c-* devices. Add your user to the `i2c` group (`sudo usermod -aG i2c $USER`) or configure uaccess rules, then relogin."
+    } else {
+        "Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery."
+    };
+    ddc_unavailable(
+        BackendStatusKind::Error,
+        true,
+        format!("ddcutil detect failed: {detail}"),
+        guidance,
+    )
+}
 
-                if monitor.brightness_vcp_supported != Some(true) {
-                    match client.get_brightness_for_selection(&selection_args) {
-                        Ok(_) => {
-                            monitor.brightness_vcp_supported = Some(true);
-                            monitor.backend_viable = true;
-                            monitor.note = Some(match monitor.note.take() {
-                                Some(detail) => format!("{detail} (recovered via getvcp)"),
-                                None => String::from("brightness confirmed via getvcp"),
-                            });
-                        }
-                        Err(error) => {
-                            capability_failures += 1;
-                            monitor.note = Some(match monitor.note.take() {
-                                Some(detail) => format!("{detail}; getvcp fallback failed: {error}"),
-                                None => format!("getvcp fallback failed: {error}"),
-                            });
-                        }
-                    }
-                }
-            }
+/// Parses a successful `ddcutil detect` and probes each monitor in turn.
+fn probe_detected_monitors<R: ProcessRunner>(
+    client: &DdcutilClient<'_, R>,
+    output: &CommandOutput,
+) -> (BackendStatus, Vec<DdcMonitorDiscovery>, bool) {
+    let mut monitors = crate::ddcutil::parser::parse_ddc_detect(&output.stdout)
+        .into_iter()
+        .map(super::model::RawDdcMonitor::into_discovery)
+        .collect::<Vec<_>>();
+    let observation_complete = !has_invalid_display_record(&output.stdout);
+    super::assign_ddc_occurrence_ids(&mut monitors);
+    let mut capability_failures = 0usize;
 
-            let message = if monitors.is_empty() {
-                String::from("No external monitors were reported by ddcutil.")
-            } else if capability_failures == 0 {
-                format!("Detected {} external monitor(s).", monitors.len())
-            } else {
-                format!(
-                    "Detected {} external monitor(s); {} capability probe(s) failed.",
-                    monitors.len(),
-                    capability_failures
-                )
-            };
-
-            (
-                BackendStatus {
-                    backend: String::from("ddcutil"),
-                    status: BackendStatusKind::Ok,
-                    available: true,
-                    message,
-                    guidance: None,
-                },
-                monitors,
-                observation_complete,
-            )
+    for monitor in &mut monitors {
+        // `--display N` makes ddcutil repeat the full bus scan; the bus
+        // reported by `detect` addresses the same display directly.
+        let (selector_flag, selector_value) = monitor.bus_number.map_or_else(
+            || ("--display", monitor.display_number.to_string()),
+            |bus| ("--bus", bus.to_string()),
+        );
+        let selection_args = vec![String::from(selector_flag), selector_value];
+        capability_failures += probe_monitor_capabilities(client, monitor, &selection_args);
+        if monitor.brightness_vcp_supported != Some(true) {
+            capability_failures += probe_monitor_getvcp(client, monitor, &selection_args);
         }
-        Ok(output) => {
-            let detail = command_failure_detail(&output);
-            let guidance = if detail.contains("i2c-dev")
-                || output.stderr.contains("i2c-dev")
-                || output.stdout.contains("i2c-dev")
-                || detail.contains("No /dev/i2c devices exist")
-            {
-                String::from("Kernel module `i2c-dev` is not loaded. Load it with `sudo modprobe i2c-dev` or add it to `/etc/modules-load.d/i2c.conf`.")
-            } else if detail.contains("Permission denied")
-                || output.stderr.contains("Permission denied")
-            {
-                String::from("Permission denied accessing /dev/i2c-* devices. Add your user to the `i2c` group (`sudo usermod -aG i2c $USER`) or configure uaccess rules, then relogin.")
-            } else {
-                String::from("Ensure the user can access the relevant /dev/i2c-* devices and rerun discovery.")
-            };
-            (
-                BackendStatus {
-                    backend: String::from("ddcutil"),
-                    status: BackendStatusKind::Error,
-                    available: true,
-                    message: format!("ddcutil detect failed: {detail}"),
-                    guidance: Some(guidance),
-                },
-                Vec::new(),
-                false,
-            )
+    }
+
+    let message = if monitors.is_empty() {
+        String::from("No external monitors were reported by ddcutil.")
+    } else if capability_failures == 0 {
+        format!("Detected {} external monitor(s).", monitors.len())
+    } else {
+        format!(
+            "Detected {} external monitor(s); {} capability probe(s) failed.",
+            monitors.len(),
+            capability_failures
+        )
+    };
+
+    (
+        BackendStatus {
+            backend: String::from("ddcutil"),
+            status: BackendStatusKind::Ok,
+            available: true,
+            message,
+            guidance: None,
+        },
+        monitors,
+        observation_complete,
+    )
+}
+
+/// Runs the capabilities probe; returns the number of failures (0 or 1).
+fn probe_monitor_capabilities<R: ProcessRunner>(
+    client: &DdcutilClient<'_, R>,
+    monitor: &mut DdcMonitorDiscovery,
+    selection_args: &[String],
+) -> usize {
+    match client.capabilities_output_for_selection(selection_args) {
+        Ok(capabilities) if capabilities.success() => {
+            let supported =
+                crate::ddcutil::parser::parse_brightness_vcp_support(&capabilities.stdout);
+            monitor.brightness_vcp_supported = Some(supported);
+            monitor.backend_viable = supported;
+            0
         }
-        Err(CommandError::Missing { .. }) => (
-            BackendStatus {
-                backend: String::from("ddcutil"),
-                status: BackendStatusKind::Missing,
-                available: false,
-                message: String::from("ddcutil is not installed."),
-                guidance: Some(String::from(
-                    "Install `ddcutil` to discover external monitors and verify VCP 0x10 brightness support.",
-                )),
-            },
-            Vec::new(),
-            false,
-        ),
-        Err(CommandError::Timeout { after, .. }) => (
-            BackendStatus {
-                backend: String::from("ddcutil"),
-                status: BackendStatusKind::Timeout,
-                available: true,
-                message: format!("ddcutil detect timed out after {}s.", after.as_secs()),
-                guidance: Some(String::from(
-                    "Retry when the I2C bus is idle; busy or wedged DDC busses can stall discovery.",
-                )),
-            },
-            Vec::new(),
-            false,
-        ),
-        Err(error) => (
-            BackendStatus {
-                backend: String::from("ddcutil"),
-                status: BackendStatusKind::Error,
-                available: true,
-                message: error.to_string(),
-                guidance: Some(String::from(
-                    "Check ddcutil access and monitor cabling, then rerun discovery.",
-                )),
-            },
-            Vec::new(),
-            false,
-        ),
+        Ok(capabilities) => {
+            monitor.note = Some(format!(
+                "capabilities probe failed: {}",
+                command_failure_detail(&capabilities)
+            ));
+            1
+        }
+        Err(CommandError::Timeout { after, .. }) => {
+            monitor.note = Some(format!(
+                "capabilities probe timed out after {}s",
+                after.as_secs()
+            ));
+            1
+        }
+        Err(error) => {
+            monitor.note = Some(error.to_string());
+            1
+        }
+    }
+}
+
+/// Falls back to a direct `getvcp` read; returns the number of failures (0 or 1).
+fn probe_monitor_getvcp<R: ProcessRunner>(
+    client: &DdcutilClient<'_, R>,
+    monitor: &mut DdcMonitorDiscovery,
+    selection_args: &[String],
+) -> usize {
+    match client.get_brightness_for_selection(selection_args) {
+        Ok(_) => {
+            monitor.brightness_vcp_supported = Some(true);
+            monitor.backend_viable = true;
+            monitor.note = Some(match monitor.note.take() {
+                Some(detail) => format!("{detail} (recovered via getvcp)"),
+                None => String::from("brightness confirmed via getvcp"),
+            });
+            0
+        }
+        Err(error) => {
+            monitor.note = Some(match monitor.note.take() {
+                Some(detail) => format!("{detail}; getvcp fallback failed: {error}"),
+                None => format!("getvcp fallback failed: {error}"),
+            });
+            1
+        }
     }
 }
 
