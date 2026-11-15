@@ -489,6 +489,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
     ) {
         match wayland_idle_action(state.mode, &event) {
             WaylandIdleAction::IdleDim => fire_sunreactorctl("idle-dim"),
+            WaylandIdleAction::IdleWake => fire_sunreactorctl("idle-wake"),
             WaylandIdleAction::Resumed => {}
             WaylandIdleAction::Ignore => {}
         }
@@ -568,6 +569,10 @@ fn wayland_idle_settings(timeout_minutes: u64) -> Option<(u32, WaylandIdleMode)>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WaylandIdleAction {
     IdleDim,
+    /// Input resumed after an idle-dim: clear the dim via `idle-wake`, which
+    /// also requests the wake re-assert.
+    IdleWake,
+    /// Input resumed in wake-hint-only mode: re-assert brightness only.
     Resumed,
     Ignore,
 }
@@ -577,6 +582,9 @@ fn wayland_idle_action(mode: WaylandIdleMode, event: &IdleNotificationEvent) -> 
     match event {
         IdleNotificationEvent::Idled if mode == WaylandIdleMode::IdleDim => {
             WaylandIdleAction::IdleDim
+        }
+        IdleNotificationEvent::Resumed if mode == WaylandIdleMode::IdleDim => {
+            WaylandIdleAction::IdleWake
         }
         IdleNotificationEvent::Resumed => {
             INPUT_RESUMED.store(true, Ordering::Release);
@@ -1045,11 +1053,20 @@ mod tests {
             wayland_idle_action(mode, &IdleNotificationEvent::Idled),
             WaylandIdleAction::IdleDim
         );
+        assert_eq!(wayland_idle_settings(u64::MAX), None);
+    }
+
+    #[cfg(feature = "wayland")]
+    #[test]
+    fn idle_dim_wayland_watcher_wakes_on_resume() {
+        let (_, mode) = wayland_idle_settings(5).expect("configured timeout should fit");
+        assert_eq!(mode, WaylandIdleMode::IdleDim);
+        // Resuming after an idle-dim must clear the dim like swayidle's
+        // `resume ... idle-wake`, not merely hint the wake re-assert.
         assert_eq!(
             wayland_idle_action(mode, &IdleNotificationEvent::Resumed),
-            WaylandIdleAction::Resumed
+            WaylandIdleAction::IdleWake
         );
-        assert_eq!(wayland_idle_settings(u64::MAX), None);
     }
 
     #[test]
