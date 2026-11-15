@@ -12,8 +12,18 @@ fn main() {
     let dot_git = manifest_dir.join(".git");
     println!("cargo:rerun-if-changed={}", dot_git.join("HEAD").display());
 
+    // Re-evaluate the `-dirty` marker when sources or the index change;
+    // otherwise an edit after a clean build would keep reporting a clean hash.
+    for path in ["src", "Cargo.toml", "Cargo.lock"] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            manifest_dir.join(path).display()
+        );
+    }
+
     let git_dir = resolve_git_dir(&dot_git);
     if let Some(git_dir) = git_dir.as_deref() {
+        println!("cargo:rerun-if-changed={}", git_dir.join("index").display());
         if let Some(reference) = read_head_ref(git_dir) {
             println!(
                 "cargo:rerun-if-changed={}",
