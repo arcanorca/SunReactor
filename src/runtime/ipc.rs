@@ -433,7 +433,7 @@ impl DaemonRuntime {
         }
         self.ensure_configured_monitor(monitor_id)?;
 
-        let (message, next_config) = self.update_config_transaction(|config| {
+        let message = self.persist_config_edit(|config| {
             let Some(monitor) = config
                 .monitors
                 .iter_mut()
@@ -449,15 +449,25 @@ impl DaemonRuntime {
                 "updated limits for {monitor_id} to min={min_pct}%, max={max_pct}%"
             ))
         })?;
+        // Apply exactly the persisted edit to the live config; unrelated
+        // on-disk changes wait for an explicit reload.
+        if let Some(monitor) = self
+            .config
+            .monitors
+            .iter_mut()
+            .find(|monitor| monitor.logical_id == monitor_id)
+        {
+            monitor.min_pct = min_pct;
+            monitor.max_pct = max_pct;
+        }
         self.fade_engine.cancel_all();
-        self.config = next_config;
         self.day_curve_cache = None;
 
         Ok(message)
     }
 
     fn set_cloud_dimming(&mut self, percent: u8) -> Result<String, RuntimeError> {
-        let (message, next_config) = self.update_config_transaction(|config| {
+        let message = self.persist_config_edit(|config| {
             config
                 .weather
                 .set_cloud_dimming_percent(percent)
@@ -465,27 +475,29 @@ impl DaemonRuntime {
             Ok(format!("updated maximum cloud dimming to {percent}%"))
         })?;
 
-        self.config = next_config;
+        self.config
+            .weather
+            .set_cloud_dimming_percent(percent)
+            .map_err(|message| RuntimeError::Ipc(ipc::IpcError::Protocol { message }))?;
         self.weather_engine
             .sync_config(&self.config.weather, &self.config.location);
         self.day_curve_cache = None;
         Ok(message)
     }
 
-    /// Read, modify, validate, and atomically persist one complete config
-    /// snapshot before a caller replaces its live runtime configuration.
-    fn update_config_transaction<F>(
-        &self,
-        update: F,
-    ) -> Result<(String, RuntimeConfig), RuntimeError>
+    /// Read the on-disk config, apply one targeted edit, validate, and
+    /// atomically persist it. Other keys keep their on-disk values. The
+    /// caller mirrors the same edit onto the live config; it must not adopt
+    /// the disk snapshot, which would bypass `apply_reloaded_runtime_config`.
+    fn persist_config_edit<F>(&self, update: F) -> Result<String, RuntimeError>
     where
         F: FnOnce(&mut crate::config::Config) -> Result<String, RuntimeError>,
     {
         let mut report = config::load_from_path(&self.config.path)?;
         let message = update(&mut report.config)?;
-        let next_config = RuntimeConfig::from_report(report.clone())?;
+        RuntimeConfig::from_report(report.clone())?;
         config::save_to_path(&report.config, &self.config.path)?;
-        Ok((message, next_config))
+        Ok(message)
     }
 
     fn clear_override(
