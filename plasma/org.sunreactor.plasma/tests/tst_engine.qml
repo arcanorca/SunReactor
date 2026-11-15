@@ -13,6 +13,7 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../package/contents/ui/engine"
+import "../package/contents/ui/components"
 import "../package/contents/ui/engine/ScaleHelper.js" as ScaleHelper
 
 Item {
@@ -55,6 +56,20 @@ Item {
     Theme { id: vectorTheme; spec: top.braun }
     Theme { id: plasmaTheme }
     Theme { id: overridden; spec: top.braun }
+
+    DisplayItem {
+        id: holdDisplay
+        theme: vectorTheme
+        percent: 50
+        text: "desk"
+        externalHold: ({ remainingS: 1321, observedPercent: 70 })
+    }
+
+    SignalSpy {
+        id: holdClearSpy
+        target: holdDisplay
+        signalName: "clearExternalHoldRequested"
+    }
 
     SunReactorClient {
         id: offline
@@ -288,6 +303,20 @@ Item {
             compare(engine.theme.scaleFactor, 1.25);
             engine.uiScaleOverride = 0;
             verify(engine.theme.scaleFactor > 0);
+        }
+
+        function test_externalHoldBadgeFormattingAndClearRequest() {
+            compare(holdDisplay.holdShortText(59), "<1m");
+            compare(holdDisplay.holdShortText(60), "1m");
+            compare(holdDisplay.holdShortText(1321), "23m");
+            compare(holdDisplay.externalHoldBadgeText(1321), "external · 23m");
+            compare(holdDisplay.externalHoldTooltipText(1321),
+                    "Brightness was changed outside SunReactor; auto resumes in 23 min");
+
+            holdClearSpy.clear();
+            holdDisplay.cancelExternalHold();
+            compare(holdClearSpy.count, 1, "cancel emits the ClearExternalHold request signal");
+            verify(holdDisplay.externalHoldDismissed);
         }
     }
 }

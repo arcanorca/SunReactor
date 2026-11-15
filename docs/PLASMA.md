@@ -4,6 +4,8 @@ The widget is a Plasma 6 panel item with a popup. It is a QML package plus a sma
 
 The popup has a Brightness page (day curve, one slider per display, automation mode with the next scheduled step) and a Weather page (conditions, forecast, sun times). The panel can show a weather icon, a brightness readout, a small curve or a ring gauge.
 
+When another desktop control changes a display's brightness, its row shows an external-hold badge with the remaining time and a one-click cancel control. Cancelling clears that monitor's hold through the same bounded IPC queue used by the other popup commands; automatic brightness then resumes with the configured smooth transition.
+
 The widget follows the terminal UI's theme by default, or you can pin another theme. Many themes have their own layout and weather icons; the rest use a layout chosen by theme family. The pictures below are a selection. Everything is drawn with QML shapes and a few C++ items, no bitmap assets for the vector themes. Internals and the design notes are in [`DESIGN.md`](../plasma/org.sunreactor.plasma/DESIGN.md).
 
 <div align="center">

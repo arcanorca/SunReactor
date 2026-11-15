@@ -11,7 +11,10 @@ use sunreactor::{
     cli_help,
     config::{self, ConfigSource},
     discovery,
-    ipc::{self, Request, RequestEnvelope, Response, ResponseEnvelope, StatusResponse},
+    ipc::{
+        self, ExternalHoldStatus, Request, RequestEnvelope, Response, ResponseEnvelope,
+        StatusResponse,
+    },
     paths, version,
 };
 
@@ -33,6 +36,11 @@ enum ThemeCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WeatherCommand {
     CloudDimming { percent: Option<u8> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HoldCommand {
+    Clear { monitor: Option<String> },
 }
 
 const THEME_USAGE: &str = "usage: sunreactorctl theme <list [--json] | show <id> [--json] | set <id> | validate [file] | export <id>>";
@@ -72,6 +80,7 @@ enum CliCommand {
     ConfigValidate,
     Theme(ThemeCommand),
     Weather(WeatherCommand),
+    Hold(HoldCommand),
     #[cfg(target_os = "linux")]
     Doctor {
         json: bool,
@@ -134,6 +143,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<CliCommand> {
         },
         Some("theme" | "themes") => parse_theme_command(&args[1..]),
         Some("weather") => parse_weather_command(&args[1..]),
+        Some("hold") => parse_hold_command(&args[1..]),
         #[cfg(target_os = "linux")]
         Some("doctor") => parse_doctor_command(&args[1..]),
         #[cfg(feature = "tui")]
@@ -160,6 +170,24 @@ fn parse_weather_command(args: &[String]) -> anyhow::Result<CliCommand> {
     Ok(CliCommand::Weather(WeatherCommand::CloudDimming {
         percent,
     }))
+}
+
+fn parse_hold_command(args: &[String]) -> anyhow::Result<CliCommand> {
+    let usage = "usage: sunreactorctl hold clear [MONITOR]";
+    match args {
+        [command] if command == "clear" => {
+            Ok(CliCommand::Hold(HoldCommand::Clear { monitor: None }))
+        }
+        [command, monitor] if command == "clear" => {
+            if monitor.trim().is_empty() {
+                anyhow::bail!("monitor-id must not be empty");
+            }
+            Ok(CliCommand::Hold(HoldCommand::Clear {
+                monitor: Some(monitor.clone()),
+            }))
+        }
+        _ => anyhow::bail!("{usage}"),
+    }
 }
 
 fn parse_theme_command(args: &[String]) -> anyhow::Result<CliCommand> {
@@ -506,6 +534,9 @@ fn run_command(command: CliCommand) -> anyhow::Result<String> {
         CliCommand::Theme(command) => run_theme_command(command),
         CliCommand::Weather(WeatherCommand::CloudDimming { percent }) => {
             run_cloud_dimming_command(percent)
+        }
+        CliCommand::Hold(HoldCommand::Clear { monitor }) => {
+            run_ipc_command(Request::ClearExternalHold { monitor })
         }
         #[cfg(target_os = "linux")]
         CliCommand::Doctor { json } => {
@@ -930,8 +961,13 @@ fn render_status(status: &StatusResponse) -> String {
     } else {
         lines.push(String::from("monitors:"));
         for monitor in &status.monitors {
+            let hold = monitor
+                .external_hold
+                .as_ref()
+                .map(format_external_hold)
+                .map_or_else(String::new, |text| format!(" {text}"));
             lines.push(format!(
-                "  - logical_id={} backend={} enabled={} topology={} override_percent={} last_applied_percent={} last_applied_at_epoch_s={} backoff_until_epoch_s={}",
+                "  - logical_id={} backend={} enabled={} topology={} override_percent={} last_applied_percent={} last_applied_at_epoch_s={} backoff_until_epoch_s={}{hold}",
                 monitor.logical_id,
                 backend_name(monitor.backend),
                 monitor.enabled,
@@ -945,6 +981,18 @@ fn render_status(status: &StatusResponse) -> String {
     }
 
     lines.join("\n")
+}
+
+fn format_external_hold(hold: &ExternalHoldStatus) -> String {
+    let minutes = if hold.remaining_s < 60 {
+        String::from("<1m")
+    } else {
+        format!("{}m", hold.remaining_s.saturating_add(59) / 60)
+    };
+    format!(
+        "external hold · {minutes} left (observed {}%)",
+        hold.observed_percent
+    )
 }
 
 fn render_offline_status(socket: &ipc::ControlSocket) -> String {
@@ -1084,8 +1132,8 @@ mod tests {
     };
 
     use super::{
-        parse_command, render_status, render_theme, set_theme_at, CliCommand, OverrideTarget,
-        ThemeCommand, WeatherCommand,
+        parse_command, render_status, render_theme, set_theme_at, CliCommand, HoldCommand,
+        OverrideTarget, ThemeCommand, WeatherCommand,
     };
 
     fn parse(args: &[&str]) -> anyhow::Result<CliCommand> {
@@ -1302,6 +1350,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_external_hold_clear_commands() {
+        assert_eq!(
+            parse(&["hold", "clear"]).unwrap(),
+            CliCommand::Hold(HoldCommand::Clear { monitor: None })
+        );
+        assert_eq!(
+            parse(&["hold", "clear", "desk"]).unwrap(),
+            CliCommand::Hold(HoldCommand::Clear {
+                monitor: Some(String::from("desk")),
+            })
+        );
+        let error = parse(&["hold", "clear", "desk", "extra"]).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("usage: sunreactorctl hold clear"));
+    }
+
+    #[test]
     fn parses_set_override_commands() {
         let per_monitor = parse_command(&[
             String::from("set"),
@@ -1426,7 +1492,10 @@ mod tests {
                 topology: None,
                 min_pct: Some(15),
                 max_pct: Some(60),
-                external_hold: None,
+                external_hold: Some(sunreactor::ipc::ExternalHoldStatus {
+                    remaining_s: 1_321,
+                    observed_percent: 70,
+                }),
             }],
             solar_elevation: Some(15.0),
             lunar_phase: None,
@@ -1439,5 +1508,6 @@ mod tests {
         assert!(rendered.contains("weather_stale: true"));
         assert!(rendered.contains("weather_consecutive_failures: 2"));
         assert!(rendered.contains("weather_last_error: network timeout"));
+        assert!(rendered.contains("external hold · 23m left (observed 70%)"));
     }
 }

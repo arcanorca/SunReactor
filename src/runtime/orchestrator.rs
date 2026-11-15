@@ -2109,6 +2109,134 @@ mod tests {
     }
 
     #[test]
+    fn ipc_clear_external_hold_clears_all_monitors_and_queues_smooth_apply() {
+        let temp = TempDir::new();
+        let mut report = test_config_report();
+        let mut second = report.config.monitors[0].clone();
+        second.logical_id = String::from("external");
+        second.selector.sysfs_path = Some(String::from("/sys/class/backlight/acpi_video0"));
+        report.config.monitors.push(second);
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            report,
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        runtime.external_holds.insert(
+            String::from("internal"),
+            apply::ExternalHold {
+                since_epoch_s: 1_800_000_000,
+                until_epoch_s: 1_800_001_800,
+                observed_percent: 20,
+            },
+        );
+        runtime.external_holds.insert(
+            String::from("external"),
+            apply::ExternalHold {
+                since_epoch_s: 1_800_000_000,
+                until_epoch_s: 1_800_001_800,
+                observed_percent: 70,
+            },
+        );
+
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            Request::ClearExternalHold { monitor: None },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(outcome.tick_attempted);
+        assert!(matches!(response.response, Response::Ack { .. }));
+        assert!(runtime.external_holds.is_empty());
+        assert!(runtime.has_pending_apply());
+        assert_eq!(runtime.take_pending_apply(), Some((false, false)));
+    }
+
+    #[test]
+    fn ipc_clear_external_hold_clears_only_the_requested_monitor() {
+        let temp = TempDir::new();
+        let mut report = test_config_report();
+        let mut second = report.config.monitors[0].clone();
+        second.logical_id = String::from("external");
+        second.selector.sysfs_path = Some(String::from("/sys/class/backlight/acpi_video0"));
+        report.config.monitors.push(second);
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            report,
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        for monitor_id in ["internal", "external"] {
+            runtime.external_holds.insert(
+                String::from(monitor_id),
+                apply::ExternalHold {
+                    since_epoch_s: 1_800_000_000,
+                    until_epoch_s: 1_800_001_800,
+                    observed_percent: 42,
+                },
+            );
+        }
+
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            Request::ClearExternalHold {
+                monitor: Some(String::from("internal")),
+            },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(outcome.tick_attempted);
+        assert!(matches!(response.response, Response::Ack { .. }));
+        assert!(!runtime.external_holds.contains_key("internal"));
+        assert!(runtime.external_holds.contains_key("external"));
+        assert_eq!(runtime.take_pending_apply(), Some((false, false)));
+    }
+
+    #[test]
+    fn ipc_clear_external_hold_rejects_unknown_monitor_without_mutation() {
+        let temp = TempDir::new();
+        let mut runtime = DaemonRuntime::bootstrap_with_paths(
+            test_config_report(),
+            temp.path().join("state/runtime-state.json"),
+            temp.path().join("run/control.sock"),
+        )
+        .expect("runtime should bootstrap");
+        runtime.external_holds.insert(
+            String::from("internal"),
+            apply::ExternalHold {
+                since_epoch_s: 1_800_000_000,
+                until_epoch_s: 1_800_001_800,
+                observed_percent: 20,
+            },
+        );
+
+        let (response, outcome) = runtime.handle_ipc_request_with_runner(
+            Request::ClearExternalHold {
+                monitor: Some(String::from("missing")),
+            },
+            &FakeRunner::new(),
+            Utc.timestamp_opt(1_800_000_000, 0)
+                .single()
+                .expect("valid time"),
+        );
+
+        assert!(!outcome.tick_attempted);
+        assert!(matches!(
+            response.response,
+            Response::Error {
+                code: crate::ipc::ErrorCode::InvalidRequest,
+                ..
+            }
+        ));
+        assert!(runtime.external_holds.contains_key("internal"));
+        assert!(!runtime.has_pending_apply());
+    }
+
+    #[test]
     fn deferred_mutation_and_following_status_do_not_wait_for_apply() {
         let temp = TempDir::new();
         let mut runtime = DaemonRuntime::bootstrap_with_paths(

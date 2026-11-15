@@ -79,6 +79,10 @@ pub enum Request {
     RunOnce {
         force: bool,
     },
+    ClearExternalHold {
+        #[serde(default)]
+        monitor: Option<String>,
+    },
     ExternalBrightnessChange,
     /// Summaries of every theme in the daemon's registry.
     ListThemes,
@@ -110,6 +114,7 @@ impl Request {
             Self::RefreshWeather => "refresh_weather",
             Self::Ping => "ping",
             Self::RunOnce { .. } => "run_once",
+            Self::ClearExternalHold { .. } => "clear_external_hold",
             Self::ExternalBrightnessChange => "external_brightness_change",
             Self::ListThemes => "list_themes",
             Self::GetTheme { .. } => "get_theme",
@@ -680,6 +685,16 @@ mod tests {
                 Request::SetCloudDimming { percent: 35 },
                 json!({"version": 1, "request": "set_cloud_dimming", "percent": 35}),
             ),
+            (
+                Request::ClearExternalHold { monitor: None },
+                json!({"version": 1, "request": "clear_external_hold", "monitor": null}),
+            ),
+            (
+                Request::ClearExternalHold {
+                    monitor: Some(String::from("desk")),
+                },
+                json!({"version": 1, "request": "clear_external_hold", "monitor": "desk"}),
+            ),
         ];
         for (request, wire) in cases {
             let envelope = RequestEnvelope::new(request.clone());
@@ -691,6 +706,9 @@ mod tests {
         let parsed: RequestEnvelope =
             serde_json::from_str(r#"{"version":1,"request":"day_curve"}"#).unwrap();
         assert_eq!(parsed.request, Request::DayCurve { monitor_id: None });
+        let parsed: RequestEnvelope =
+            serde_json::from_str(r#"{"version":1,"request":"clear_external_hold"}"#).unwrap();
+        assert_eq!(parsed.request, Request::ClearExternalHold { monitor: None });
         let parsed: RequestEnvelope =
             serde_json::from_str(r#"{"version":1,"request":"day_curve","monitor_id":"mi"}"#)
                 .unwrap();

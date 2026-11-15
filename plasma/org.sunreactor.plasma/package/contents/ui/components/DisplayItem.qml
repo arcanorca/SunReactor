@@ -8,6 +8,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
@@ -31,17 +32,60 @@ PlasmaComponents3.ItemDelegate {
     property bool hasLimits: false
     property bool hasOverride: false
     property bool limitsExpanded: false
+    /*! Optional daemon hold map: { remainingS, observedPercent }. */
+    property var externalHold: null
+    /*! Hides the hold immediately after a cancel click until the next status. */
+    property bool externalHoldDismissed: false
 
     /*! Emitted while dragging (throttled) and once on release. */
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
     signal clearOverrideRequested()
+    signal clearExternalHoldRequested()
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property bool hasValue: percent >= 0
+    readonly property bool hasExternalHold: externalHold !== null && externalHold !== undefined
+        && Number(externalHold.remainingS) > 0
+    readonly property bool showExternalHold: hasExternalHold && !externalHoldDismissed
+    readonly property real externalHoldSlotWidth: Math.round(94 * root.theme.scaleFactor)
+    readonly property real externalHoldSlotHeight: Math.max(root.theme.gridUnit,
+                                                               root.theme.fontSizeSmall + root.theme.spacing)
     readonly property string valueText: hasValue
         ? i18ndc(domain, "Brightness percentage", "%1%", percent)
         : i18ndc(domain, "No value is known yet", "—")
+
+    function holdShortText(remainingS) {
+        const seconds = Math.max(0, Number(remainingS) || 0);
+        return seconds < 60 ? "<1m" : Math.ceil(seconds / 60) + "m";
+    }
+
+    function holdLongText(remainingS) {
+        const seconds = Math.max(0, Number(remainingS) || 0);
+        return seconds < 60 ? "<1 min" : Math.ceil(seconds / 60) + " min";
+    }
+
+    function externalHoldBadgeText(remainingS) {
+        return i18ndc(domain, "External brightness hold badge", "external · %1",
+                      holdShortText(remainingS));
+    }
+
+    function externalHoldTooltipText(remainingS) {
+        return i18ndc(domain, "External brightness hold tooltip",
+                      "Brightness was changed outside SunReactor; auto resumes in %1",
+                      holdLongText(remainingS));
+    }
+
+    function cancelExternalHold() {
+        externalHoldDismissed = true;
+        clearExternalHoldRequested();
+    }
+
+    onExternalHoldChanged: {
+        if (!hasExternalHold) {
+            externalHoldDismissed = false;
+        }
+    }
 
     Layout.fillWidth: true
 
@@ -108,6 +152,54 @@ PlasmaComponents3.ItemDelegate {
                     font.pixelSize: root.theme.fontSizeBody
                     color: root.theme.fg
                     elide: Text.ElideRight
+                }
+
+                // Keep a fixed-height slot so a hold never changes the row's
+                // measured height; its width is reserved to avoid reflow too.
+                Item {
+                    Layout.preferredWidth: root.externalHoldSlotWidth
+                    Layout.minimumWidth: root.externalHoldSlotWidth
+                    Layout.maximumWidth: root.externalHoldSlotWidth
+                    Layout.preferredHeight: root.externalHoldSlotHeight
+                    Layout.minimumHeight: root.externalHoldSlotHeight
+                    Layout.maximumHeight: root.externalHoldSlotHeight
+
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: root.theme.spacing / 2
+
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            visible: root.showExternalHold
+                            text: root.externalHold !== null && root.externalHold !== undefined
+                                ? root.externalHoldBadgeText(root.externalHold.remainingS) : ""
+                            textFormat: Text.PlainText
+                            font.family: root.theme.digitsFont
+                            font.pixelSize: root.theme.fontSizeSmall
+                            color: root.theme.warning
+                            elide: Text.ElideRight
+                        }
+
+                        PlasmaComponents3.ToolButton {
+                            id: clearHoldButton
+
+                            Layout.preferredWidth: root.theme.gridUnit
+                            Layout.preferredHeight: root.theme.gridUnit
+                            visible: root.showExternalHold
+                            enabled: visible
+                            icon.name: "window-close"
+                            display: PlasmaComponents3.AbstractButton.IconOnly
+                            text: i18nd(root.domain, "Cancel external brightness hold")
+                            onClicked: root.cancelExternalHold()
+                            Accessible.name: text
+                        }
+                    }
+
+                    HoverHandler { id: holdHover }
+                    QQC2.ToolTip.visible: holdHover.hovered && root.showExternalHold
+                    QQC2.ToolTip.text: root.showExternalHold
+                        ? root.externalHoldTooltipText(root.externalHold.remainingS) : ""
+                    QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 }
 
                 // In a manual override, one click returns to the solar curve.

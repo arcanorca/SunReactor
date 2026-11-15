@@ -56,6 +56,7 @@ private Q_SLOTS:
     void testCommandSequencing();
     void testOverrideRequestsAreWellFormed();
     void testMonitorLimitsRequestsAreWellFormed();
+    void testExternalHoldRequestIsWellFormedAndCoalesces();
     void testCloudDimmingRequestIsWellFormedAndClamped();
     void testCloudDimmingRequestsCoalesce();
     void testCloudDimmingStatusIsParsed();
@@ -262,6 +263,53 @@ void TestSunReactorClient::testMonitorLimitsRequestsAreWellFormed()
     QCOMPARE(limits.value(QStringLiteral("max_pct")).toInt(), 100);
 }
 
+void TestSunReactorClient::testExternalHoldRequestIsWellFormedAndCoalesces()
+{
+    serveAck();
+
+    SunReactorClient client(m_socketPath);
+    client.clearExternalHold(QStringLiteral("  desk  "));
+    client.clearExternalHold(QStringLiteral("desk"));
+    client.clearExternalHold(QString());
+
+    // The first request is in flight; the two later monitor actions coalesce
+    // in the bounded queue while the all-monitors action remains distinct.
+    QCOMPARE(client.m_requestQueue.size(), 2);
+    int queuedDesk = 0;
+    for (const SunReactorClient::QueuedRequest &queued : std::as_const(client.m_requestQueue)) {
+        if (queued.object.value(QStringLiteral("monitor")).toString() == QStringLiteral("desk")) {
+            ++queuedDesk;
+        }
+    }
+    QCOMPARE(queuedDesk, 1);
+
+    const auto commandsSoFar = [this]() {
+        QList<QJsonObject> commands;
+        for (const QJsonObject &request : std::as_const(m_received)) {
+            if (request.value(QStringLiteral("request")).toString()
+                == QStringLiteral("clear_external_hold")) {
+                commands.append(request);
+            }
+        }
+        return commands;
+    };
+
+    QTRY_VERIFY_WITH_TIMEOUT(commandsSoFar().size() >= 2, 5000);
+
+    const QList<QJsonObject> commands = commandsSoFar();
+    bool sawDesk = false;
+    bool sawAll = false;
+    for (const QJsonObject &command : commands) {
+        QCOMPARE(command.value(QStringLiteral("request")).toString(),
+                 QStringLiteral("clear_external_hold"));
+        const QJsonValue monitor = command.value(QStringLiteral("monitor"));
+        sawDesk |= monitor.toString() == QStringLiteral("desk");
+        sawAll |= monitor.isNull();
+    }
+    QVERIFY(sawDesk);
+    QVERIFY(sawAll);
+}
+
 void TestSunReactorClient::testAcknowledgedStatusDoesNotLoop()
 {
     // A peer that answers every request - including a status read - with an
@@ -316,6 +364,10 @@ void TestSunReactorClient::testConnectAndParseStatus()
     external[QStringLiteral("last_applied_percent")] = 70;
     external[QStringLiteral("override_percent")] = 75;
     external[QStringLiteral("topology")] = QStringLiteral("present");
+    external[QStringLiteral("external_hold")] = QJsonObject{
+        {QStringLiteral("remaining_s"), 1'321},
+        {QStringLiteral("observed_percent"), 70},
+    };
 
     QJsonObject internal;
     internal[QStringLiteral("logical_id")] = QStringLiteral("laptop");
@@ -380,6 +432,9 @@ void TestSunReactorClient::testConnectAndParseStatus()
     QCOMPARE(first.value(QStringLiteral("percent")).toInt(), 75);
     QCOMPARE(first.value(QStringLiteral("appliedPercent")).toInt(), 70);
     QVERIFY(!first.value(QStringLiteral("unreachable")).toBool());
+    const QVariantMap hold = first.value(QStringLiteral("externalHold")).toMap();
+    QCOMPARE(hold.value(QStringLiteral("remainingS")).toLongLong(), 1'321);
+    QCOMPARE(hold.value(QStringLiteral("observedPercent")).toInt(), 70);
 
     const QVariantMap second = client.monitors().at(1).toMap();
     QVERIFY(!second.value(QStringLiteral("hasOverride")).toBool());
