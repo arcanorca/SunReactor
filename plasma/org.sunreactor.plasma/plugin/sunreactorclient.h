@@ -325,6 +325,7 @@ private:
     struct QueuedRequest {
         QJsonObject object;
         qint64 queuedAtMs = 0;
+        int attempts = 0;
     };
     QQueue<QueuedRequest> m_requestQueue;
     QJsonObject m_inFlightRequest;
@@ -332,9 +333,11 @@ private:
     bool m_responseHandled = true;
     bool m_processNextScheduled = false;
     qint64 m_inFlightQueuedAtMs = 0;
+    int m_inFlightAttempts = 0;
     QElapsedTimer m_elapsed;
     int m_reconnectBackoffMs = 250;
     int m_lastBackoffWindowMs = 250;
+    qint64 m_disconnectedAtMs = -1;
 
     QString m_customSocketPath;
     QString m_lastError;
