@@ -388,6 +388,18 @@ fn huge_strings_and_numbers_are_bounded() {
 }
 
 #[test]
+fn unknown_variant_echo_cannot_make_error_reply_unwritable() {
+    // serde echoes unknown variant names; near-limit names must still yield a
+    // writable error reply (control chars expand 6x when JSON-escaped).
+    for (ch, count) in [("a", 65_400), ("\\u0001", 10_800), ("\\\"", 28_000)] {
+        let variant = ch.repeat(count);
+        let body = format!(r#"{{"version":1,"request":"{variant}"}}"#);
+        assert!(body.len() < MAX_MESSAGE);
+        assert!(exercise(frame(body.into_bytes()), 4096).is_err());
+    }
+}
+
+#[test]
 fn oversized_frames_are_rejected_with_bounded_reads() {
     for size in [MAX_MESSAGE + 1, MAX_MESSAGE + 4096, 10 * MAX_MESSAGE] {
         let mut stream = Endless {
@@ -434,4 +446,16 @@ fn slow_drip_sender_hits_receive_deadline() {
     let err = read_request(&mut stream, TARGET).expect_err("slow drip must time out");
     assert!(err.to_string().contains("deadline"), "{err}");
     assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn error_message_truncation_respects_char_boundaries() {
+    let reply = ResponseEnvelope::error(ErrorCode::InvalidRequest, "\u{e9}".repeat(5000));
+    let Response::Error { message, .. } = reply.response else {
+        panic!("expected error response");
+    };
+    assert!(message.len() <= 2048 + 3);
+    assert!(message.ends_with("..."));
+    let short = ResponseEnvelope::error(ErrorCode::InvalidRequest, "short");
+    assert!(matches!(short.response, Response::Error { message, .. } if message == "short"));
 }
