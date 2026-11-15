@@ -21,6 +21,7 @@ import "../../modules"
 import "../../Format.js" as Format
 import "../terminal"
 import "Hg.js" as Hg
+import "../../modules/ForecastRules.js" as ForecastRules
 
 Item {
     id: root
@@ -43,18 +44,7 @@ Item {
 
     /*! Slots that fit: each wants nine cells, at most five. */
     readonly property int slots: Math.max(1, Math.min(5, Math.floor(term.cols(root.width) / 9)))
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === slots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
     implicitHeight: section.implicitHeight
