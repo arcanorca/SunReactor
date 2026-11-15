@@ -29,6 +29,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../modules/Monitors.js" as Monitors
 import "../../Format.js" as Format
 import "Term.js" as Term
 
@@ -54,15 +55,17 @@ FocusScope {
         theme: root.theme
     }
 
-    // --- local state -------------------------------------------------------------
-    /*! logicalId -> true while that display's range is open. */
-    property var expanded: ({})
-    /*! Values the user asked for that the daemon has not reported back yet:
-        logicalId (or "*" for all displays) -> percent. */
-    property var pendingPct: ({})
-    /*! logicalId -> [min, max]. */
-    property var pendingLimits: ({})
-    property int cursorIndex: 0
+    // --- cursor, pending values and writes: shared with the other terminal skin ----
+    DisplaysControl {
+        id: ctl
+
+        client: root.client
+        settings: root.settings
+        scope: root
+        monitors: root.monitors
+        showAll: root.showAll
+        jumpKeys: true
+    }
 
     /*! The controls, top to bottom: mon -1 is "All displays", else an index. */
     readonly property var rows: {
@@ -73,234 +76,17 @@ FocusScope {
         monitors.forEach((m, i) => out.push({ mon: i }));
         return out;
     }
-    readonly property int openRanges: monitors.filter(m => expanded[m.logicalId] === true).length
+    readonly property int openRanges: monitors.filter(m => ctl.expanded[m.logicalId] === true).length
     readonly property int contentRows: Math.max(1, rows.length * controlRows + openRanges * rangeRows)
-
-    readonly property var targets: {
-        const out = [];
-        if (showAll) {
-            out.push({ mon: -1, field: "value" });
-        }
-        monitors.forEach((m, i) => {
-            out.push({ mon: i, field: "value" });
-            if (expanded[m.logicalId]) {
-                out.push({ mon: i, field: "min" });
-                out.push({ mon: i, field: "max" });
-            }
-        });
-        return out;
-    }
-    readonly property var cursor: targets.length > 0 ? targets[Math.max(0, Math.min(cursorIndex, targets.length - 1))] : null
-
-    function isCursor(mon, field) {
-        return cursor !== null && cursor.mon === mon && cursor.field === field;
-    }
-    function select(mon, field) {
-        const i = targets.findIndex(t => t.mon === mon && t.field === field);
-        if (i >= 0) {
-            cursorIndex = i;
-        }
-        root.forceActiveFocus(Qt.MouseFocusReason);
-    }
-
-    function controllable(m) {
-        return m.enabled && !m.unreachable && m.topology !== "temporarily_unavailable";
-    }
-    function shownPct(key, reported) {
-        return pendingPct[key] !== undefined ? pendingPct[key] : reported;
-    }
-    function shownLimits(m) {
-        return pendingLimits[m.logicalId] !== undefined ? pendingLimits[m.logicalId] : [m.minPct, m.maxPct];
-    }
-    function setPct(key, value) {
-        const next = Object.assign({}, pendingPct);
-        next[key] = Math.max(0, Math.min(100, Math.round(value)));
-        pendingPct = next;
-        sendTimer.restart();
-        settleTimer.restart();
-    }
-    function setLimits(m, minPct, maxPct) {
-        const next = Object.assign({}, pendingLimits);
-        const lo = Math.max(0, Math.min(100, Math.round(minPct)));
-        next[m.logicalId] = [lo, Math.max(lo, Math.min(100, Math.round(maxPct)))];
-        pendingLimits = next;
-        sendTimer.restart();
-        settleTimer.restart();
-    }
-    function flush() {
-        sendTimer.stop();
-        for (const key in pendingPct) {
-            if (key === "*") {
-                client.setGlobalOverride(pendingPct[key], settings.overrideMinutes);
-            } else {
-                client.setMonitorOverride(key, pendingPct[key], settings.overrideMinutes);
-            }
-        }
-        for (const key in pendingLimits) {
-            client.setMonitorLimits(key, pendingLimits[key][0], pendingLimits[key][1]);
-        }
-    }
-    function toggleRange(m) {
-        const next = Object.assign({}, expanded);
-        next[m.logicalId] = !next[m.logicalId];
-        expanded = next;
-    }
-    function automatic(mon) {
-        if (mon < 0) {
-            client.clearAllOverrides();
-        } else {
-            client.clearMonitorOverride(monitors[mon].logicalId);
-        }
-        pendingPct = ({});
-    }
-    /*! Writes the value of the cursor's bar (or the range boundary it is on). */
-    function adjust(delta) {
-        if (!cursor) {
-            return;
-        }
-        if (cursor.mon < 0) {
-            if (client.globalPercent >= 0) {
-                setPct("*", shownPct("*", client.globalPercent) + delta);
-            }
-            return;
-        }
-        const m = monitors[cursor.mon];
-        if (cursor.field === "value") {
-            if (controllable(m) && m.percent >= 0) {
-                setPct(m.logicalId, shownPct(m.logicalId, m.percent) + delta);
-            }
-        } else {
-            const lim = shownLimits(m);
-            if (cursor.field === "min") {
-                setLimits(m, Math.min(lim[0] + delta, lim[1]), lim[1]);
-            } else {
-                setLimits(m, lim[0], Math.max(lim[1] + delta, lim[0]));
-            }
-        }
-    }
-    /*! Home / End: the bottom or top of the bar's range (0 and 100 for all). */
-    function jump(top) {
-        if (!cursor || cursor.field !== "value") {
-            return;
-        }
-        if (cursor.mon < 0) {
-            if (client.globalPercent >= 0) {
-                setPct("*", top ? 100 : 0);
-            }
-            return;
-        }
-        const m = monitors[cursor.mon];
-        if (controllable(m) && m.percent >= 0) {
-            const lim = shownLimits(m);
-            setPct(m.logicalId, top ? lim[1] : lim[0]);
-        }
-    }
-
-    // The daemon's own target for a display right now (day_curve), or -1.
-    function targetNow(logicalId) {
-        const curve = client.dayCurve;
-        if (!curve || !curve.monitors) {
-            return -1;
-        }
-        for (const c of curve.monitors) {
-            if (c.monitorId === logicalId && c.samples.length > 1) {
-                const s = c.samples;
-                const t = client.nowEpochS;
-                if (t < s[0].t || t > s[s.length - 1].t) {
-                    return -1;
-                }
-                for (let i = 1; i < s.length; ++i) {
-                    if (s[i].t >= t) {
-                        const f = (t - s[i - 1].t) / Math.max(1, s[i].t - s[i - 1].t);
-                        return Math.round(s[i - 1].pct + (s[i].pct - s[i - 1].pct) * f);
-                    }
-                }
-            }
-        }
-        return -1;
-    }
-
-    Timer {
-        id: sendTimer
-        interval: 250
-        onTriggered: root.flush()
-    }
-    // After the last change, give the daemon time to report it back.
-    Timer {
-        id: settleTimer
-        interval: 2500
-        onTriggered: {
-            root.pendingPct = ({});
-            root.pendingLimits = ({});
-        }
-    }
 
     activeFocusOnTab: true
     implicitHeight: frame.implicitHeight
 
-    Keys.onUpPressed: event => {
-        if (cursorIndex > 0) {
-            cursorIndex = Math.min(cursorIndex, targets.length - 1) - 1;
-        } else {
-            const previous = nextItemInFocusChain(false);
-            if (previous) {
-                previous.forceActiveFocus(Qt.BacktabFocusReason);
-            }
-        }
-    }
-    Keys.onDownPressed: event => {
-        if (cursorIndex < targets.length - 1) {
-            ++cursorIndex;
-        } else {
-            const next = nextItemInFocusChain(true);
-            if (next) {
-                next.forceActiveFocus(Qt.TabFocusReason);
-            }
-        }
-    }
-    Keys.onLeftPressed: event => root.adjust((event.modifiers & Qt.ShiftModifier) ? -10 : -1)
-    Keys.onRightPressed: event => root.adjust((event.modifiers & Qt.ShiftModifier) ? 10 : 1)
-    Keys.onPressed: event => {
-        switch (event.key) {
-        case Qt.Key_PageUp:
-            root.adjust(10);
-            break;
-        case Qt.Key_PageDown:
-            root.adjust(-10);
-            break;
-        case Qt.Key_Home:
-            root.jump(false);
-            break;
-        case Qt.Key_End:
-            root.jump(true);
-            break;
-        case Qt.Key_Return:
-        case Qt.Key_Enter:
-        case Qt.Key_Space:
-            if (root.cursor && root.cursor.mon >= 0) {
-                root.toggleRange(root.monitors[root.cursor.mon]);
-            }
-            break;
-        case Qt.Key_A:
-        case Qt.Key_Backspace:
-        case Qt.Key_Delete:
-            if (root.cursor) {
-                root.automatic(root.cursor.mon);
-            }
-            break;
-        case Qt.Key_Escape:
-            if (root.cursor && root.cursor.mon >= 0 && root.expanded[root.monitors[root.cursor.mon].logicalId]) {
-                root.toggleRange(root.monitors[root.cursor.mon]);
-                root.cursorIndex = root.targets.findIndex(t => t.mon === root.cursor.mon && t.field === "value");
-            } else {
-                return;
-            }
-            break;
-        default:
-            return;
-        }
-        event.accepted = true;
-    }
+    Keys.onUpPressed: event => ctl.up()
+    Keys.onDownPressed: event => ctl.down()
+    Keys.onLeftPressed: event => ctl.step(event, -1)
+    Keys.onRightPressed: event => ctl.step(event, 1)
+    Keys.onPressed: event => ctl.handleKey(event)
 
     function hint(key, text) {
         return [{ t: key, c: theme.fg, b: true }, { t: " " + text + "  ", c: theme.textMuted }];
@@ -319,7 +105,7 @@ FocusScope {
             if (root.monitors.length < 2) {
                 return "";
             }
-            const mon = root.cursor && root.cursor.mon >= 0 ? root.cursor.mon : 0;
+            const mon = ctl.cursor && ctl.cursor.mon >= 0 ? ctl.cursor.mon : 0;
             return i18ndc(root.domain, "Position of the selected display in the list", "%1 of %2", mon + 1, root.monitors.length);
         }
         bottomRuns: root.activeFocus
@@ -349,15 +135,15 @@ FocusScope {
                     readonly property bool isAll: mon < 0
                     readonly property var m: isAll ? null : root.monitors[mon]
                     readonly property string key: isAll ? "*" : m.logicalId
-                    readonly property bool canWrite: isAll ? root.client.globalPercent >= 0 : root.controllable(m)
-                    readonly property int shown: isAll ? root.shownPct("*", root.client.globalPercent)
-                                                       : root.shownPct(m.logicalId, m.percent)
-                    readonly property var limits: isAll ? [0, 100] : root.shownLimits(m)
-                    readonly property int target: isAll ? -1 : root.targetNow(m.logicalId)
+                    readonly property bool canWrite: isAll ? root.client.globalPercent >= 0 : Monitors.controllable(m)
+                    readonly property int shown: isAll ? ctl.shownPct("*", root.client.globalPercent)
+                                                       : ctl.shownPct(m.logicalId, m.percent)
+                    readonly property var limits: isAll ? [0, 100] : ctl.shownLimits(m)
+                    readonly property int target: isAll ? -1 : ctl.targetNow(m.logicalId)
                     readonly property bool manual: isAll ? root.client.isOverrideActive : m.hasOverride === true
-                    readonly property bool open: !isAll && root.expanded[m.logicalId] === true
-                    readonly property bool unavailable: !isAll && (m.unreachable || m.topology === "temporarily_unavailable")
-                    readonly property bool focusedHere: root.activeFocus && root.isCursor(mon, "value")
+                    readonly property bool open: !isAll && ctl.expanded[m.logicalId] === true
+                    readonly property bool unavailable: !isAll && Monitors.unavailable(m)
+                    readonly property bool focusedHere: root.activeFocus && ctl.isCursor(mon, "value")
                     readonly property color fillColor: !canWrite ? root.theme.textMuted
                         : (manual ? root.theme.warning : root.theme.accent)
 
@@ -386,7 +172,7 @@ FocusScope {
                         }
                         TermText {
                             tm: term
-                            visible: root.isCursor(block.mon, "value")
+                            visible: ctl.isCursor(block.mon, "value")
                             value: root.activeFocus ? "❯" : "›"
                             strong: root.activeFocus
                             color: block.focusedHere ? root.theme.onColor(root.theme.accent)
@@ -411,7 +197,7 @@ FocusScope {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: root.select(block.mon, "value")
+                            onClicked: ctl.select(block.mon, "value")
                         }
                     }
 
@@ -425,12 +211,12 @@ FocusScope {
                         interactive: block.canWrite && block.shown >= 0
                         fillColor: block.fillColor
                         onMoved: value => {
-                            root.select(block.mon, "value");
-                            root.setPct(block.key, value);
+                            ctl.select(block.mon, "value");
+                            ctl.setPct(block.key, value);
                         }
                         onReleased: value => {
-                            root.setPct(block.key, value);
-                            root.flush();
+                            ctl.setPct(block.key, value);
+                            ctl.flush();
                         }
                     }
 
@@ -514,8 +300,8 @@ FocusScope {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                root.toggleRange(block.m);
-                                root.select(block.mon, block.open ? "min" : "value");
+                                ctl.toggleRange(block.m);
+                                ctl.select(block.mon, block.open ? "min" : "value");
                             }
                         }
                         MouseArea {
@@ -528,7 +314,7 @@ FocusScope {
                             height: term.ch
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.automatic(block.mon)
+                            onClicked: ctl.automatic(block.mon)
                         }
                     }
 
@@ -546,15 +332,15 @@ FocusScope {
                             minPct: block.limits[0]
                             maxPct: block.limits[1]
                             applied: block.isAll ? -1 : block.m.appliedPercent
-                            focusedHandle: root.activeFocus && root.cursor && root.cursor.mon === block.mon
-                                && root.cursor.field !== "value" ? root.cursor.field : ""
+                            focusedHandle: root.activeFocus && ctl.cursor && ctl.cursor.mon === block.mon
+                                && ctl.cursor.field !== "value" ? ctl.cursor.field : ""
                             onMoved: (minPct, maxPct) => {
-                                root.select(block.mon, minPct !== block.limits[0] ? "min" : "max");
-                                root.setLimits(block.m, minPct, maxPct);
+                                ctl.select(block.mon, minPct !== block.limits[0] ? "min" : "max");
+                                ctl.setLimits(block.m, minPct, maxPct);
                             }
                             onReleased: (minPct, maxPct) => {
-                                root.setLimits(block.m, minPct, maxPct);
-                                root.flush();
+                                ctl.setLimits(block.m, minPct, maxPct);
+                                ctl.flush();
                             }
                         }
                     }
@@ -573,13 +359,13 @@ FocusScope {
                             label: index === 0 ? i18ndc(root.domain, "Night minimum boundary", "Minimum")
                                                : i18ndc(root.domain, "Day maximum boundary", "Maximum")
                             value: block.limits[index] + "%"
-                            current: root.isCursor(block.mon, modelData)
+                            current: ctl.isCursor(block.mon, modelData)
                             active: root.activeFocus
                             labelColor: root.theme.fg
-                            onClicked: root.select(block.mon, modelData)
+                            onClicked: ctl.select(block.mon, modelData)
                             onStepped: direction => {
-                                root.select(block.mon, modelData);
-                                root.adjust(direction);
+                                ctl.select(block.mon, modelData);
+                                ctl.adjust(direction);
                             }
                         }
                     }

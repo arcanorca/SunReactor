@@ -104,17 +104,6 @@ FocusScope {
         root.control.pick(root.control.order[index], root);
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
-    /*! The status sentence and the idle note, one row: the hint replaces both. */
-    readonly property string statusLine: root.control.hinting || root.control.note.length === 0
-        ? root.control.displayText
-        : root.control.displayText + " · " + root.control.note
-
     Keys.onLeftPressed: root.cursor = (root.cursor + root.labels.length - 1) % root.labels.length
     Keys.onRightPressed: root.cursor = (root.cursor + 1) % root.labels.length
     Keys.onPressed: event => {
@@ -122,7 +111,7 @@ FocusScope {
             root.pick(root.cursor);
             event.accepted = true;
         } else if (event.key === Qt.Key_Down && root.cursor === 2) {
-            root.openDurations(cells.itemAt(2));
+            durations.openBelow(cells.itemAt(2), root);
             event.accepted = true;
         }
     }
@@ -239,7 +228,7 @@ FocusScope {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 root.forceActiveFocus(Qt.MouseFocusReason);
-                                root.openDurations(cell);
+                                durations.openBelow(cell, root);
                             }
                         }
                     }
@@ -255,7 +244,7 @@ FocusScope {
                     tm: term
                     x: term.cx(2)
                     cells: Math.max(0, frame.innerCols - 2)
-                    value: Term.shedSegments(root.statusLine, Math.max(0, frame.innerCols - 2))
+                    value: Term.shedSegments(root.control.statusLine, Math.max(0, frame.innerCols - 2))
                     color: root.control.hinting ? root.theme.warning : root.theme.fg
                 }
             }

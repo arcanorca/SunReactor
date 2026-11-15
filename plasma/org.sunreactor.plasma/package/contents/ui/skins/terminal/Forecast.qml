@@ -23,6 +23,7 @@ import "../../components"
 import "../../Format.js" as Format
 import "Term.js" as Term
 import "TermArt.js" as Art
+import "../../modules/ForecastRules.js" as ForecastRules
 
 Item {
     id: root
@@ -44,18 +45,7 @@ Item {
 
     /*! The next five intervals after now (the daemon's forecast order). */
     readonly property int slotCount: 5
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === slotCount) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slotCount)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
     /*! Column geometry in cells: `start` and `width` of each, one cell between columns. */

@@ -26,6 +26,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "Term.js" as Term
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -53,21 +54,6 @@ Item {
     TermMetrics {
         id: term
         theme: root.theme
-    }
-
-    function valueAt(samples, t, field) {
-        if (!samples || samples.length === 0 || t < samples[0].t || t > samples[samples.length - 1].t) {
-            return -1;
-        }
-        for (let i = 1; i < samples.length; ++i) {
-            const b = samples[i];
-            if (b.t >= t) {
-                const a = samples[i - 1];
-                const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-                return a[field] + (b[field] - a[field]) * f;
-            }
-        }
-        return samples[samples.length - 1][field];
     }
 
     // --- layout in cells -------------------------------------------------------
@@ -102,8 +88,8 @@ Item {
         }
         for (let c = 0; c < plotCols; ++c) {
             const t = t0 + (c + 0.5) / plotCols * (t1 - t0);
-            const v = valueAt(current.samples, t, "pct");
-            const nw = valueAt(current.samples, t, "pctNoWeather");
+            const v = DayCurve.valueAt(current.samples, t, "pct");
+            const nw = DayCurve.valueAt(current.samples, t, "pctNoWeather");
             const fill = v >= 0 ? fillDev(v) : 0;
             const fillNw = nw >= 0 ? Math.max(fill, fillDev(nw)) : fill;
             // Row the area (with the weather share) reaches into, as in the TUI.
@@ -115,9 +101,9 @@ Item {
 
     readonly property int nowCol: colOf(now)
     readonly property bool nowInside: available && now >= t0 && now <= t1
-    readonly property real targetNow: current && nowInside ? valueAt(current.samples, now, "pct") : -1
+    readonly property real targetNow: current && nowInside ? DayCurve.valueAt(current.samples, now, "pct") : -1
     readonly property real costNow: current && nowInside
-        ? valueAt(current.samples, now, "pctNoWeather") - valueAt(current.samples, now, "pct") : 0
+        ? DayCurve.valueAt(current.samples, now, "pctNoWeather") - DayCurve.valueAt(current.samples, now, "pct") : 0
 
     readonly property var bounds: Term.phaseBounds(curve ? curve.sun : null, t0, t1)
 
@@ -190,7 +176,7 @@ Item {
                 }
                 if (scrub.containsMouse && root.current) {
                     const t = root.t0 + (scrub.column + 0.5) / root.plotCols * (root.t1 - root.t0);
-                    const pct = root.valueAt(root.current.samples, t, "pct");
+                    const pct = DayCurve.valueAt(root.current.samples, t, "pct");
                     return [{ t: "━ ", c: root.theme.accent },
                             { t: root.shortTime(t) + " ", c: root.theme.textMuted },
                             { t: i18ndc(root.domain, "Brightness the curve targets at the time under the pointer",
@@ -305,7 +291,7 @@ Item {
                         delegate: Rectangle {
                             required property int index
 
-                            readonly property real v: root.valueAt(allCurve.modelData.samples,
+                            readonly property real v: DayCurve.valueAt(allCurve.modelData.samples,
                                 root.t0 + (index + 0.5) / root.plotCols * (root.t1 - root.t0), "pct")
 
                             visible: v >= 0
