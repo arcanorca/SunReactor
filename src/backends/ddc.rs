@@ -6,7 +6,11 @@ use std::io;
 use std::path::Path;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 use crate::config::{MonitorConfig, MonitorSelector};
 use crate::ddcutil::DdcutilClient;
@@ -24,6 +28,22 @@ const DEFAULT_DDC_ADDRESS: u16 = 0x37;
 const DDC_LOCK_FILE_NAME: &str = "sunreactor_i2c.lock";
 #[cfg(unix)]
 static DDC_LOCK_OPEN_WARNED: AtomicBool = AtomicBool::new(false);
+/// Serializes DDC traffic between threads of this process. The apply engine
+/// dispatches monitors concurrently; without this queue sibling writers would
+/// burn their per-command timeout polling the flock and fail into backoff.
+#[cfg(unix)]
+static DDC_PROCESS_LOCK: Mutex<()> = Mutex::new(());
+
+/// Exclusive DDC access held for one ddcutil invocation.
+///
+/// Fields drop in declaration order: the cross-process flock is released
+/// before the next in-process writer is let through.
+#[cfg(unix)]
+#[derive(Debug)]
+struct DdcLock {
+    _file: Option<File>,
+    _process: MutexGuard<'static, ()>,
+}
 
 pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
     apply_with_runner(
@@ -102,7 +122,7 @@ fn apply_with_runner_in<R: ProcessRunner>(
 }
 
 #[cfg(unix)]
-fn acquire_ddc_lock(timeout: Duration) -> Result<Option<File>, BackendError> {
+fn acquire_ddc_lock(timeout: Duration) -> Result<DdcLock, BackendError> {
     let lock_path = crate::paths::runtime_socket_dir().map_or_else(
         |_| {
             let uid = unsafe { libc::geteuid() };
@@ -114,7 +134,14 @@ fn acquire_ddc_lock(timeout: Duration) -> Result<Option<File>, BackendError> {
 }
 
 #[cfg(unix)]
-fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<Option<File>, BackendError> {
+/// Waits (unbounded) for the in-process DDC queue, then takes the
+/// cross-process flock within `timeout`.
+fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<DdcLock, BackendError> {
+    // The mutex guards no data, so a panic in a previous holder leaves nothing
+    // inconsistent; recover the guard instead of propagating the poison.
+    let process = DDC_PROCESS_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let lock_file = match OpenOptions::new()
         .create(true)
         .write(true)
@@ -126,7 +153,10 @@ fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<Option<Fil
             if !DDC_LOCK_OPEN_WARNED.swap(true, Ordering::AcqRel) {
                 tracing::warn!(path = %lock_path.display(), error = %error, "ddc_lock_unavailable_continuing_without_lock");
             }
-            return Ok(None);
+            return Ok(DdcLock {
+                _file: None,
+                _process: process,
+            });
         }
     };
 
@@ -138,7 +168,12 @@ fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<Option<Fil
             &lock_file,
             rustix::fs::FlockOperation::NonBlockingLockExclusive,
         ) {
-            Ok(()) => return Ok(Some(lock_file)),
+            Ok(()) => {
+                return Ok(DdcLock {
+                    _file: Some(lock_file),
+                    _process: process,
+                })
+            }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
@@ -727,6 +762,34 @@ mod tests {
             .expect_err("contended lock should time out");
         assert!(matches!(error, super::BackendError::CommandTimeout { .. }));
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    /// Sibling monitors in one apply run dispatch DDC writes concurrently.
+    /// They must queue for the bus in-process instead of spending their
+    /// per-command timeout on the cross-process flock and failing.
+    #[cfg(unix)]
+    #[test]
+    fn in_process_ddc_writers_wait_their_turn_instead_of_timing_out() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let lock_path = temp.path().join("ddc.lock");
+        let holder_path = lock_path.clone();
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let lock = super::acquire_ddc_lock_at(&holder_path, Duration::from_millis(60))
+                .expect("first writer acquires the lock");
+            held_tx.send(()).expect("signal held");
+            // Longer than the second writer's timeout, like a slow setvcp.
+            std::thread::sleep(Duration::from_millis(200));
+            drop(lock);
+        });
+        held_rx.recv().expect("holder took the lock");
+
+        let second = super::acquire_ddc_lock_at(&lock_path, Duration::from_millis(60));
+        holder.join().expect("holder thread");
+        assert!(
+            second.is_ok(),
+            "in-process writer should wait for the bus, got {second:?}"
+        );
     }
 
     /// A minimal EDID base block with a monitor name and serial descriptor.
