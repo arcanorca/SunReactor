@@ -21,6 +21,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules" as Mod
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 ColumnLayout {
     id: root
@@ -34,18 +35,7 @@ ColumnLayout {
         theme: root.theme
     }
 
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === 5) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
     /*! The temperature range the trace is scaled to. */
     readonly property real tMin: points.length > 0 ? Math.min(...points.map(p => p.temperatureC)) : 0

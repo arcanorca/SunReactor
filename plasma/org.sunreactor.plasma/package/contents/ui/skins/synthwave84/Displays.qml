@@ -17,7 +17,8 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules" as Mod
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
+import "../../modules/Monitors.js" as Monitors
 
 ColumnLayout {
     id: root
@@ -141,11 +142,10 @@ ColumnLayout {
             required property var modelData
             required property int index
 
-            readonly property bool unavailable: modelData.unreachable === true
-                || modelData.topology === "temporarily_unavailable"
+            readonly property bool unavailable: Monitors.unavailable(modelData)
             readonly property bool controllable: modelData.enabled === true && !unavailable
             readonly property bool hasValue: modelData.percent !== undefined && modelData.percent >= 0
-            readonly property real target: Curve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
+            readonly property real target: DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
             readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : 15
             readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
             readonly property string stateText: {
