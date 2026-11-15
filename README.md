@@ -191,7 +191,13 @@ sunreactorctl resume               # Clear overrides and return to the active so
 sunreactorctl reload-config        # Atomically validate and reload config.toml
 sunreactorctl theme list           # Built-in and user themes (* marks the configured one)
 sunreactorctl theme set nord       # Set tui.theme and reload the daemon
+sunreactorctl doctor               # Diagnose brightness access and runtime health
+sunreactorctl doctor --report bug.md  # Redacted Markdown bundle to attach to a GitHub issue
 ```
+
+#### Reporting a bug
+
+`sunreactorctl doctor --report [PATH]` prints (or writes to `PATH`) one Markdown document with the SunReactor version, distro, kernel, session type and desktop, the doctor checks, discovery results, daemon status if it is running, and your config. It is read-only and works without the daemon. Latitude and longitude are rounded to whole degrees; city, API keys and tokens, device serials, URL credentials, home paths and your user name are replaced or removed. Skim it before pasting it into an issue. The git commit shows only when the binary was built with `SUNREACTOR_GIT_HASH` set.
 
 ---
 
