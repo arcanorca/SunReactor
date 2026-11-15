@@ -174,7 +174,7 @@ pub(crate) fn compute_policy_with_elevation(
         .any(|monitor| !monitor.milestone_adjustments.is_empty())
         .then(|| {
             let context = resolve_base_milestone_context(input)?;
-            let base = resolve_base_milestones(input, &context)?;
+            let base = resolve_base_milestones(input, &context);
             Ok::<_, PolicyError>((context, base))
         })
         .transpose()?;
@@ -239,7 +239,7 @@ pub(crate) fn base_linear_effective_daylight_factor_at_utc(
     context: &BaseMilestoneContext,
     datetime_utc: DateTime<Utc>,
 ) -> Result<f64, PolicyError> {
-    let datetime_local = crate::solar::local_datetime_at_utc(datetime_utc, input.location).unwrap();
+    let datetime_local = crate::solar::local_datetime_at_utc(datetime_utc, input.location)?;
     if datetime_local <= context.day_start_local
         || datetime_local >= context.minimum_brightness_start_local
     {
@@ -616,6 +616,7 @@ mod tests {
         assert!(delayed_output.targets[0].percent < baseline_output.targets[0].percent);
     }
 
+    // Test helper: callers pass `vec![...]` literals inline for readability.
     #[allow(clippy::needless_pass_by_value)]
     fn evaluate_at_elevation(elevation_deg: f64, monitors: Vec<MonitorConfig>) -> PolicyOutput {
         let (location, config) = base_config();
@@ -632,6 +633,7 @@ mod tests {
         compute_policy_for_elevation(&input, elevation_deg).expect("policy should evaluate")
     }
 
+    // Test helper: callers pass `vec![...]` literals inline for readability.
     #[allow(clippy::needless_pass_by_value)]
     fn evaluate_at_elevation_with_weather(
         elevation_deg: f64,

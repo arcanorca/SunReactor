@@ -2,7 +2,7 @@ use crate::policy::{
     compute_monitor_target_percent, linear_daylight_factor_at_local, solar_elevation_at_utc,
     PolicyContext, PolicyError,
 };
-use crate::solar::{self, Location};
+use crate::solar::{self, Location, SolarError};
 use chrono::{DateTime, Duration, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -222,7 +222,7 @@ pub(crate) fn compute_monitor_milestones(
     input: &PolicyContext,
 ) -> Result<Vec<MonitorMilestoneSchedule>, PolicyError> {
     let context = resolve_base_milestone_context(input)?;
-    let base_milestones = resolve_base_milestones(input, &context)?;
+    let base_milestones = resolve_base_milestones(input, &context);
 
     Ok(input
         .monitors
@@ -336,8 +336,7 @@ pub(crate) fn resolve_base_milestone_context_for_date(
 ) -> Result<BaseMilestoneContext, PolicyError> {
     let start_of_day = resolve_local_minute_of_day(date, 0, input.location)?;
     let end_of_day = resolve_local_minute_of_day(
-        date.succ_opt()
-            .expect("policy date should remain within chrono's supported range"),
+        date.succ_opt().ok_or(SolarError::DateOutOfRange)?,
         0,
         input.location,
     )?;
@@ -397,18 +396,14 @@ pub(crate) fn resolve_base_milestone_context(
 
     if now_local < rise_start {
         // We are before today's sunrise, so we actually belong to yesterday's cycle.
-        date = date
-            .pred_opt()
-            .expect("policy date should remain within chrono's supported range");
+        date = date.pred_opt().ok_or(SolarError::DateOutOfRange)?;
         context = resolve_base_milestone_context_for_date(input, date)?;
 
         // Yesterday's NightFloor can be pushed up to 1 minute before today's sunrise.
         context.day_end_local = rise_start - Duration::minutes(1);
     } else {
         // We are within today's cycle.
-        let tomorrow = date
-            .succ_opt()
-            .expect("policy date should remain within chrono's supported range");
+        let tomorrow = date.succ_opt().ok_or(SolarError::DateOutOfRange)?;
         let tomorrow_context = resolve_base_milestone_context_for_date(input, tomorrow)?;
         let tomorrow_rise = find_rise_start(input, &tomorrow_context);
 
@@ -418,142 +413,127 @@ pub(crate) fn resolve_base_milestone_context(
 
     Ok(context)
 }
-#[allow(clippy::too_many_lines)]
-#[allow(clippy::unnecessary_wraps)]
+type LocalTime = DateTime<chrono::FixedOffset>;
+
+/// Resolves the nine base milestones for one day by scanning the daylight
+/// curve minute by minute, exactly as the daemon samples it.
+///
+/// Invariant: each milestone is the first scanned minute that reaches its
+/// target; a target never reached keeps its phase default (day start for
+/// `RiseStart`, peak for the rising quartiles, the minimum-brightness start
+/// for the falling quartiles).
 pub(crate) fn resolve_base_milestones(
     input: &PolicyContext,
     context: &BaseMilestoneContext,
-) -> Result<Vec<BaseMilestone>, PolicyError> {
-    let target_rise25 = milestone_factor(AutomationMilestone::Rise25, context.peak_linear_factor);
-    let target_rise50 = milestone_factor(AutomationMilestone::Rise50, context.peak_linear_factor);
-    let target_rise75 = milestone_factor(AutomationMilestone::Rise75, context.peak_linear_factor);
-    let target_fall75 = milestone_factor(AutomationMilestone::Fall75, context.peak_linear_factor);
-    let target_fall50 = milestone_factor(AutomationMilestone::Fall50, context.peak_linear_factor);
-    let target_fall25 = milestone_factor(AutomationMilestone::Fall25, context.peak_linear_factor);
+) -> Vec<BaseMilestone> {
+    let peak_factor = context.peak_linear_factor;
+    let (rise_start, [rise25, rise50, rise75]) = scan_rising_phase(
+        input,
+        context,
+        [
+            milestone_factor(AutomationMilestone::Rise25, peak_factor),
+            milestone_factor(AutomationMilestone::Rise50, peak_factor),
+            milestone_factor(AutomationMilestone::Rise75, peak_factor),
+        ],
+    );
+    let [fall75, fall50, fall25] = scan_falling_phase(
+        input,
+        context,
+        [
+            milestone_factor(AutomationMilestone::Fall75, peak_factor),
+            milestone_factor(AutomationMilestone::Fall50, peak_factor),
+            milestone_factor(AutomationMilestone::Fall25, peak_factor),
+        ],
+    );
 
+    [
+        (AutomationMilestone::RiseStart, rise_start),
+        (AutomationMilestone::Rise25, rise25),
+        (AutomationMilestone::Rise50, rise50),
+        (AutomationMilestone::Rise75, rise75),
+        (AutomationMilestone::Peak, context.peak_local),
+        (AutomationMilestone::Fall75, fall75),
+        (AutomationMilestone::Fall50, fall50),
+        (AutomationMilestone::Fall25, fall25),
+        (
+            AutomationMilestone::NightFloor,
+            context.minimum_brightness_start_local,
+        ),
+    ]
+    .into_iter()
+    .map(|(milestone, local_time)| BaseMilestone {
+        milestone,
+        local_time,
+    })
+    .collect()
+}
+
+/// Scans day start → peak. Returns the first minute the sun reaches
+/// `twilight_elevation_start` and the first minute the daylight factor
+/// reaches each rising target (factor `>=` target).
+fn scan_rising_phase(
+    input: &PolicyContext,
+    context: &BaseMilestoneContext,
+    targets: [f64; 3],
+) -> (LocalTime, [LocalTime; 3]) {
     let threshold_rise_start = input.config.twilight_elevation_start;
-
-    let mut rise_start = context.day_start_local;
-    let mut rise25 = context.peak_local;
-    let mut rise50 = context.peak_local;
-    let mut rise75 = context.peak_local;
-    let mut fall75 = context.minimum_brightness_start_local;
-    let mut fall50 = context.minimum_brightness_start_local;
-    let mut fall25 = context.minimum_brightness_start_local;
-
-    // Daily Simulation (Iterative Scanning)
-    // We loop minute-by-minute to find the exact crossings to perfectly sync with the Daemon.
-
-    // Rising Phase (Start of Day to Peak)
+    let mut rise_start = None;
+    let mut crossings = [None; 3];
     let mut current = context.day_start_local;
-    let mut found_rise_start = false;
-    let mut found_rise25 = false;
-    let mut found_rise50 = false;
-    let mut found_rise75 = false;
-
     while current <= context.peak_local {
         let current_utc = current.with_timezone(&Utc);
-
-        if !found_rise_start {
-            let elevation = solar_elevation_at_utc(input, current_utc).unwrap_or(-90.0);
-            if elevation >= threshold_rise_start {
-                rise_start = current;
-                found_rise_start = true;
-            }
+        if rise_start.is_none()
+            && solar_elevation_at_utc(input, current_utc).unwrap_or(-90.0) >= threshold_rise_start
+        {
+            rise_start = Some(current);
         }
-
-        let factor = crate::policy::base_linear_effective_daylight_factor_at_utc(
-            input,
-            context,
-            current_utc,
-        )
-        .unwrap_or(0.0);
-
-        if !found_rise25 && factor >= target_rise25 {
-            rise25 = current;
-            found_rise25 = true;
-        }
-        if !found_rise50 && factor >= target_rise50 {
-            rise50 = current;
-            found_rise50 = true;
-        }
-        if !found_rise75 && factor >= target_rise75 {
-            rise75 = current;
-            found_rise75 = true;
-        }
-
+        let factor = base_factor_at(input, context, current_utc);
+        record_first_crossings(&mut crossings, &targets, current, |target| factor >= target);
         current += Duration::minutes(1);
     }
+    (
+        rise_start.unwrap_or(context.day_start_local),
+        crossings.map(|at| at.unwrap_or(context.peak_local)),
+    )
+}
 
-    // Falling Phase (Peak to NightFloor)
+/// Scans peak → minimum-brightness start. Returns the first minute the
+/// daylight factor drops to each falling target (factor `<=` target).
+fn scan_falling_phase(
+    input: &PolicyContext,
+    context: &BaseMilestoneContext,
+    targets: [f64; 3],
+) -> [LocalTime; 3] {
+    let mut crossings = [None; 3];
     let mut current = context.peak_local;
-    let mut found_fall75 = false;
-    let mut found_fall50 = false;
-    let mut found_fall25 = false;
-
     while current <= context.minimum_brightness_start_local {
-        let current_utc = current.with_timezone(&Utc);
-        let factor = crate::policy::base_linear_effective_daylight_factor_at_utc(
-            input,
-            context,
-            current_utc,
-        )
-        .unwrap_or(0.0);
-
-        if !found_fall75 && factor <= target_fall75 {
-            fall75 = current;
-            found_fall75 = true;
-        }
-        if !found_fall50 && factor <= target_fall50 {
-            fall50 = current;
-            found_fall50 = true;
-        }
-        if !found_fall25 && factor <= target_fall25 {
-            fall25 = current;
-            found_fall25 = true;
-        }
-
+        let factor = base_factor_at(input, context, current.with_timezone(&Utc));
+        record_first_crossings(&mut crossings, &targets, current, |target| factor <= target);
         current += Duration::minutes(1);
     }
+    crossings.map(|at| at.unwrap_or(context.minimum_brightness_start_local))
+}
 
-    Ok(vec![
-        BaseMilestone {
-            milestone: AutomationMilestone::RiseStart,
-            local_time: rise_start,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Rise25,
-            local_time: rise25,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Rise50,
-            local_time: rise50,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Rise75,
-            local_time: rise75,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Peak,
-            local_time: context.peak_local,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Fall75,
-            local_time: fall75,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Fall50,
-            local_time: fall50,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::Fall25,
-            local_time: fall25,
-        },
-        BaseMilestone {
-            milestone: AutomationMilestone::NightFloor,
-            local_time: context.minimum_brightness_start_local,
-        },
-    ])
+fn base_factor_at(
+    input: &PolicyContext,
+    context: &BaseMilestoneContext,
+    at_utc: DateTime<Utc>,
+) -> f64 {
+    crate::policy::base_linear_effective_daylight_factor_at_utc(input, context, at_utc)
+        .unwrap_or(0.0)
+}
+
+fn record_first_crossings(
+    crossings: &mut [Option<LocalTime>; 3],
+    targets: &[f64; 3],
+    current: LocalTime,
+    reached: impl Fn(f64) -> bool,
+) {
+    for (slot, &target) in crossings.iter_mut().zip(targets) {
+        if slot.is_none() && reached(target) {
+            *slot = Some(current);
+        }
+    }
 }
 
 pub(crate) fn milestone_factor(milestone: AutomationMilestone, peak_factor: f64) -> f64 {
@@ -580,7 +560,7 @@ pub(crate) fn relevant_evening_events(
     let yesterday = now_local
         .date_naive()
         .pred_opt()
-        .expect("policy date should remain within chrono's supported range");
+        .ok_or(SolarError::DateOutOfRange)?;
     Ok(Some(solar::get_sun_events(yesterday, location)?))
 }
 pub(crate) fn resolve_auto_minimum_brightness_start(
@@ -598,7 +578,7 @@ pub(crate) fn resolve_local_minute_of_day(
     location: &Location,
 ) -> Result<DateTime<chrono::FixedOffset>, PolicyError> {
     let time = local_time_from_minute_of_day(minute_of_day)
-        .expect("validated minute-of-day should produce a local time");
+        .expect("invariant: callers pass a minute_of_day below 24 * 60");
     let datetime = date.and_time(time);
     solar::local_datetime(datetime, location).map_err(Into::into)
 }

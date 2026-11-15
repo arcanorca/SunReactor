@@ -172,17 +172,23 @@ pub fn local_datetime_at_utc(
         .timezone
         .find_local_time_type(datetime.timestamp())
         .map_err(|_| SolarError::DateOutOfRange)?;
-    let offset = FixedOffset::east_opt(local_type.ut_offset()).unwrap();
-    Ok(datetime.with_timezone(&offset))
+    Ok(datetime.with_timezone(&utc_offset(local_type)))
 }
 
-fn noon_utc(datetime: DateTime<Utc>, location: &Location) -> DateTime<FixedOffset> {
+fn noon_utc(
+    datetime: DateTime<Utc>,
+    location: &Location,
+) -> Result<DateTime<FixedOffset>, SolarError> {
     let local_type = location
         .timezone
         .find_local_time_type(datetime.timestamp())
-        .unwrap();
-    let offset = FixedOffset::east_opt(local_type.ut_offset()).unwrap();
-    datetime.with_timezone(&offset)
+        .map_err(|_| SolarError::DateOutOfRange)?;
+    Ok(datetime.with_timezone(&utc_offset(local_type)))
+}
+
+fn utc_offset(local_type: &tz::LocalTimeType) -> FixedOffset {
+    FixedOffset::east_opt(local_type.ut_offset())
+        .expect("invariant: tz database UTC offsets are within ±24h")
 }
 
 pub(crate) fn classify_elevation(
@@ -305,7 +311,7 @@ pub fn safe_get_sun_events(
         SunEventKind::Sunrise,
     )?;
     let noon_utc_dt = find_solar_noon(start_utc, end_utc, location)?;
-    let noon = noon_utc(noon_utc_dt, location);
+    let noon = noon_utc(noon_utc_dt, location)?;
     let sunset = safe_find_event_crossing(
         date,
         location,

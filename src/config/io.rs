@@ -56,8 +56,9 @@ pub(crate) fn load_from_path(path: &Path) -> Result<ConfigReport, ConfigError> {
             path: path.to_path_buf(),
             source,
         })?;
-        let warnings = super::compat::compatibility_warnings(&raw);
-        let config = parse_str(&raw, path)?;
+        let mut warnings = super::compat::compatibility_warnings(&raw);
+        let (config, normalize_warnings) = parse_str_with_warnings(&raw, path)?;
+        warnings.extend(normalize_warnings);
 
         Ok(ConfigReport {
             path: path.to_path_buf(),
@@ -79,14 +80,20 @@ pub(crate) fn load_from_path(path: &Path) -> Result<ConfigReport, ConfigError> {
 }
 
 pub(crate) fn parse_str(raw: &str, path: &Path) -> Result<Config, ConfigError> {
+    parse_str_with_warnings(raw, path).map(|(config, _)| config)
+}
+
+/// Parses, normalizes and validates `raw`, also returning the normalization
+/// warnings (legacy values that were clamped).
+fn parse_str_with_warnings(raw: &str, path: &Path) -> Result<(Config, Vec<String>), ConfigError> {
     super::compat::reject_removed_legacy_fields(raw)?;
     let mut config: Config = toml::from_str(raw).map_err(|source| ConfigError::Parse {
         path: path.to_path_buf(),
         source,
     })?;
-    config.normalize();
+    let warnings = config.normalize();
     config.validate()?;
-    Ok(config)
+    Ok((config, warnings))
 }
 
 pub(crate) fn write_default_to(path: &Path) -> Result<PathBuf, ConfigError> {

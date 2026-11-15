@@ -288,8 +288,7 @@ fn build_ddc_stable_id(raw: &RawDdcMonitor) -> String {
     parts.join(":")
 }
 
-#[cfg(not(target_os = "linux"))]
-#[allow(dead_code)]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 #[must_use]
 pub fn windows_discovery_deferred_report() -> DiscoveryReport {
     DiscoveryReport {
