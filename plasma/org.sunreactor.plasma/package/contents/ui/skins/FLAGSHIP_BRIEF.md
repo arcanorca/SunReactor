@@ -7,8 +7,12 @@ its own skin folder `skins/<theme id>/` that looks authentically like its subjec
 Rules
 - Own folder skins/<id>/ with Telemetry, LightCycle, Displays, Automation, Weather, Forecast,
   SunTimes (module contract: modules/Modules.js header). You may import and wrap shared parts
-  from ../instrument/ (Fader, TickScale, Tag, Digits, Glow, Curve.js, Legend ...) or ../terminal/
-  (TermFrame, TermBar, TermText ...) by relative path, but do NOT edit those folders.
+  from ../instrument/ (Fader, TickScale, Tag, Digits, Glow, Legend ...) or ../terminal/
+  (TermFrame, TermBar, TermText ...) by relative path, but do NOT edit those folders. Data
+  rules every skin needs are shared, not copied: modules/DayCurve.js (curve lookups, applied
+  brightness, short display names), modules/Monitors.js (unavailable / controllable),
+  modules/ModeControl.qml (mode rules, status line), components/ModeDurationMenu.qml
+  (openBelow), components/WeatherText.qml (condition, state and effect sentences).
 - Register ONLY under SKINS key "id:<theme id>" in modules/Modules.js (and the TABBAR / footer
   Parts tables only if you ship custom parts; otherwise the generic instrument/terminal ones are used).
   Use small atomic edits (other agents edit the same file concurrently): re-read the file right
