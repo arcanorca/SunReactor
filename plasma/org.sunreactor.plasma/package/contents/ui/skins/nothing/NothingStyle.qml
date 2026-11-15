@@ -15,7 +15,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import org.kde.kirigami as Kirigami
 
 import "../../engine"
 

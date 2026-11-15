@@ -236,6 +236,8 @@ Item {
 
     /*! One triangular ray, its gradient running from the base to the tip. */
     component Ray: ShapePath {
+        id: ray
+
         required property real deg
         required property real cx
         required property real cy
@@ -251,14 +253,14 @@ Item {
         strokeColor: "#b8700f"
         strokeWidth: root.hair
         fillGradient: LinearGradient {
-            x1: bx
-            y1: by
-            x2: tx
-            y2: ty
+            x1: ray.bx
+            y1: ray.by
+            x2: ray.tx
+            y2: ray.ty
             GradientStop { position: 0; color: "#ffe47a" }
             GradientStop { position: 1; color: "#ff9a1f" }
         }
-        PathSvg { path: root.rayPath(cx, cy, r0, r1, 2.4, deg) }
+        PathSvg { path: root.rayPath(ray.cx, ray.cy, ray.r0, ray.r1, 2.4, ray.deg) }
     }
 
     /*! The crescent moon with a gloss arc along its outer edge. */
@@ -404,6 +406,8 @@ Item {
 
     /*! One fog bar: a grey-blue, translucent, rounded band. */
     component Bar: ShapePath {
+        id: bar
+
         required property real bx
         required property real by
         required property real bw
@@ -413,13 +417,13 @@ Item {
         strokeWidth: root.hair
         fillGradient: LinearGradient {
             x1: 0
-            y1: by
+            y1: bar.by
             x2: 0
-            y2: by + 5
-            GradientStop { position: 0; color: Qt.rgba(0.91, 0.94, 0.97, alpha) }
-            GradientStop { position: 1; color: Qt.rgba(0.62, 0.7, 0.8, alpha) }
+            y2: bar.by + 5
+            GradientStop { position: 0; color: Qt.rgba(0.91, 0.94, 0.97, bar.alpha) }
+            GradientStop { position: 1; color: Qt.rgba(0.62, 0.7, 0.8, bar.alpha) }
         }
-        PathSvg { path: root.barPath(bx, by, bw, 5) }
+        PathSvg { path: root.barPath(bar.bx, bar.by, bar.bw, 5) }
     }
 
     // ---- the scene -------------------------------------------------------------------

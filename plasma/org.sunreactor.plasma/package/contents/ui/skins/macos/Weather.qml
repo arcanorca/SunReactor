@@ -190,6 +190,8 @@ ColumnLayout {
             model: root.tiles
 
             delegate: Surface {
+                id: weatherTile
+
                 required property var modelData
 
                 Layout.fillWidth: true
@@ -202,17 +204,17 @@ ColumnLayout {
 
                     Text {
                         Layout.fillWidth: true
-                        text: modelData.k
+                        text: weatherTile.modelData.k
                         textFormat: Text.PlainText
                         font: root.style.caption
                         color: root.style.inkSecondary
                         elide: Text.ElideRight
                     }
                     Text {
-                        text: modelData.v
+                        text: weatherTile.modelData.v
                         textFormat: Text.PlainText
                         font: root.style.readout
-                        color: modelData.warn ? root.style.warning : root.style.ink
+                        color: weatherTile.modelData.warn ? root.style.warning : root.style.ink
                     }
                 }
             }

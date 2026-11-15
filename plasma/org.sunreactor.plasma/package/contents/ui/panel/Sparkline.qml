@@ -52,7 +52,7 @@ Item {
         id: curveDots
 
         visible: root.dotted
-        cols: view.vertical ? 12 : 18
+        cols: root.view.vertical ? 12 : 18
         rows: 6
         pitch: root.dotPitch
         samples: root.dotSamples

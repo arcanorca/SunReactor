@@ -48,9 +48,10 @@ PlasmaExtras.Representation {
     ModuleSettings {
         id: moduleSettings
 
-        overrideMinutes: Plasmoid.configuration.overrideDurationMinutes
-        defaultSuspendMinutes: Plasmoid.configuration.defaultSuspendMinutes
-        showSolarElevation: Plasmoid.configuration.showSolarElevation
+        // Plasma adds the main.xml configuration keys dynamically.
+        overrideMinutes: Plasmoid.configuration.overrideDurationMinutes // qmllint disable missing-property
+        defaultSuspendMinutes: Plasmoid.configuration.defaultSuspendMinutes // qmllint disable missing-property
+        showSolarElevation: Plasmoid.configuration.showSolarElevation // qmllint disable missing-property
     }
 
     Layout.minimumWidth: root.theme.gridUnit * 16
@@ -389,8 +390,9 @@ PlasmaExtras.Representation {
                     onTabSourceChanged: load()
                     Component.onCompleted: load()
                     onLoaded: {
-                        item.tabs = Qt.binding(() => root.tabEntries);
-                        item.current = Qt.binding(() => root.shownPage);
+                        // Each dynamically loaded tab bar has these properties.
+                        item.tabs = Qt.binding(() => root.tabEntries); // qmllint disable missing-property
+                        item.current = Qt.binding(() => root.shownPage); // qmllint disable missing-property
                     }
 
                     Connections {
@@ -424,12 +426,13 @@ PlasmaExtras.Representation {
                     theme: root.theme
                     client: root.client
                     visible: root.client.isConnected
-                    themeMode: Plasmoid.configuration.themeMode
-                    pinnedId: Plasmoid.configuration.pinnedTheme
-                    onFollowRequested: Plasmoid.configuration.themeMode = "follow"
+                    // Plasma adds the main.xml configuration keys dynamically.
+                    themeMode: Plasmoid.configuration.themeMode // qmllint disable missing-property
+                    pinnedId: Plasmoid.configuration.pinnedTheme // qmllint disable missing-property
+                    onFollowRequested: Plasmoid.configuration.themeMode = "follow" // qmllint disable missing-property
                     onPinRequested: id => {
-                        Plasmoid.configuration.pinnedTheme = id;
-                        Plasmoid.configuration.themeMode = "pinned";
+                        Plasmoid.configuration.pinnedTheme = id; // qmllint disable missing-property
+                        Plasmoid.configuration.themeMode = "pinned"; // qmllint disable missing-property
                     }
                 }
             }
@@ -561,7 +564,8 @@ PlasmaExtras.Representation {
 
         client: root.client
         theme: root.theme
-        defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes
+        // Plasma adds the main.xml configuration key dynamically.
+        defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes // qmllint disable missing-property
         visible: root.client.isConnected
     }
 }

@@ -22,3 +22,17 @@ git clone https://github.com/arcanorca/SunReactor.git
 cd SunReactor
 cargo build
 ```
+
+For the Plasma widget, install Qt 6, KDE Frameworks 6, Plasma development
+packages, `cmake`, and `jq`, then run:
+
+```bash
+cmake -S plasma/org.sunreactor.plasma -B build/plasma -DBUILD_TESTING=ON
+cmake --build build/plasma
+QT_QPA_PLATFORM=offscreen ctest --test-dir build/plasma --output-on-failure
+bash scripts/qmllint.sh
+```
+
+The lint script checks the built QML plugin and system Plasma imports, prints
+the diagnostic count, and fails if it exceeds `scripts/qmllint.baseline`.
+The baseline currently includes KDE's context-provided translation functions.

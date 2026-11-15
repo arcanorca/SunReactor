@@ -27,7 +27,7 @@ Item {
     readonly property var points: client.forecast.slice(0, slotCount)
 
     C64Style {
-        id: style
+        id: c64Style
 
         theme: root.theme
     }
@@ -53,22 +53,22 @@ Item {
         width: parent.width
         grid: root.theme.grid
         fillsWidth: true
-        artHeight: body.height + style.padTop + style.padBottom
+        artHeight: body.height + c64Style.padTop + c64Style.padBottom
         regionName: "c64-forecast"
 
-        readonly property int cols: style.cols(artWidth)
+        readonly property int cols: c64Style.cols(artWidth)
         readonly property int shown: Math.max(1, Math.min(root.points.length, Math.floor(cols / 4)))
         readonly property int slotCols: Math.floor(cols / shown)
 
         Column {
             id: body
 
-            x: style.left(surface.artWidth)
-            y: style.padTop
-            width: surface.cols * style.cw
+            x: c64Style.left(surface.artWidth)
+            y: c64Style.padTop
+            width: surface.cols * c64Style.cw
 
             C64Text {
-                ink: style.ink
+                ink: c64Style.ink
                 text: "LOAD \"FORECAST\",8,1"
                 maximumArtWidth: body.width
             }
@@ -83,10 +83,10 @@ Item {
                         required property var modelData
                         required property int index
 
-                        width: surface.slotCols * style.cw
+                        width: surface.slotCols * c64Style.cw
 
                         C64Text {
-                            ink: style.hot
+                            ink: c64Style.hot
                             text: PixelFormat.hour(new Date(slot.modelData.epochS * 1000).getHours())
                             maximumArtWidth: slot.width
                         }
@@ -96,11 +96,11 @@ Item {
                             theme: root.theme
                             condition: slot.modelData.condition
                             night: slot.modelData.isNight === true
-                            size: style.ch * 2
+                            size: c64Style.ch * 2
                         }
                         C64Text {
-                            ink: style.ink
-                            text: root.slotTemperature(slot.modelData, slot.width / style.cw)
+                            ink: c64Style.ink
+                            text: root.slotTemperature(slot.modelData, slot.width / c64Style.cw)
                             maximumArtWidth: slot.width
                         }
                     }

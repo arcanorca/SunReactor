@@ -481,18 +481,20 @@ ColumnLayout {
                 // Scope centre cross: five minor ticks per division.
                 model: lp.scope ? 41 : 0
                 delegate: Item {
+                    id: scopeTick
+
                     required property int index
                     Rectangle {
-                        x: plot.sx(root.t0 + index / 40 * (root.t1 - root.t0))
+                        x: plot.sx(root.t0 + scopeTick.index / 40 * (root.t1 - root.t0))
                         y: plot.sy(50) - height / 2
                         width: root.style.hairline
-                        height: root.style.snap(index % 5 === 0 ? 0 : 4)
+                        height: root.style.snap(scopeTick.index % 5 === 0 ? 0 : 4)
                         color: root.style.rule
                     }
                     Rectangle {
                         x: plot.sx(root.t0 + (root.t1 - root.t0) / 2) - width / 2
-                        y: plot.sy(index * 2.5)
-                        width: root.style.snap(index % 5 === 0 ? 0 : 4)
+                        y: plot.sy(scopeTick.index * 2.5)
+                        width: root.style.snap(scopeTick.index % 5 === 0 ? 0 : 4)
                         height: root.style.hairline
                         color: root.style.rule
                     }

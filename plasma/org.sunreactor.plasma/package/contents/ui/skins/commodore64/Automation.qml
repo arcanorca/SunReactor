@@ -57,9 +57,10 @@ Item {
         : root.control.displayText + " · " + root.control.note
 
     function keyFor(id) {
-        for (let i = 0; i < cells.count; ++i) {
-            const key = cells.itemAt(i);
-            if (key && key.choiceId === id) {
+        for (let i = 0; i < keyRepeater.count; ++i) {
+            const key = keyRepeater.itemAt(i);
+            // Repeater.itemAt is typed as Item; its delegates are C64Keycaps.
+            if (key && key.choiceId === id) { // qmllint disable missing-property
                 return key;
             }
         }
@@ -73,7 +74,7 @@ Item {
 
     function focusCell(index) {
         const count = control.order.length;
-        const key = cells.itemAt((index + count) % count);
+        const key = keyRepeater.itemAt((index + count) % count);
         if (key) {
             key.forceActiveFocus(Qt.TabFocusReason);
         }
@@ -132,11 +133,11 @@ Item {
             }
 
             Row {
-                id: cells
-
                 spacing: style.cw
 
                 Repeater {
+                    id: keyRepeater
+
                     model: root.control.choices
 
                     delegate: C64Keycap {

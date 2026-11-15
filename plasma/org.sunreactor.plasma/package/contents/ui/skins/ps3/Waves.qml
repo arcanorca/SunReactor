@@ -47,7 +47,8 @@ Item {
     readonly property bool motion: Kirigami.Units.longDuration > 1
     /*! Harness only: the frozen fraction of the loop from motion_t, or -1 for the live loop. */
     readonly property real frozenPhase: {
-        const v = Number(Plasmoid.configuration.motion_t);
+        // The screenshot harness adds this key dynamically.
+        const v = Number(Plasmoid.configuration.motion_t); // qmllint disable missing-property
         return Number.isFinite(v) && v >= 0 && v < 1 ? v : -1;
     }
     /*! The popup is on screen: shown, and not hidden or minimised. */
@@ -95,7 +96,8 @@ Item {
 
     /*! The month, 0 for January, or -1 when the date is unknown. Harness: xmb_month. */
     readonly property int month: {
-        const m = Number(Plasmoid.configuration.xmb_month);
+        // The screenshot harness adds this key dynamically.
+        const m = Number(Plasmoid.configuration.xmb_month); // qmllint disable missing-property
         if (Number.isInteger(m) && m >= 1 && m <= 12) {
             return m - 1;
         }
@@ -103,7 +105,8 @@ Item {
     }
     /*! The hour of the day (0 to 24, fractional), or -1 when the time is unknown. Harness: xmb_hour. */
     readonly property real hour: {
-        const h = Number(Plasmoid.configuration.xmb_hour);
+        // The screenshot harness adds this key dynamically.
+        const h = Number(Plasmoid.configuration.xmb_hour); // qmllint disable missing-property
         if (Number.isFinite(h) && h >= 0 && h <= 24) {
             return h;
         }

@@ -24,7 +24,8 @@ PlasmoidItem {
     SunReactorClient {
         id: daemon
 
-        socketPath: Plasmoid.configuration.socketPath
+        // Plasma adds the main.xml configuration key dynamically.
+        socketPath: Plasmoid.configuration.socketPath // qmllint disable missing-property
         // Poll faster only while the popup is on screen.
         popupOpen: root.expanded
     }
@@ -127,7 +128,8 @@ PlasmoidItem {
                     daemon.resume();
                     return;
                 }
-                const minutes = Plasmoid.configuration.defaultSuspendMinutes;
+                // Plasma adds the main.xml configuration key dynamically.
+                const minutes = Plasmoid.configuration.defaultSuspendMinutes; // qmllint disable missing-property
                 daemon.suspend(minutes > 0 ? minutes : 60);
             }
         },
@@ -219,8 +221,9 @@ PlasmoidItem {
 
     function harnessShowPage(page: string): void {
         const item = root.fullRepresentationItem;
-        if (item && typeof item.showPage === "function") {
-            item.showPage(page);
+        // Plasma exposes the FullRepresentation as a generic QQuickItem.
+        if (item && typeof item.showPage === "function") { // qmllint disable missing-property
+            item.showPage(page); // qmllint disable missing-property
         }
     }
 

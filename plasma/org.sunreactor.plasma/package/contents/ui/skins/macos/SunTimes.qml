@@ -143,7 +143,7 @@ ColumnLayout {
         Text {
             anchors.left: parent.left
             anchors.bottom: parent.bottom
-            text: i18ndc(root.domain, "Sunrise time", "Rise %1", Format.timeText(client.sunriseEpochS))
+            text: i18ndc(root.domain, "Sunrise time", "Rise %1", Format.timeText(root.client.sunriseEpochS))
             textFormat: Text.PlainText
             font: root.style.caption
             color: root.style.inkSecondary
@@ -153,7 +153,7 @@ ColumnLayout {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             text: root.showElevation
-                ? i18ndc(root.domain, "Solar elevation in degrees", "%1°", client.solarElevation.toFixed(1))
+                ? i18ndc(root.domain, "Solar elevation in degrees", "%1°", root.client.solarElevation.toFixed(1))
                 : root.hoursText(root.dayLength)
             textFormat: Text.PlainText
             font: root.style.captionMedium
@@ -163,7 +163,7 @@ ColumnLayout {
         Text {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            text: i18ndc(root.domain, "Sunset time", "Set %1", Format.timeText(client.sunsetEpochS))
+            text: i18ndc(root.domain, "Sunset time", "Set %1", Format.timeText(root.client.sunsetEpochS))
             textFormat: Text.PlainText
             font: root.style.caption
             color: root.style.inkSecondary

@@ -10,14 +10,15 @@ import org.kde.plasma.plasmoid
 import "engine"
 
 ThemeEngine {
-    mode: Plasmoid.configuration.themeMode
-    pinnedId: Plasmoid.configuration.pinnedTheme
-    accentOverride: Plasmoid.configuration.accentOverride
-    densityOverride: Plasmoid.configuration.densityOverride
-    rendererOverride: Plasmoid.configuration.rendererOverride
-    pixelScaleOverride: Plasmoid.configuration.pixelScale
-    weatherIconStyleOverride: Plasmoid.configuration.weatherIconStyle
-    modulesOverride: Plasmoid.configuration.moduleOrder
-    hiddenModules: Plasmoid.configuration.hiddenModules
-    uiScaleOverride: Plasmoid.configuration.uiScale
+    // Plasma adds the main.xml configuration keys dynamically.
+    mode: Plasmoid.configuration.themeMode // qmllint disable missing-property
+    pinnedId: Plasmoid.configuration.pinnedTheme // qmllint disable missing-property
+    accentOverride: Plasmoid.configuration.accentOverride // qmllint disable missing-property
+    densityOverride: Plasmoid.configuration.densityOverride // qmllint disable missing-property
+    rendererOverride: Plasmoid.configuration.rendererOverride // qmllint disable missing-property
+    pixelScaleOverride: Plasmoid.configuration.pixelScale // qmllint disable missing-property
+    weatherIconStyleOverride: Plasmoid.configuration.weatherIconStyle // qmllint disable missing-property
+    modulesOverride: Plasmoid.configuration.moduleOrder // qmllint disable missing-property
+    hiddenModules: Plasmoid.configuration.hiddenModules // qmllint disable missing-property
+    uiScaleOverride: Plasmoid.configuration.uiScale // qmllint disable missing-property
 }

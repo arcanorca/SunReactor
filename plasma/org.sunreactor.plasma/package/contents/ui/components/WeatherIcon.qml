@@ -13,7 +13,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import org.kde.kirigami as Kirigami
-import org.sunreactor.plasma
 
 import "../engine"
 import "weathericons"

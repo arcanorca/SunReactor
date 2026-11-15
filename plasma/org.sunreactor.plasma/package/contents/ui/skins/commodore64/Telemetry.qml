@@ -31,17 +31,17 @@ Item {
     readonly property string stateWord: {
         const domain = root.settings.domain;
         if (!root.client.isConnected) {
-            return i18ndc(root.domain, "Daemon state in the C64 banner", "OFFLINE");
+            return i18ndc(domain, "Daemon state in the C64 banner", "OFFLINE");
         }
         switch (root.client.mode) {
         case SunReactorClient.Paused:
-            return i18ndc(root.domain, "Daemon state in the C64 banner", "PAUSED");
+            return i18ndc(domain, "Daemon state in the C64 banner", "PAUSED");
         case SunReactorClient.Manual:
-            return i18ndc(root.domain, "Daemon state in the C64 banner", "MANUAL");
+            return i18ndc(domain, "Daemon state in the C64 banner", "MANUAL");
         case SunReactorClient.IdleDimmed:
-            return i18ndc(root.domain, "Daemon state in the C64 banner", "IDLE");
+            return i18ndc(domain, "Daemon state in the C64 banner", "IDLE");
         default:
-            return i18ndc(root.domain, "Daemon state in the C64 banner", "LIVE");
+            return i18ndc(domain, "Daemon state in the C64 banner", "LIVE");
         }
     }
 

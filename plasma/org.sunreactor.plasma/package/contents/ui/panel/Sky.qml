@@ -14,7 +14,6 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../components/weathericons"
-import "../engine"
 import "../skins/pixel/Sprites.js" as Sprites
 
 Item {
