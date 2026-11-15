@@ -22,6 +22,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 ColumnLayout {
     id: root
@@ -37,18 +38,7 @@ ColumnLayout {
     /*! Line glyph colours: sky in cyan, sun and moon in yellow. */
     readonly property var glyphColours: theme.glyphColours(theme.bg, theme.secondaryAccent)
 
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === 5) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
     function shortCondition(condition) {
