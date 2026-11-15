@@ -18,6 +18,7 @@ import "../../engine"
 import "../../modules"
 import "PixelFormat.js" as PixelFormat
 import "Sprites.js" as Sprites
+import "../../components"
 
 Item {
     id: root
@@ -34,19 +35,10 @@ Item {
         theme: root.theme
     }
 
-    readonly property string stateText: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return i18ndc(domain, "Daemon state in the status line", "OFFLINE");
-        case SunReactorClient.Paused:
-            return i18ndc(domain, "Daemon state in the status line", "PAUSED");
-        case SunReactorClient.Manual:
-            return i18ndc(domain, "Daemon state in the status line", "MANUAL");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Daemon state in the status line", "IDLE");
-        default:
-            return i18ndc(domain, "Daemon state in the status line", "LIVE");
-        }
+    readonly property string stateText: stateWords.label(client.mode)
+
+    StateText {
+        id: stateWords
     }
     readonly property var clock: PixelFormat.timeParts(client.nowEpochS)
     readonly property string tempText: client.hasTemperature

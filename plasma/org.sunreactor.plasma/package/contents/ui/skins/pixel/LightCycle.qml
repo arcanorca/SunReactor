@@ -17,6 +17,7 @@ import "../../engine"
 import "../../modules"
 import "PixelFormat.js" as PixelFormat
 import "Sprites.js" as Sprites
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -39,15 +40,6 @@ Item {
     readonly property real targetNow: current ? plot.valueAt(now) : -1
     readonly property real costNow: current && targetNow >= 0 ? plot.valueAt(now, true) - targetNow : 0
     property real scrubTime: 0
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
 
     /*! Tabs run display 0..n-1, then All (-1). */
     function moveTab(delta) {
@@ -110,7 +102,7 @@ Item {
                         variant: "tab"
                         checked: root.selected === value
                         text: isAll ? i18ndc(root.domain, "Show the curves of every display", "All")
-                                    : PixelFormat.shortName(root.curves[index].monitorId)
+                                    : DayCurve.shortName(root.curves[index].monitorId)
                         accessibleName: isAll ? text : root.curves[index].monitorId
                         onClicked: root.selected = value
                         Keys.onLeftPressed: root.moveTab(-1)
@@ -150,7 +142,7 @@ Item {
                         : i18ndc(root.domain, "The curve's brightness right now", "Now")
                 }
                 PixelLabel {
-                    readonly property int applied: root.current && !root.showAll ? root.appliedFor(root.current.monitorId) : -1
+                    readonly property int applied: root.current && !root.showAll ? DayCurve.appliedFor(root.client.monitors, root.current.monitorId) : -1
                     theme: root.theme
                     x: hero.width + 5
                     y: hero.height - capHeight
@@ -199,7 +191,7 @@ Item {
                 overlays: root.showAll ? root.curves.map(c => c.samples) : []
                 overlayColors: [pstyle.ink, pstyle.hot, pstyle.dim, pstyle.cost]
                 now: root.now
-                applied: root.current && !root.showAll ? root.appliedFor(root.current.monitorId) : -1
+                applied: root.current && !root.showAll ? DayCurve.appliedFor(root.client.monitors, root.current.monitorId) : -1
                 minPct: root.current && !root.showAll ? root.current.minPct : -1
                 maxPct: root.current && !root.showAll ? root.current.maxPct : -1
                 sunrise: root.sun.sunrise || 0

@@ -48,12 +48,6 @@ Item {
         }
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     /*! The segment captions: the full names do not fit three cells in a 19 gu popup. */
     readonly property var captions: ({
         automatic: i18ndc(control.domain, "Mode segment, compact: follow the sun again", "Auto"),
@@ -61,13 +55,9 @@ Item {
         paused: i18ndc(control.domain, "Mode segment, compact: stop adjusting for a while", "Pause"),
     })
 
-    /*! The status sentence and the idle note, joined: wrapped, never cut. */
-    readonly property string statusLine: root.control.hinting || root.control.note.length === 0
-        ? root.control.displayText
-        : root.control.displayText + " · " + root.control.note
     /*! The sentence in the 5x7 face: the middle dot and the arrow have no glyph there,
         so they become ASCII, and the no-break spaces become plain spaces. */
-    readonly property string shownLine: statusLine.replace(/·/g, "-").replace(/→/g, ">")
+    readonly property string shownLine: control.statusLine.replace(/·/g, "-").replace(/→/g, ">")
         .replace(/[  ]/g, " ")
 
     /*! Art pixels of one cell, its frame, and the pixel arrow when it has one. */
@@ -162,7 +152,7 @@ Item {
                                 root.control.pick(choiceId, root);
                                 event.accepted = true;
                             } else if (event.key === Qt.Key_Down && caret) {
-                                root.openDurations(cell);
+                                durations.openBelow(cell, root);
                                 event.accepted = true;
                             }
                         }
@@ -212,7 +202,7 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 cell.forceActiveFocus(Qt.MouseFocusReason);
-                                root.openDurations(cell);
+                                durations.openBelow(cell, root);
                             }
                         }
                     }
