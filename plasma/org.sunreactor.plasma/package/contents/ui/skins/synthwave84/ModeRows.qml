@@ -50,12 +50,6 @@ ColumnLayout {
         }
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     RowLayout {
         Layout.fillWidth: true
         spacing: root.style.gap
@@ -98,7 +92,7 @@ ColumnLayout {
                         root.control.pick(choiceId, root);
                         event.accepted = true;
                     } else if (event.key === Qt.Key_Down && choiceId === "paused") {
-                        root.openDurations(cell);
+                        durations.openBelow(cell, root);
                         event.accepted = true;
                     }
                 }
@@ -107,7 +101,7 @@ ColumnLayout {
                     cell.forceActiveFocus(Qt.MouseFocusReason);
                     root.control.pick(choiceId, root);
                 }
-                onArrowClicked: root.openDurations(cell)
+                onArrowClicked: durations.openBelow(cell, root)
             }
         }
     }

@@ -17,8 +17,9 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules" as Mod
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "../instrument" as Instrument
+import "../../components"
 
 ColumnLayout {
     id: root
@@ -47,19 +48,10 @@ ColumnLayout {
         }
     }
 
-    readonly property string stateText: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return i18ndc(domain, "Daemon state in the status line", "OFFLINE");
-        case SunReactorClient.Paused:
-            return i18ndc(domain, "Daemon state in the status line", "PAUSED");
-        case SunReactorClient.Manual:
-            return i18ndc(domain, "Daemon state in the status line", "MANUAL");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Daemon state in the status line", "IDLE");
-        default:
-            return i18ndc(domain, "Daemon state in the status line", "LIVE");
-        }
+    readonly property string stateText: stateWords.label(client.mode)
+
+    StateText {
+        id: stateWords
     }
 
     spacing: style.gap
@@ -68,7 +60,7 @@ ColumnLayout {
     Accessible.name: {
         const parts = [stateText];
         for (const monitor of client.monitors) {
-            parts.push(Curve.shortName(monitor.logicalId) + " "
+            parts.push(DayCurve.shortName(monitor.logicalId) + " "
                        + (monitor.appliedPercent >= 0 ? monitor.appliedPercent + "%" : "—"));
         }
         if (client.hasTemperature) {
@@ -137,7 +129,7 @@ ColumnLayout {
                 spacing: root.style.gap
 
                 Text {
-                    text: Curve.shortName(readout.modelData.logicalId)
+                    text: DayCurve.shortName(readout.modelData.logicalId)
                     textFormat: Text.PlainText
                     font: root.style.labelFont
                     color: root.style.cyan

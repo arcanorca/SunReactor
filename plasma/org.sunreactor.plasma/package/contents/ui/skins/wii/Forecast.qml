@@ -18,6 +18,7 @@ import "../../engine"
 import "../../modules"
 import "../../components/weathericons"
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 ColumnLayout {
     id: root
@@ -32,18 +33,7 @@ ColumnLayout {
     }
 
     /*! The first five intervals after now. */
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === 5) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
     /*! Whether an instant falls outside the daylight hours of the sun times. */

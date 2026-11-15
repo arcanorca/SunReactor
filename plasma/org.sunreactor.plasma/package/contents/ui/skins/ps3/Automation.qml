@@ -51,13 +51,6 @@ ColumnLayout {
         }
     }
 
-    function openDurations(item) {
-        const at = item.mapToItem(root, 0, item.height);
-        durations.x = Math.max(0, at.x);
-        durations.y = at.y;
-        durations.open();
-    }
-
     RowLayout {
         Layout.fillWidth: true
         spacing: root.style.gap3
@@ -89,10 +82,10 @@ ColumnLayout {
                 onMoved: delta => root.focusCell(index + delta)
                 onDown: {
                     if (modelData.id === "paused") {
-                        root.openDurations(cell);
+                        durations.openBelow(cell, root);
                     }
                 }
-                onArrowActivated: root.openDurations(cell)
+                onArrowActivated: durations.openBelow(cell, root)
             }
         }
     }

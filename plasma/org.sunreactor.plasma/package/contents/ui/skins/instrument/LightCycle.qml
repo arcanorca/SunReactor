@@ -30,7 +30,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 ColumnLayout {
     id: root
@@ -68,33 +68,16 @@ ColumnLayout {
     readonly property bool nowInDay: now >= t0 && now <= t1
     readonly property var sun: available && curve.sun ? curve.sun : ({})
 
-    function valueAt(samples, t, field) {
-        return Curve.valueAt(samples, t, field);
-    }
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
-
-    function shortName(id) {
-        return Curve.shortName(id);
-    }
-
     function pctText(v) {
         return v >= 0 ? String(Math.round(v)) : i18ndc(domain, "No value is known yet", "—");
     }
 
     readonly property bool scrubbing: hover.active && current !== null && !showAll
     readonly property real readTime: scrubbing ? hover.time : now
-    readonly property real readTarget: current ? valueAt(current.samples, readTime, "pct") : -1
-    readonly property real readClearSky: current ? valueAt(current.samples, readTime, "pctNoWeather") : -1
+    readonly property real readTarget: current ? DayCurve.valueAt(current.samples, readTime, "pct") : -1
+    readonly property real readClearSky: current ? DayCurve.valueAt(current.samples, readTime, "pctNoWeather") : -1
     readonly property real readCost: readTarget >= 0 && readClearSky >= 0 ? readClearSky - readTarget : 0
-    readonly property int appliedNow: current ? appliedFor(current.monitorId) : -1
+    readonly property int appliedNow: current ? DayCurve.appliedFor(root.client.monitors, current.monitorId) : -1
 
     spacing: style.rowGap
 
@@ -128,7 +111,7 @@ ColumnLayout {
                 filled: root.selected === value
                 tone: root.style.ink
                 text: isAll ? i18ndc(root.domain, "Show the curves of every display", "All")
-                            : root.shortName(root.curves[index].monitorId)
+                            : DayCurve.shortName(root.curves[index].monitorId)
                 Accessible.name: isAll ? text : root.curves[index].monitorId
                 onClicked: root.selected = value
             }
@@ -322,7 +305,7 @@ ColumnLayout {
                 Rectangle {
                     // Applied level when it differs from the curve (override, lag).
                     visible: root.nowInDay && !root.showAll && root.appliedNow >= 0 && !root.style.isVfd
-                        && Math.abs(root.appliedNow - root.valueAt(root.current.samples, root.now, "pct")) >= 1
+                        && Math.abs(root.appliedNow - DayCurve.valueAt(root.current.samples, root.now, "pct")) >= 1
                     width: root.style.snap(9)
                     height: width
                     radius: root.style.isThinkpad ? 0 : width / 2
@@ -335,7 +318,7 @@ ColumnLayout {
                 }
                 Rectangle {
                     visible: root.nowInDay && !root.showAll && root.current !== null && !root.style.isVfd
-                    readonly property real level: root.current ? root.valueAt(root.current.samples, root.now, "pct") : 0
+                    readonly property real level: root.current ? DayCurve.valueAt(root.current.samples, root.now, "pct") : 0
                     width: root.style.snap(root.style.isThinkpad ? 8 : 7)
                     height: width
                     radius: width / 2
@@ -635,7 +618,7 @@ ColumnLayout {
                         case 0:
                             return root.showAll ? i18ndc(root.domain, "Scope readout: every channel", "ALL CH")
                                 : i18ndc(root.domain, "Scope readout: channel number and display", "CH%1 %2",
-                                         root.selected + 1, root.shortName(root.current ? root.current.monitorId : ""));
+                                         root.selected + 1, DayCurve.shortName(root.current ? root.current.monitorId : ""));
                         case 1:
                             return i18ndc(root.domain, "Scope readout: vertical scale", "12.5%/DIV");
                         case 2:
@@ -676,7 +659,7 @@ ColumnLayout {
             }
             function level(c, field, samples) {
                 const t = root.t0 + (c + 0.5) / columns * (root.t1 - root.t0);
-                const v = root.valueAt(samples, t, field);
+                const v = DayCurve.valueAt(samples, t, field);
                 return v < 0 ? 0 : Math.round(v / 100 * rows);
             }
 

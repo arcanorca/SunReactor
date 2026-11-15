@@ -17,6 +17,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import org.sunreactor.plasma
+import "../../modules/DayCurve.js" as DayCurve
 
 
 Item {
@@ -42,7 +43,7 @@ Item {
         if (nowCol < 0 || curves.length === 0) {
             return -1;
         }
-        const v = style.valueAt(curves[0].samples, nowT, "pct");
+        const v = DayCurve.valueAt(curves[0].samples, nowT, "pct");
         return v < 0 ? -1 : rowFor(v);
     }
     /*! Everything the layers paint from: one change repaints each layer once. */
@@ -118,8 +119,8 @@ Item {
         const samples = curves[0].samples;
         for (let c = 0; c < cost.cols; ++c) {
             const t = timeOf(c);
-            const clear = style.valueAt(samples, t, "pctNoWeather");
-            const live = style.valueAt(samples, t, "pct");
+            const clear = DayCurve.valueAt(samples, t, "pctNoWeather");
+            const live = DayCurve.valueAt(samples, t, "pct");
             if (clear < 0 || live < 0) {
                 continue;
             }
@@ -156,7 +157,7 @@ Item {
                 fill(DotField.Off);
                 const samples = modelData.samples;
                 for (let c = 0; c < root.cols; ++c) {
-                    const v = root.style.valueAt(samples, root.timeOf(c), "pct");
+                    const v = DayCurve.valueAt(samples, root.timeOf(c), "pct");
                     if (v < 0) {
                         continue;
                     }

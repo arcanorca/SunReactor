@@ -80,12 +80,6 @@ FocusScope {
         root.control.pick(root.control.order[index], root);
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     /*! Splits the sentence at its " · " separators into lines of at most `width` cells. */
     function wrapParts(text, width) {
         const out = [];
@@ -112,7 +106,7 @@ FocusScope {
             root.pick(root.cursor);
             event.accepted = true;
         } else if (event.key === Qt.Key_Down && root.cursor === 2) {
-            root.openDurations(buttons.itemAt(2));
+            durations.openBelow(buttons.itemAt(2), root);
             event.accepted = true;
         }
     }
@@ -230,7 +224,7 @@ FocusScope {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 root.forceActiveFocus(Qt.MouseFocusReason);
-                                root.openDurations(button);
+                                durations.openBelow(button, root);
                             }
                         }
                     }

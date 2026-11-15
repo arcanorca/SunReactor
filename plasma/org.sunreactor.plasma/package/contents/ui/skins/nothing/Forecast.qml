@@ -20,6 +20,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 Item {
     id: root
@@ -35,18 +36,7 @@ Item {
     /*! Intervals across: five, or six once each column has room for it. */
     readonly property int slots: Math.max(5, Math.min(6, Math.floor(root.width / (root.style.unit * 4))))
 
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of root.client.forecast) {
-            if (point.epochS > root.client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === root.slots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(root.client.forecast, root.client.nowEpochS, root.slots)
 
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 

@@ -16,8 +16,9 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "Geometry.js" as G
+import "../../components"
 
 ColumnLayout {
     id: root
@@ -32,19 +33,10 @@ ColumnLayout {
         theme: root.theme
     }
 
-    readonly property string stateText: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return i18ndc(domain, "Daemon state in the status line", "OFFLINE");
-        case SunReactorClient.Paused:
-            return i18ndc(domain, "Daemon state in the status line", "PAUSED");
-        case SunReactorClient.Manual:
-            return i18ndc(domain, "Daemon state in the status line", "MANUAL");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Daemon state in the status line", "IDLE");
-        default:
-            return i18ndc(domain, "Daemon state in the status line", "LIVE");
-        }
+    readonly property string stateText: stateWords.label(client.mode)
+
+    StateText {
+        id: stateWords
     }
     /*! Override and offline are the red warnings; paused is the yellow alert. */
     readonly property color stateColor: {
@@ -64,7 +56,7 @@ ColumnLayout {
         const out = [{ label: "SYS.LUM", value: client.globalPercent >= 0 ? String(client.globalPercent) : "--" }];
         for (const monitor of client.monitors) {
             out.push({
-                label: Curve.shortName(monitor.logicalId) + ".LUM",
+                label: DayCurve.shortName(monitor.logicalId) + ".LUM",
                 value: monitor.appliedPercent >= 0 ? String(monitor.appliedPercent) : "--"
             });
         }

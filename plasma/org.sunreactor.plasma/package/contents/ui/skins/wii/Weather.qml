@@ -38,25 +38,7 @@ ColumnLayout {
     readonly property bool available: client.isConnected && client.weatherEnabled
 
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
-    readonly property string stateNote: {
-        if (client.hasWeatherReading) {
-            return "";
-        }
-        switch (client.weatherState) {
-        case "no_api_key":
-            return i18nd(domain, "No API key is configured");
-        case "loading":
-            return i18nd(domain, "Looking up the current conditions…");
-        case "unauthorized":
-            return i18nd(domain, "The weather provider rejected the API key");
-        case "rate_limited":
-            return i18nd(domain, "The weather provider is rate limiting requests");
-        case "network_error":
-            return i18nd(domain, "The weather provider could not be reached");
-        default:
-            return i18nd(domain, "No reading yet");
-        }
-    }
+    readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
     /*! What the weather does to the displays, in a few words; "" for no effect. */
     readonly property string effectText: {
         if (client.weatherStale) {

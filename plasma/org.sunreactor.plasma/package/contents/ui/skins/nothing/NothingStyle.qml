@@ -101,42 +101,4 @@ QtObject {
         pixelSize: root.figurePx,
         features: { "tnum": 1, "zero": 0 },
     })
-
-    // --- daemon data helpers ------------------------------------------------------
-
-    /*! Short caps channel name: "len-p24h-20" -> "LEN". */
-    function shortName(id) {
-        const text = String(id);
-        const head = text.split(/[-_ .]/)[0] || text;
-        return head.slice(0, 4).toUpperCase();
-    }
-
-    /*! Linear interpolation of a sample field at time t; -1 outside the samples. */
-    function valueAt(samples, t, field) {
-        if (!samples || samples.length === 0 || t < samples[0].t || t > samples[samples.length - 1].t) {
-            return -1;
-        }
-        for (let i = 1; i < samples.length; ++i) {
-            const b = samples[i];
-            if (b.t >= t) {
-                const a = samples[i - 1];
-                const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-                return a[field] + (b[field] - a[field]) * f;
-            }
-        }
-        return samples[samples.length - 1][field];
-    }
-
-    /*! Where the automatic curve of one display is at time t; -1 when unknown. */
-    function targetAt(dayCurve, monitorId, t) {
-        if (!dayCurve || !dayCurve.monitors) {
-            return -1;
-        }
-        for (const curve of dayCurve.monitors) {
-            if (curve.monitorId === monitorId) {
-                return valueAt(curve.samples, t, "pct");
-            }
-        }
-        return -1;
-    }
 }

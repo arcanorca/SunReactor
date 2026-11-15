@@ -47,17 +47,6 @@ Item {
         paused: i18ndc(control.domain, "Mode segment, compact: stop adjusting for a while", "Pause"),
     })
 
-    /*! The status sentence and the idle note, joined: one line that wraps. */
-    readonly property string statusLine: control.hinting || control.note.length === 0
-        ? control.displayText
-        : control.displayText + " · " + control.note
-
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     implicitHeight: trayH
 
     Accessible.role: Accessible.Grouping
@@ -128,12 +117,12 @@ Item {
             wrapMode: Text.WordWrap
             maximumLineCount: 2
             elide: Text.ElideRight
-            text: root.statusLine
+            text: root.control.statusLine
             font.family: root.style.family
             font.pixelSize: Math.round(root.gu * 0.62)
             color: root.control.hinting ? root.style.blue : root.style.ink
             Accessible.role: Accessible.StaticText
-            Accessible.name: root.statusLine
+            Accessible.name: root.control.statusLine
         }
     }
 
@@ -169,7 +158,7 @@ Item {
                 root.control.pick(choiceId, cell);
                 event.accepted = true;
             } else if (event.key === Qt.Key_Down && choiceId === "paused") {
-                root.openDurations(cell);
+                durations.openBelow(cell, root);
                 event.accepted = true;
             }
         }
@@ -233,7 +222,7 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.openDurations(cell)
+                onClicked: durations.openBelow(cell, root)
             }
         }
     }

@@ -39,11 +39,15 @@ ContainmentItem {
         value: root.popup ? root.popup.fullRepresentationItem : null
     }
 
+    /*! The popup's size until its full representation exists (19 x 14 grid units, its minimum height). */
+    readonly property real placeholderWidth: 19 * Kirigami.Units.gridUnit
+    readonly property real placeholderHeight: 14 * Kirigami.Units.gridUnit
+
     function popupWidth(): real {
         if (root.gridUnits > 0) {
             return root.gridUnits * Kirigami.Units.gridUnit;
         }
-        return root.full ? root.full.Layout.preferredWidth : host.width;
+        return root.full ? root.full.Layout.preferredWidth : root.placeholderWidth;
     }
 
     function adopt(applet) {
@@ -55,9 +59,12 @@ ContainmentItem {
         item.visible = true;
         item.anchors.left = host.left;
         item.anchors.top = host.top;
-        // Until the full representation exists, the window's size.
+        // Until the full representation exists, a placeholder size. It must not follow the
+        // host: the applet's size feeds back into the window (Plasma 6.8's containment view
+        // fits itself to its content), and a size taken from the host made a binding loop
+        // that collapsed the window to a third of the -s height.
         item.width = Qt.binding(() => root.popupWidth());
-        item.height = Qt.binding(() => root.full ? root.full.Layout.preferredHeight : host.height);
+        item.height = Qt.binding(() => root.full ? root.full.Layout.preferredHeight : root.placeholderHeight);
         root.popup = item;
     }
 
@@ -70,7 +77,12 @@ ContainmentItem {
         onLoaded: item.representation = Qt.binding(() => root.full)
     }
 
-    /*! The popup's extent in window pixels: x, y, then its size (logical px). */
+    /*! Frames the window has swapped so far: a size that changes twice between two
+        frames was never on screen, one that survives a frame was (popup size audit). */
+    property int frames: 0
+    /*! The popup's extent in window pixels: x, y, then its size (logical px); t is the
+        wall clock in ms (comparable with the fake daemon's request log) and frame the
+        swap count. */
     function report(): void {
         if (!root.popup) {
             return;
@@ -82,7 +94,40 @@ ContainmentItem {
             width: root.popup.width,
             height: root.popup.height,
             dpr: Window.window ? Window.window.devicePixelRatio : 1,
+            t: Date.now(),
+            frame: root.frames,
         }));
+    }
+    /*! A named moment (page switch, popup opened or closed) in the same log. */
+    function mark(what: string): void {
+        console.info("SUNREACTOR_HARNESS_EVENT " + JSON.stringify({ event: what, t: Date.now(), frame: root.frames }));
+    }
+
+    Connections {
+        target: root.Window.window
+        ignoreUnknownSignals: true
+
+        function onFrameSwapped(): void {
+            root.frames += 1;
+        }
+    }
+
+    Connections {
+        target: root.full
+        ignoreUnknownSignals: true
+
+        function onCurrentPageChanged(): void {
+            root.mark("page " + root.full.currentPage);
+        }
+    }
+
+    Connections {
+        target: root.popup
+        ignoreUnknownSignals: true
+
+        function onExpandedChanged(): void {
+            root.mark("expanded " + root.popup.expanded);
+        }
     }
 
     Connections {

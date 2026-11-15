@@ -157,6 +157,8 @@ QtObject {
         ? i18nd(domain, "Drag a slider to take over")
         : i18nd(domain, "Change a display to take over")
     readonly property string displayText: hinting ? hintText : statusText
+    /*! The status sentence and the idle note, joined for one line; the hint replaces both. */
+    readonly property string statusLine: hinting || note.length === 0 ? displayText : displayText + " · " + note
 
     // The hint goes once the user has taken over. A resume out of a pause changes
     // the choice too, and must not clear the hint it was asked for.

@@ -15,6 +15,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../pixel/PixelFormat.js" as PixelFormat
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -35,15 +36,6 @@ Item {
     readonly property var sun: available && curve.sun ? curve.sun : ({})
     readonly property real targetNow: current ? plot.valueAt(now) : -1
     property real scrubTime: 0
-
-    function appliedFor(monitorId) {
-        for (const monitor of root.client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
 
     AmigaStyle {
         id: tokens
@@ -99,7 +91,7 @@ Item {
                         theme: root.theme
                         style: tokens
                         text: isAll ? i18ndc(root.domain, "Show the curves of every display", "All")
-                                    : PixelFormat.shortName(root.curves[index].monitorId)
+                                    : DayCurve.shortName(root.curves[index].monitorId)
                         lit: root.selected === value
                         onActivated: root.selected = value
                     }
@@ -113,7 +105,7 @@ Item {
                 readonly property bool scrubbing: scrub.containsMouse && root.current !== null
                 readonly property real shownPct: scrubbing ? plot.valueAt(root.scrubTime)
                                                           : (root.showAll ? -1 : root.targetNow)
-                readonly property int applied: root.current && !root.showAll ? root.appliedFor(root.current.monitorId) : -1
+                readonly property int applied: root.current && !root.showAll ? DayCurve.appliedFor(root.client.monitors, root.current.monitorId) : -1
 
                 // One art pixel under the gadgets; the hero is its glyph cell (16 at pitch 2).
                 y: selector.height > 0 ? selector.height + 1 : 0

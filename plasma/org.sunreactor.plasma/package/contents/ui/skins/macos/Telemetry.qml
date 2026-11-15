@@ -18,7 +18,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 RowLayout {
     id: root
@@ -53,7 +53,7 @@ RowLayout {
     readonly property string readouts: {
         const parts = [];
         for (const monitor of client.monitors) {
-            parts.push(Curve.shortName(monitor.logicalId) + " "
+            parts.push(DayCurve.shortName(monitor.logicalId) + " "
                        + (monitor.appliedPercent >= 0 ? monitor.appliedPercent + "%" : "—"));
         }
         return parts.join("  ·  ");

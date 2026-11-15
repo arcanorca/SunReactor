@@ -27,6 +27,8 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/DayCurve.js" as DayCurve
+import "../../modules/Monitors.js" as Monitors
 
 Rectangle {
     id: root
@@ -185,11 +187,10 @@ Rectangle {
                 required property int index
 
                 readonly property string monitorId: modelData.logicalId
-                readonly property bool unavailable: modelData.unreachable === true
-                    || modelData.topology === "temporarily_unavailable"
+                readonly property bool unavailable: Monitors.unavailable(modelData)
                 /*! What the slider shows: the override, else the applied value; -1 unknown. */
                 readonly property int level: modelData.percent !== undefined ? modelData.percent : -1
-                readonly property real aimAt: root.style.targetAt(root.client.dayCurve, monitorId,
+                readonly property real aimAt: DayCurve.targetAt(root.client.dayCurve, monitorId,
                                                                   root.client.nowEpochS)
                 readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : 15
                 readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60

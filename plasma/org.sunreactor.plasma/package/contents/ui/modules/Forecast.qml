@@ -14,6 +14,7 @@ import org.sunreactor.plasma
 import "../engine"
 import "../components"
 import "../Format.js" as Format
+import "ForecastRules.js" as ForecastRules
 
 PlasmaComponents3.ItemDelegate {
     id: root
@@ -25,18 +26,7 @@ PlasmaComponents3.ItemDelegate {
     /*! How many intervals to show; five fits the popup at its narrowest. */
     property int slots: 5
 
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === slots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
 
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 

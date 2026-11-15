@@ -48,12 +48,6 @@ ColumnLayout {
         }
     }
 
-    function openDurations(choice) {
-        durations.x = Math.max(0, choice.mapToItem(root, 0, 0).x);
-        durations.y = choice.mapToItem(root, 0, choice.height).y;
-        durations.open();
-    }
-
     WiiTile {
         id: tile
 
@@ -110,7 +104,7 @@ ColumnLayout {
                                 root.control.pick(choiceId, root);
                                 event.accepted = true;
                             } else if (event.key === Qt.Key_Down && choiceId === "paused") {
-                                root.openDurations(choice);
+                                durations.openBelow(choice, root);
                                 event.accepted = true;
                             }
                         }
@@ -119,7 +113,7 @@ ColumnLayout {
                             choice.forceActiveFocus(Qt.MouseFocusReason);
                             root.control.pick(choiceId, root);
                         }
-                        onArrowClicked: root.openDurations(choice)
+                        onArrowClicked: durations.openBelow(choice, root)
                     }
                 }
             }

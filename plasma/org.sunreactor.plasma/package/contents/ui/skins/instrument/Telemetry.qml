@@ -18,7 +18,8 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
+import "../../components"
 
 Item {
     id: root
@@ -33,23 +34,14 @@ Item {
         theme: root.theme
     }
 
-    readonly property string stateText: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return i18ndc(domain, "Daemon state in the status line", "OFFLINE");
-        case SunReactorClient.Paused:
-            return i18ndc(domain, "Daemon state in the status line", "PAUSED");
-        case SunReactorClient.Manual:
-            return i18ndc(domain, "Daemon state in the status line", "MANUAL");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(domain, "Daemon state in the status line", "IDLE");
-        default:
-            return i18ndc(domain, "Daemon state in the status line", "LIVE");
-        }
+    readonly property string stateText: stateWords.label(client.mode)
+
+    StateText {
+        id: stateWords
     }
 
     function shortName(logicalId) {
-        return Curve.shortName(logicalId);
+        return DayCurve.shortName(logicalId);
     }
 
     implicitHeight: window.implicitHeight

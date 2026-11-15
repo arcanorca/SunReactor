@@ -14,6 +14,7 @@ import "../../components/weathericons"
 import "../../modules"
 import "PixelFormat.js" as PixelFormat
 import "Sprites.js" as Sprites
+import "../../modules/ForecastRules.js" as ForecastRules
 
 Item {
     id: root
@@ -25,18 +26,7 @@ Item {
     readonly property int maxSlots: 5
     readonly property int slotMin: 26
     readonly property int slots: Math.max(1, Math.min(maxSlots, Math.floor(panel.contentWidth / slotMin)))
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === slots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
     readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
 
     PixelStyle {

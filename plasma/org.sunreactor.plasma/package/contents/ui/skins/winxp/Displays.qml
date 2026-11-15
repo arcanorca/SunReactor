@@ -15,6 +15,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../modules/Monitors.js" as Monitors
 
 WinWindow {
     id: root
@@ -183,8 +184,7 @@ WinWindow {
 
                 required property var modelData
 
-                readonly property bool unavailable: modelData.unreachable
-                    || modelData.topology === "temporarily_unavailable"
+                readonly property bool unavailable: Monitors.unavailable(modelData)
 
                 Layout.fillWidth: true
                 style: root.ui

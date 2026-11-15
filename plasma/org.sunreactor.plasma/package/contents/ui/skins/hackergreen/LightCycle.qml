@@ -30,6 +30,7 @@ import "../instrument"
 import "../terminal"
 import "../terminal/Term.js" as Term
 import "Hg.js" as Hg
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -63,21 +64,6 @@ Item {
         theme: root.theme
     }
 
-    function valueAt(samples, t, field) {
-        if (!samples || samples.length === 0 || t < samples[0].t || t > samples[samples.length - 1].t) {
-            return -1;
-        }
-        for (let i = 1; i < samples.length; ++i) {
-            const b = samples[i];
-            if (b.t >= t) {
-                const a = samples[i - 1];
-                const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-                return a[field] + (b[field] - a[field]) * f;
-            }
-        }
-        return samples[samples.length - 1][field];
-    }
-
     // --- layout in cells ---------------------------------------------------------
     readonly property bool tabs: curves.length > 1
     readonly property int chartRows: term.comfortable ? 9 : 7
@@ -108,8 +94,8 @@ Item {
         }
         for (let c = 0; c < plotCols; ++c) {
             const t = t0 + (c + 0.5) / plotCols * (t1 - t0);
-            const v = valueAt(current.samples, t, "pct");
-            const nw = valueAt(current.samples, t, "pctNoWeather");
+            const v = DayCurve.valueAt(current.samples, t, "pct");
+            const nw = DayCurve.valueAt(current.samples, t, "pctNoWeather");
             const fill = v >= 0 ? fillDev(v) : 0;
             const fillNw = nw >= 0 ? Math.max(fill, fillDev(nw)) : fill;
             out.push({ v: v, fill: fill, fillNw: fillNw, topRow: chartRows - Math.ceil(fillNw / term.chDev) });
@@ -123,15 +109,15 @@ Item {
 
     readonly property int nowCol: colOf(now)
     readonly property bool nowInside: available && now >= t0 && now <= t1
-    readonly property real targetNow: current && nowInside ? valueAt(current.samples, now, "pct") : -1
+    readonly property real targetNow: current && nowInside ? DayCurve.valueAt(current.samples, now, "pct") : -1
     readonly property real costNow: current && nowInside
-        ? valueAt(current.samples, now, "pctNoWeather") - valueAt(current.samples, now, "pct") : 0
+        ? DayCurve.valueAt(current.samples, now, "pctNoWeather") - DayCurve.valueAt(current.samples, now, "pct") : 0
     /*! All curves at this moment, averaged, for the "All" hero. */
     readonly property real meanNow: {
         let sum = 0;
         let n = 0;
         for (const c of curves) {
-            const v = valueAt(c.samples, now, "pct");
+            const v = DayCurve.valueAt(c.samples, now, "pct");
             if (v >= 0) {
                 sum += v;
                 n += 1;
@@ -154,7 +140,7 @@ Item {
 
     // --- scrub: the hovered time, when the chart is pointed at ---------------------
     readonly property real scrubT: t0 + (scrub.column + 0.5) / plotCols * (t1 - t0)
-    readonly property real scrubPct: current ? valueAt(current.samples, scrubT, "pct") : -1
+    readonly property real scrubPct: current ? DayCurve.valueAt(current.samples, scrubT, "pct") : -1
     readonly property bool scrubbing: scrub.containsMouse && !showAll && current !== null && scrubPct >= 0
 
     readonly property string heroText: {
@@ -440,7 +426,7 @@ Item {
                         delegate: Rectangle {
                             required property int index
 
-                            readonly property real v: root.valueAt(allCurve.modelData.samples,
+                            readonly property real v: DayCurve.valueAt(allCurve.modelData.samples,
                                 root.t0 + (index + 0.5) / root.plotCols * (root.t1 - root.t0), "pct")
 
                             visible: v >= 0

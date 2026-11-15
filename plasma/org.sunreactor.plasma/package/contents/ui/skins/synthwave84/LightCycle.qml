@@ -27,7 +27,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules" as Mod
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "../instrument" as Instrument
 
 ColumnLayout {
@@ -56,34 +56,9 @@ ColumnLayout {
     readonly property real t1: available ? samples[samples.length - 1].t : 1
     readonly property real now: client.nowEpochS
 
-    /*! Linear interpolation of a sample field at time t; -1 outside the day. */
-    function valueAt(points, t, field) {
-        if (!points || points.length === 0 || t < points[0].t || t > points[points.length - 1].t) {
-            return -1;
-        }
-        for (let i = 1; i < points.length; ++i) {
-            const b = points[i];
-            if (b.t >= t) {
-                const a = points[i - 1];
-                const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-                return a[field] + (b[field] - a[field]) * f;
-            }
-        }
-        return points[points.length - 1][field];
-    }
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
-
-    readonly property real targetNow: available ? valueAt(samples, now, "pct") : -1
+    readonly property real targetNow: available ? DayCurve.valueAt(samples, now, "pct") : -1
     readonly property real costNow: targetNow >= 0
-        ? valueAt(samples, now, "pctNoWeather") - targetNow : 0
+        ? DayCurve.valueAt(samples, now, "pctNoWeather") - targetNow : 0
 
     readonly property var milestones: current && current.milestones ? current.milestones : []
     readonly property var nextMilestone: {
@@ -462,7 +437,7 @@ ColumnLayout {
             readonly property bool active: containsMouse && root.available
             readonly property real time: root.t0 + Math.max(0, Math.min(1, mouseX / Math.max(1, width)))
                 * (root.t1 - root.t0)
-            readonly property real pct: root.valueAt(root.samples, time, "pct")
+            readonly property real pct: DayCurve.valueAt(root.samples, time, "pct")
 
             anchors.fill: parent
             hoverEnabled: true
@@ -543,7 +518,7 @@ ColumnLayout {
                                 required property int index
 
                                 style: root.style
-                                text: Curve.shortName(chip.modelData.monitorId)
+                                text: DayCurve.shortName(chip.modelData.monitorId)
                                 tone: root.style.cyan
                                 filled: chip.index === root.selected
                                 onClicked: root.selected = chip.index

@@ -14,7 +14,8 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "Plot.js" as Plot
+import "../../modules/DayCurve.js" as DayCurve
+import "../../modules/Monitors.js" as Monitors
 
 ColumnLayout {
     id: root
@@ -64,13 +65,12 @@ ColumnLayout {
 
             required property var modelData
 
-            readonly property bool unavailable: modelData.unreachable
-                || modelData.topology === "temporarily_unavailable"
+            readonly property bool unavailable: Monitors.unavailable(modelData)
 
             style: root.style
             name: modelData.logicalId
             percent: modelData.percent
-            target: Plot.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
+            target: DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
             minPct: modelData.minPct !== undefined ? modelData.minPct : 15
             maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
             hasLimits: true

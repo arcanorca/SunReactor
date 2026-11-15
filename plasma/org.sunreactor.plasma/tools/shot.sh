@@ -23,6 +23,11 @@
 # 2400x2400: the popup's maximum height is 75% of the screen, so a smaller one
 # makes a page scroll), SHOT_SETTLE (s), SHOT_SERVERNUM (Xvfb display
 # number; default: pick a free one), SHOT_KEEP=1 keeps the work dir.
+# SHOT_STABLE=N waits for the picture to stop changing: after the settle time the
+# window is captured every 0.5 s until N consecutive captures are identical (at
+# most 60 tries), and that capture is kept. A slow machine then no longer
+# photographs a half-laid-out popup, which is what makes two runs of an unchanged
+# tree comparable pixel for pixel (tools/pixel_diff.py). Default: off.
 # --font-dpi N sets QT_FONT_DPI as given; in this Qt that also scales the device
 # pixel ratio by N/96 (see tools/overflow_audit.sh). --units N sets the popup's
 # width in grid units (popupGridUnits,
@@ -72,6 +77,7 @@ SETTLE="${SHOT_SETTLE:-2.5}"
 FONT="${SHOT_FONT:-}"
 FIXED_FONT="${SHOT_FIXED_FONT:-}"
 SMALL_FONT="${SHOT_SMALL_FONT:-}"
+STABLE="${SHOT_STABLE:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -101,13 +107,26 @@ done
 [[ -n "$OUT" ]] || { echo "--out DIR (or SHOT_OUT) is required; keep screenshots out of the repo" >&2; exit 2; }
 # Harness config keys this run adds to --config (read by the containment and the widget).
 HARNESS_CONFIG="$CONFIG"
+for kv in motion_t=0.5 xmb_month=10 xmb_hour=14; do
+    [[ " $CONFIG " == *" ${kv%%=*}="* ]] || HARNESS_CONFIG="$HARNESS_CONFIG $kv"
+done
 [[ -n "$UNITS" ]] && HARNESS_CONFIG="$HARNESS_CONFIG popupGridUnits=$UNITS"
 [[ -n "$AUDIT" ]] && HARNESS_CONFIG="$HARNESS_CONFIG audit=1"
 # QT_FONT_DPI is passed as given. In this Qt it also multiplies the window's
 # device pixel ratio: scale x FONT_DPI/96 (1.35 at 144 is 2.025). The crops below
 # use that effective ratio; the popup line and the audit's META record it.
 extra_env=()
+# Reproducible pixels (harness only, nothing here reaches the widget in use):
+#  - QML_DISABLE_DISTANCEFIELD=1: Qt's distance-field glyph path renders the same text
+#    differently from run to run (+-1..3 levels on glyph edges, 40..900 px per popup);
+#    the plain glyph cache is bit-exact. SHOT_REAL_TEXT=1 keeps the production text path.
+#  - motion_t / xmb_month / xmb_hour freeze the PS3 wave background (see ps3/Waves.qml);
+#    the other skins ignore these keys. A --config value for them wins.
+[[ -n "${SHOT_REAL_TEXT:-}" ]] || extra_env+=("QML_DISABLE_DISTANCEFIELD=1")
 [[ -n "$FONT_DPI" ]] && extra_env+=("QT_FONT_DPI=$FONT_DPI")
+# SHOT_EXTRA_ENV="A=1 B=2": more variables for the viewer (the run is env -i otherwise).
+# shellcheck disable=SC2206
+[[ -n "${SHOT_EXTRA_ENV:-}" ]] && extra_env+=(${SHOT_EXTRA_ENV})
 [[ -f "$QMLDIR/org/sunreactor/plasma/qmldir" ]] || { echo "no plugin under $QMLDIR (build first)" >&2; exit 2; }
 for tool in xvfb-run plasmoidviewer import magick dbus-run-session python3; do
     command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 2; }
@@ -232,6 +251,20 @@ else
     sleep $SETTLE
 fi
 import -window root -crop ${w}x${h}+0+0 +repage "$WORK/$name.png"
+if [ -n "$STABLE" ]; then
+    same=0
+    for i in \$(seq 60); do
+        sleep 0.5
+        import -window root -crop ${w}x${h}+0+0 +repage "$WORK/$name.next.png"
+        if cmp -s "$WORK/$name.png" "$WORK/$name.next.png"; then
+            same=\$((same + 1))
+            [ "\$same" -ge "$STABLE" ] && break
+        else
+            same=0
+            mv "$WORK/$name.next.png" "$WORK/$name.png"
+        fi
+    done
+fi
 kill \$VP 2>/dev/null
 wait \$VP 2>/dev/null
 EOF

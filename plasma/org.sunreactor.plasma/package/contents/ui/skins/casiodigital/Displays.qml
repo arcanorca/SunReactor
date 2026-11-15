@@ -16,8 +16,9 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "Casio.js" as Casio
+import "../../modules/Monitors.js" as Monitors
 
 Item {
     id: root
@@ -145,14 +146,13 @@ Item {
 
                 required property var modelData
 
-                readonly property bool unavailable: modelData.unreachable === true
-                    || modelData.topology === "temporarily_unavailable"
+                readonly property bool unavailable: Monitors.unavailable(modelData)
 
                 name: modelData.logicalId
                 percent: modelData.percent !== undefined ? modelData.percent : -1
                 minPct: modelData.minPct !== undefined ? modelData.minPct : -1
                 maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
-                targetPct: Math.round(Curve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS))
+                targetPct: Math.round(DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS))
                 controllable: modelData.enabled === true && !unavailable
                 hasOverride: modelData.hasOverride === true
                 stateText: {

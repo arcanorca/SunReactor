@@ -214,9 +214,16 @@ package/contents/ui/
     Modules.js             id -> file registry; ModuleSettings.qml
     Telemetry.qml  LightCycle.qml  Displays.qml  Automation.qml
     Weather.qml  Forecast.qml  SunTimes.qml
+    DayCurve.js  Monitors.js  ForecastRules.js   data rules every module and
+                           skin shares (curve lookups, applied brightness, short
+                           display names; unavailable / controllable; the
+                           upcoming forecast points). Skins call them, never
+                           copy them. ModeControl.qml: the mode rules.
   components/              rows shared by modules: DisplayItem, ThemeSlider,
-                           WeatherText; ThemeButton + ThemePicker (tab row);
-                           PopupFooter (Update now)
+                           WeatherText (conditions, "no reading" and "what the
+                           weather does" sentences), StateText (LIVE / IDLE ...),
+                           ModeDurationMenu (openBelow); ThemeButton +
+                           ThemePicker (tab row); PopupFooter (Update now)
   skins/                   pixel/ (this branch), instrument/, terminal/
   FullRepresentation.qml   Repeater + Loader over theme.modules
   CompactRepresentation.qml  sprite + temperature (panel modes still to come)

@@ -1,9 +1,10 @@
 .pragma library
 
 /*
- * Day-curve lookups shared by the instrument skins (client.dayCurve shape:
- * { monitors: [{ monitorId, minPct, maxPct, samples: [{ t, pct, pctNoWeather }],
- * milestones: [...] }], sun: {...} }).
+ * Day-curve and display lookups shared by every module and skin (client.dayCurve
+ * shape: { monitors: [{ monitorId, minPct, maxPct, samples: [{ t, pct,
+ * pctNoWeather }], milestones: [...] }], sun: {...} }). Pure functions of their
+ * arguments, so a binding that calls one tracks what it passes in.
  */
 
 /*! Linear interpolation of a sample field at time t; -1 outside the samples. */
@@ -39,6 +40,17 @@ function curveFor(dayCurve, monitorId) {
 function targetAt(dayCurve, monitorId, t) {
     var curve = curveFor(dayCurve, monitorId);
     return curve ? valueAt(curve.samples, t, "pct") : -1;
+}
+
+/*! The brightness the daemon applied to a display (client.monitors entry's
+    appliedPercent), or -1 when it is not listed. */
+function appliedFor(monitors, logicalId) {
+    for (var i = 0; i < monitors.length; ++i) {
+        if (monitors[i].logicalId === logicalId) {
+            return monitors[i].appliedPercent;
+        }
+    }
+    return -1;
 }
 
 /*! Short caps channel name: "len-p24h-20" -> "LEN". */

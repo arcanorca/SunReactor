@@ -21,6 +21,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/DayCurve.js" as DayCurve
 import "Plot.js" as Plot
 
 ColumnLayout {
@@ -54,22 +55,13 @@ ColumnLayout {
 
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: now >= t0 && now <= t1
-    readonly property real nowPct: Plot.valueAt(samples, now, "pct")
-    readonly property int appliedNow: appliedFor(current ? current.monitorId : "")
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
+    readonly property real nowPct: DayCurve.valueAt(samples, now, "pct")
+    readonly property int appliedNow: DayCurve.appliedFor(root.client.monitors, current ? current.monitorId : "")
 
     // What the readout shows: the time under the pointer while scrubbing, else now.
     readonly property bool scrubbing: hover.containsMouse
     readonly property real readTime: scrubbing ? hover.time : now
-    readonly property real readTarget: Plot.valueAt(samples, readTime, "pct")
+    readonly property real readTarget: DayCurve.valueAt(samples, readTime, "pct")
 
     Accessible.role: Accessible.Chart
     Accessible.name: i18nd(domain, "Today's brightness curve")
@@ -161,7 +153,7 @@ ColumnLayout {
                         required property int index
 
                         style: root.style
-                        text: Plot.shortName(root.curves[index].monitorId)
+                        text: DayCurve.shortName(root.curves[index].monitorId)
                         selected: root.selected === index
                         textFont: root.style.legendFont
                         Accessible.name: root.curves[index].monitorId

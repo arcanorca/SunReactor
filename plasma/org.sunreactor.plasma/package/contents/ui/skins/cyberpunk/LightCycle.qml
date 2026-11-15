@@ -25,7 +25,7 @@ import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
 import "../instrument" as Instrument
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 import "Geometry.js" as G
 
 ColumnLayout {
@@ -60,34 +60,17 @@ ColumnLayout {
     readonly property var sun: available && curve.sun ? curve.sun : ({})
     readonly property bool sunKnown: available && sun.sunrise > 0 && sun.sunset > 0
 
-    function valueAt(samples, t, field) {
-        return Curve.valueAt(samples, t, field);
-    }
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
-
-    function shortName(id) {
-        return Curve.shortName(id);
-    }
-
     function pctText(v) {
         return v >= 0 ? String(Math.round(v)) : "--";
     }
 
     readonly property bool scrubbing: hover.active && current !== null && !showAll
     readonly property real readTime: scrubbing ? hover.time : now
-    readonly property real readTarget: current ? valueAt(current.samples, readTime, "pct") : -1
-    readonly property real readClearSky: current ? valueAt(current.samples, readTime, "pctNoWeather") : -1
+    readonly property real readTarget: current ? DayCurve.valueAt(current.samples, readTime, "pct") : -1
+    readonly property real readClearSky: current ? DayCurve.valueAt(current.samples, readTime, "pctNoWeather") : -1
     readonly property real readCost: readTarget >= 0 && readClearSky >= 0 ? readClearSky - readTarget : 0
-    readonly property int appliedNow: current ? appliedFor(current.monitorId) : -1
-    readonly property real nowLevel: current && nowInDay ? valueAt(current.samples, now, "pct") : -1
+    readonly property int appliedNow: current ? DayCurve.appliedFor(root.client.monitors, current.monitorId) : -1
+    readonly property real nowLevel: current && nowInDay ? DayCurve.valueAt(current.samples, now, "pct") : -1
 
     spacing: style.rowGap
 
@@ -136,7 +119,7 @@ ColumnLayout {
                     height: root.style.tabHeight
                     font: root.style.techFont
                     text: isAll ? i18ndc(root.domain, "Channel chip: every display", "ALL")
-                        : root.shortName(root.curves[index].monitorId)
+                        : DayCurve.shortName(root.curves[index].monitorId)
                     active: root.selected === value
                     Accessible.name: isAll ? text : root.curves[index].monitorId
 

@@ -47,9 +47,3 @@ function hour(h) {
     }
     return String(h).padStart(2, "0");
 }
-
-/*! Short display tag: "MI", "LEN" - the first word of the id, at most 4 letters. */
-function shortName(logicalId) {
-    const head = String(logicalId).split(/[-_ .]/)[0] || String(logicalId);
-    return head.slice(0, 4).toUpperCase();
-}

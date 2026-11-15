@@ -17,6 +17,8 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/DayCurve.js" as DayCurve
+import "../../components"
 
 Item {
     id: root
@@ -32,19 +34,10 @@ Item {
     }
 
     readonly property bool offline: client.mode === SunReactorClient.Offline
-    readonly property string stateText: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return i18ndc(root.domain, "Daemon state in the status line", "OFFLINE");
-        case SunReactorClient.Paused:
-            return i18ndc(root.domain, "Daemon state in the status line", "PAUSED");
-        case SunReactorClient.Manual:
-            return i18ndc(root.domain, "Daemon state in the status line", "MANUAL");
-        case SunReactorClient.IdleDimmed:
-            return i18ndc(root.domain, "Daemon state in the status line", "IDLE");
-        default:
-            return i18ndc(root.domain, "Daemon state in the status line", "LIVE");
-        }
+    readonly property string stateText: stateWords.label(client.mode)
+
+    StateText {
+        id: stateWords
     }
 
     /*! Temperature and the daemon's clock, one string: "15° 2:30 PM" (or "15° 14:30"). */
@@ -62,7 +55,7 @@ Item {
     Accessible.name: {
         const parts = [stateText];
         for (const monitor of client.monitors) {
-            parts.push(style.shortName(monitor.logicalId) + " "
+            parts.push(DayCurve.shortName(monitor.logicalId) + " "
                        + (monitor.appliedPercent >= 0 ? monitor.appliedPercent + "%" : "—"));
         }
         if (client.hasTemperature) {
@@ -110,7 +103,7 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     Layout.leftMargin: root.style.gap * 0.5
                     Layout.minimumWidth: implicitWidth
-                    text: root.style.shortName(channel.modelData.logicalId)
+                    text: DayCurve.shortName(channel.modelData.logicalId)
                     textFormat: Text.PlainText
                     font: root.style.label
                     color: root.style.muted

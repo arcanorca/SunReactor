@@ -52,12 +52,6 @@ Item {
         }
     }
 
-    function openDurations(key) {
-        durations.x = Math.max(0, key.mapToItem(root, 0, 0).x);
-        durations.y = key.mapToItem(root, 0, key.height).y;
-        durations.open();
-    }
-
     CasioBezel {
         id: bezel
 
@@ -101,13 +95,13 @@ Item {
                 Accessible.description: modelData.tip
 
                 onClicked: root.control.pick(modelData.id, root)
-                onArrowClicked: root.openDurations(key)
+                onArrowClicked: durations.openBelow(key, root)
 
                 Keys.onLeftPressed: root.focusKey(index - 1)
                 Keys.onRightPressed: root.focusKey(index + 1)
                 Keys.onDownPressed: {
                     if (modelData.id === "paused") {
-                        root.openDurations(key);
+                        durations.openBelow(key, root);
                     }
                 }
             }

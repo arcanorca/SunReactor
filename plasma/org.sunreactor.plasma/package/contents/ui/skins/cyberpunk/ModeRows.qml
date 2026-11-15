@@ -54,12 +54,6 @@ ColumnLayout {
         }
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     // The band: a thin stripe of hazard, the rule above the controls.
     HazardStrip {
         Layout.fillWidth: true
@@ -113,7 +107,7 @@ ColumnLayout {
                         root.control.pick(choiceId, root);
                         event.accepted = true;
                     } else if (event.key === Qt.Key_Down && choiceId === "paused") {
-                        root.openDurations(cell);
+                        durations.openBelow(cell, root);
                         event.accepted = true;
                     }
                 }
@@ -142,7 +136,7 @@ ColumnLayout {
                     anchors.bottom: parent.bottom
                     width: root.style.snap(root.style.unit * 2)
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.openDurations(cell)
+                    onClicked: durations.openBelow(cell, root)
                 }
             }
         }

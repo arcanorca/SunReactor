@@ -59,12 +59,6 @@ Item {
         }
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     /*! The gadget captions: the full names do not fit three gadgets in a 19 gu popup. */
     readonly property var captions: ({
         automatic: i18ndc(root.control.domain, "Mode segment, compact: follow the sun again", "Auto"),
@@ -146,13 +140,13 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 cell.forceActiveFocus(Qt.MouseFocusReason);
-                                root.openDurations(cell);
+                                durations.openBelow(cell, root);
                             }
                         }
 
                         Keys.onLeftPressed: root.focusCell(index - 1)
                         Keys.onRightPressed: root.focusCell(index + 1)
-                        Keys.onDownPressed: if (cell.caret) { root.openDurations(cell); }
+                        Keys.onDownPressed: if (cell.caret) { durations.openBelow(cell, root); }
                     }
                 }
             }

@@ -13,6 +13,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "Petscii.js" as Petscii
+import "../../modules/Monitors.js" as Monitors
 
 Item {
     id: root
@@ -83,8 +84,7 @@ Item {
                     required property int index
 
                     readonly property bool master: modelData.master === true
-                    readonly property bool unavailable: modelData.unreachable === true
-                        || modelData.topology === "temporarily_unavailable"
+                    readonly property bool unavailable: Monitors.unavailable(modelData)
                     readonly property bool controllable: modelData.enabled !== false && !unavailable
                     readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
                     readonly property bool overridden: modelData.hasOverride === true

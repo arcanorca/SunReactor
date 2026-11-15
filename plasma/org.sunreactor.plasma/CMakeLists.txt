@@ -219,6 +219,13 @@ if (QMLTESTRUNNER_EXECUTABLE)
     set_tests_properties(test_engine PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QML_IMPORT_PATH=${CMAKE_CURRENT_BINARY_DIR}/qml")
 
+    # Shared data rules: day-curve lookups, display state, the terminal Displays control.
+    add_test(NAME test_datarules
+        COMMAND ${QMLTESTRUNNER_EXECUTABLE} -input ${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_datarules.qml
+                -import ${CMAKE_CURRENT_BINARY_DIR}/qml)
+    set_tests_properties(test_datarules PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QML_IMPORT_PATH=${CMAKE_CURRENT_BINARY_DIR}/qml")
+
     # Theme picker: the button and the popover, clicks and keys (offscreen).
     add_test(NAME test_picker
         COMMAND ${QMLTESTRUNNER_EXECUTABLE} -input ${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_picker.qml

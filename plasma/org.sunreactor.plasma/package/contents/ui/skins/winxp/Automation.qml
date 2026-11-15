@@ -35,12 +35,6 @@ WinWindow {
     readonly property bool available: client.isConnected
     title: i18ndc(control.domain, "Window title of the automation mode", "Automation")
 
-    function openDurations(anchorItem) {
-        durations.x = Math.max(0, anchorItem.mapToItem(root, 0, 0).x);
-        durations.y = anchorItem.mapToItem(root, 0, anchorItem.height).y;
-        durations.open();
-    }
-
     WinGroupBox {
         Layout.fillWidth: true
         style: root.ui
@@ -76,7 +70,7 @@ WinWindow {
                         style: root.ui
                         text: "▾"
                         implicitWidth: root.ui.snap(root.ui.sizeBody * 1.6)
-                        onClicked: root.openDurations(arrow)
+                        onClicked: durations.openBelow(arrow, root)
                     }
                 }
             }

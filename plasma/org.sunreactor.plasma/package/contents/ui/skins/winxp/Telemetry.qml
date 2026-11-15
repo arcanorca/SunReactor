@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -45,19 +46,14 @@ Item {
         }
     }
 
-    function shortName(logicalId) {
-        const head = String(logicalId).split(/[-_ .]/)[0] || String(logicalId);
-        return head.slice(0, 4).toUpperCase();
-    }
-
     readonly property string runText: {
         const parts = [];
         for (const monitor of client.monitors) {
             parts.push(monitor.appliedPercent >= 0
                 ? i18ndc(domain, "Taskbar: short display name, then its applied brightness", "%1 %2%",
-                         shortName(monitor.logicalId), monitor.appliedPercent)
+                         DayCurve.shortName(monitor.logicalId), monitor.appliedPercent)
                 : i18ndc(domain, "Taskbar: short display name whose brightness is unknown", "%1 —",
-                         shortName(monitor.logicalId)));
+                         DayCurve.shortName(monitor.logicalId)));
         }
         if (client.hasTemperature) {
             parts.push(i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°C",
