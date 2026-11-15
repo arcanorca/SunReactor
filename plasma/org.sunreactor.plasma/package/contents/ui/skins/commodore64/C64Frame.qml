@@ -7,7 +7,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import org.sunreactor.plasma
 
 import "../../engine"
 

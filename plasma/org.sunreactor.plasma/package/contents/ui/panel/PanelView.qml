@@ -26,7 +26,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
@@ -153,28 +152,32 @@ Item {
     Component {
         id: skyComponent
         Sky {
-            view: root
+            // The circular QML type reference resolves to this PanelView at runtime.
+            view: root // qmllint disable incompatible-type
         }
     }
 
     Component {
         id: readoutComponent
         Readout {
-            view: root
+            // The circular QML type reference resolves to this PanelView at runtime.
+            view: root // qmllint disable incompatible-type
         }
     }
 
     Component {
         id: sparklineComponent
         Sparkline {
-            view: root
+            // The circular QML type reference resolves to this PanelView at runtime.
+            view: root // qmllint disable incompatible-type
         }
     }
 
     Component {
         id: ringComponent
         Ring {
-            view: root
+            // The circular QML type reference resolves to this PanelView at runtime.
+            view: root // qmllint disable incompatible-type
         }
     }
 }

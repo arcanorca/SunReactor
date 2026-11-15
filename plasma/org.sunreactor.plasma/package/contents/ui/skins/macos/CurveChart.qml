@@ -63,6 +63,8 @@ Item {
     // --- static layers --------------------------------------------------------
     // One horizontal hairline across the plot, `fraction` of the way down.
     component GridLine: ShapePath {
+        id: gridLine
+
         required property real fraction
 
         strokeColor: root.style.gridline
@@ -72,7 +74,7 @@ Item {
         startY: root.style.snap(root.plotHeight * fraction)
         PathLine {
             x: root.width
-            y: root.style.snap(root.plotHeight * fraction)
+            y: root.style.snap(root.plotHeight * gridLine.fraction)
         }
     }
 

@@ -25,7 +25,6 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../../Format.js" as Format
 import "Term.js" as Term
 
 Item {

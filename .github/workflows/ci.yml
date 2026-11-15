@@ -12,6 +12,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plasma:
+    name: Plasma build, tests, and QML lint
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install Qt 6 and Plasma dependencies
+        shell: bash
+        run: |
+          pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules qt6-base qt6-declarative qt6-shadertools libplasma kirigami kcmutils jq git appstream
+          # The committed shader pack was compressed with zlib-ng; qsb's check is byte-for-byte.
+          printf 'y\ny\n' | pacman -S --needed zlib-ng-compat
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S plasma/org.sunreactor.plasma -B build/plasma -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build/plasma -j2
+      - name: Test
+        run: QT_QPA_PLATFORM=offscreen ctest --test-dir build/plasma --output-on-failure
+      - name: QML lint ratchet
+        run: bash scripts/qmllint.sh
+
   quality:
     name: Canonical Quality (fmt, clippy, test)
     runs-on: ubuntu-latest

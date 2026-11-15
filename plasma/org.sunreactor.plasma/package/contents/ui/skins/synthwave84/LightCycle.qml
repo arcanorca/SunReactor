@@ -130,13 +130,14 @@ ColumnLayout {
         const b = Math.asin(Math.max(-1, Math.min(1, (yB - r) / r)));
         const n = 28;
         let d = "";
+        // Arithmetic produces JavaScript numbers; qmllint cannot infer toFixed here.
         for (let i = 0; i <= n; ++i) {
             const f = a + (b - a) * i / n;
-            d += (i === 0 ? "M " : "L ") + (r + r * Math.cos(f)).toFixed(2) + " " + (r + r * Math.sin(f)).toFixed(2) + " ";
+            d += (i === 0 ? "M " : "L ") + (r + r * Math.cos(f)).toFixed(2) + " " + (r + r * Math.sin(f)).toFixed(2) + " "; // qmllint disable missing-property
         }
         for (let i = 0; i <= n; ++i) {
             const f = b - (b - a) * i / n;
-            d += "L " + (r - r * Math.cos(f)).toFixed(2) + " " + (r + r * Math.sin(f)).toFixed(2) + " ";
+            d += "L " + (r - r * Math.cos(f)).toFixed(2) + " " + (r + r * Math.sin(f)).toFixed(2) + " "; // qmllint disable missing-property
         }
         return d + "Z ";
     }

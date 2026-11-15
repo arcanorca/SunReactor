@@ -57,9 +57,9 @@ T.Slider {
     bottomPadding: 0
 
     implicitWidth: 200
-    implicitHeight: style.snap((showScale ? scale.implicitHeight + style.hairline * 2 : 0) + zone)
+    implicitHeight: style.snap((showScale ? tickScale.implicitHeight + style.hairline * 2 : 0) + zone)
 
-    readonly property real trackY: (showScale ? scale.implicitHeight + style.hairline * 2 : 0)
+    readonly property real trackY: (showScale ? tickScale.implicitHeight + style.hairline * 2 : 0)
     readonly property real centreY: style.snap(trackY + zone / 2)
     readonly property real valueX: xAt(known ? value : from)
 
@@ -68,7 +68,7 @@ T.Slider {
         implicitHeight: control.implicitHeight
 
         TickScale {
-            id: scale
+            id: tickScale
 
             visible: control.showScale
             x: control.leftPadding

@@ -45,7 +45,8 @@ MouseArea {
         if (client.isSuspended) {
             client.resume();
         } else {
-            const minutes = Plasmoid.configuration.defaultSuspendMinutes;
+            // Plasma adds the main.xml configuration keys dynamically.
+            const minutes = Plasmoid.configuration.defaultSuspendMinutes; // qmllint disable missing-property
             client.suspend(minutes > 0 ? minutes : 60);
         }
     }
@@ -81,10 +82,11 @@ MouseArea {
         anchors.centerIn: parent
         theme: root.theme
         client: root.client
-        mode: Plasmoid.configuration.panelMode
-        displayId: Plasmoid.configuration.panelDisplay
-        showTemperature: Plasmoid.configuration.showTemperature
-        showElevation: Plasmoid.configuration.showSolarElevation
+        // Plasma adds the main.xml configuration keys dynamically.
+        mode: Plasmoid.configuration.panelMode // qmllint disable missing-property
+        displayId: Plasmoid.configuration.panelDisplay // qmllint disable missing-property
+        showTemperature: Plasmoid.configuration.showTemperature // qmllint disable missing-property
+        showElevation: Plasmoid.configuration.showSolarElevation // qmllint disable missing-property
         vertical: root.vertical
         square: root.square
         thickness: root.thickness

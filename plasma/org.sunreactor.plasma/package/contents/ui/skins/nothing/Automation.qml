@@ -59,6 +59,8 @@ Rectangle {
         model: root.sentenceChoices
 
         Item {
+            id: sentenceChoice
+
             required property string modelData
 
             readonly property real advanceWidth: metrics.advanceWidth
@@ -67,7 +69,7 @@ Rectangle {
                 id: metrics
 
                 font: root.style.sentence
-                text: modelData
+                text: sentenceChoice.modelData
             }
         }
     }

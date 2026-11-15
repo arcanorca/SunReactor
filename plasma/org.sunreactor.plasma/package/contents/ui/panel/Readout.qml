@@ -14,7 +14,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import org.kde.plasma.components as PlasmaComponents3
-import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"

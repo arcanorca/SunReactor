@@ -53,17 +53,21 @@ Item {
 
     /*! A fill: one layer's path, with a gradient or a colour. */
     component Fill: ShapePath {
+        id: fill
+
         required property string d
 
         strokeColor: "transparent"
         fillColor: "transparent"
         // The layers' sub-paths overlap (a cloud is four discs and a base): nonzero unites them.
         fillRule: ShapePath.WindingFill
-        PathSvg { path: d }
+        PathSvg { path: fill.d }
     }
 
     /*! The rim of a layer: the same path stroked under the fill, on light surfaces only. */
     component Rim: ShapePath {
+        id: rim
+
         required property string d
         required property color tint
 
@@ -72,7 +76,7 @@ Item {
         strokeColor: root.onDark ? "transparent" : tint
         strokeWidth: root.onDark ? 0 : root.rimWidth
         joinStyle: ShapePath.RoundJoin
-        PathSvg { path: d }
+        PathSvg { path: rim.d }
     }
 
     /*! Top-to-bottom gradient over a layer's box: the clouds' underside comes from it. */

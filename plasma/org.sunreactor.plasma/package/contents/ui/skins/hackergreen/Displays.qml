@@ -495,6 +495,8 @@ FocusScope {
                         model: block.open ? ["min", "max"] : []
 
                         delegate: Item {
+                            id: rangeChoice
+
                             required property string modelData
                             required property int index
 
@@ -505,11 +507,11 @@ FocusScope {
                                 tm: term
                                 theme: root.theme
                                 x: term.cx(2)
-                                label: index === 0 ? i18ndc(root.domain, "Night minimum boundary", "minimum")
+                                label: rangeChoice.index === 0 ? i18ndc(root.domain, "Night minimum boundary", "minimum")
                                                    : i18ndc(root.domain, "Day maximum boundary", "maximum")
-                                current: root.isCursor(block.index, modelData)
+                                current: root.isCursor(block.index, rangeChoice.modelData)
                                 active: root.activeFocus
-                                onClicked: root.select(block.index, modelData)
+                                onClicked: root.select(block.index, rangeChoice.modelData)
                             }
                         }
                     }
