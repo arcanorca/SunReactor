@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use super::model::{
     slugify, BackendStatus, BackendStatusKind, BacklightDeviceDiscovery, DdcMonitorDiscovery,
-    DiscoveryReport, DiscoverySnapshot, DiscoverySummary,
+    DiscoveryReport, DiscoverySnapshot, DiscoverySummary, WindowsDisplayDiscovery,
 };
 use crate::backends::ddc::{
     selector_match_count, selector_plan, selector_relation, DdcSelectorRelation,
@@ -43,27 +43,60 @@ pub(super) fn importable_monitor_configs(report: &DiscoveryReport) -> Vec<Monito
         .collect()
 }
 
-// Linear, table-like report rendering; splitting would only scatter the layout.
-#[allow(clippy::too_many_lines)]
 pub(super) fn render_human(report: &DiscoveryReport) -> String {
-    let backend_rows = vec![
-        vec![
-            report.backends.ddcutil.backend.clone(),
-            backend_status_label(report.backends.ddcutil.status).to_owned(),
-            backend_detail(&report.backends.ddcutil),
-        ],
-        vec![
-            report.backends.brightnessctl.backend.clone(),
-            backend_status_label(report.backends.brightnessctl.status).to_owned(),
-            backend_detail(&report.backends.brightnessctl),
-        ],
-        vec![
-            report.backends.sysfs.backend.clone(),
-            backend_status_label(report.backends.sysfs.status).to_owned(),
-            backend_detail(&report.backends.sysfs),
-        ],
+    let mut sections = vec![
+        render_summary_section(report),
+        render_backend_section(report),
+        render_ddc_section(report),
+        render_backlight_section(report),
     ];
+    if !report.notes.is_empty() {
+        sections.push(format!("Notes\n{}", report.notes.join("\n")));
+    }
+    if !report.windows_displays.is_empty() {
+        sections.push(render_windows_section(&report.windows_displays));
+    }
+    sections.push(format!(
+        "Candidate config snippet\n{}",
+        report.config_snippet
+    ));
+    sections.join("\n\n")
+}
 
+fn render_summary_section(report: &DiscoveryReport) -> String {
+    format!(
+        "Discovery summary\nviable targets: {}\nexternal monitors: {}\nbacklight devices: {}",
+        report.summary.viable_targets,
+        report.summary.ddc_monitors,
+        report.summary.backlight_devices,
+    )
+}
+
+fn render_backend_section(report: &DiscoveryReport) -> String {
+    let backend_rows = [
+        &report.backends.ddcutil,
+        &report.backends.brightnessctl,
+        &report.backends.sysfs,
+    ]
+    .into_iter()
+    .map(|backend| {
+        vec![
+            backend.backend.clone(),
+            backend_status_label(backend.status).to_owned(),
+            backend_detail(backend),
+        ]
+    })
+    .collect::<Vec<_>>();
+    format!(
+        "Backend status\n{}",
+        render_table(&["backend", "status", "detail"], &backend_rows)
+    )
+}
+
+fn render_ddc_section(report: &DiscoveryReport) -> String {
+    if report.ddc_monitors.is_empty() {
+        return String::from("DDC monitors\nNo external monitors reported.");
+    }
     let ddc_rows = report
         .ddc_monitors
         .iter()
@@ -81,7 +114,29 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
             ]
         })
         .collect::<Vec<_>>();
+    format!(
+        "DDC monitors\n{}",
+        render_table(
+            &[
+                "display",
+                "bus",
+                "manufacturer",
+                "model",
+                "serial",
+                "connector",
+                "vcp_0x10",
+                "viable",
+                "note",
+            ],
+            &ddc_rows,
+        )
+    )
+}
 
+fn render_backlight_section(report: &DiscoveryReport) -> String {
+    if report.backlight_devices.is_empty() {
+        return String::from("Backlight devices\nNo internal backlight devices reported.");
+    }
     let backlight_rows = report
         .backlight_devices
         .iter()
@@ -101,157 +156,111 @@ pub(super) fn render_human(report: &DiscoveryReport) -> String {
             ]
         })
         .collect::<Vec<_>>();
+    format!(
+        "Backlight devices\n{}",
+        render_table(
+            &[
+                "device",
+                "class",
+                "type",
+                "max",
+                "source",
+                "viable",
+                "sysfs_path",
+                "note",
+            ],
+            &backlight_rows,
+        )
+    )
+}
 
-    let mut sections = Vec::new();
-    sections.push(format!(
-        "Discovery summary\nviable targets: {}\nexternal monitors: {}\nbacklight devices: {}",
-        report.summary.viable_targets,
-        report.summary.ddc_monitors,
-        report.summary.backlight_devices,
-    ));
-    sections.push(format!(
-        "Backend status\n{}",
-        render_table(&["backend", "status", "detail"], &backend_rows)
-    ));
+fn render_windows_section(displays: &[WindowsDisplayDiscovery]) -> String {
+    let mut section = String::from("Windows display topology\n");
+    for disp in displays {
+        write_windows_display(&mut section, disp);
+        section.push('\n');
+    }
+    section.trim_end().to_string()
+}
 
-    if ddc_rows.is_empty() {
-        sections.push(String::from("DDC monitors\nNo external monitors reported."));
+fn write_windows_display(out: &mut String, disp: &WindowsDisplayDiscovery) {
+    use std::fmt::Write;
+    let primary_tag = if disp.is_primary { " (Primary)" } else { "" };
+    let title = disp.name.as_deref().unwrap_or("Display");
+    let num = disp.display_number;
+    let _ = writeln!(out, "  [{num}] {title}{primary_tag}");
+    let _ = writeln!(
+        out,
+        "      Kind:              {} ({})",
+        disp.kind, disp.output_technology
+    );
+    let status = if disp.active && disp.target_available {
+        "Active / Connected"
+    } else if disp.active {
+        "Active / Temporarily Unavailable"
     } else {
-        sections.push(format!(
-            "DDC monitors\n{}",
-            render_table(
-                &[
-                    "display",
-                    "bus",
-                    "manufacturer",
-                    "model",
-                    "serial",
-                    "connector",
-                    "vcp_0x10",
-                    "viable",
-                    "note",
-                ],
-                &ddc_rows,
-            )
-        ));
+        "Inactive"
+    };
+    let _ = writeln!(out, "      Status:            {status}");
+    if let Some(ref gdi) = disp.gdi_device_name {
+        let rect = disp
+            .desktop_rect
+            .as_deref()
+            .unwrap_or("coordinates unknown");
+        let _ = writeln!(out, "      GDI Device:        {gdi} ({rect})");
     }
-
-    if backlight_rows.is_empty() {
-        sections.push(String::from(
-            "Backlight devices\nNo internal backlight devices reported.",
-        ));
-    } else {
-        sections.push(format!(
-            "Backlight devices\n{}",
-            render_table(
-                &[
-                    "device",
-                    "class",
-                    "type",
-                    "max",
-                    "source",
-                    "viable",
-                    "sysfs_path",
-                    "note",
-                ],
-                &backlight_rows,
-            )
-        ));
+    let _ = writeln!(
+        out,
+        "      CCD Path:          Adapter {} / Target {} (Connector #{})",
+        disp.adapter_luid, disp.target_id, disp.connector_instance
+    );
+    let _ = writeln!(
+        out,
+        "      Physical Monitors: {} (Handles transient & destroyed via RAII)",
+        disp.physical_monitors_count
+    );
+    if let Some(ref cid) = disp.container_id {
+        let _ = writeln!(out, "      Container ID:      {cid}");
     }
-
-    if !report.notes.is_empty() {
-        sections.push(format!("Notes\n{}", report.notes.join("\n")));
+    if let Some(ref inst) = disp.device_instance_id {
+        let _ = writeln!(out, "      Device Instance:   {inst}");
     }
+    let _ = writeln!(out, "      Identity Quality:  {}", disp.identity_quality);
+    let _ = writeln!(
+        out,
+        "      W3 Mutation Tier:  {}",
+        disp.mutation_eligibility
+    );
+    if let Some(ref cid) = disp.canonical_id {
+        let _ = writeln!(out, "      Canonical ID:      {cid}");
+    }
+    if let Some(ref label) = disp.display_label {
+        let _ = writeln!(out, "      Display Label:     {label}");
+    }
+    write_windows_brightness(out, disp);
+    if let Some(ref note) = disp.note {
+        let _ = writeln!(out, "      Note:              {note}");
+    }
+}
 
-    if !report.windows_displays.is_empty() {
-        use std::fmt::Write;
-        let mut win_section = String::from("Windows display topology\n");
-        for disp in &report.windows_displays {
-            let primary_tag = if disp.is_primary { " (Primary)" } else { "" };
-            let title = disp.name.as_deref().unwrap_or("Display");
-            let num = disp.display_number;
-            let _ = writeln!(win_section, "  [{num}] {title}{primary_tag}");
+fn write_windows_brightness(out: &mut String, disp: &WindowsDisplayDiscovery) {
+    use std::fmt::Write;
+    if let Some(ref capable) = disp.brightness_capable {
+        if *capable {
+            let min = disp.native_min.unwrap_or(0);
+            let cur = disp.native_current.unwrap_or(0);
+            let max = disp.native_max.unwrap_or(100);
+            let pct = disp.normalized_current_percent.unwrap_or(0);
             let _ = writeln!(
-                win_section,
-                "      Kind:              {} ({})",
-                disp.kind, disp.output_technology
+                out,
+                "      Brightness Backend: Capable (DXVA2 High-Level, Native: {min}..{max}, Current: {cur} [{pct}%])"
             );
-            let status = if disp.active && disp.target_available {
-                "Active / Connected"
-            } else if disp.active {
-                "Active / Temporarily Unavailable"
-            } else {
-                "Inactive"
-            };
-            let _ = writeln!(win_section, "      Status:            {status}");
-            if let Some(ref gdi) = disp.gdi_device_name {
-                let rect = disp
-                    .desktop_rect
-                    .as_deref()
-                    .unwrap_or("coordinates unknown");
-                let _ = writeln!(win_section, "      GDI Device:        {gdi} ({rect})");
-            }
-            let _ = writeln!(
-                win_section,
-                "      CCD Path:          Adapter {} / Target {} (Connector #{})",
-                disp.adapter_luid, disp.target_id, disp.connector_instance
-            );
-            let _ = writeln!(
-                win_section,
-                "      Physical Monitors: {} (Handles transient & destroyed via RAII)",
-                disp.physical_monitors_count
-            );
-            if let Some(ref cid) = disp.container_id {
-                let _ = writeln!(win_section, "      Container ID:      {cid}");
-            }
-            if let Some(ref inst) = disp.device_instance_id {
-                let _ = writeln!(win_section, "      Device Instance:   {inst}");
-            }
-            let _ = writeln!(
-                win_section,
-                "      Identity Quality:  {}",
-                disp.identity_quality
-            );
-            let _ = writeln!(
-                win_section,
-                "      W3 Mutation Tier:  {}",
-                disp.mutation_eligibility
-            );
-            if let Some(ref cid) = disp.canonical_id {
-                let _ = writeln!(win_section, "      Canonical ID:      {cid}");
-            }
-            if let Some(ref label) = disp.display_label {
-                let _ = writeln!(win_section, "      Display Label:     {label}");
-            }
-            if let Some(ref capable) = disp.brightness_capable {
-                if *capable {
-                    let min = disp.native_min.unwrap_or(0);
-                    let cur = disp.native_current.unwrap_or(0);
-                    let max = disp.native_max.unwrap_or(100);
-                    let pct = disp.normalized_current_percent.unwrap_or(0);
-                    let _ = writeln!(
-                        win_section,
-                        "      Brightness Backend: Capable (DXVA2 High-Level, Native: {min}..{max}, Current: {cur} [{pct}%])"
-                    );
-                } else if let Some(ref note) = disp.capability_note {
-                    let _ = writeln!(win_section, "      Brightness Backend: {note}");
-                }
-            } else if let Some(ref note) = disp.capability_note {
-                let _ = writeln!(win_section, "      Brightness Backend: {note}");
-            }
-            if let Some(ref note) = disp.note {
-                let _ = writeln!(win_section, "      Note:              {note}");
-            }
-            win_section.push('\n');
+            return;
         }
-        sections.push(win_section.trim_end().to_string());
     }
-
-    sections.push(format!(
-        "Candidate config snippet\n{}",
-        report.config_snippet
-    ));
-    sections.join("\n\n")
+    if let Some(ref note) = disp.capability_note {
+        let _ = writeln!(out, "      Brightness Backend: {note}");
+    }
 }
 
 pub(super) fn render_json(report: &DiscoveryReport) -> String {
@@ -600,4 +609,179 @@ fn render_row(cells: &[String], widths: &[usize]) -> String {
         .map(|(index, cell)| format!("{cell:<width$}", width = widths[index]))
         .collect::<Vec<_>>()
         .join("  ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discovery::model::{
+        DiscoveryBackends, PhysicalIdentityStatus, WindowsDisplayDiscovery,
+    };
+
+    fn status(name: &str, kind: BackendStatusKind, message: &str) -> BackendStatus {
+        BackendStatus {
+            backend: name.to_owned(),
+            status: kind,
+            available: kind == BackendStatusKind::Ok,
+            message: message.to_owned(),
+            guidance: None,
+        }
+    }
+
+    fn windows_display(number: u32) -> WindowsDisplayDiscovery {
+        WindowsDisplayDiscovery {
+            display_number: number,
+            canonical_id: None,
+            display_label: None,
+            stable_id: None,
+            identity_quality: String::from("strong"),
+            mutation_eligibility: String::from("eligible"),
+            name: None,
+            kind: String::from("external_monitor"),
+            active: true,
+            target_available: true,
+            is_primary: false,
+            output_technology: String::from("DisplayPort"),
+            gdi_device_name: None,
+            adapter_luid: String::from("0x1"),
+            source_id: 0,
+            target_id: 4,
+            connector_instance: 2,
+            container_id: None,
+            device_instance_id: None,
+            hardware_ids: Vec::new(),
+            edid_manufacturer: None,
+            edid_product_code: None,
+            physical_monitors_count: 1,
+            physical_monitor_description: None,
+            desktop_rect: None,
+            note: None,
+            brightness_capable: None,
+            native_min: None,
+            native_current: None,
+            native_max: None,
+            normalized_current_percent: None,
+            capability_note: None,
+        }
+    }
+
+    fn representative_report(with_devices: bool) -> DiscoveryReport {
+        let mut report = DiscoveryReport {
+            summary: DiscoverySummary {
+                ddc_monitors: 0,
+                backlight_devices: 0,
+                viable_targets: 0,
+            },
+            backends: DiscoveryBackends {
+                ddcutil: status("ddcutil", BackendStatusKind::Ok, "ddcutil 2.1.4"),
+                brightnessctl: status("brightnessctl", BackendStatusKind::Missing, ""),
+                sysfs: status("sysfs", BackendStatusKind::Unavailable, "no devices"),
+            },
+            ddc_observation_complete: true,
+            ddc_monitors: Vec::new(),
+            backlight_devices: Vec::new(),
+            windows_displays: Vec::new(),
+            notes: Vec::new(),
+            config_snippet: String::from("# No viable brightness-capable devices were discovered."),
+        };
+        if !with_devices {
+            return report;
+        }
+        report.summary = DiscoverySummary {
+            ddc_monitors: 2,
+            backlight_devices: 1,
+            viable_targets: 2,
+        };
+        report.ddc_monitors = vec![
+            DdcMonitorDiscovery {
+                occurrence_id: String::from("a"),
+                stable_id: String::from("dell-u2720q-abc"),
+                identity_status: PhysicalIdentityStatus::Unique,
+                manufacturer: Some(String::from("DEL")),
+                model: Some(String::from("DELL U2720Q")),
+                serial: Some(String::from("ABC123")),
+                display_number: 1,
+                bus_number: Some(5),
+                connector: Some(String::from("card1-DP-1")),
+                brightness_vcp_supported: Some(true),
+                backend_viable: true,
+                note: None,
+            },
+            DdcMonitorDiscovery {
+                occurrence_id: String::from("b"),
+                stable_id: String::from("bus-7"),
+                identity_status: PhysicalIdentityStatus::Insufficient,
+                manufacturer: None,
+                model: None,
+                serial: None,
+                display_number: 2,
+                bus_number: None,
+                connector: None,
+                brightness_vcp_supported: None,
+                backend_viable: false,
+                note: Some(String::from("capabilities probe timed out")),
+            },
+        ];
+        report.backlight_devices = vec![BacklightDeviceDiscovery {
+            stable_id: String::from("intel-backlight"),
+            device_name: String::from("intel_backlight"),
+            class: String::from("backlight"),
+            max_brightness: Some(96000),
+            backlight_type: None,
+            probe_source: String::from("sysfs"),
+            sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+            ddcci_connector: None,
+            backend_viable: true,
+            note: None,
+        }];
+        report.notes = vec![String::from("first note"), String::from("second note")];
+        report
+    }
+
+    #[test]
+    fn render_human_empty_report_is_pinned() {
+        let text = render_human(&representative_report(false));
+        assert_eq!(text, EXPECTED_EMPTY);
+    }
+
+    #[test]
+    fn render_human_populated_report_is_pinned() {
+        let text = render_human(&representative_report(true));
+        assert_eq!(text, EXPECTED_POPULATED);
+    }
+
+    #[test]
+    fn render_human_windows_topology_is_pinned() {
+        let mut report = representative_report(false);
+        let mut full = windows_display(1);
+        full.name = Some(String::from("Dell U2720Q"));
+        full.is_primary = true;
+        full.gdi_device_name = Some(String::from("\\\\.\\DISPLAY1"));
+        full.desktop_rect = Some(String::from("0,0 2560x1440"));
+        full.container_id = Some(String::from("{container}"));
+        full.device_instance_id = Some(String::from("DISPLAY\\DEL\\1"));
+        full.canonical_id = Some(String::from("canon-1"));
+        full.display_label = Some(String::from("Desk left"));
+        full.brightness_capable = Some(true);
+        full.native_min = Some(0);
+        full.native_current = Some(30);
+        full.native_max = Some(100);
+        full.normalized_current_percent = Some(30);
+        full.note = Some(String::from("primary note"));
+        let mut unavailable = windows_display(2);
+        unavailable.target_available = false;
+        unavailable.gdi_device_name = Some(String::from("\\\\.\\DISPLAY2"));
+        unavailable.brightness_capable = Some(false);
+        unavailable.capability_note = Some(String::from("DXVA2 unsupported"));
+        let mut inactive = windows_display(3);
+        inactive.active = false;
+        inactive.capability_note = Some(String::from("no handle"));
+        report.windows_displays = vec![full, unavailable, inactive];
+        let text = render_human(&report);
+        assert_eq!(text, EXPECTED_WINDOWS);
+    }
+
+    const EXPECTED_EMPTY: &str = "Discovery summary\nviable targets: 0\nexternal monitors: 0\nbacklight devices: 0\n\nBackend status\nbackend        status       detail       \n-------------  -----------  -------------\nddcutil        ok           ddcutil 2.1.4\nbrightnessctl  missing                   \nsysfs          unavailable  no devices   \n\nDDC monitors\nNo external monitors reported.\n\nBacklight devices\nNo internal backlight devices reported.\n\nCandidate config snippet\n# No viable brightness-capable devices were discovered.";
+    const EXPECTED_POPULATED: &str = "Discovery summary\nviable targets: 2\nexternal monitors: 2\nbacklight devices: 1\n\nBackend status\nbackend        status       detail       \n-------------  -----------  -------------\nddcutil        ok           ddcutil 2.1.4\nbrightnessctl  missing                   \nsysfs          unavailable  no devices   \n\nDDC monitors\ndisplay  bus  manufacturer  model        serial  connector   vcp_0x10  viable  note                        \n-------  ---  ------------  -----------  ------  ----------  --------  ------  ----------------------------\n1        5    DEL           DELL U2720Q  ABC123  card1-DP-1  yes       yes     -                           \n2        -    -             -            -       -           unknown   no      capabilities probe timed out\n\nBacklight devices\ndevice           class      type  max    source  viable  sysfs_path                            note\n---------------  ---------  ----  -----  ------  ------  ------------------------------------  ----\nintel_backlight  backlight  -     96000  sysfs   yes     /sys/class/backlight/intel_backlight  -   \n\nNotes\nfirst note\nsecond note\n\nCandidate config snippet\n# No viable brightness-capable devices were discovered.";
+    const EXPECTED_WINDOWS: &str = "Discovery summary\nviable targets: 0\nexternal monitors: 0\nbacklight devices: 0\n\nBackend status\nbackend        status       detail       \n-------------  -----------  -------------\nddcutil        ok           ddcutil 2.1.4\nbrightnessctl  missing                   \nsysfs          unavailable  no devices   \n\nDDC monitors\nNo external monitors reported.\n\nBacklight devices\nNo internal backlight devices reported.\n\nWindows display topology\n  [1] Dell U2720Q (Primary)\n      Kind:              external_monitor (DisplayPort)\n      Status:            Active / Connected\n      GDI Device:        \\\\.\\DISPLAY1 (0,0 2560x1440)\n      CCD Path:          Adapter 0x1 / Target 4 (Connector #2)\n      Physical Monitors: 1 (Handles transient & destroyed via RAII)\n      Container ID:      {container}\n      Device Instance:   DISPLAY\\DEL\\1\n      Identity Quality:  strong\n      W3 Mutation Tier:  eligible\n      Canonical ID:      canon-1\n      Display Label:     Desk left\n      Brightness Backend: Capable (DXVA2 High-Level, Native: 0..100, Current: 30 [30%])\n      Note:              primary note\n\n  [2] Display\n      Kind:              external_monitor (DisplayPort)\n      Status:            Active / Temporarily Unavailable\n      GDI Device:        \\\\.\\DISPLAY2 (coordinates unknown)\n      CCD Path:          Adapter 0x1 / Target 4 (Connector #2)\n      Physical Monitors: 1 (Handles transient & destroyed via RAII)\n      Identity Quality:  strong\n      W3 Mutation Tier:  eligible\n      Brightness Backend: DXVA2 unsupported\n\n  [3] Display\n      Kind:              external_monitor (DisplayPort)\n      Status:            Inactive\n      CCD Path:          Adapter 0x1 / Target 4 (Connector #2)\n      Physical Monitors: 1 (Handles transient & destroyed via RAII)\n      Identity Quality:  strong\n      W3 Mutation Tier:  eligible\n      Brightness Backend: no handle\n\nCandidate config snippet\n# No viable brightness-capable devices were discovered.";
 }
