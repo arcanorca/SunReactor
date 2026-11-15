@@ -106,12 +106,6 @@ Rectangle {
         }
     }
 
-    function openDurations(cell) {
-        durations.x = Math.max(0, cell.mapToItem(root, 0, 0).x);
-        durations.y = cell.mapToItem(root, 0, cell.height).y;
-        durations.open();
-    }
-
     ColumnLayout {
         id: content
 
@@ -161,12 +155,12 @@ Rectangle {
                     Keys.onRightPressed: root.focusCell(index + 1)
                     Keys.onDownPressed: {
                         if (choiceId === "paused") {
-                            root.openDurations(cell);
+                            durations.openBelow(cell, root);
                         }
                     }
 
                     onClicked: root.control.pick(choiceId, root)
-                    onArrowClicked: root.openDurations(cell)
+                    onArrowClicked: durations.openBelow(cell, root)
                 }
             }
         }

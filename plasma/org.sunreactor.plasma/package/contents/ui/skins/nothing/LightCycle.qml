@@ -25,6 +25,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/DayCurve.js" as DayCurve
 
 Rectangle {
     id: root
@@ -61,21 +62,12 @@ Rectangle {
     readonly property int plotRows: 12
     readonly property int ringDiameter: 21
 
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
-
     readonly property bool scrubbing: hover.containsMouse && available && !showAll
     readonly property real readTime: scrubbing ? hover.time : now
-    readonly property real readTarget: current ? style.valueAt(current.samples, readTime, "pct") : -1
-    readonly property real readClear: current ? style.valueAt(current.samples, readTime, "pctNoWeather") : -1
+    readonly property real readTarget: current ? DayCurve.valueAt(current.samples, readTime, "pct") : -1
+    readonly property real readClear: current ? DayCurve.valueAt(current.samples, readTime, "pctNoWeather") : -1
     readonly property real readCost: readTarget >= 0 && readClear >= 0 ? readClear - readTarget : 0
-    readonly property int appliedNow: current ? appliedFor(current.monitorId) : -1
+    readonly property int appliedNow: current ? DayCurve.appliedFor(root.client.monitors, current.monitorId) : -1
 
     readonly property string caption: showAll
         ? i18ndc(root.domain, "Caption over the plot when every display is plotted", "Today")
@@ -183,7 +175,7 @@ Rectangle {
                     radio: true
                     active: root.selected === value
                     text: isAll ? i18ndc(root.domain, "Display selector: every display", "ALL")
-                                : root.style.shortName(root.curves[index].monitorId)
+                                : DayCurve.shortName(root.curves[index].monitorId)
                     accessibleName: isAll ? text : root.curves[index].monitorId
                     onClicked: root.selected = value
                 }

@@ -44,25 +44,7 @@ Rectangle {
     /*! Percent the weather takes off the targets; negative when it adds. */
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
 
-    readonly property string stateNote: {
-        if (client.hasWeatherReading) {
-            return "";
-        }
-        switch (client.weatherState) {
-        case "no_api_key":
-            return i18nd(root.domain, "No API key is configured");
-        case "loading":
-            return i18nd(root.domain, "Looking up the current conditions…");
-        case "unauthorized":
-            return i18nd(root.domain, "The weather provider rejected the API key");
-        case "rate_limited":
-            return i18nd(root.domain, "The weather provider is rate limiting requests");
-        case "network_error":
-            return i18nd(root.domain, "The weather provider could not be reached");
-        default:
-            return i18nd(root.domain, "No reading yet");
-        }
-    }
+    readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
 
     /*! The condition, the staleness and the weather's effect, in one lower-case line. */
     readonly property string conditionText: {
