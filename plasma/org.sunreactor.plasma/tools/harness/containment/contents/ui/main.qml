@@ -39,11 +39,15 @@ ContainmentItem {
         value: root.popup ? root.popup.fullRepresentationItem : null
     }
 
+    /*! The popup's size until its full representation exists (19 x 14 grid units, its minimum height). */
+    readonly property real placeholderWidth: 19 * Kirigami.Units.gridUnit
+    readonly property real placeholderHeight: 14 * Kirigami.Units.gridUnit
+
     function popupWidth(): real {
         if (root.gridUnits > 0) {
             return root.gridUnits * Kirigami.Units.gridUnit;
         }
-        return root.full ? root.full.Layout.preferredWidth : host.width;
+        return root.full ? root.full.Layout.preferredWidth : root.placeholderWidth;
     }
 
     function adopt(applet) {
@@ -55,9 +59,12 @@ ContainmentItem {
         item.visible = true;
         item.anchors.left = host.left;
         item.anchors.top = host.top;
-        // Until the full representation exists, the window's size.
+        // Until the full representation exists, a placeholder size. It must not follow the
+        // host: the applet's size feeds back into the window (Plasma 6.8's containment view
+        // fits itself to its content), and a size taken from the host made a binding loop
+        // that collapsed the window to a third of the -s height.
         item.width = Qt.binding(() => root.popupWidth());
-        item.height = Qt.binding(() => root.full ? root.full.Layout.preferredHeight : host.height);
+        item.height = Qt.binding(() => root.full ? root.full.Layout.preferredHeight : root.placeholderHeight);
         root.popup = item;
     }
 
