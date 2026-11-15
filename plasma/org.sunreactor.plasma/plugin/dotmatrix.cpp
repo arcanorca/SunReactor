@@ -24,6 +24,11 @@ using GlyphTables::Face;
 using GlyphTables::Glyph;
 
 constexpr int kMinDevicePitch = 3;
+constexpr int kMaxDevicePitch = 512;
+constexpr int kMaxGridDimension = 512;
+constexpr qsizetype kMaxGridCells = 16 * 1024;
+constexpr qsizetype kMaxTextCodeUnits = 16 * 1024;
+constexpr qsizetype kMaxCurveSamples = 4096;
 constexpr int kMinSegments = 12;
 constexpr int kMaxSegments = 48;
 constexpr int kBlankAdvance = 3; // cells of an unknown character
@@ -72,6 +77,16 @@ bool hasDescent(const Face &face, const QList<char32_t> &chars)
     return false;
 }
 
+int boundedDimension(int value)
+{
+    return std::clamp(value, 0, kMaxGridDimension);
+}
+
+QString boundedText(const QString &text)
+{
+    return text.size() <= kMaxTextCodeUnits ? text : text.left(kMaxTextCodeUnits);
+}
+
 // Weather pictograms on a 12 x 12 grid, y down. '#' lit, '@' accent, '.' unlit.
 struct IconBitmap {
     const char *name;
@@ -106,7 +121,14 @@ DotField::DotField(QQuickItem *parent)
 
 int DotField::devicePitch(qreal pitch, qreal dpr)
 {
-    return std::max(kMinDevicePitch, static_cast<int>(std::lround(pitch * dpr)));
+    if (!std::isfinite(pitch) || !std::isfinite(dpr) || pitch <= 0.0 || dpr <= 0.0) {
+        return kMinDevicePitch;
+    }
+    const qreal scaled = pitch * dpr;
+    if (!std::isfinite(scaled) || scaled >= kMaxDevicePitch) {
+        return kMaxDevicePitch;
+    }
+    return std::clamp(static_cast<int>(std::lround(scaled)), kMinDevicePitch, kMaxDevicePitch);
 }
 
 qreal DotField::pitch() const
@@ -116,7 +138,10 @@ qreal DotField::pitch() const
 
 void DotField::setCols(int v)
 {
-    v = std::max(0, v);
+    v = boundedDimension(v);
+    if (m_rows > 0) {
+        v = std::min(v, static_cast<int>(kMaxGridCells / m_rows));
+    }
     if (v == m_cols) {
         return;
     }
@@ -127,7 +152,10 @@ void DotField::setCols(int v)
 
 void DotField::setRows(int v)
 {
-    v = std::max(0, v);
+    v = boundedDimension(v);
+    if (m_cols > 0) {
+        v = std::min(v, static_cast<int>(kMaxGridCells / m_cols));
+    }
     if (v == m_rows) {
         return;
     }
@@ -138,7 +166,7 @@ void DotField::setRows(int v)
 
 void DotField::setPitch(qreal v)
 {
-    v = std::max<qreal>(0.0, v);
+    v = std::isfinite(v) ? std::max<qreal>(0.0, v) : 0.0;
     if (v == m_pitch) {
         return;
     }
@@ -150,6 +178,9 @@ void DotField::setPitch(qreal v)
 
 void DotField::setDotScale(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = 0.1;
+    }
     v = std::clamp<qreal>(v, 0.1, 1.0);
     if (v == m_dotScale) {
         return;
@@ -228,8 +259,11 @@ void DotField::refresh()
 
 void DotField::setGrid(int cols, int rows, int fill)
 {
-    m_cols = std::max(0, cols);
-    m_rows = std::max(0, rows);
+    m_cols = boundedDimension(cols);
+    m_rows = boundedDimension(rows);
+    if (m_cols > 0) {
+        m_rows = std::min(m_rows, static_cast<int>(kMaxGridCells / m_cols));
+    }
     m_cells.assign(static_cast<size_t>(m_cols) * static_cast<size_t>(m_rows),
                    static_cast<quint8>(std::clamp(fill, 0, static_cast<int>(Blank))));
 }
@@ -246,7 +280,7 @@ void DotField::put(int col, int row, int cell)
 void DotField::updateImplicitSize()
 {
     const qreal p = pitch();
-    setImplicitSize(m_cols * p, m_rows * p);
+    setImplicitSize(static_cast<qreal>(m_cols) * p, static_cast<qreal>(m_rows) * p);
 }
 
 void DotField::markGeometry()
@@ -263,7 +297,7 @@ void DotField::updateDpr()
     } else if (qGuiApp) {
         ratio = qGuiApp->devicePixelRatio();
     }
-    if (ratio <= 0.0) {
+    if (!std::isfinite(ratio) || ratio <= 0.0) {
         ratio = 1.0;
     }
     if (ratio == m_dpr) {
@@ -419,10 +453,11 @@ int DotText::descentRows() const
 
 void DotText::setText(const QString &v)
 {
-    if (v == m_text) {
+    const QString bounded = boundedText(v);
+    if (bounded == m_text) {
         return;
     }
-    m_text = v;
+    m_text = bounded;
     Q_EMIT textChanged();
     refresh();
 }
@@ -472,6 +507,9 @@ void DotText::setAccentIndex(int v)
 
 bool DotText::covers(const QString &text) const
 {
+    if (text.size() > kMaxTextCodeUnits) {
+        return false;
+    }
     const Face &face = tiny() ? GlyphTables::tinyFace() : GlyphTables::smallFace();
     for (const char32_t c : text.toUcs4()) {
         if (!findGlyph(face, tiny() ? upperCase(c) : c)) {
@@ -537,6 +575,9 @@ DotBar::DotBar(QQuickItem *parent)
 
 void DotBar::setValue(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = 0.0;
+    }
     v = std::clamp<qreal>(v, 0.0, 1.0);
     if (v == m_value) {
         return;
@@ -583,6 +624,9 @@ DotRing::DotRing(QQuickItem *parent)
 
 void DotRing::setValue(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = 0.0;
+    }
     v = std::clamp<qreal>(v, 0.0, 1.0);
     if (v == m_value) {
         return;
@@ -659,22 +703,25 @@ DotCurve::DotCurve(QQuickItem *parent)
 std::vector<DotCurve::Sample> DotCurve::parse(const QVariantList &list)
 {
     std::vector<Sample> out;
-    out.reserve(static_cast<size_t>(list.size()));
-    for (const QVariant &v : list) {
+    out.reserve(static_cast<size_t>(std::min<qsizetype>(list.size(), kMaxCurveSamples)));
+    for (qsizetype index = 0; index < list.size() && index < kMaxCurveSamples; ++index) {
+        const QVariant &v = list.at(index);
         const QVariantMap m = v.toMap();
         const qreal t = m.value(QStringLiteral("t")).toDouble();
         const QVariant pct = m.value(QStringLiteral("pct"));
-        if (!pct.isValid() || (!out.empty() && t <= out.back().t)) {
+        const qreal value = pct.toDouble();
+        if (!std::isfinite(t) || !std::isfinite(value) || !pct.isValid()
+            || (!out.empty() && t <= out.back().t)) {
             continue;
         }
-        out.push_back({t, pct.toDouble()});
+        out.push_back({t, value});
     }
     return out;
 }
 
 qreal DotCurve::interpolate(const std::vector<Sample> &s, qreal t)
 {
-    if (s.empty() || t < s.front().t || t > s.back().t) {
+    if (!std::isfinite(t) || s.empty() || t < s.front().t || t > s.back().t) {
         return -1;
     }
     const auto it = std::lower_bound(s.begin(), s.end(), t, [](const Sample &a, qreal v) { return a.t < v; });
@@ -689,28 +736,33 @@ qreal DotCurve::interpolate(const std::vector<Sample> &s, qreal t)
 
 void DotCurve::setSamples(const QVariantList &v)
 {
-    if (v == m_samplesVar) {
+    const QVariantList bounded = v.mid(0, kMaxCurveSamples);
+    if (bounded == m_samplesVar) {
         return;
     }
-    m_samplesVar = v;
-    m_samples = parse(v);
+    m_samplesVar = bounded;
+    m_samples = parse(bounded);
     Q_EMIT curveChanged();
     refresh();
 }
 
 void DotCurve::setSamplesNoWeather(const QVariantList &v)
 {
-    if (v == m_noWeatherVar) {
+    const QVariantList bounded = v.mid(0, kMaxCurveSamples);
+    if (bounded == m_noWeatherVar) {
         return;
     }
-    m_noWeatherVar = v;
-    m_noWeather = parse(v);
+    m_noWeatherVar = bounded;
+    m_noWeather = parse(bounded);
     Q_EMIT curveChanged();
     refresh();
 }
 
 void DotCurve::setT0(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = 0.0;
+    }
     if (v == m_t0) {
         return;
     }
@@ -721,6 +773,9 @@ void DotCurve::setT0(qreal v)
 
 void DotCurve::setT1(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = 0.0;
+    }
     if (v == m_t1) {
         return;
     }
@@ -731,6 +786,9 @@ void DotCurve::setT1(qreal v)
 
 void DotCurve::setNowT(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = -1.0;
+    }
     if (v == m_nowT) {
         return;
     }
@@ -741,6 +799,9 @@ void DotCurve::setNowT(qreal v)
 
 void DotCurve::setMaxPct(qreal v)
 {
+    if (!std::isfinite(v)) {
+        v = 100.0;
+    }
     if (v == m_maxPct) {
         return;
     }
@@ -801,10 +862,11 @@ DotIcon::DotIcon(QQuickItem *parent)
 
 void DotIcon::setCondition(const QString &v)
 {
-    if (v == m_condition) {
+    const QString bounded = boundedText(v);
+    if (bounded == m_condition) {
         return;
     }
-    m_condition = v;
+    m_condition = bounded;
     Q_EMIT iconChanged();
     refresh();
 }

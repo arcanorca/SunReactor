@@ -98,7 +98,7 @@ PixelRaster::PixelRaster(QQuickItem *parent)
 
 void PixelRaster::setArtScale(qreal scale)
 {
-    if (scale <= 0.0 || qFuzzyCompare(scale, m_artScale)) {
+    if (!std::isfinite(scale) || scale <= 0.0 || qFuzzyCompare(scale, m_artScale)) {
         return;
     }
     m_artScale = scale;

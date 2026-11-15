@@ -53,7 +53,7 @@ systemctl --user restart plasma-plasmashell.service
 
 | Part | Location |
 |---|---|
-| C++ plugin | `~/.local/lib/libsunreactorplugin.so` |
+| C++ plugin | installed only inside the QML module (found via `$ORIGIN` RUNPATH) |
 | QML module | `~/.local/<Qt QML relative path>/org/sunreactor/plasma/` (`qmldir`, `libsunreactorpluginplugin.so`, `libsunreactorplugin.so`, `sunreactorplugin.qmltypes`) |
 | Widget package | `~/.local/share/plasma/plasmoids/org.sunreactor.plasma/` |
 | Application icon | `~/.local/share/icons/hicolor/scalable/apps/` |

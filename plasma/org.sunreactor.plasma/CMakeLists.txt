@@ -23,7 +23,19 @@ qt_policy(SET QTP0001 NEW)
 
 # Plasma 6 package
 if (Plasma_FOUND)
-    plasma_install_package(package org.sunreactor.plasma)
+    # Keep design briefs and skin brand notes in the source tree only.  The
+    # package installer otherwise copies every file below package verbatim.
+    install(
+        DIRECTORY package/
+        DESTINATION ${KDE_INSTALL_DATADIR}/plasma/plasmoids/org.sunreactor.plasma
+        PATTERN ".svn" EXCLUDE
+        PATTERN "*.qmlc" EXCLUDE
+        PATTERN "CMakeLists.txt" EXCLUDE
+        PATTERN "Messages.sh" EXCLUDE
+        PATTERN "dummydata" EXCLUDE
+        PATTERN "*.md" EXCLUDE
+        PATTERN "*.MD" EXCLUDE
+    )
 else()
     message(WARNING "Plasma not found: the plasmoid package will not be installed")
 endif()
@@ -41,6 +53,11 @@ add_library(sunreactorplugin SHARED)
 target_sources(sunreactorplugin PRIVATE
     plugin/sunreactorclient.cpp
     plugin/sunreactorclient.h
+    plugin/sunreactorclient_private.h
+    plugin/sunreactorclient_commands.cpp
+    plugin/sunreactorclient_queue.cpp
+    plugin/sunreactorclient_transport.cpp
+    plugin/sunreactorclient_status.cpp
     plugin/sunreactortypes.h
     plugin/themenormalize.cpp
     plugin/themenormalize.h
@@ -85,11 +102,6 @@ if (TARGET sunreactorpluginplugin)
 endif()
 
 install(
-    TARGETS sunreactorplugin
-    DESTINATION ${KDE_INSTALL_LIBDIR}
-)
-
-install(
     TARGETS sunreactorplugin sunreactorpluginplugin
     DESTINATION ${KDE_INSTALL_QMLDIR}/org/sunreactor/plasma
 )
@@ -131,6 +143,10 @@ endif()
 add_executable(test_sunreactorclient
     tests/test_sunreactorclient.cpp
     plugin/sunreactorclient.cpp
+    plugin/sunreactorclient_commands.cpp
+    plugin/sunreactorclient_queue.cpp
+    plugin/sunreactorclient_transport.cpp
+    plugin/sunreactorclient_status.cpp
     plugin/themenormalize.cpp
 )
 

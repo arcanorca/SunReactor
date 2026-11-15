@@ -9,11 +9,29 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 using namespace GlyphTables;
 
 namespace
 {
+constexpr int kMaxArtDimension = 4096;
+constexpr int kMaxAtlasDimension = 4096;
+constexpr qsizetype kMaxGlyphTextCodeUnits = 16 * 1024;
+constexpr qsizetype kMaxCurveSamples = 4096;
+constexpr qsizetype kMaxOverlays = 64;
+constexpr qsizetype kMaxPaletteEntries = 256;
+
+QString boundedText(const QString &text)
+{
+    return text.size() <= kMaxGlyphTextCodeUnits ? text : text.left(kMaxGlyphTextCodeUnits);
+}
+
+qreal finiteOr(qreal value, qreal fallback)
+{
+    return std::isfinite(value) ? value : fallback;
+}
+
 void fillRect(QImage &img, int x, int y, int w, int h, QRgb c)
 {
     if (qAlpha(c) == 0) {
@@ -72,7 +90,7 @@ void PixelGlyphs::assign(T &field, const T &value)
     invalidate();
 }
 
-void PixelGlyphs::setText(const QString &v) { assign(m_text, v); }
+void PixelGlyphs::setText(const QString &v) { assign(m_text, boundedText(v)); }
 void PixelGlyphs::setColor(const QColor &v) { assign(m_color, v); }
 void PixelGlyphs::setGhostColor(const QColor &v) { assign(m_ghost, v); }
 namespace {
@@ -99,7 +117,7 @@ void PixelGlyphs::setRound(bool v) { assign(m_round, v); }
 void PixelGlyphs::setSegmentLength(int v) { assign(m_segLength, std::clamp(v, 1, 32)); }
 void PixelGlyphs::setSegmentWidth(int v) { assign(m_segWidth, std::clamp(v, 1, 8)); }
 void PixelGlyphs::setLetterSpacing(int v) { assign(m_letterSpacing, std::clamp(v, 0, 16)); }
-void PixelGlyphs::setMaximumArtWidth(int v) { assign(m_maxWidth, std::max(0, v)); }
+void PixelGlyphs::setMaximumArtWidth(int v) { assign(m_maxWidth, std::clamp(v, 0, kMaxArtDimension)); }
 void PixelGlyphs::setMaximumLines(int v) { assign(m_maxLines, std::clamp(v, 1, 8)); }
 void PixelGlyphs::setLineSpacing(int v) { assign(m_lineSpacing, std::clamp(v, 0, 16)); }
 void PixelGlyphs::setAlignment(int v) { assign(m_alignment, v); }
@@ -171,7 +189,7 @@ int PixelGlyphs::lineWidth(const QString &text) const
     if (w > 0) {
         w -= m_face == QLatin1String("seg") ? (m_letterSpacing * m_segWidth + 1) : m_letterSpacing * m_pitch;
     }
-    return std::max(0, w);
+    return std::clamp(w, 0, kMaxArtDimension);
 }
 
 int PixelGlyphs::measure(const QString &text) const
@@ -182,7 +200,7 @@ int PixelGlyphs::measure(const QString &text) const
 std::vector<PixelGlyphs::Line> PixelGlyphs::layout(bool *elided) const
 {
     *elided = false;
-    const QString text = shown(m_text);
+    const QString text = shown(m_text).left(kMaxGlyphTextCodeUnits);
     std::vector<Line> lines;
     const auto elide = [this, elided](QString s) -> QString {
         const QString dots = QString(QChar(0x2026));
@@ -366,11 +384,16 @@ QImage PixelGlyphs::render() const
         width = std::max(width, m_maxWidth);
     }
     const int cell = cellHeight();
-    const int height = cell * m_lineCount + m_lineSpacing * (m_lineCount - 1);
+    const qint64 height64 = static_cast<qint64>(cell) * m_lineCount
+        + static_cast<qint64>(m_lineSpacing) * (m_lineCount - 1);
+    const int height = height64 > kMaxArtDimension ? kMaxArtDimension : static_cast<int>(height64);
     if (width <= 0 || height <= 0) {
         return {};
     }
-    QImage img(width, height, QImage::Format_ARGB32_Premultiplied);
+    QImage img(std::min(width, kMaxArtDimension), height, QImage::Format_ARGB32_Premultiplied);
+    if (img.isNull()) {
+        return {};
+    }
     img.fill(Qt::transparent);
     const QRgb lit = premul(m_color);
     const QRgb ghost = premul(m_ghost);
@@ -412,62 +435,70 @@ void PixelCurve::assign(T &field, const T &value)
 std::vector<PixelCurve::Sample> PixelCurve::parse(const QVariantList &list)
 {
     std::vector<Sample> out;
-    out.reserve(static_cast<size_t>(list.size()));
-    for (const QVariant &v : list) {
+    out.reserve(static_cast<size_t>(std::min<qsizetype>(list.size(), kMaxCurveSamples)));
+    for (qsizetype index = 0; index < list.size() && index < kMaxCurveSamples; ++index) {
+        const QVariant &v = list.at(index);
         const QVariantMap m = v.toMap();
         const qreal t = m.value(QStringLiteral("t")).toDouble();
         const qreal pct = m.value(QStringLiteral("pct")).toDouble();
         const QVariant nw = m.value(QStringLiteral("pctNoWeather"));
-        if (t <= 0 || (!out.empty() && t <= out.back().t)) {
+        const qreal noWeather = nw.isValid() ? nw.toDouble() : pct;
+        if (!std::isfinite(t) || !std::isfinite(pct) || !std::isfinite(noWeather) || t <= 0
+            || (!out.empty() && t <= out.back().t)) {
             continue;
         }
-        out.push_back({t, pct, nw.isValid() ? nw.toDouble() : pct});
+        out.push_back({t, pct, noWeather});
     }
     return out;
 }
 
 void PixelCurve::setSamples(const QVariantList &v)
 {
-    if (m_samplesVar == v) {
+    const QVariantList bounded = v.mid(0, kMaxCurveSamples);
+    if (m_samplesVar == bounded) {
         return;
     }
-    m_samplesVar = v;
-    m_samples = parse(v);
+    m_samplesVar = bounded;
+    m_samples = parse(bounded);
     Q_EMIT curveChanged();
     invalidate();
 }
 
 void PixelCurve::setOverlays(const QVariantList &v)
 {
-    if (m_overlaysVar == v) {
+    const QVariantList bounded = v.mid(0, kMaxOverlays);
+    if (m_overlaysVar == bounded) {
         return;
     }
-    m_overlaysVar = v;
+    m_overlaysVar = bounded;
     m_overlays.clear();
-    for (const QVariant &list : v) {
+    for (const QVariant &list : bounded) {
         m_overlays.push_back(parse(list.toList()));
     }
     Q_EMIT curveChanged();
     invalidate();
 }
 
-void PixelCurve::setOverlayColors(const QVariantList &v) { assign(m_overlayColors, v); }
-void PixelCurve::setT0(qreal v) { assign(m_t0, v); }
-void PixelCurve::setT1(qreal v) { assign(m_t1, v); }
-void PixelCurve::setNow(qreal v) { assign(m_now, v); }
+void PixelCurve::setOverlayColors(const QVariantList &v)
+{
+    assign(m_overlayColors, v.mid(0, kMaxOverlays));
+}
+void PixelCurve::setT0(qreal v) { assign(m_t0, finiteOr(v, 0.0)); }
+void PixelCurve::setT1(qreal v) { assign(m_t1, finiteOr(v, 0.0)); }
+void PixelCurve::setNow(qreal v) { assign(m_now, finiteOr(v, 0.0)); }
 void PixelCurve::setApplied(int v) { assign(m_applied, v); }
 void PixelCurve::setMinPct(int v) { assign(m_minPct, v); }
 void PixelCurve::setMaxPct(int v) { assign(m_maxPct, v); }
-void PixelCurve::setSunrise(qreal v) { assign(m_sunrise, v); }
-void PixelCurve::setSolarNoon(qreal v) { assign(m_noon, v); }
-void PixelCurve::setSunset(qreal v) { assign(m_sunset, v); }
+void PixelCurve::setSunrise(qreal v) { assign(m_sunrise, finiteOr(v, 0.0)); }
+void PixelCurve::setSolarNoon(qreal v) { assign(m_noon, finiteOr(v, 0.0)); }
+void PixelCurve::setSunset(qreal v) { assign(m_sunset, finiteOr(v, 0.0)); }
 void PixelCurve::setShowArea(bool v) { assign(m_showArea, v); }
 void PixelCurve::setPaperColor(const QColor &v) { assign(m_paper, v); }
 void PixelCurve::setLineColor(const QColor &v) { assign(m_line, v); }
 void PixelCurve::setLineWeight(int v) { assign(m_lineWeight, std::clamp(v, 1, 3)); }
 void PixelCurve::setAreaColor(const QColor &v) { assign(m_area, v); }
 void PixelCurve::setAreaPattern(const QString &v) { assign(m_areaPattern, v); }
-void PixelCurve::setAreaLevel(qreal v) { assign(m_areaLevel, v); }
+void PixelCurve::setAreaLevel(qreal v) { assign(m_areaLevel, std::clamp(finiteOr(v, 0.0), 0.0, 1.0)); }
 void PixelCurve::setCostColor(const QColor &v) { assign(m_cost, v); }
 void PixelCurve::setCostPattern(const QString &v) { assign(m_costPattern, v); }
 void PixelCurve::setBandColor(const QColor &v) { assign(m_band, v); }
@@ -484,12 +515,24 @@ void PixelCurve::setRoundMarkers(bool v) { assign(m_roundMarkers, v); }
 
 int PixelCurve::artW() const
 {
-    return std::max(0, static_cast<int>(std::floor(width() / artScale() + 1e-6)));
+    const qreal scale = finiteOr(artScale(), 1.0);
+    const qreal logical = std::max<qreal>(0.0, width());
+    const qreal value = logical / scale;
+    if (!std::isfinite(value) || value >= kMaxArtDimension) {
+        return kMaxArtDimension;
+    }
+    return std::max(0, static_cast<int>(std::floor(value + 1e-6)));
 }
 
 int PixelCurve::artH() const
 {
-    return std::max(0, static_cast<int>(std::floor(height() / artScale() + 1e-6)));
+    const qreal scale = finiteOr(artScale(), 1.0);
+    const qreal logical = std::max<qreal>(0.0, height());
+    const qreal value = logical / scale;
+    if (!std::isfinite(value) || value >= kMaxArtDimension) {
+        return kMaxArtDimension;
+    }
+    return std::max(0, static_cast<int>(std::floor(value + 1e-6)));
 }
 
 qreal PixelCurve::start() const
@@ -504,26 +547,46 @@ qreal PixelCurve::end() const
 
 int PixelCurve::xAt(qreal t) const
 {
-    const qreal span = std::max<qreal>(1, end() - start());
-    return static_cast<int>(std::floor((t - start()) / span * artW()));
+    if (!std::isfinite(t)) {
+        return -1;
+    }
+    const qreal span = end() - start();
+    if (!std::isfinite(span) || span <= 0.0) {
+        return -1;
+    }
+    const qreal position = (t - start()) / span * artW();
+    if (!std::isfinite(position)) {
+        return -1;
+    }
+    return position <= std::numeric_limits<int>::min()
+        ? std::numeric_limits<int>::min()
+        : position >= std::numeric_limits<int>::max()
+            ? std::numeric_limits<int>::max()
+            : static_cast<int>(std::floor(position));
 }
 
 int PixelCurve::yAt(qreal pct) const
 {
     const int h = artH();
+    if (!std::isfinite(pct)) {
+        return -1;
+    }
     const qreal p = std::clamp<qreal>(pct, 0, 100) / 100.0;
     return static_cast<int>(std::lround((1.0 - p) * (h - 1)));
 }
 
 qreal PixelCurve::timeAt(qreal artX) const
 {
+    if (!std::isfinite(artX)) {
+        return start();
+    }
     const int w = std::max(1, artW());
     return start() + (artX + 0.5) / w * (end() - start());
 }
 
 qreal PixelCurve::interpolate(const std::vector<Sample> &s, qreal t, bool noWeather)
 {
-    if (s.empty() || t < s.front().t || t > s.back().t) {
+    if (!std::isfinite(t) || s.empty() || t < s.front().t || t > s.back().t) {
         return -1;
     }
     const auto it = std::lower_bound(s.begin(), s.end(), t, [](const Sample &a, qreal v) { return a.t < v; });
@@ -804,7 +867,8 @@ QImage loadAtlas(const QUrl &url)
         return *it;
     }
     QImage image(path);
-    if (!image.isNull() && image.format() != QImage::Format_Indexed8) {
+    if (!image.isNull() && (image.format() != QImage::Format_Indexed8
+                            || image.width() > kMaxAtlasDimension || image.height() > kMaxAtlasDimension)) {
         // Only palette-index atlases carry tone indices; anything else is refused.
         qWarning("PixelSprite: %s is not an indexed PNG", qPrintable(path));
         image = QImage();
@@ -831,6 +895,7 @@ void PixelSprite::setSource(const QUrl &v)
 
 void PixelSprite::setFrame(int v)
 {
+    v = std::clamp(v, 0, 1'000'000);
     if (m_frame == v) {
         return;
     }
@@ -841,7 +906,7 @@ void PixelSprite::setFrame(int v)
 
 void PixelSprite::setFrameWidth(int v)
 {
-    v = std::max(1, v);
+    v = std::clamp(v, 1, kMaxAtlasDimension);
     if (m_frameWidth == v) {
         return;
     }
@@ -852,7 +917,7 @@ void PixelSprite::setFrameWidth(int v)
 
 void PixelSprite::setFrameHeight(int v)
 {
-    v = std::max(1, v);
+    v = std::clamp(v, 1, kMaxAtlasDimension);
     if (m_frameHeight == v) {
         return;
     }
@@ -863,10 +928,11 @@ void PixelSprite::setFrameHeight(int v)
 
 void PixelSprite::setColors(const QVariantList &v)
 {
-    if (m_colors == v) {
+    const QVariantList bounded = v.mid(0, kMaxPaletteEntries);
+    if (m_colors == bounded) {
         return;
     }
-    m_colors = v;
+    m_colors = bounded;
     Q_EMIT spriteChanged();
     invalidate();
 }
@@ -898,6 +964,10 @@ QImage PixelSprite::render() const
         return {};
     }
     const qint64 frame = m_frame;
+    const qint64 frameRows = (atlas.height() + m_frameHeight - 1) / m_frameHeight;
+    if (frame >= perRow * frameRows) {
+        return {};
+    }
     const qint64 fx = (frame % perRow) * static_cast<qint64>(m_frameWidth);
     const qint64 fy = (frame / perRow) * static_cast<qint64>(m_frameHeight);
     if (fx < 0 || fy < 0 || fx > atlas.width() || fy > atlas.height()
@@ -911,6 +981,9 @@ QImage PixelSprite::render() const
         lut.append(c.isValid() ? qPremultiply(c.rgba()) : 0);
     }
     QImage out(m_frameWidth, m_frameHeight, QImage::Format_ARGB32_Premultiplied);
+    if (out.isNull()) {
+        return {};
+    }
     out.fill(Qt::transparent);
     for (int y = 0; y < m_frameHeight; ++y) {
         auto *line = reinterpret_cast<QRgb *>(out.scanLine(y));
