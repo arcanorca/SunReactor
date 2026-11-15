@@ -172,99 +172,112 @@ impl DaemonRuntime {
             LoopAction::RunTick => {
                 self.execute_scheduled_tick(now_utc, runner, cadence, desktop_idle);
             }
-            LoopAction::RunFadeStep => {
-                if self.config.daemon.dry_run {
-                    self.fade_engine.cancel_all();
-                    return;
-                }
-                // Fade steps are hardware writes too.  Do not let the high-
-                // cadence path bypass topology authorization while the first
-                // complete capability observation is still pending.
-                let Some(capabilities) = self.last_capabilities.as_ref() else {
-                    self.fade_engine.cancel_all();
-                    wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
-                    return;
-                };
-                let reconcile_actions =
-                    crate::runtime::topology::reconcile(&self.config.monitors, capabilities);
-                let step_start = Instant::now();
-                let steps = self.fade_engine.process_tick();
-                for (monitor_id, percent) in steps {
-                    let now_epoch_s = now_utc.timestamp().max(0) as u64;
-                    if let Some(hold) = self.external_holds.get(&monitor_id).copied() {
-                        if hold.until_epoch_s > now_epoch_s {
-                            self.fade_engine.active_fades.remove(&monitor_id);
-                            continue;
-                        }
-                        self.external_holds.remove(&monitor_id);
-                        self.fade_engine.active_fades.remove(&monitor_id);
-                        continue;
-                    }
-                    let Some(monitor_index) = self
-                        .config
-                        .monitors
-                        .iter()
-                        .position(|monitor| monitor.logical_id == monitor_id)
-                    else {
-                        self.fade_engine.active_fades.remove(&monitor_id);
-                        continue;
-                    };
-                    let action = reconcile_actions
-                        .get(monitor_index)
-                        .copied()
-                        .unwrap_or(crate::runtime::topology::ReconcileAction::AmbiguousOrUnsafe);
-                    if !action.allowed_to_apply() {
-                        tracing::debug!(
-                            monitor = %monitor_id,
-                            action = action.name(),
-                            "fade_step_skipped_topology"
-                        );
-                        self.fade_engine.active_fades.remove(&monitor_id);
-                        continue;
-                    }
-                    if let Some(monitor) = self.config.monitors.get(monitor_index) {
-                        let target = crate::policy::PerMonitorTarget {
-                            logical_id: monitor_id,
-                            percent,
-                            solar_daylight_factor: 0.0,
-                            effective_daylight_factor: 0.0,
-                        };
-                        let settings = self.config.apply;
-                        match crate::apply::apply_monitor_target(
-                            runner, monitor, &target, percent, &settings,
-                        ) {
-                            Ok(_) => {
-                                self.state.record_apply_success(
-                                    &target.logical_id,
-                                    percent,
-                                    now_utc.timestamp().max(0) as u64,
-                                );
-                            }
-                            Err(error) => {
-                                tracing::warn!(
-                                    monitor = %target.logical_id,
-                                    percent = %percent,
-                                    error = %error,
-                                    "fade_step_failed"
-                                );
-                                self.state.record_apply_failure(
-                                    &target.logical_id,
-                                    monitor.backend,
-                                    error.failure_kind(),
-                                    now_utc.timestamp().max(0) as u64,
-                                );
-                                // Stop fading this monitor if it's failing
-                                self.fade_engine.active_fades.remove(&target.logical_id);
-                            }
-                        }
-                    }
-                }
-                if let Some(remaining) = Duration::from_millis(16).checked_sub(step_start.elapsed())
-                {
-                    wait_for_ipc_or_sleep(listener, remaining);
-                }
-            }
+            LoopAction::RunFadeStep => self.run_fade_step(now_utc, runner, listener),
             LoopAction::Sleep(duration) => wait_for_ipc_or_sleep(listener, duration),
+        }
+    }
+
+    fn run_fade_step<R: ProcessRunner + Sync>(
+        &mut self,
+        now_utc: DateTime<Utc>,
+        runner: &R,
+        listener: &BoundControlSocket,
+    ) {
+        if self.config.daemon.dry_run {
+            self.fade_engine.cancel_all();
+            return;
+        }
+        // Fade steps are hardware writes too.  Do not let the high-
+        // cadence path bypass topology authorization while the first
+        // complete capability observation is still pending.
+        let Some(capabilities) = self.last_capabilities.as_ref() else {
+            self.fade_engine.cancel_all();
+            wait_for_ipc_or_sleep(listener, Duration::from_millis(16));
+            return;
+        };
+        let reconcile_actions =
+            crate::runtime::topology::reconcile(&self.config.monitors, capabilities);
+        let step_start = Instant::now();
+        let steps = self.fade_engine.process_tick();
+        for (monitor_id, percent) in steps {
+            self.apply_fade_step(monitor_id, percent, now_utc, runner, &reconcile_actions);
+        }
+        if let Some(remaining) = Duration::from_millis(16).checked_sub(step_start.elapsed()) {
+            wait_for_ipc_or_sleep(listener, remaining);
+        }
+    }
+
+    /// Applies one fade step to one monitor, dropping its fade when the
+    /// monitor is held, gone, topology-unsafe, or failing.
+    fn apply_fade_step<R: ProcessRunner + Sync>(
+        &mut self,
+        monitor_id: String,
+        percent: u8,
+        now_utc: DateTime<Utc>,
+        runner: &R,
+        reconcile_actions: &[crate::runtime::topology::ReconcileAction],
+    ) {
+        let now_epoch_s = now_utc.timestamp().max(0) as u64;
+        if let Some(hold) = self.external_holds.get(&monitor_id).copied() {
+            if hold.until_epoch_s <= now_epoch_s {
+                self.external_holds.remove(&monitor_id);
+            }
+            self.fade_engine.active_fades.remove(&monitor_id);
+            return;
+        }
+        let Some(monitor_index) = self
+            .config
+            .monitors
+            .iter()
+            .position(|monitor| monitor.logical_id == monitor_id)
+        else {
+            self.fade_engine.active_fades.remove(&monitor_id);
+            return;
+        };
+        let action = reconcile_actions
+            .get(monitor_index)
+            .copied()
+            .unwrap_or(crate::runtime::topology::ReconcileAction::AmbiguousOrUnsafe);
+        if !action.allowed_to_apply() {
+            tracing::debug!(
+                monitor = %monitor_id,
+                action = action.name(),
+                "fade_step_skipped_topology"
+            );
+            self.fade_engine.active_fades.remove(&monitor_id);
+            return;
+        }
+        let Some(monitor) = self.config.monitors.get(monitor_index) else {
+            return;
+        };
+        let target = crate::policy::PerMonitorTarget {
+            logical_id: monitor_id,
+            percent,
+            solar_daylight_factor: 0.0,
+            effective_daylight_factor: 0.0,
+        };
+        let settings = self.config.apply;
+        match crate::apply::apply_monitor_target(runner, monitor, &target, percent, &settings) {
+            Ok(_) => {
+                self.state
+                    .record_apply_success(&target.logical_id, percent, now_epoch_s);
+            }
+            Err(error) => {
+                tracing::warn!(
+                    monitor = %target.logical_id,
+                    percent = %percent,
+                    error = %error,
+                    "fade_step_failed"
+                );
+                self.state.record_apply_failure(
+                    &target.logical_id,
+                    monitor.backend,
+                    error.failure_kind(),
+                    now_epoch_s,
+                );
+                // Stop fading this monitor if it's failing
+                self.fade_engine.active_fades.remove(&target.logical_id);
+            }
         }
     }
 

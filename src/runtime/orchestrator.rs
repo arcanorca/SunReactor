@@ -542,15 +542,7 @@ impl DaemonRuntime {
             tracing::info!(warning = %warning, "config_compat_warning");
         }
 
-        if let Some(state_dir) = state_path.parent() {
-            create_runtime_dir(state_dir)?;
-        }
-        #[cfg(target_os = "linux")]
-        if create_socket_dir {
-            if let Some(socket_dir) = socket_path.parent() {
-                create_runtime_dir(socket_dir)?;
-            }
-        }
+        ensure_runtime_dirs(&state_path, &socket_path, create_socket_dir)?;
 
         let state = RuntimeState::load_from_path(&state_path)?;
 
@@ -605,32 +597,8 @@ impl DaemonRuntime {
 
         runtime.prepare_apply_resync(false);
 
-        // Unit fixtures historically invoke ticks directly. Give those
-        // fixtures an explicit safe observation; production bootstrap remains
-        // fail-closed until the daemon loop publishes a real snapshot.
         #[cfg(test)]
-        {
-            if runtime.config.monitors.iter().any(|monitor| {
-                monitor.backend == crate::backends::BackendKind::Backlight
-                    && monitor.selector.sysfs_path.is_some()
-            }) {
-                runtime.last_capabilities = Some(CapabilitySnapshot {
-                    ddc_present: Vec::new(),
-                    backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
-                        stable_id: String::from("test:backlight"),
-                        device_name: String::from("intel_backlight"),
-                        class: String::from("backlight"),
-                        max_brightness: Some(100),
-                        backlight_type: Some(String::from("raw")),
-                        probe_source: String::from("test-fixture"),
-                        sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
-                        ddcci_connector: None,
-                        backend_viable: true,
-                        note: None,
-                    }],
-                });
-            }
-        }
+        runtime.seed_test_capabilities();
 
         runtime.state.prune_to_configured_monitors(
             runtime
@@ -643,6 +611,52 @@ impl DaemonRuntime {
 
         Ok(runtime)
     }
+
+    /// Unit fixtures historically invoke ticks directly. Give those
+    /// fixtures an explicit safe observation; production bootstrap remains
+    /// fail-closed until the daemon loop publishes a real snapshot.
+    #[cfg(test)]
+    fn seed_test_capabilities(&mut self) {
+        if self.config.monitors.iter().any(|monitor| {
+            monitor.backend == crate::backends::BackendKind::Backlight
+                && monitor.selector.sysfs_path.is_some()
+        }) {
+            self.last_capabilities = Some(CapabilitySnapshot {
+                ddc_present: Vec::new(),
+                backlights_present: vec![crate::discovery::BacklightDeviceDiscovery {
+                    stable_id: String::from("test:backlight"),
+                    device_name: String::from("intel_backlight"),
+                    class: String::from("backlight"),
+                    max_brightness: Some(100),
+                    backlight_type: Some(String::from("raw")),
+                    probe_source: String::from("test-fixture"),
+                    sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                    ddcci_connector: None,
+                    backend_viable: true,
+                    note: None,
+                }],
+            });
+        }
+    }
+}
+
+fn ensure_runtime_dirs(
+    state_path: &Path,
+    socket_path: &Path,
+    create_socket_dir: bool,
+) -> Result<(), RuntimeError> {
+    if let Some(state_dir) = state_path.parent() {
+        create_runtime_dir(state_dir)?;
+    }
+    #[cfg(target_os = "linux")]
+    if create_socket_dir {
+        if let Some(socket_dir) = socket_path.parent() {
+            create_runtime_dir(socket_dir)?;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (socket_path, create_socket_dir);
+    Ok(())
 }
 
 #[cfg(test)]
