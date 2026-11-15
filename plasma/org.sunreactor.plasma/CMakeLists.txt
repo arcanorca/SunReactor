@@ -41,6 +41,11 @@ add_library(sunreactorplugin SHARED)
 target_sources(sunreactorplugin PRIVATE
     plugin/sunreactorclient.cpp
     plugin/sunreactorclient.h
+    plugin/sunreactorclient_private.h
+    plugin/sunreactorclient_commands.cpp
+    plugin/sunreactorclient_queue.cpp
+    plugin/sunreactorclient_transport.cpp
+    plugin/sunreactorclient_status.cpp
     plugin/sunreactortypes.h
     plugin/themenormalize.cpp
     plugin/themenormalize.h
@@ -131,6 +136,10 @@ endif()
 add_executable(test_sunreactorclient
     tests/test_sunreactorclient.cpp
     plugin/sunreactorclient.cpp
+    plugin/sunreactorclient_commands.cpp
+    plugin/sunreactorclient_queue.cpp
+    plugin/sunreactorclient_transport.cpp
+    plugin/sunreactorclient_status.cpp
     plugin/themenormalize.cpp
 )
 
