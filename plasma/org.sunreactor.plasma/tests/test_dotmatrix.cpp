@@ -4,6 +4,10 @@
 #include "dotmatrix.h"
 
 #include <QTest>
+#include <QVariantMap>
+
+#include <climits>
+#include <limits>
 
 class TestDotMatrix : public QObject
 {
@@ -16,6 +20,7 @@ private Q_SLOTS:
     void capitalIMapsToItsGlyph();
     void descendersAddRows();
     void accentIndexMarksOneCharacter();
+    void hostileInputsStayBounded();
 };
 
 void TestDotMatrix::smallFaceCoversTheReadout()
@@ -91,6 +96,71 @@ void TestDotMatrix::accentIndexMarksOneCharacter()
     QCOMPARE(text.cell(6, 0), static_cast<int>(DotField::Accent));
     QCOMPARE(text.cell(7, 0), static_cast<int>(DotField::Accent));
     QCOMPARE(text.cell(5, 0), static_cast<int>(DotField::Blank));
+}
+
+void TestDotMatrix::hostileInputsStayBounded()
+{
+    DotField field;
+    field.setCols(INT_MAX);
+    field.setRows(INT_MAX);
+    QVERIFY(field.cols() <= 512);
+    QVERIFY(field.rows() <= 512);
+    QVERIFY(static_cast<qint64>(field.cols()) * field.rows() <= 16 * 1024);
+    QCOMPARE(DotField::devicePitch(std::numeric_limits<qreal>::quiet_NaN(), 1.0), 3);
+    QCOMPARE(DotField::devicePitch(std::numeric_limits<qreal>::infinity(), 1.0), 3);
+
+    DotText text;
+    text.setText(QString(100000, QLatin1Char('A')));
+    QVERIFY(text.cols() <= 512);
+    QVERIFY(text.rows() <= 512);
+    QVERIFY(text.covers(QString(100000, QLatin1Char('A'))) == false);
+
+    DotCurve curve;
+    QVariantList samples;
+    for (int i = 0; i < 10000; ++i) {
+        samples.append(QVariantMap{{QStringLiteral("t"), static_cast<double>(i + 1)},
+                                   {QStringLiteral("pct"), static_cast<double>(i % 101)}});
+    }
+    samples.append(QVariantMap{{QStringLiteral("t"), std::numeric_limits<qreal>::quiet_NaN()},
+                               {QStringLiteral("pct"), 50.0}});
+    curve.setSamples(samples);
+    curve.setT0(std::numeric_limits<qreal>::infinity());
+    curve.setT1(std::numeric_limits<qreal>::quiet_NaN());
+    curve.setNowT(std::numeric_limits<qreal>::quiet_NaN());
+    curve.setMaxPct(std::numeric_limits<qreal>::infinity());
+    QVERIFY(curve.cols() <= 512);
+    QVERIFY(curve.rows() <= 512);
+
+    DotRing ring;
+    ring.setDiameter(INT_MAX);
+    ring.setDots(INT_MAX);
+    ring.setValue(std::numeric_limits<qreal>::quiet_NaN());
+    QVERIFY(ring.cols() <= 64);
+    QVERIFY(ring.rows() <= 64);
+
+    DotBar bar;
+    bar.setValue(std::numeric_limits<qreal>::infinity());
+    QVERIFY(bar.cols() <= 512);
+
+    DotIcon icon;
+    icon.setCondition(QString(100000, QLatin1Char('x')));
+    QVERIFY(icon.cols() == 12);
+    QVERIFY(icon.rows() == 12);
+
+    quint32 state = 0x243f6a88u;
+    const auto next = [&state]() {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return state;
+    };
+    for (int i = 0; i < 256; ++i) {
+        field.setCols(static_cast<int>(next()));
+        field.setRows(static_cast<int>(next()));
+        field.setPitch(static_cast<qreal>(next()) / 1000.0);
+        field.setDotScale(static_cast<qreal>(next()) / 1000.0);
+        QVERIFY(static_cast<qint64>(field.cols()) * field.rows() <= 16 * 1024);
+    }
 }
 
 QTEST_GUILESS_MAIN(TestDotMatrix)
