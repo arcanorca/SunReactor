@@ -14,7 +14,7 @@
         ],
         "Icon": "org.sunreactor.plasma",
         "Id": "org.sunreactor.plasma",
-        "License": "MIT",
+        "License": "GPL-3.0-or-later",
         "Name": "SunReactor",
         "Version": "1.0.0",
         "Website": "https://github.com/arcanorca/SunReactor"

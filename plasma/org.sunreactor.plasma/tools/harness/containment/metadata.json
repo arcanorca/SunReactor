@@ -3,7 +3,7 @@
         "Authors": [{ "Name": "SunReactor Developers" }],
         "Description": "Screenshot harness: shows one applet filling the window over a popup background",
         "Id": "org.sunreactor.harness",
-        "License": "MIT",
+        "License": "GPL-3.0-or-later",
         "Name": "SunReactor screenshot harness",
         "Version": "1.0"
     },
