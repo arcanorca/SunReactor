@@ -15,7 +15,8 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
+import "../../modules/Monitors.js" as Monitors
 
 ColumnLayout {
     id: root
@@ -45,13 +46,12 @@ ColumnLayout {
             required property int index
 
             readonly property string logicalId: String(strip.modelData.logicalId)
-            readonly property bool unavailable: strip.modelData.unreachable === true
-                || strip.modelData.topology === "temporarily_unavailable"
+            readonly property bool unavailable: Monitors.unavailable(strip.modelData)
             readonly property bool controllable: strip.modelData.enabled === true && !unavailable
             readonly property bool hasValue: strip.modelData.percent !== undefined && strip.modelData.percent >= 0
             readonly property int minPct: strip.modelData.minPct !== undefined ? strip.modelData.minPct : 15
             readonly property int maxPct: strip.modelData.maxPct !== undefined ? strip.modelData.maxPct : 60
-            readonly property real target: Curve.targetAt(root.client.dayCurve, logicalId, root.client.nowEpochS)
+            readonly property real target: DayCurve.targetAt(root.client.dayCurve, logicalId, root.client.nowEpochS)
             readonly property int applied: strip.modelData.appliedPercent !== undefined ? strip.modelData.appliedPercent : -1
             readonly property string stateText: {
                 if (strip.modelData.enabled !== true) {

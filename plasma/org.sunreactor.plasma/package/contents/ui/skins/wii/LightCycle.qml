@@ -23,7 +23,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 ColumnLayout {
     id: root
@@ -52,22 +52,13 @@ ColumnLayout {
     readonly property var sun: curve && curve.sun ? curve.sun : ({})
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: now >= t0 && now <= t1
-    readonly property real nowTarget: Curve.valueAt(samples, now, "pct")
+    readonly property real nowTarget: DayCurve.valueAt(samples, now, "pct")
 
     /*! The time under the pointer; `hovering` false means "now". */
     property bool hovering: false
     property real hoverT: 0
-    readonly property real readTarget: hovering ? Curve.valueAt(samples, hoverT, "pct") : nowTarget
-    readonly property int appliedNow: appliedFor(current ? current.monitorId : "")
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
+    readonly property real readTarget: hovering ? DayCurve.valueAt(samples, hoverT, "pct") : nowTarget
+    readonly property int appliedNow: DayCurve.appliedFor(root.client.monitors, current ? current.monitorId : "")
 
     function pctText(v) {
         return v >= 0 ? String(Math.round(v)) : "—";
@@ -153,7 +144,7 @@ ColumnLayout {
 
                         Layout.alignment: Qt.AlignVCenter
                         style: root.style
-                        label: Curve.shortName(modelData.monitorId)
+                        label: DayCurve.shortName(modelData.monitorId)
                         variant: "outline"
                         current: index === root.selected
                         Accessible.role: Accessible.Button

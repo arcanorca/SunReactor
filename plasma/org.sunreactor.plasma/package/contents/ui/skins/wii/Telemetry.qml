@@ -16,7 +16,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -112,7 +112,7 @@ Item {
                     spacing: root.style.snap(root.style.gap * 0.5)
 
                     Text {
-                        text: Curve.shortName(channel.modelData.logicalId)
+                        text: DayCurve.shortName(channel.modelData.logicalId)
                         textFormat: Text.PlainText
                         font: root.style.captionBoldFont
                         color: root.style.inkSoft
