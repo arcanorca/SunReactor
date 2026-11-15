@@ -585,6 +585,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     fn set_send_buffer_size(stream: &UnixStream, size: i32) {
+        // SAFETY: the fd is owned by the live `stream`, and the pointer/length describe the local i32 `size`.
         let result = unsafe {
             libc::setsockopt(
                 stream.as_raw_fd(),

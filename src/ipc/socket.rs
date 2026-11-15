@@ -129,6 +129,7 @@ impl BoundControlSocket {
 
                     match get_socket_peercred(stream.as_fd()) {
                         Ok(creds) => {
+                            // SAFETY: geteuid has no preconditions and cannot fail.
                             let current_euid = unsafe { libc::geteuid() };
                             if creds.uid.as_raw() != current_euid {
                                 tracing::warn!(

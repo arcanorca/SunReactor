@@ -129,6 +129,7 @@ fn drm_listener(pending: Arc<PendingRequest>, shutdown: Arc<AtomicBool>) {
 fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io::Result<()> {
     use std::mem::size_of;
 
+    // SAFETY: socket() takes only integer constants; the returned fd is checked and then owned by `CloseFd`.
     let fd = unsafe {
         libc::socket(
             libc::AF_NETLINK,
@@ -141,10 +142,12 @@ fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io
     }
     let close_fd = CloseFd(fd);
 
+    // SAFETY: sockaddr_nl is plain-old-data for which the all-zero bit pattern is valid.
     let mut address: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     address.nl_family = libc::AF_NETLINK as u16;
     address.nl_pid = 0;
     address.nl_groups = 1;
+    // SAFETY: `address` is a valid sockaddr_nl and the length passed equals its size; the fd is open.
     let bind_result = unsafe {
         libc::bind(
             close_fd.0,
@@ -164,6 +167,7 @@ fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io
     let mut buffer = [0_u8; 4096];
     while !shutdown.load(Ordering::Acquire) {
         let result =
+            // SAFETY: `pollfd` is a valid, exclusively borrowed pollfd and nfds is 1.
             unsafe { libc::poll(&raw mut pollfd, 1, LISTENER_POLL_TIMEOUT.as_millis() as i32) };
         if result < 0 {
             let error = std::io::Error::last_os_error();
@@ -175,6 +179,7 @@ fn drm_listener_once(pending: &PendingRequest, shutdown: &AtomicBool) -> std::io
         if result == 0 {
             continue;
         }
+        // SAFETY: the pointer and length describe the writable local `buffer`; the fd is open.
         let length = unsafe {
             libc::recv(
                 close_fd.0,
@@ -211,6 +216,7 @@ struct CloseFd(std::os::fd::RawFd);
 #[cfg(target_os = "linux")]
 impl Drop for CloseFd {
     fn drop(&mut self) {
+        // SAFETY: `self.0` is a descriptor owned exclusively by this guard and closed exactly once here.
         unsafe {
             libc::close(self.0);
         }

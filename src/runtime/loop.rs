@@ -43,6 +43,7 @@ fn wait_for_ipc_or_sleep(listener: &BoundControlSocket, duration: Duration) {
         revents: 0,
     };
     let timeout_ms = duration.as_millis().try_into().unwrap_or(i32::MAX);
+    // SAFETY: `pollfd` is a valid, exclusively borrowed pollfd and nfds is 1.
     unsafe {
         libc::poll(&raw mut pollfd, 1, timeout_ms);
     }

@@ -609,6 +609,7 @@ fn dispatch_wayland_once(
         events: libc::POLLIN,
         revents: 0,
     };
+    // SAFETY: `pollfd` is a valid, exclusively borrowed pollfd and nfds is 1.
     let result = unsafe { libc::poll(&raw mut pollfd, 1, 100) };
     if state.shutdown.load(Ordering::Relaxed) {
         drop(read_guard);
