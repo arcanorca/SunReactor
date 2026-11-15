@@ -14,7 +14,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 WinWindow {
     id: root
@@ -42,7 +42,7 @@ WinWindow {
     readonly property real t1: available ? curves[0].samples[curves[0].samples.length - 1].t : 1
     readonly property real gridStart: Math.ceil(t0 / 7200) * 7200
     readonly property real now: client.nowEpochS
-    readonly property real targetNow: current ? Curve.valueAt(current.samples, now, "pct") : -1
+    readonly property real targetNow: current ? DayCurve.valueAt(current.samples, now, "pct") : -1
     readonly property var sun: curve && curve.sun ? curve.sun : ({})
     readonly property var curveColors: [ui.accent, ui.green, ui.orange, ui.danger]
 
@@ -64,7 +64,7 @@ WinWindow {
 
                 style: root.ui
                 text: isAll ? i18ndc(root.domain, "Light cycle selector: every display", "All")
-                    : Curve.shortName(root.curves[index].monitorId)
+                    : DayCurve.shortName(root.curves[index].monitorId)
                 current: root.selected === slot
                 onClicked: root.selected = slot
             }

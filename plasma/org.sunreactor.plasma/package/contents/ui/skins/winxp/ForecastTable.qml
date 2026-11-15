@@ -16,6 +16,7 @@ import "../../modules"
 import "../../components"
 import "../../components/weathericons"
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 ColumnLayout {
     id: root
@@ -29,18 +30,7 @@ ColumnLayout {
     }
     readonly property string domain: settings.domain
     /*! Upcoming intervals, at most three. */
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === 3) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 3)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
     WeatherText {
