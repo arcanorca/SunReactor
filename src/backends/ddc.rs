@@ -125,7 +125,7 @@ fn apply_with_runner_in<R: ProcessRunner>(
 fn acquire_ddc_lock(timeout: Duration) -> Result<DdcLock, BackendError> {
     let lock_path = crate::paths::runtime_socket_dir().map_or_else(
         |_| {
-            let uid = unsafe { libc::geteuid() };
+            let uid = rustix::process::geteuid().as_raw();
             std::path::PathBuf::from(format!("/run/user/{uid}/sunreactor/{DDC_LOCK_FILE_NAME}"))
         },
         |path| path.join(DDC_LOCK_FILE_NAME),
