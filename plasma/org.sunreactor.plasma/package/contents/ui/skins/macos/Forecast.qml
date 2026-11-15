@@ -14,6 +14,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
+import "../../modules/ForecastRules.js" as ForecastRules
 
 ColumnLayout {
     id: root
@@ -29,18 +30,7 @@ ColumnLayout {
 
     /*! Hours that fit: 3 to 5, one column per 72 logical px. */
     readonly property int slots: Math.max(3, Math.min(5, Math.floor(width / root.style.snap(72))))
-    readonly property var points: {
-        const upcoming = [];
-        for (const point of client.forecast) {
-            if (point.epochS > client.nowEpochS) {
-                upcoming.push(point);
-            }
-            if (upcoming.length === slots) {
-                break;
-            }
-        }
-        return upcoming;
-    }
+    readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
     spacing: style.gap

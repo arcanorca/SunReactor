@@ -20,7 +20,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 ColumnLayout {
     id: root
@@ -46,14 +46,14 @@ ColumnLayout {
     readonly property real now: client.nowEpochS
     readonly property var sun: available && curve.sun ? curve.sun : ({})
 
-    readonly property real targetNow: current ? Curve.valueAt(samples, now, "pct") : -1
-    readonly property int appliedNow: current ? appliedFor(current.monitorId) : -1
+    readonly property real targetNow: current ? DayCurve.valueAt(samples, now, "pct") : -1
+    readonly property int appliedNow: current ? DayCurve.appliedFor(root.client.monitors, current.monitorId) : -1
 
     // While the pointer is over the chart, the figures read the day at that time.
     readonly property bool scrubbing: chart.scrubbing
     readonly property real readTime: scrubbing ? chart.hoverTime : now
     readonly property real readTarget: scrubbing ? chart.hoverValue : targetNow
-    readonly property real readClearSky: current ? Curve.valueAt(samples, readTime, "pctNoWeather") : -1
+    readonly property real readClearSky: current ? DayCurve.valueAt(samples, readTime, "pctNoWeather") : -1
     readonly property real readCost: readTarget >= 0 && readClearSky >= 0 ? readClearSky - readTarget : 0
 
     /*! The marks under the chart: sunrise and sunset, when known. */
@@ -61,15 +61,6 @@ ColumnLayout {
         { t: sun.sunrise, label: Format.timeText(sun.sunrise) },
         { t: sun.sunset, label: Format.timeText(sun.sunset) }
     ].filter(mark => mark.t > 0)
-
-    function appliedFor(monitorId) {
-        for (const monitor of client.monitors) {
-            if (monitor.logicalId === monitorId) {
-                return monitor.appliedPercent;
-            }
-        }
-        return -1;
-    }
 
     function pctText(v) {
         return v >= 0 ? i18ndc(domain, "Percentage", "%1%", Math.round(v)) : "—";
@@ -114,7 +105,7 @@ ColumnLayout {
                 Layout.maximumWidth: root.width * 0.6
                 Layout.preferredHeight: root.style.snap(20)
                 style: root.style
-                segments: root.curves.map((curve, i) => ({ id: String(i), text: Curve.shortName(curve.monitorId) }))
+                segments: root.curves.map((curve, i) => ({ id: String(i), text: DayCurve.shortName(curve.monitorId) }))
                 current: String(root.selected)
 
                 onPicked: id => root.selected = Number(id)

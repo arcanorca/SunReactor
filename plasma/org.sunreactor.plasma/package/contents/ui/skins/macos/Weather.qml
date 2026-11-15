@@ -39,22 +39,7 @@ ColumnLayout {
     /*! Percent the weather takes off the brightness (positive means dimmer). */
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
 
-    readonly property string stateNote: {
-        switch (client.weatherState) {
-        case "no_api_key":
-            return i18nd(domain, "No API key is configured");
-        case "loading":
-            return i18nd(domain, "Looking up the current conditions…");
-        case "unauthorized":
-            return i18nd(domain, "The weather provider rejected the API key");
-        case "rate_limited":
-            return i18nd(domain, "The weather provider is rate limiting requests");
-        case "network_error":
-            return i18nd(domain, "The weather provider could not be reached");
-        default:
-            return i18nd(domain, "No reading yet");
-        }
-    }
+    readonly property string stateNote: weatherText.stateNote(client.weatherState)
 
     /*! Highest and lowest temperature of the reading and the next 24 hours; null when unknown. */
     readonly property var span: {

@@ -38,12 +38,6 @@ ColumnLayout {
     Accessible.role: Accessible.Grouping
     Accessible.name: i18ndc(control.domain, "Accessible name of the automation mode switch", "Automation mode")
 
-    function openDurations(anchorItem) {
-        durations.x = Math.max(0, anchorItem.mapToItem(root, 0, 0).x);
-        durations.y = anchorItem.mapToItem(root, 0, anchorItem.height).y;
-        durations.open();
-    }
-
     Segmented {
         Layout.fillWidth: true
         style: root.style
@@ -52,7 +46,7 @@ ColumnLayout {
         arrowId: "paused"
 
         onPicked: id => root.control.pick(id, root)
-        onArrowPicked: (id, anchorItem) => root.openDurations(anchorItem)
+        onArrowPicked: (id, anchorItem) => durations.openBelow(anchorItem, root)
     }
 
     Text {

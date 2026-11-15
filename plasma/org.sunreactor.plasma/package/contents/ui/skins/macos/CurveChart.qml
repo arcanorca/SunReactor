@@ -12,7 +12,7 @@ import QtQuick
 import QtQuick.Shapes
 
 import "../../Format.js" as Format
-import "../instrument/Curve.js" as Curve
+import "../../modules/DayCurve.js" as DayCurve
 
 Item {
     id: root
@@ -52,13 +52,13 @@ Item {
     readonly property var areaPoints: linePoints.length > 0
         ? linePoints.concat([Qt.point(width, plotHeight), Qt.point(0, plotHeight)]) : []
 
-    readonly property real nowValue: Curve.valueAt(samples, now, "pct")
+    readonly property real nowValue: DayCurve.valueAt(samples, now, "pct")
     readonly property bool nowVisible: nowValue >= 0 && now >= t0 && now <= t1
 
     // --- hover --------------------------------------------------------------
     readonly property bool scrubbing: mouse.containsMouse && samples.length > 1
     readonly property real hoverTime: t0 + Math.max(0, Math.min(1, mouse.mouseX / Math.max(1, width))) * (t1 - t0)
-    readonly property real hoverValue: Curve.valueAt(samples, hoverTime, "pct")
+    readonly property real hoverValue: DayCurve.valueAt(samples, hoverTime, "pct")
 
     // --- static layers --------------------------------------------------------
     // One horizontal hairline across the plot, `fraction` of the way down.
