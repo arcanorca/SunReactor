@@ -13,6 +13,7 @@ pkgdesc='Adaptive screen brightness daemon that follows the sun (DDC/CI and back
 arch=(x86_64 aarch64)
 url='https://github.com/arcanorca/SunReactor'
 license=(GPL-3.0-or-later)
+options=(!lto)  # makepkg's -flto CFLAGS break linking of C/asm objects in ring (rustls) under Rust fat LTO
 makedepends=(cargo cmake extra-cmake-modules qt6-base qt6-declarative libplasma)
 source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # SKIP is a placeholder only: at release time run `updpkgsums` in this

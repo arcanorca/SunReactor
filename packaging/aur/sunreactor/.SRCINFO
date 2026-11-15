@@ -1,0 +1,36 @@
+pkgbase = sunreactor
+	pkgdesc = Adaptive screen brightness daemon that follows the sun (DDC/CI and backlight), with CLI/TUI
+	pkgver = 0.13.0
+	pkgrel = 1
+	url = https://github.com/arcanorca/SunReactor
+	arch = x86_64
+	arch = aarch64
+	license = GPL-3.0-or-later
+	makedepends = cargo
+	makedepends = cmake
+	makedepends = extra-cmake-modules
+	makedepends = qt6-base
+	makedepends = qt6-declarative
+	makedepends = libplasma
+	options = !lto
+	source = sunreactor-0.13.0.tar.gz::https://github.com/arcanorca/SunReactor/archive/refs/tags/v0.13.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = sunreactor
+	install = sunreactor.install
+	depends = gcc-libs
+	depends = glibc
+	optdepends = ddcutil: DDC/CI brightness control for external monitors (needs access to /dev/i2c-*)
+	optdepends = brightnessctl: backlight control for internal laptop panels
+	optdepends = xprintidle: idle detection on X11 sessions
+	optdepends = swayidle: idle detection on wlroots compositors
+	optdepends = plasma6-applets-sunreactor: Plasma 6 widget
+
+pkgname = plasma6-applets-sunreactor
+	pkgdesc = Plasma 6 widget for SunReactor adaptive brightness
+	depends = sunreactor
+	depends = qt6-base
+	depends = qt6-declarative
+	depends = libplasma
+	depends = kirigami
+	depends = kcmutils
