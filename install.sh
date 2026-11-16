@@ -45,6 +45,7 @@ readonly BACKUP_DIR="$TMP_DIR/backup"
 
 # State variables
 QUIET=0
+HELP=0
 UNINSTALL=0
 PURGE=0
 NO_SERVICE=0
@@ -78,9 +79,28 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
+print_usage() {
+    cat <<'EOF'
+Usage: install.sh [OPTIONS]
+
+Install or uninstall SunReactor for the current user.
+
+Options:
+  -h, --help       Show this help and exit without downloading or installing.
+  -q, --quiet      Suppress informational and success messages.
+      --uninstall  Remove the installed binaries and service integration.
+      --purge      With --uninstall, also remove configuration and state data.
+      --no-service Install files without configuring or starting a service.
+      --with-plasma Try to build and install the KDE Plasma widget.
+      --no-plasma  Skip the KDE Plasma widget.
+      --dry-run    Print the Plasma widget installation plan without changing files.
+EOF
+}
+
 parse_args() {
     for arg in "$@"; do
         case $arg in
+            -h|--help) HELP=1 ;;
             -q|--quiet) QUIET=1 ;;
             --uninstall) UNINSTALL=1 ;;
             --purge) PURGE=1 ;;
@@ -88,7 +108,11 @@ parse_args() {
             --with-plasma) PLASMA_MODE=on ;;
             --no-plasma) PLASMA_MODE=off ;;
             --dry-run) DRY_RUN=1 ;;
-            *) ;;
+            *)
+                log_error "Unknown option: $arg"
+                print_usage >&2
+                return 2
+                ;;
         esac
     done
 }
@@ -157,11 +181,15 @@ detect_libc() {
 version_at_least() {
     local required="$1" actual="$2"
     awk -v required="$required" -v actual="$actual" '
-        function component(value, index, parts) {
-            split(value, parts, ".")
-            return (index in parts) ? (parts[index] + 0) : 0
+        function component(value, part_number, parts, part_count) {
+            part_count = split(value, parts, /[.]/)
+            return (part_number <= part_count) ? (parts[part_number] + 0) : 0
         }
         BEGIN {
+            if (required !~ /^[0-9]+([.][0-9]+)*$/ ||
+                actual !~ /^[0-9]+([.][0-9]+)*$/) {
+                exit 1
+            }
             for (i = 1; i <= 8; i++) {
                 r = component(required, i)
                 a = component(actual, i)
@@ -1231,7 +1259,12 @@ uninstall_sunreactor() {
 }
 
 main() {
-    parse_args "$@"
+    parse_args "$@" || exit $?
+
+    if [[ $HELP -eq 1 ]]; then
+        print_usage
+        exit 0
+    fi
 
     if [[ $DRY_RUN -eq 1 ]]; then
         print_plasma_widget_plan
