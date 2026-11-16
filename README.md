@@ -221,6 +221,10 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 
 *From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [KDE Plasma widget](#-kde-plasma-widget).*
 
+Run `./install.sh --help` (or `-h`) to list every installer option without
+downloading or changing files. Unknown options fail with a usage message before
+any network or installation work begins.
+
 ### Building from Source (Optimized Native Profile)
 ```bash
 git clone https://github.com/arcanorca/SunReactor.git

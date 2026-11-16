@@ -144,6 +144,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   light cycle percent rows use the fill scale.
 - Popup content no longer overflows the popup's right edge. Layout overflows and
   collisions in the NDS, Synthwave '84, pixel and Amiga skins are fixed.
+- The installer compares glibc versions correctly across common `awk`
+  implementations and handles `--help`/`-h` and unknown options before any
+  download or installation side effects.
 
 ## [0.12.2] - 2026-09-28
 
