@@ -131,6 +131,18 @@ private:
         m2[QStringLiteral("max_pct")] = 90;
         m2[QStringLiteral("samples")] = samples;
 
+        QJsonObject m3;
+        m3[QStringLiteral("monitor_id")] = QStringLiteral("eDP-1");
+        m3[QStringLiteral("min_pct")] = 10;
+        m3[QStringLiteral("max_pct")] = 80;
+        m3[QStringLiteral("samples")] = samples;
+
+        QJsonObject m4;
+        m4[QStringLiteral("monitor_id")] = QStringLiteral("DP-2");
+        m4[QStringLiteral("min_pct")] = 15;
+        m4[QStringLiteral("max_pct")] = 95;
+        m4[QStringLiteral("samples")] = samples;
+
         QJsonObject sun;
         sun[QStringLiteral("sunrise")] = 1700024400;
         sun[QStringLiteral("solar_noon")] = 1700042400;
@@ -140,7 +152,7 @@ private:
         curve[QStringLiteral("date")] = QStringLiteral("2026-11-17");
         curve[QStringLiteral("step_minutes")] = 15;
         curve[QStringLiteral("sun")] = sun;
-        curve[QStringLiteral("monitors")] = QJsonArray{m1, m2};
+        curve[QStringLiteral("monitors")] = QJsonArray{m1, m2, m3, m4};
         return curve;
     }
 
@@ -196,6 +208,7 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
     const QByteArray qml = R"(
         import QtQuick
         import QtQuick.Layouts
+        import org.kde.plasma.components as PlasmaComponents3
         import org.sunreactor.plasma
         import "engine" as Engine
         import "modules" as Mod
@@ -204,9 +217,9 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
         Item {
             id: root
             property alias client: client
-            property alias lightCycle: cycle
-            property int frameWidthChanges: 0
-            property int frameImplicitWidthChanges: 0
+            property alias themeObj: theme
+            property alias settingsObj: settings
+            property alias lightCycle: cycleLoader.item
             property real containerWidth: 320
 
             SunReactorClient {
@@ -221,14 +234,24 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
             Mod.ModuleSettings {
                 id: settings
             }
-            ColumnLayout {
+            PlasmaComponents3.ScrollView {
+                id: panel
                 width: root.containerWidth
-                Cyber.LightCycle {
-                    id: cycle
-                    Layout.fillWidth: true
-                    theme: theme
-                    client: client
-                    settings: settings
+                height: 400
+                PlasmaComponents3.ScrollBar.horizontal.visible: false
+                ColumnLayout {
+                    id: pageColumn
+                    width: panel.width - 20
+                    Loader {
+                        id: cycleLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/LightCycle.qml"), {
+                            theme: root.themeObj,
+                            client: root.client,
+                            settings: root.settingsObj,
+                        })
+                    }
                 }
             }
         }
@@ -284,9 +307,11 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
         ++widthChanges;
     });
 
-    // Resize the popup container across widths that wrap/unwrap Flow and
-    // verify layout settles within a bounded number of event-loop turns.
-    const int widths[] = {240, 320, 210, 360, 280};
+    // Resize the popup across widths that wrap/unwrap Flow (including 0 width
+    // during open/close) and toggle the channel selection (showAll=false -> true -> false).
+    // CyberFrame.implicitWidth must never change (no feedback into the layout),
+    // and frame.width must settle within 1 change per resize.
+    const int widths[] = {0, 210, 260, 320, 360, 280};
     for (int w : widths) {
         implicitWidthChanges = 0;
         widthChanges = 0;
@@ -295,14 +320,33 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
             QCoreApplication::processEvents();
             QTest::qWait(5);
         }
-        QVERIFY2(implicitWidthChanges <= 2,
-                 qPrintable(QStringLiteral("implicitWidth oscillated (%1 changes) at width %2")
+        QVERIFY2(implicitWidthChanges == 0,
+                 qPrintable(QStringLiteral("CyberFrame.implicitWidth changed %1 times at width %2")
                                 .arg(implicitWidthChanges)
                                 .arg(w)));
         QVERIFY2(widthChanges <= 2,
-                 qPrintable(QStringLiteral("width oscillated (%1 changes) at width %2")
+                 qPrintable(QStringLiteral("CyberFrame.width oscillated (%1 changes) at width %2")
                                 .arg(widthChanges)
                                 .arg(w)));
+    }
+
+    const int selections[] = {-1, 0, 1, -1, 0};
+    for (int sel : selections) {
+        implicitWidthChanges = 0;
+        widthChanges = 0;
+        cycle->setProperty("selected", sel);
+        for (int turn = 0; turn < 20; ++turn) {
+            QCoreApplication::processEvents();
+            QTest::qWait(5);
+        }
+        QVERIFY2(implicitWidthChanges == 0,
+                 qPrintable(QStringLiteral("CyberFrame.implicitWidth changed %1 times on selected=%2")
+                                .arg(implicitWidthChanges)
+                                .arg(sel)));
+        QVERIFY2(widthChanges <= 1,
+                 qPrintable(QStringLiteral("CyberFrame.width changed %1 times on selected=%2")
+                                .arg(widthChanges)
+                                .arg(sel)));
     }
 }
 
