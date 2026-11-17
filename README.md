@@ -67,7 +67,7 @@ Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASM
 
 Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
 
-**Next release (0.13.0)**
+**0.13.0**
 - Themes are TOML data shared by the terminal UI and the Plasma widget. 40 are built in; you can add your own in `~/.config/sunreactor/themes/` ([docs/THEMES.md](docs/THEMES.md)).
 - New `sunreactorctl theme` commands, and new IPC requests (`list_themes`, `get_theme`, `day_curve`) used by the widget.
 - The Plasma widget was rewritten around that theme data: see [KDE Plasma widget](#-kde-plasma-widget).
