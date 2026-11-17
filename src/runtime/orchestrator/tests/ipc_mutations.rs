@@ -527,6 +527,43 @@ fn ipc_set_monitor_limits_edits_only_that_monitor_without_reloading_disk_config(
 }
 
 #[test]
+fn ipc_set_monitor_limits_accepts_client_json_and_echoes_updated_limits_in_status() {
+    let temp = TempDir::new();
+    let config_path = temp.path().join("config.toml");
+    let mut report = test_config_report();
+    report.path = config_path.clone();
+    config::save_to_path(&report.config, &config_path).expect("fixture config should save");
+    let state_path = temp.path().join("state/runtime-state.json");
+    let socket_path = temp.path().join("run/control.sock");
+    let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
+        .expect("runtime should bootstrap");
+
+    let client_json =
+        r#"{"max_pct":82,"min_pct":22,"monitor_id":"internal","request":"set_monitor_limits","version":1}"#;
+    let envelope: ipc::RequestEnvelope =
+        serde_json::from_str(client_json).expect("client set_monitor_limits JSON should parse");
+    let now = Utc
+        .timestamp_opt(1_800_000_000, 0)
+        .single()
+        .expect("valid time");
+    let (response, _) =
+        runtime.handle_ipc_request_with_runner(envelope.request, &FakeRunner::new(), now);
+    assert!(matches!(response.response, Response::Ack { .. }));
+
+    let (status_reply, _) =
+        runtime.handle_ipc_request_with_runner(Request::Status, &FakeRunner::new(), now);
+    let Response::Status { status } = status_reply.response else {
+        panic!("expected status response, got {:?}", status_reply.response);
+    };
+    let internal = status
+        .monitors
+        .iter()
+        .find(|monitor| monitor.logical_id == "internal")
+        .expect("internal monitor in status");
+    assert_eq!((internal.min_pct, internal.max_pct), (Some(22), Some(82)));
+}
+
+#[test]
 fn ipc_set_cloud_dimming_edits_only_weather_without_reloading_disk_config() {
     let temp = TempDir::new();
     let config_path = temp.path().join("config.toml");

@@ -49,9 +49,12 @@ Item {
         property int targetPct: -1
         property bool controllable: true
         property bool hasOverride: false
+        property bool hasLimits: false
+        property bool limitsOpen: false
         property string stateText: ""
 
         signal requested(int percent)
+        signal limitsRequested(int minPct, int maxPct)
         signal clearRequested()
 
         Layout.fillWidth: true
@@ -91,6 +94,26 @@ Item {
                 }
             }
 
+            // Range toggle flag: opens the night-min / day-max bars below.
+            Item {
+                visible: channel.hasLimits && channel.minPct >= 0 && channel.maxPct >= 0
+                implicitWidth: rangeFlag.implicitWidth
+                implicitHeight: rangeFlag.implicitHeight
+
+                CasioFlag {
+                    id: rangeFlag
+
+                    style: root.style
+                    text: channel.minPct + "-" + channel.maxPct
+                    lit: channel.limitsOpen
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: channel.limitsOpen = !channel.limitsOpen
+                }
+            }
+
             CasioDigits {
                 style: root.style
                 size: root.style.digitMedium
@@ -116,6 +139,74 @@ Item {
             interactive: channel.controllable
             accessibleName: channel.name
             onCommitted: value => channel.requested(value)
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: channel.hasLimits && channel.limitsOpen && channel.minPct >= 0 && channel.maxPct >= 0
+            spacing: root.style.gap
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.style.gap
+
+                Text {
+                    Layout.preferredWidth: root.style.snap(root.style.unit * 2.4)
+                    text: i18ndc(root.domain, "Night minimum boundary, compact", "MIN")
+                    textFormat: Text.PlainText
+                    font: root.style.cap(root.style.sizeCap)
+                    color: root.style.inkMuted
+                }
+                CasioBar {
+                    id: minBar
+
+                    Layout.fillWidth: true
+                    style: root.style
+                    value: channel.minPct
+                    interactive: true
+                    accessibleName: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                    onCommitted: v => channel.limitsRequested(Math.min(v, channel.maxPct), channel.maxPct)
+                }
+                Text {
+                    Layout.preferredWidth: root.style.snap(root.style.unit * 2.2)
+                    horizontalAlignment: Text.AlignRight
+                    text: minBar.shown + "%"
+                    textFormat: Text.PlainText
+                    font: root.style.cap(root.style.sizeCap)
+                    color: root.style.ink
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.style.gap
+
+                Text {
+                    Layout.preferredWidth: root.style.snap(root.style.unit * 2.4)
+                    text: i18ndc(root.domain, "Day maximum boundary, compact", "MAX")
+                    textFormat: Text.PlainText
+                    font: root.style.cap(root.style.sizeCap)
+                    color: root.style.inkMuted
+                }
+                CasioBar {
+                    id: maxBar
+
+                    Layout.fillWidth: true
+                    style: root.style
+                    value: channel.maxPct
+                    interactive: true
+                    accessibleName: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+                    onCommitted: v => channel.limitsRequested(channel.minPct, Math.max(v, channel.minPct))
+                }
+                Text {
+                    Layout.preferredWidth: root.style.snap(root.style.unit * 2.2)
+                    horizontalAlignment: Text.AlignRight
+                    text: maxBar.shown + "%"
+                    textFormat: Text.PlainText
+                    font: root.style.cap(root.style.sizeCap)
+                    color: root.style.ink
+                }
+            }
         }
     }
 
@@ -154,6 +245,7 @@ Item {
                 maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
                 targetPct: Math.round(DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS))
                 controllable: modelData.enabled === true && !unavailable
+                hasLimits: true
                 hasOverride: modelData.hasOverride === true
                 stateText: {
                     if (modelData.enabled === false) {
@@ -170,6 +262,7 @@ Item {
 
                 onRequested: value => root.client.setMonitorOverride(modelData.logicalId, value,
                                                                      root.settings.overrideMinutes)
+                onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(modelData.logicalId, lo, hi)
                 onClearRequested: root.client.clearMonitorOverride(modelData.logicalId)
             }
         }

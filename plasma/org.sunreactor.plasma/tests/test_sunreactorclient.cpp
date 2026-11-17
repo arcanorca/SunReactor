@@ -261,10 +261,32 @@ void TestSunReactorClient::testMonitorLimitsRequestsAreWellFormed()
     QCOMPARE(commands.size(), 1);
 
     const QJsonObject limits = commands.at(0);
+    QCOMPARE(limits.value(QStringLiteral("version")).toInt(), static_cast<int>(SunReactor::PROTOCOL_VERSION));
     QCOMPARE(limits.value(QStringLiteral("request")).toString(), QStringLiteral("set_monitor_limits"));
     QCOMPARE(limits.value(QStringLiteral("monitor_id")).toString(), QStringLiteral("desk"));
     QCOMPARE(limits.value(QStringLiteral("min_pct")).toInt(), 0);
     QCOMPARE(limits.value(QStringLiteral("max_pct")).toInt(), 100);
+
+    // Inverted bounds clamp max_pct up to min_pct, and mid-range values pass through intact.
+    const int beforeSecond = m_received.size();
+    client.setMonitorLimits(QStringLiteral("desk"), 70, 30);
+    QTRY_VERIFY_WITH_TIMEOUT(commandsSoFar().size() >= 2, 5000);
+    const QJsonObject inverted = commandsSoFar().at(1);
+    QCOMPARE(inverted.value(QStringLiteral("version")).toInt(), static_cast<int>(SunReactor::PROTOCOL_VERSION));
+    QCOMPARE(inverted.value(QStringLiteral("request")).toString(), QStringLiteral("set_monitor_limits"));
+    QCOMPARE(inverted.value(QStringLiteral("monitor_id")).toString(), QStringLiteral("desk"));
+    QCOMPARE(inverted.value(QStringLiteral("min_pct")).toInt(), 70);
+    QCOMPARE(inverted.value(QStringLiteral("max_pct")).toInt(), 70);
+    Q_UNUSED(beforeSecond);
+
+    client.setMonitorLimits(QStringLiteral("desk"), 22, 82);
+    QTRY_VERIFY_WITH_TIMEOUT(commandsSoFar().size() >= 3, 5000);
+    const QJsonObject mid = commandsSoFar().at(2);
+    QCOMPARE(mid.value(QStringLiteral("version")).toInt(), static_cast<int>(SunReactor::PROTOCOL_VERSION));
+    QCOMPARE(mid.value(QStringLiteral("request")).toString(), QStringLiteral("set_monitor_limits"));
+    QCOMPARE(mid.value(QStringLiteral("monitor_id")).toString(), QStringLiteral("desk"));
+    QCOMPARE(mid.value(QStringLiteral("min_pct")).toInt(), 22);
+    QCOMPARE(mid.value(QStringLiteral("max_pct")).toInt(), 82);
 }
 
 void TestSunReactorClient::testExternalHoldRequestIsWellFormedAndCoalesces()

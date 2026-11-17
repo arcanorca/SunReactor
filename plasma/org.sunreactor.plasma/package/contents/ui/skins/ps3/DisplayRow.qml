@@ -238,6 +238,7 @@ Item {
                     if (!pressed) {
                         limitsThrottle.stop();
                         row.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
+                        value = Qt.binding(() => row.minPct);
                     }
                 }
             }
@@ -255,6 +256,7 @@ Item {
                     if (!pressed) {
                         limitsThrottle.stop();
                         row.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
+                        value = Qt.binding(() => row.maxPct);
                     }
                 }
             }

@@ -95,6 +95,7 @@ ColumnLayout {
                 stateTone: modelData.enabled ? root.style.red : root.style.faint
 
                 onRequested: v => root.client.setMonitorOverride(modelData.logicalId, v, root.settings.overrideMinutes)
+                onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(modelData.logicalId, lo, hi)
             }
         }
 

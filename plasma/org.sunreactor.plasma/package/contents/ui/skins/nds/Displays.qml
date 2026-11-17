@@ -47,8 +47,9 @@ Item {
     readonly property real pad: Math.round(gu * 0.35)
     readonly property real inset: Math.round(gu * 0.6)
     readonly property real panelH: Math.round(gu * 3.0)
+    readonly property real limitsH: Math.round(gu * 3.6)
     readonly property real gap: Math.round(gu * 0.25)
-    readonly property real panelsH: rows.length * panelH + Math.max(0, rows.length - 1) * gap
+    readonly property real panelsH: panelsCol.implicitHeight
     /*! The tray (ModeRows) below the panels, when this screen hosts it. */
     readonly property real trayGap: Math.round(gu * 0.45)
     readonly property real glassH: 2 * pad + panelsH + (hostsModes ? trayGap + modes.trayH : 0)
@@ -67,14 +68,21 @@ Item {
         wallpaper: "touch"
         glassHeight: root.glassH
 
-        Repeater {
-            model: root.rows
+        Column {
+            id: panelsCol
 
-            delegate: DisplayPanel {
-                x: root.inset
-                y: root.pad + index * (root.panelH + root.gap)
-                width: screen.glassWidth - 2 * root.inset
-                height: root.panelH
+            x: root.inset
+            y: root.pad
+            width: screen.glassWidth - 2 * root.inset
+            spacing: root.gap
+
+            Repeater {
+                model: root.rows
+
+                delegate: DisplayPanel {
+                    width: panelsCol.width
+                    height: expanded && !master ? root.panelH + root.limitsH : root.panelH
+                }
             }
         }
 
@@ -99,6 +107,7 @@ Item {
 
         required property var modelData
         required property int index
+        property bool expanded: false
 
         readonly property bool master: modelData.master === true
         readonly property bool unavailable: Monitors.unavailable(modelData)
@@ -128,13 +137,42 @@ Item {
         Text {
             x: Math.round(root.gu * 0.8)
             y: Math.round(root.gu * 0.42)
-            width: valueText.x - x - Math.round(root.gu * 0.5)
+            width: (rangePill.visible ? rangePill.x : valueText.x) - x - Math.round(root.gu * 0.4)
             elide: Text.ElideRight
             text: panel.name
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 0.9)
             color: panel.controllable ? root.style.ink : root.style.muted
+        }
+        Rectangle {
+            id: rangePill
+
+            visible: !panel.master && panel.minPct >= 0 && panel.maxPct >= 0
+            x: valueText.x - width - Math.round(root.gu * 0.4)
+            y: Math.round(root.gu * 0.34)
+            width: rangeLabel.implicitWidth + Math.round(root.gu * 0.7)
+            height: Math.round(root.gu * 1.1)
+            radius: Math.round(height / 2)
+            color: panel.expanded ? root.style.blue : root.style.track
+            border.width: root.style.hairline
+            border.color: root.style.line
+
+            Text {
+                id: rangeLabel
+
+                anchors.centerIn: parent
+                text: panel.minPct + "–" + panel.maxPct
+                font.family: root.style.family
+                font.weight: Font.Bold
+                font.pixelSize: Math.round(root.gu * 0.65)
+                color: panel.expanded ? root.style.paper : root.style.ink
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: panel.expanded = !panel.expanded
+            }
         }
         Text {
             id: valueText
@@ -155,7 +193,7 @@ Item {
 
             x: Math.round(root.gu * 0.5)
             height: Math.max(28, Math.round(root.gu * 1.6))
-            y: Math.round(panel.height - height - root.gu * 0.2)
+            y: Math.round(root.panelH - height - root.gu * 0.2)
             width: panel.width - Math.round(root.gu * 1.0)
             value: panel.percent
             minMark: panel.master ? -1 : panel.minPct
@@ -165,6 +203,73 @@ Item {
             onCommitted: v => panel.master
                 ? root.client.setGlobalOverride(v, root.settings.overrideMinutes)
                 : root.client.setMonitorOverride(panel.modelData.logicalId, v, root.settings.overrideMinutes)
+        }
+
+        Column {
+            visible: panel.expanded && !panel.master && panel.minPct >= 0 && panel.maxPct >= 0
+            x: Math.round(root.gu * 0.5)
+            y: root.panelH
+            width: panel.width - Math.round(root.gu * 1.0)
+            spacing: Math.round(root.gu * 0.15)
+
+            Repeater {
+                model: [
+                    { label: i18ndc(root.domain, "Night minimum boundary, compact", "Min"), which: 0 },
+                    { label: i18ndc(root.domain, "Day maximum boundary, compact", "Max"), which: 1 },
+                ]
+
+                delegate: Item {
+                    id: limitRow
+
+                    required property var modelData
+                    readonly property int current: modelData.which === 0 ? panel.minPct : panel.maxPct
+
+                    width: parent.width
+                    height: Math.round(root.gu * 1.65)
+
+                    Text {
+                        id: limitTag
+
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.round(root.gu * 2.2)
+                        text: limitRow.modelData.label
+                        font.family: root.style.family
+                        font.weight: Font.Bold
+                        font.pixelSize: Math.round(root.gu * 0.68)
+                        color: root.style.muted
+                    }
+                    KnobSlider {
+                        id: limitKnob
+
+                        x: limitTag.width + Math.round(root.gu * 0.2)
+                        width: parent.width - x - limitVal.width - Math.round(root.gu * 0.2)
+                        height: parent.height
+                        value: limitRow.current
+                        editable: true
+                        accessibleName: limitRow.modelData.which === 0
+                            ? i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                            : i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+                        onCommitted: v => limitRow.modelData.which === 0
+                            ? root.client.setMonitorLimits(panel.modelData.logicalId,
+                                                           Math.min(v, panel.maxPct), panel.maxPct)
+                            : root.client.setMonitorLimits(panel.modelData.logicalId,
+                                                           panel.minPct, Math.max(v, panel.minPct))
+                    }
+                    Text {
+                        id: limitVal
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.round(root.gu * 2.1)
+                        horizontalAlignment: Text.AlignRight
+                        text: Math.round(limitKnob.shown) + "%"
+                        font.family: root.style.family
+                        font.weight: Font.Bold
+                        font.pixelSize: Math.round(root.gu * 0.7)
+                        color: root.style.ink
+                    }
+                }
+            }
         }
     }
 

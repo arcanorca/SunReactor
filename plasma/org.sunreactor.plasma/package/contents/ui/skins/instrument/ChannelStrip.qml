@@ -287,6 +287,7 @@ ColumnLayout {
                 if (!pressed) {
                     limitsThrottle.stop();
                     root.limitsRequested(Math.round(minFader.value), Math.round(maxFader.value));
+                    value = Qt.binding(() => root.maxPct);
                 }
             }
             Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
@@ -322,6 +323,7 @@ ColumnLayout {
                 if (!pressed) {
                     limitsThrottle.stop();
                     root.limitsRequested(Math.round(minFader.value), Math.round(maxFader.value));
+                    value = Qt.binding(() => root.minPct);
                 }
             }
             Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")

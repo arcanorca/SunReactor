@@ -231,7 +231,8 @@ ColumnLayout {
                             to: 100
                             value: strip.maxPct
                             Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
-                            onRequested: value => root.client.setMonitorLimits(strip.logicalId, strip.minPct, value)
+                            onRequested: value => root.client.setMonitorLimits(strip.logicalId, strip.minPct,
+                                                                               Math.max(strip.minPct, value))
                         }
                         Text {
                             Layout.preferredWidth: root.style.snap(root.style.unit * 1.6)
@@ -263,7 +264,9 @@ ColumnLayout {
                             to: 100
                             value: strip.minPct
                             Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
-                            onRequested: value => root.client.setMonitorLimits(strip.logicalId, value, strip.maxPct)
+                            onRequested: value => root.client.setMonitorLimits(strip.logicalId,
+                                                                               Math.min(value, strip.maxPct),
+                                                                               strip.maxPct)
                         }
                         Text {
                             Layout.preferredWidth: root.style.snap(root.style.unit * 1.6)
