@@ -63,17 +63,23 @@ test_custom_paths_and_uninstall_paths() {
         /tmp/custom-config/sunreactor/config.toml \
         /tmp/custom-state/sunreactor/runtime-state.json \
         /tmp/custom-cache/sunreactor/cache-entry
-    SYSTEMCTL_MARKER="$home/systemctl-called" PATH="/usr/bin:/bin" HOME="$home" \
+    # Never reach the real user manager: uninstall stops and disables sunreactord.
+    local fakebin="$home/fakebin"
+    mkdir -p "$fakebin"
+    printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$*" >>"$SYSTEMCTL_MARKER"' 'exit 0' >"$fakebin/systemctl"
+    chmod +x "$fakebin/systemctl"
+    SYSTEMCTL_MARKER="$home/systemctl-called" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
         XDG_CONFIG_HOME=/tmp/custom-config XDG_STATE_HOME=/tmp/custom-state XDG_CACHE_HOME=/tmp/custom-cache \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; QUIET=1; uninstall_sunreactor' _ "$ROOT_DIR/install.sh" >/dev/null 2>&1
     [[ ! -e "$home/.local/bin/sunreactord" && ! -e "$home/.local/bin/sunreactorctl" ]]
     [[ ! -e /tmp/custom-config/systemd/user/sunreactord.service ]]
+    grep -q -- '--user' "$home/systemctl-called"
     # Standard uninstall MUST preserve user configuration and runtime state
     [[ -e /tmp/custom-config/sunreactor/config.toml ]]
     [[ -e /tmp/custom-state/sunreactor/runtime-state.json ]]
 
     # Purge uninstall MUST remove user configuration and runtime state
-    SYSTEMCTL_MARKER="$home/systemctl-called" PATH="/usr/bin:/bin" HOME="$home" \
+    SYSTEMCTL_MARKER="$home/systemctl-called" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
         XDG_CONFIG_HOME=/tmp/custom-config XDG_STATE_HOME=/tmp/custom-state XDG_CACHE_HOME=/tmp/custom-cache \
         SUNREACTOR_INSTALLER_LIBRARY=1 bash -c 'source "$1"; QUIET=1; PURGE=1; uninstall_sunreactor' _ "$ROOT_DIR/install.sh" >/dev/null 2>&1
     [[ ! -e /tmp/custom-config/sunreactor && ! -e /tmp/custom-state/sunreactor && ! -e /tmp/custom-cache/sunreactor ]]
