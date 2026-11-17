@@ -158,8 +158,38 @@ Item {
     /*! Automatic scale factor computed from screen resolution and physical dimensions. */
     readonly property real autoScaleFactor: ScaleHelper.calculateAutoScale(Screen)
 
-    /*! Resolved effective scale factor (e.g. 1.0, 1.15, 1.25, 1.5). */
-    readonly property real scaleFactor: ScaleHelper.resolveScale(uiScale, Screen)
+    /*! The scale the current screen asks for, live. */
+    readonly property real screenScale: ScaleHelper.resolveScale(uiScale, Screen)
+
+    /*! Resolved effective scale factor (e.g. 1.0, 1.15, 1.25, 1.5). It follows
+        screenScale only once that has held still for a moment. A popup on the
+        border of two screens with different scales otherwise oscillates: the
+        larger scale grows the window onto the other screen, whose scale shrinks
+        it back, every frame, and plasmashell's GUI thread never idles. */
+    property real scaleFactor: 1
+    property bool scaleSettled: false
+
+    onScreenScaleChanged: {
+        // A fixed uiScale does not depend on the screen: apply it at once.
+        if (!scaleSettled || uiScale > 0) {
+            scaleSettle.stop();
+            scaleFactor = screenScale;
+        } else if (screenScale !== scaleFactor) {
+            scaleSettle.restart();
+        } else {
+            scaleSettle.stop();
+        }
+    }
+    Component.onCompleted: {
+        scaleFactor = screenScale;
+        scaleSettled = true;
+    }
+    Timer {
+        id: scaleSettle
+
+        interval: 600
+        onTriggered: root.scaleFactor = root.screenScale
+    }
 
     /*! Scaled grid unit, anchored to Kirigami.Units.gridUnit. */
     readonly property real gridUnit: Math.round(Kirigami.Units.gridUnit * scaleFactor)
