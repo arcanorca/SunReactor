@@ -111,7 +111,7 @@ Item {
         return root.theme.fg;
     }
 
-    readonly property int artCells: 7
+    readonly property int artCells: 9
     readonly property int textX: 1 + artCells + 1
     readonly property int textCells: Math.max(0, term.cols(root.width) - textX - 1)
     /*! A reading's label, its gap and its value (seven cells at most). */
@@ -141,17 +141,17 @@ Item {
             }
             return [Hg.flag(t, "ok", i18ndc(root.domain, "Weather reading state", "OK"))];
         }
-        bodyHeight: term.cy(Math.max(3, root.textRows))
+        bodyHeight: term.cy(Math.max(4, root.textRows))
         glowing: true
 
-        // The sky, three rows of seven cells, or the chosen Weather icons style in its place.
+        // The sky, four rows of nine cells, or the chosen Weather icons style in its place.
         ThemedWeatherIcon {
             x: term.cx(1)
             y: term.cy(0)
             theme: root.theme
             condition: root.client.weatherCondition
             night: root.night
-            size: Math.min(term.cy(3) - term.cy(0), term.cx(7))
+            size: Math.min(term.cy(4) - term.cy(0), term.cx(root.artCells))
 
             Repeater {
                 model: root.artRows

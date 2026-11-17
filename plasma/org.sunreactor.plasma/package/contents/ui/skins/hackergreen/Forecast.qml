@@ -66,7 +66,7 @@ Item {
                            Math.max(1, Math.round((root.points[root.points.length - 1].epochS - root.client.nowEpochS) / 3600))),
                  c: root.theme.textMuted }]
             : []
-        bodyHeight: term.cy(5)
+        bodyHeight: term.cy(6)
         glowing: true
 
         Repeater {
@@ -82,7 +82,7 @@ Item {
                 readonly property var rows: Hg.art(modelData.condition, root.isNight(modelData.epochS))
                 x: term.cx(index * w)
                 width: term.cx(w)
-                height: term.cy(5)
+                height: term.cy(6)
 
                 function centred(cells) {
                     return term.cx(Math.max(0, Math.floor((w - cells) / 2)));
@@ -96,14 +96,14 @@ Item {
                     color: root.theme.textMuted
                 }
 
-                // The three art rows, or the chosen Weather icons style in their place.
+                // The four art rows, or the chosen Weather icons style in their place.
                 ThemedWeatherIcon {
-                    x: slot.centred(7)
+                    x: slot.centred(9)
                     y: term.cy(1)
                     theme: root.theme
                     condition: slot.modelData.condition
                     night: root.isNight(slot.modelData.epochS)
-                    size: Math.min(term.cy(4) - term.cy(1), term.cx(7))
+                    size: Math.min(term.cy(5) - term.cy(1), term.cx(9))
 
                     Repeater {
                         model: slot.rows
@@ -123,7 +123,7 @@ Item {
 
                 TermText {
                     tm: term
-                    y: term.cy(4)
+                    y: term.cy(5)
                     x: slot.centred(usedCells)
                     value: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
                                   Math.round(slot.modelData.temperatureC))

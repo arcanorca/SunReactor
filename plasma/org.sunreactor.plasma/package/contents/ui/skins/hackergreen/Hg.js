@@ -6,26 +6,29 @@
  * of their arguments; nothing here reads the daemon or keeps state.
  */
 
-/*! Three rows of seven cells per condition token (the names of WeatherGlyphs.js). */
+/*! Four rows of nine cells per condition token (the names of WeatherGlyphs.js). */
 var ART = {
-    clear: [" \\ | / ", "-- O --", " / | \\ "],
-    night_clear: ["  .-.  ", " (   ) ", "  `-'  "],
-    partly_cloudy: [" \\ |   ", " -(   )", "  (___)"],
-    cloudy: ["  .-.  ", " (   ) ", "(_____)"],
-    drizzle: ["  .-.  ", " (   ) ", " . . . "],
-    rain: ["  .-.  ", " (   ) ", " / / / "],
-    heavy_rain: ["  .-.  ", " (   ) ", "/ / / /"],
-    thunderstorm: ["  .-.  ", " (   ) ", "  /\\/  "],
-    snow: ["  .-.  ", " (   ) ", " * * * "],
-    mist: [" ~~~~~ ", "~~~~~~~", " ~~~~~ "],
-    fog: ["=======", " ===== ", "======="],
-    atmospheric: [" ~ ~ ~ ", "~ ~ ~ ~", " ~ ~ ~ "],
-    unknown: ["       ", "   ?   ", "       "]
+    clear:               ["  \\ | /  ", " -- O -- ", "  / | \\  ", "         "],
+    night_clear:         ["   ,--.  ", "  (  .-' ", "  (  `-. ", "   `--'  "],
+    partly_cloudy:       ["\\|/      ", "-O-.-.   ", "  (   )  ", " (_____) "],
+    night_partly_cloudy: [",-       ", "(  .-.   ", "`-(   )  ", " (_____) "],
+    cloudy:              ["   .-.   ", "  (   )  ", " (_____) ", "         "],
+    drizzle:             ["   .-.   ", "  (   )  ", " (_____) ", "  ' ' '  "],
+    rain:                ["   .-.   ", "  (   )  ", " (_____) ", "  / / /  "],
+    heavy_rain:          ["   .-.   ", "  (   )  ", " (_____) ", " / / / / "],
+    thunderstorm:        ["   .-.   ", "  (   )  ", " (_____) ", "   /_/   "],
+    snow:                ["   .-.   ", "  (   )  ", " (_____) ", "  * * *  "],
+    mist:                [" ~~~~~~~ ", "  ~~~~~  ", " ~~~~~~~ ", "  ~~~~~  "],
+    fog:                 [" ======= ", "  =====  ", " ======= ", "  =====  "],
+    atmospheric:         [" ~ ~ ~ ~ ", "  ~ ~ ~  ", " ~ ~ ~ ~ ", "  ~ ~ ~  "],
+    unknown:             ["         ", "    ?    ", "         ", "         "]
 };
 
-/*! The three art rows for a condition ("" or unknown tokens get the question mark). */
+/*! The four art rows for a condition ("" or unknown tokens get the question mark). */
 function art(condition, night) {
-    const key = condition === "clear" && night ? "night_clear" : condition;
+    const key = night && (condition === "clear" || condition === "partly_cloudy")
+        ? "night_" + condition
+        : condition;
     return ART.hasOwnProperty(key) ? ART[key] : ART.unknown;
 }
 
