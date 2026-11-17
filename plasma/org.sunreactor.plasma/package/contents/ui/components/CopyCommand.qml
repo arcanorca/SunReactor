@@ -38,6 +38,10 @@ RowLayout {
         readOnly: true
         selectByMouse: true
         horizontalAlignment: TextInput.AlignHCenter
+        leftPadding: Kirigami.Units.largeSpacing
+        rightPadding: Kirigami.Units.largeSpacing
+        topPadding: Kirigami.Units.smallSpacing
+        bottomPadding: Kirigami.Units.smallSpacing
         font: Kirigami.Theme.fixedWidthFont
         color: Kirigami.Theme.textColor
         selectionColor: Kirigami.Theme.highlightColor
