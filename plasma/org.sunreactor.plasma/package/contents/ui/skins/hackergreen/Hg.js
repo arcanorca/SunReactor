@@ -32,6 +32,32 @@ function art(condition, night) {
     return ART.hasOwnProperty(key) ? ART[key] : ART.unknown;
 }
 
+/*! Three rows of seven cells per token: the forecast columns' compact sky. */
+var ART_COMPACT = {
+    clear:               [" \\ | / ", "-- O --", " / | \\ "],
+    night_clear:         ["  ,-.  ", " (  .' ", "  `-'  "],
+    partly_cloudy:       [" \\ .-. ", "-O(   )", " /(___)"],
+    night_partly_cloudy: [" , .-. ", "( (   )", "`'(___)"],
+    cloudy:              ["  .-.  ", ".-(  ).", "(__.__)"],
+    drizzle:             ["  .-.  ", "(__.__)", " ' ' ' "],
+    rain:                ["  .-.  ", "(__.__)", " / / / "],
+    heavy_rain:          ["  .-.  ", "(__.__)", "/ / / /"],
+    thunderstorm:        ["  .-.  ", "(__.__)", "  /_/  "],
+    snow:                ["  .-.  ", "(__.__)", " * * * "],
+    mist:                [" ~~~~~ ", "~~~~~~~", " ~~~~~ "],
+    fog:                 [" ===== ", "=======", " ===== "],
+    atmospheric:         [" ~ ~ ~ ", "~ ~ ~ ~", " ~ ~ ~ "],
+    unknown:             ["       ", "   ?   ", "       "]
+};
+
+/*! The three compact rows for a condition (same routing as art()). */
+function artCompact(condition, night) {
+    const key = night && (condition === "clear" || condition === "partly_cloudy")
+        ? "night_" + condition
+        : condition;
+    return ART_COMPACT.hasOwnProperty(key) ? ART_COMPACT[key] : ART_COMPACT.unknown;
+}
+
 /*! Glyphs of the code texture: digits and symbols of the bundled mono font. */
 var GLYPHS = "0123456789+-*/=<>|:;.~^%&#$";
 

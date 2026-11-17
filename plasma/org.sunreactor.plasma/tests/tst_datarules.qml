@@ -256,6 +256,19 @@ Item {
             }
         }
 
+        function test_hgArtCompactUniformDimensions() {
+            for (const key of allTokens) {
+                verify(Hg.ART_COMPACT.hasOwnProperty(key), "ART_COMPACT has " + key);
+                const rows = Hg.ART_COMPACT[key];
+                compare(rows.length, 3, key + " compact has 3 rows");
+                for (let i = 0; i < rows.length; ++i) {
+                    compare(rows[i].length, 7, key + " compact row " + i + " is 7 cells wide");
+                }
+            }
+            compare(Hg.artCompact("partly_cloudy", true), Hg.ART_COMPACT.night_partly_cloudy);
+            compare(Hg.artCompact("bogus", false), Hg.ART_COMPACT.unknown);
+        }
+
         function test_hgArtNightRouting() {
             compare(Hg.art("clear", false), Hg.ART.clear);
             compare(Hg.art("clear", true), Hg.ART.night_clear);
