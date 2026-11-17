@@ -23,7 +23,10 @@ Item {
     default property alias contentData: column.data
 
     implicitHeight: style.snap(column.implicitHeight + padding * 2)
-    implicitWidth: column.implicitWidth + padding * 2
+    // Fill-width container: column is anchored left/right to the window, so
+    // feeding column.implicitWidth back into implicitWidth can create a layout
+    // polish cycle.
+    implicitWidth: 0
 
     Rectangle {
         id: bezel
