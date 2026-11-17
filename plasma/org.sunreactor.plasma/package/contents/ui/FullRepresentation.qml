@@ -558,7 +558,7 @@ PlasmaExtras.Representation {
         clip: true
         // Every module exposes `available` (modules/Modules.js); the
         // loaded type is only known at run time.
-        visible: status === Loader.Ready && item.available === true // qmllint disable missing-property
+        visible: status === Loader.Ready && item !== null && item.available === true // qmllint disable missing-property
         active: moduleSource.length > 0 && (!pageSlot || (root.client.popupOpen && pageCurrent))
 
         onModuleSourceChanged: load()

@@ -114,14 +114,17 @@ ColumnLayout {
                     required property int index
                     readonly property bool isAll: index === root.curves.length
                     readonly property int value: isAll ? -1 : index
+                    // The model outlives the curves for a tick when they shrink.
+                    readonly property string monitorId: !isAll && index < root.curves.length
+                        && root.curves[index] ? root.curves[index].monitorId : ""
 
                     style: root.style
                     height: root.style.tabHeight
                     font: root.style.techFont
                     text: isAll ? i18ndc(root.domain, "Channel chip: every display", "ALL")
-                        : DayCurve.shortName(root.curves[index].monitorId)
+                        : DayCurve.shortName(chip.monitorId)
                     active: root.selected === value
-                    Accessible.name: isAll ? text : root.curves[index].monitorId
+                    Accessible.name: isAll ? text : chip.monitorId
 
                     onClicked: root.selected = value
                 }

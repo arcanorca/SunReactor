@@ -1,4 +1,6 @@
 #include <QCoreApplication>
+#include <QFont>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -84,14 +86,14 @@ private:
         theme[QStringLiteral("widget")] = widget;
 
         QJsonObject m1;
-        m1[QStringLiteral("logical_id")] = QStringLiteral("DP-1");
+        m1[QStringLiteral("logical_id")] = QStringLiteral("DP-3");
         m1[QStringLiteral("enabled")] = true;
         m1[QStringLiteral("last_applied_percent")] = 55;
         m1[QStringLiteral("min_pct")] = 15;
         m1[QStringLiteral("max_pct")] = 85;
 
         QJsonObject m2;
-        m2[QStringLiteral("logical_id")] = QStringLiteral("HDMI-A-1");
+        m2[QStringLiteral("logical_id")] = QStringLiteral("DP-1");
         m2[QStringLiteral("enabled")] = true;
         m2[QStringLiteral("last_applied_percent")] = 60;
         m2[QStringLiteral("min_pct")] = 20;
@@ -120,28 +122,16 @@ private:
         }
 
         QJsonObject m1;
-        m1[QStringLiteral("monitor_id")] = QStringLiteral("DP-1");
+        m1[QStringLiteral("monitor_id")] = QStringLiteral("DP-3");
         m1[QStringLiteral("min_pct")] = 15;
         m1[QStringLiteral("max_pct")] = 85;
         m1[QStringLiteral("samples")] = samples;
 
         QJsonObject m2;
-        m2[QStringLiteral("monitor_id")] = QStringLiteral("HDMI-A-1");
+        m2[QStringLiteral("monitor_id")] = QStringLiteral("DP-1");
         m2[QStringLiteral("min_pct")] = 20;
         m2[QStringLiteral("max_pct")] = 90;
         m2[QStringLiteral("samples")] = samples;
-
-        QJsonObject m3;
-        m3[QStringLiteral("monitor_id")] = QStringLiteral("eDP-1");
-        m3[QStringLiteral("min_pct")] = 10;
-        m3[QStringLiteral("max_pct")] = 80;
-        m3[QStringLiteral("samples")] = samples;
-
-        QJsonObject m4;
-        m4[QStringLiteral("monitor_id")] = QStringLiteral("DP-2");
-        m4[QStringLiteral("min_pct")] = 15;
-        m4[QStringLiteral("max_pct")] = 95;
-        m4[QStringLiteral("samples")] = samples;
 
         QJsonObject sun;
         sun[QStringLiteral("sunrise")] = 1700024400;
@@ -152,7 +142,7 @@ private:
         curve[QStringLiteral("date")] = QStringLiteral("2026-11-17");
         curve[QStringLiteral("step_minutes")] = 15;
         curve[QStringLiteral("sun")] = sun;
-        curve[QStringLiteral("monitors")] = QJsonArray{m1, m2, m3, m4};
+        curve[QStringLiteral("monitors")] = QJsonArray{m1, m2};
         return curve;
     }
 
@@ -190,6 +180,7 @@ private Q_SLOTS:
 
 void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
 {
+    QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
     const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
@@ -201,7 +192,7 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
     view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
     view.rootContext()->setContextObject(&i18nStub);
     view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
-    view.setResizeMode(QQuickView::SizeRootObjectToView);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
     view.resize(340, 420);
 
     const QString uiDir = QStringLiteral(PLASMA_UI_DIR);
@@ -209,18 +200,28 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
         import QtQuick
         import QtQuick.Layouts
         import org.kde.plasma.components as PlasmaComponents3
+        import org.kde.plasma.extras as PlasmaExtras
+        import org.kde.kirigami as Kirigami
         import org.sunreactor.plasma
         import "engine" as Engine
         import "modules" as Mod
+        import "components" as Comp
+        import "components/tabs" as Tabs
         import "skins/cyberpunk" as Cyber
 
-        Item {
+        PlasmaExtras.Representation {
             id: root
             property alias client: client
             property alias themeObj: theme
             property alias settingsObj: settings
             property alias lightCycle: cycleLoader.item
-            property real containerWidth: 320
+            readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * theme.scaleFactor)
+
+            Layout.minimumWidth: theme.gridUnit * 16
+            Layout.preferredWidth: theme.gridUnit * 19
+            Layout.maximumWidth: theme.gridUnit * 40
+            width: theme.gridUnit * 19
+            height: 560
 
             SunReactorClient {
                 id: client
@@ -230,29 +231,99 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
                 id: theme
                 spec: client.theme
                 source: "follow"
+                overrides: ({ uiScale: 115 })
             }
             Mod.ModuleSettings {
                 id: settings
             }
-            PlasmaComponents3.ScrollView {
-                id: panel
-                width: root.containerWidth
-                height: 400
-                PlasmaComponents3.ScrollBar.horizontal.visible: false
+            Binding {
+                target: theme
+                property: "gridContentWidth"
+                value: pages.width - 2 * root.edgeInset - theme.gridUnit
+            }
+
+            contentItem: ColumnLayout {
+                spacing: 0
                 ColumnLayout {
-                    id: pageColumn
-                    width: panel.width - 20
+                    id: headerColumn
+                    Layout.fillWidth: true
+                    Layout.leftMargin: root.edgeInset
+                    Layout.rightMargin: root.edgeInset
+                    spacing: 0
                     Loader {
-                        id: cycleLoader
                         Layout.fillWidth: true
                         Layout.maximumWidth: parent ? parent.width : 0
-                        Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/LightCycle.qml"), {
+                        Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/Telemetry.qml"), {
                             theme: root.themeObj,
                             client: root.client,
                             settings: root.settingsObj,
                         })
                     }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Loader {
+                            Layout.fillWidth: true
+                            Component.onCompleted: setSource(Qt.resolvedUrl("components/tabs/InstrumentTabs.qml"), {
+                                theme: root.themeObj,
+                                tabs: [{ id: "brightness", text: "Brightness", hint: "" },
+                                       { id: "weather", text: "Weather", hint: "" }],
+                                current: "brightness",
+                            })
+                        }
+                    }
                 }
+                Item {
+                    id: pages
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.topMargin: theme.sectionSpacing
+                    PlasmaComponents3.ScrollView {
+                        id: panel
+                        anchors.fill: parent
+                        PlasmaComponents3.ScrollBar.horizontal.visible: false
+                        ColumnLayout {
+                            id: pageColumn
+                            x: root.edgeInset
+                            width: panel.width - 2 * root.edgeInset - theme.gridUnit
+                            spacing: theme.sectionSpacing
+                            Loader {
+                                id: cycleLoader
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: parent ? parent.width : 0
+                                Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/LightCycle.qml"), {
+                                    theme: root.themeObj,
+                                    client: root.client,
+                                    settings: root.settingsObj,
+                                })
+                            }
+                            Loader {
+                                id: displaysLoader
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: parent ? parent.width : 0
+                                Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/Displays.qml"), {
+                                    theme: root.themeObj,
+                                    client: root.client,
+                                    settings: root.settingsObj,
+                                })
+                            }
+                            Loader {
+                                id: autoLoader
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: parent ? parent.width : 0
+                                Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/Automation.qml"), {
+                                    theme: root.themeObj,
+                                    client: root.client,
+                                    settings: root.settingsObj,
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+            footer: Comp.PopupFooter {
+                client: root.client
+                theme: root.themeObj
             }
         }
     )";
@@ -300,12 +371,41 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
 
     int implicitWidthChanges = 0;
     int widthChanges = 0;
+    int allDescendantWidthChanges = 0;
     connect(frame, &QQuickItem::implicitWidthChanged, this, [&implicitWidthChanges]() {
         ++implicitWidthChanges;
     });
     connect(frame, &QQuickItem::widthChanged, this, [&widthChanges]() {
         ++widthChanges;
     });
+    for (QQuickItem *desc : frame->findChildren<QQuickItem *>()) {
+        connect(desc, &QQuickItem::widthChanged, this, [&allDescendantWidthChanges]() {
+            ++allDescendantWidthChanges;
+        });
+    }
+
+    // Pump 500ms right after load at popup width (gridUnit * 19) to catch any polish oscillation.
+    for (int turn = 0; turn < 60; ++turn) {
+        view.requestUpdate();
+        QCoreApplication::processEvents();
+        QTest::qWait(8);
+    }
+    qInfo() << "initial 500ms: implicitWidthChanges=" << implicitWidthChanges
+            << "frameWidthChanges=" << widthChanges
+            << "descendantWidthChanges=" << allDescendantWidthChanges
+            << "gridUnit=" << rootObj->property("themeObj").value<QObject *>()->property("gridUnit")
+            << "scaleFactor=" << rootObj->property("themeObj").value<QObject *>()->property("scaleFactor")
+            << "rootImplicitWidth=" << qobject_cast<QQuickItem *>(rootObj)->implicitWidth()
+            << "frameWidth=" << frame->width();
+    for (QQuickItem *child : qobject_cast<QQuickItem *>(rootObj)->findChildren<QQuickItem *>()) {
+        if (child->implicitWidth() > 300) {
+            qInfo() << "wide item:" << child->metaObject()->className() << child->objectName()
+                    << "implicitWidth=" << child->implicitWidth() << "width=" << child->width();
+        }
+    }
+    QVERIFY2(allDescendantWidthChanges <= 50,
+             qPrintable(QStringLiteral("Descendant widths oscillated (%1 changes) in initial 500ms")
+                            .arg(allDescendantWidthChanges)));
 
     // Resize the popup across widths that wrap/unwrap Flow (including 0 width
     // during open/close) and toggle the channel selection (showAll=false -> true -> false).
@@ -315,7 +415,7 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
     for (int w : widths) {
         implicitWidthChanges = 0;
         widthChanges = 0;
-        rootObj->setProperty("containerWidth", w);
+        rootObj->setProperty("width", w);
         for (int turn = 0; turn < 20; ++turn) {
             QCoreApplication::processEvents();
             QTest::qWait(5);

@@ -24,6 +24,7 @@ Item {
     property color tint: "transparent"
 
     readonly property bool active: strength > 0.01 && source !== null && source.visible
+        && source.width > 0 && source.height > 0
 
     visible: active
 

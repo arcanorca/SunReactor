@@ -141,14 +141,21 @@ ColumnLayout {
                 font: root.style.tinyFont
                 color: root.limitsOpen ? root.style.cyan : root.style.muted
             }
-            Bracket {
+            Item {
                 visible: root.showRange
                 Layout.alignment: Qt.AlignVCenter
-                style: root.style
-                value: root.minPct + "–" + root.maxPct
-                font: root.style.tinyFont
-                color: root.limitsOpen ? root.style.cyan : root.style.ink
-                bracketColor: root.limitsOpen ? root.style.cyan : root.style.muted
+                implicitWidth: rangeBracket.implicitWidth
+                implicitHeight: rangeBracket.implicitHeight
+
+                Bracket {
+                    id: rangeBracket
+
+                    style: root.style
+                    value: root.minPct + "–" + root.maxPct
+                    font: root.style.tinyFont
+                    color: root.limitsOpen ? root.style.cyan : root.style.ink
+                    bracketColor: root.limitsOpen ? root.style.cyan : root.style.muted
+                }
 
                 MouseArea {
                     anchors.fill: parent
