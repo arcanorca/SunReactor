@@ -97,9 +97,9 @@ Item {
         rightTitle: root.points.length > 0
             ? i18ndp(root.domain, "next hour", "next %1 h", Math.max(1, Math.round((root.points[root.points.length - 1].epochS - root.client.nowEpochS) / 3600)))
             : ""
-        contentRows: 4
+        contentRows: 6
 
-        // Column separators, rows 0-2 (the sparkline row runs under them).
+        // Column separators, rows 0-4 (the sparkline row runs under them).
         Repeater {
             model: root.slots.length > 1 ? root.slots.slice(1) : []
 
@@ -109,7 +109,7 @@ Item {
                 x: term.lineX(modelData.start - 1)
                 y: term.cy(0)
                 width: term.lw
-                height: term.cy(3)
+                height: term.cy(5)
                 color: root.theme.borderInactive
                 antialiasing: false
             }
@@ -125,11 +125,10 @@ Item {
                 required property int index
 
                 readonly property var geometry: root.slots[index]
-                readonly property var icon: Art.weatherIcon(modelData.condition, root.nightAt(modelData.epochS))
 
                 x: term.cx(geometry.start)
                 width: term.cx(geometry.width)
-                height: term.cy(3)
+                height: term.cy(5)
 
                 TermText {
                     id: timeLabel
@@ -142,27 +141,21 @@ Item {
                     color: root.theme.textMuted
                 }
 
-                // The symbol, two rows high, or the chosen Weather icons style in its place.
+                // The symbol, three rows high, or the chosen Weather icons style in its place.
                 ThemedWeatherIcon {
-                    x: term.cx(Math.max(0, Math.floor((slot.geometry.width - symbol.cols) / 2)))
+                    x: Math.round((slot.width - size) / 2)
                     y: term.cy(1)
                     theme: root.theme
                     condition: slot.modelData.condition
                     night: root.nightAt(slot.modelData.epochS)
-                    size: Math.min(term.cy(2), term.cx(symbol.cols))
+                    size: Math.min(term.cy(3), slot.width)
 
-                    TermPicture {
-                        id: symbol
-
-                        tm: term
+                    TerminalIcon {
+                        anchors.fill: parent
                         theme: root.theme
-                        x: 0
-                        y: 0
-                        rows: slot.icon.rows
-                        roles: slot.icon.roles
-                        colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.textMuted, root.theme.fg, 0.4),
-                                    m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
-                                    d: root.theme.borderInactive })
+                        condition: slot.modelData.condition
+                        night: root.nightAt(slot.modelData.epochS)
+                        size: parent.width
                     }
                 }
 
@@ -170,7 +163,7 @@ Item {
                     id: tempLabel
 
                     tm: term
-                    y: term.cy(2)
+                    y: term.cy(4)
                     x: term.cx(Math.max(0, Math.floor((slot.geometry.width - usedCells) / 2)))
                     value: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
                                   Math.round(slot.modelData.temperatureC))
@@ -181,12 +174,12 @@ Item {
             }
         }
 
-        // The sparkline, one cell per level, across the whole strip (row 3).
+        // The sparkline, one cell per level, across the whole strip (row 5).
         TermPicture {
             visible: root.spark.length > 0
             tm: term
             theme: root.theme
-            y: term.cy(3)
+            y: term.cy(5)
             rows: [root.spark]
             roles: [root.spark.replace(/./gu, "a")]
             colours: ({ a: root.theme.mix(root.theme.bg, root.theme.secondaryAccent, 0.55) })

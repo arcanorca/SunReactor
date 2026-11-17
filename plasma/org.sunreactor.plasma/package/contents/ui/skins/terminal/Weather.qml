@@ -182,16 +182,12 @@ Item {
             night: root.night
             size: Math.min(term.cy(7) - term.cy(0), term.cx(root.artCols))
 
-            TermPicture {
-                tm: term
+            TerminalIcon {
+                anchors.fill: parent
                 theme: root.theme
-                x: 0
-                y: 0
-                rows: root.sky.rows
-                roles: root.sky.roles
-                colours: ({ o: root.theme.accent, h: root.theme.secondaryAccent, c: root.theme.mix(root.theme.fg, root.theme.bg, 0.15),
-                            m: root.theme.textMuted, y: root.theme.warning, w: root.theme.fg,
-                            d: root.theme.borderInactive })
+                condition: root.client.hasWeatherReading ? root.client.weatherCondition : ""
+                night: root.night
+                size: parent.width
             }
         }
 

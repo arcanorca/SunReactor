@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.13.0] - Unreleased
 
 ### Changed
+- Redesigned hackergreen 4x9 ASCII weather art (`Hg.js`, `Weather.qml`, `Forecast.qml`,
+  `HackergreenIcon.qml`) with a shared cloud silhouette, aligned precipitation rows, and
+  `night_partly_cloudy` support, and upgraded `TerminalIcon.qml` from 6x6 to 16x16
+  pixel-snapped weather sprites.
 - External brightness changes are respected for the configured cooldown before
   SunReactor resumes automatic control; wake and topology recovery still correct
   immediately, and status/TUI expose active holds.

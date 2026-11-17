@@ -26,8 +26,8 @@ Item {
     implicitWidth: size
     implicitHeight: size
 
-    /*! Font size of the rows: seven cells of about 0.6 em across fit the square. */
-    readonly property int fontPx: Math.floor(size / 4.2)
+    /*! Font size of the rows: nine cells of 0.6 em across fit the square. */
+    readonly property int fontPx: Math.floor(size / 5.4)
     /*! The rows need at least 9 device px of font to read. */
     readonly property bool legible: fontPx * theme.grid.devicePixelRatio >= 9
     readonly property color artColour: {
@@ -54,6 +54,8 @@ Item {
                 textFormat: Text.PlainText
                 font.family: root.theme.monoFont
                 font.pixelSize: root.fontPx
+                font.kerning: false
+                font.features: ({ "calt": 0, "liga": 0, "clig": 0, "dlig": 0 })
                 color: root.artColour
                 height: Math.round(root.fontPx * 1.2)
                 verticalAlignment: Text.AlignVCenter

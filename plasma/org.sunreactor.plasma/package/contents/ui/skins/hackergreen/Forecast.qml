@@ -79,7 +79,7 @@ Item {
                 required property int index
 
                 readonly property int w: Math.floor(term.cols(root.width) / root.slots)
-                readonly property var rows: Hg.art(modelData.condition, root.isNight(modelData.epochS))
+                readonly property var rows: Hg.artCompact(modelData.condition, root.isNight(modelData.epochS))
                 x: term.cx(index * w)
                 width: term.cx(w)
                 height: term.cy(5)
@@ -96,7 +96,7 @@ Item {
                     color: root.theme.textMuted
                 }
 
-                // The three art rows, or the chosen Weather icons style in their place.
+                // The three compact art rows, or the chosen Weather icons style in their place.
                 ThemedWeatherIcon {
                     x: slot.centred(7)
                     y: term.cy(1)
