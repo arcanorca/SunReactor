@@ -66,6 +66,7 @@ private Q_SLOTS:
     void testCloudDimmingStatusIsParsed();
     void testAcknowledgedStatusDoesNotLoop();
     void testRequestTimeout();
+    void testBusyDaemonBurstKeepsConnectionAndState();
     void testThemeHotSwapping();
 
     void testNewThemeIsNormalized();
@@ -881,7 +882,7 @@ void TestSunReactorClient::testConnectedMutationsSurviveTimeout()
     QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
     client.setMonitorOverride(QStringLiteral("desk"), 42, 30);
 
-    QTRY_VERIFY_WITH_TIMEOUT(commandAttempts >= 2, 8000);
+    QTRY_VERIFY_WITH_TIMEOUT(commandAttempts >= 2, 20000);
     QVERIFY(client.isConnected());
 }
 
@@ -1094,6 +1095,85 @@ void TestSunReactorClient::testRequestTimeout()
     QVERIFY(!client.isConnected());
     QCOMPARE(client.mode(), SunReactorClient::Offline);
     QVERIFY(client.lastError().contains(QStringLiteral("timed out")));
+}
+
+void TestSunReactorClient::testBusyDaemonBurstKeepsConnectionAndState()
+{
+    // Models the real daemon: it is single threaded and, after acknowledging a
+    // forced apply (resume, clear_override), is busy past the base request
+    // timeout before it answers anything else.
+    QHash<QString, int> counts;
+    int peerClosedBeforeAck = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &counts, &peerClosedBeforeAck]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        auto buffer = std::make_shared<QByteArray>();
+        auto answered = std::make_shared<bool>(false);
+        connect(socket, &QLocalSocket::disconnected, socket, [&peerClosedBeforeAck, answered]() {
+            if (!*answered) {
+                ++peerClosedBeforeAck;
+            }
+        });
+        connect(socket, &QLocalSocket::readyRead, socket, [this, socket, buffer, answered, &counts]() {
+            buffer->append(socket->readAll());
+            if (!buffer->contains('\n')) {
+                return;
+            }
+            const QJsonObject request = QJsonDocument::fromJson(buffer->left(buffer->indexOf('\n'))).object();
+            buffer->clear();
+            m_received.append(request);
+            const QString name = request.value(QStringLiteral("request")).toString();
+            counts[name] += 1;
+
+            const auto answer = [socket, answered, name]() {
+                if (socket->state() != QLocalSocket::ConnectedState) {
+                    return;
+                }
+                QJsonObject statusObj;
+                QJsonObject monitor;
+                monitor[QStringLiteral("logical_id")] = QStringLiteral("DP-1");
+                monitor[QStringLiteral("enabled")] = true;
+                statusObj[QStringLiteral("monitors")] = QJsonArray{monitor};
+                const QJsonObject response = name == QStringLiteral("status")
+                    ? statusResponse(statusObj)
+                    : envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+                *answered = true;
+                socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+                socket->flush();
+                socket->disconnectFromServer();
+            };
+            if (name == QStringLiteral("resume") || name == QStringLiteral("clear_override")) {
+                QTimer::singleShot(3600, socket, answer);
+            } else {
+                answer();
+            }
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.monitors().size() == 1, 3000);
+
+    QSignalSpy connectionSpy(&client, &SunReactorClient::connectionChanged);
+    QSignalSpy monitorsSpy(&client, &SunReactorClient::monitorsChanged);
+    QSignalSpy errorSpy(&client, &SunReactorClient::errorOccurred);
+
+    client.resume();
+    client.clearGlobalOverride();
+    client.setMonitorOverride(QStringLiteral("DP-1"), 40, 30);
+    client.setMonitorLimits(QStringLiteral("DP-1"), 20, 80);
+
+    QTRY_VERIFY_WITH_TIMEOUT(counts.value(QStringLiteral("set_monitor_limits")) >= 1 && !client.isBusy(), 20000);
+    QTest::qWait(300);
+
+    QCOMPARE(counts.value(QStringLiteral("resume")), 1);
+    QCOMPARE(counts.value(QStringLiteral("clear_override")), 1);
+    QCOMPARE(counts.value(QStringLiteral("set_override")), 1);
+    QCOMPARE(counts.value(QStringLiteral("set_monitor_limits")), 1);
+    QCOMPARE(peerClosedBeforeAck, 0);
+    QCOMPARE(connectionSpy.count(), 0);
+    QCOMPARE(errorSpy.count(), 0);
+    QVERIFY(client.isConnected());
+    QCOMPARE(client.monitors().size(), 1);
+    Q_UNUSED(monitorsSpy);
 }
 
 void TestSunReactorClient::testThemeHotSwapping()

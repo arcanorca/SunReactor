@@ -332,6 +332,7 @@ private:
     QByteArray m_readBuffer;
     bool m_responseHandled = true;
     bool m_processNextScheduled = false;
+    bool m_watchdogExtended = false;
     qint64 m_inFlightQueuedAtMs = 0;
     int m_inFlightAttempts = 0;
     QElapsedTimer m_elapsed;
