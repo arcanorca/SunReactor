@@ -165,6 +165,59 @@ test_doas_privilege_helper_selection() {
     rm -rf "$fakebin"
 }
 
+# Stale org/sunreactor/plasma copies in other user QML roots are moved to the
+# backup tree; the installed root, other modules and non-HOME roots are not.
+test_plasma_stale_copies_are_moved() {
+    local home installed roots backup dry_run
+    home=$(mktemp -d)
+    installed="$home/.local/lib/qt6/qml"
+    mkdir -p "$installed/org/sunreactor/plasma" \
+        "$home/.local/lib/qml/org/sunreactor/plasma" \
+        "$home/.local/lib/qml/org/sunreactor/tools" \
+        "$home/.local/lib/qml/org/other/mod" \
+        "$home/extra/qml/org/sunreactor/plasma"
+    printf 'new\n' >"$installed/org/sunreactor/plasma/libsunreactorpluginplugin.so"
+    printf 'stale\n' >"$home/.local/lib/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so"
+    printf 'stale\n' >"$home/extra/qml/org/sunreactor/plasma/qmldir"
+    printf 'tools\n' >"$home/.local/lib/qml/org/sunreactor/tools/tools.so"
+    printf 'other\n' >"$home/.local/lib/qml/org/other/mod/qmldir"
+
+    # shellcheck disable=SC2016
+    roots=$(HOME="$home" XDG_DATA_HOME="$home/data" QML_IMPORT_PATH="/usr/lib/qt6/qml:$home/extra/qml" \
+        QML2_IMPORT_PATH="$installed" SUNREACTOR_INSTALLER_LIBRARY=1 \
+        bash -c 'source "$1"; plasma_stale_scan_roots "$2"' _ "$ROOT_DIR/install.sh" "$installed")
+    assert_contains "$roots" "$home/extra/qml"
+    assert_contains "$roots" "$home/.local/lib/qml"
+    [[ "$roots" != *"$installed"* && "$roots" != */usr/* ]] || {
+        printf 'scan roots include the installed or a non-HOME directory: %s\n' "$roots" >&2
+        exit 1
+    }
+
+    # shellcheck disable=SC2016
+    HOME="$home" XDG_DATA_HOME="$home/data" QML_IMPORT_PATH="/usr/lib/qt6/qml:$home/extra/qml" \
+        QML2_IMPORT_PATH="$installed" SUNREACTOR_INSTALLER_LIBRARY=1 \
+        bash -c 'source "$1"; sweep_stale_plasma_copies "$2"' _ "$ROOT_DIR/install.sh" "$installed" \
+        2>"$home/sweep.log"
+
+    [[ ! -e "$home/.local/lib/qml/org/sunreactor/plasma" && ! -e "$home/extra/qml/org/sunreactor/plasma" ]]
+    grep -F 'Moved stale SunReactor plugin copy' "$home/sweep.log" >/dev/null
+    grep -F "$home/.local/lib/qml/org/sunreactor/plasma" "$home/sweep.log" >/dev/null
+    backup=$(find "$home/data/sunreactor-backups" -path '*/stale-plugin-*' -name libsunreactorpluginplugin.so | head -n 1)
+    [[ -n "$backup" ]] && grep -Fx 'stale' "$backup" >/dev/null
+    [[ -f "$(find "$home/data/sunreactor-backups" -path '*/stale-plugin-*' -name qmldir | head -n 1)" ]]
+    grep -Fx 'new' "$installed/org/sunreactor/plasma/libsunreactorpluginplugin.so" >/dev/null
+    grep -Fx 'tools' "$home/.local/lib/qml/org/sunreactor/tools/tools.so" >/dev/null
+    grep -Fx 'other' "$home/.local/lib/qml/org/other/mod/qmldir" >/dev/null
+
+    # The dry-run plan lists the same scan roots and changes nothing.
+    dry_run=$(HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" QML2_IMPORT_PATH="$installed" \
+        bash "$ROOT_DIR/install.sh" --dry-run --with-plasma)
+    assert_contains "$dry_run" "stale-plugin-"
+    assert_contains "$dry_run" "scan: $home/.local/lib/qml"
+    rm -rf "$home"
+}
+
 test_systemd_setup_failure_restores_previous_installation() {
     local home fakebin marker
     home=$(mktemp -d)
@@ -1030,6 +1083,7 @@ test_qtpaths6_lib64_layout
 test_plasma_widget_success_is_atomic_and_keeps_backup
 test_plasma_failure_never_fails_install
 test_plasma_qmlcache_cleared_and_running_warning
+test_plasma_stale_copies_are_moved
 
 test_checksum_helpers
 test_archive_member_rejection

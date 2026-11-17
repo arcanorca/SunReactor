@@ -136,6 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directories are gone too.
 
 ### Fixed
+- The installer moves stale `org/sunreactor/plasma` plugin copies out of the other user QML import roots (into `stale-plugin-<timestamp>` under the widget backup root), so plasmashell can no longer load an old plugin.
 - On Wayland with `desktop_idle_timeout_minutes > 0`, returning input now wakes
   idle-dimmed screens instead of leaving them dimmed until the next IPC wake.
 - With `desktop_idle_sync = false`, the Wayland wake-hint watcher still runs, so

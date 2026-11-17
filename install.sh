@@ -945,7 +945,7 @@ plasma_widget_decision() {
 }
 
 print_plasma_widget_plan() {
-    local tool state tools="" qml_system_dir qml_relative_dir
+    local tool state tools="" qml_system_dir qml_relative_dir scan_root
     plasma_widget_decision || true
     qml_system_dir=$(qt6_qml_system_dir)
     qml_relative_dir=$(qml_install_relative_dir "$qml_system_dir")
@@ -961,6 +961,10 @@ print_plasma_widget_plan() {
     printf '  qml-dir:  %s (system Qt path: %s)\n' "$PLASMA_PREFIX/$qml_relative_dir" "$qml_system_dir"
     printf '  package:  %s\n' "$PLASMA_PKG_DIR"
     printf '  backups:  %s/plasma-widget-<timestamp>-<pid>/\n' "$PLASMA_BACKUP_ROOT"
+    printf '  stale:    org/sunreactor/plasma copies in these roots move to %s/stale-plugin-<timestamp>-<pid>/\n' "$PLASMA_BACKUP_ROOT"
+    while IFS= read -r scan_root; do
+        printf '            scan: %s\n' "$scan_root"
+    done < <(plasma_stale_scan_roots "$PLASMA_PREFIX/$qml_relative_dir")
     printf '  qmlcache: %s (cleared after install)\n' "$PLASMA_QMLCACHE_DIR"
     printf '  restart:  %s (never run by the installer)\n' "$PLASMA_RESTART_CMD"
     if [[ $NO_SERVICE -eq 1 ]]; then
@@ -1019,6 +1023,47 @@ qml_install_relative_dir() {
     fi
     [[ -n "$relative" ]] || relative="lib/qt6/qml"
     printf '%s\n' "$relative"
+}
+
+# Prints the user-owned QML import roots that may hold a stale SunReactor
+# plugin: every QML_IMPORT_PATH/QML2_IMPORT_PATH entry plus the two user-local
+# Qt directories. Only directories under $HOME are printed, each once, and the
+# directory the plugin was just installed to ($1) is skipped.
+plasma_stale_scan_roots() {
+    local installed="${1%/}" entry seen=":"
+    while IFS= read -r entry; do
+        entry="${entry%/}"
+        [[ "$entry" == "$HOME"/* && "$entry" != "$installed" ]] || continue
+        [[ "$seen" != *":$entry:"* ]] || continue
+        seen+="$entry:"
+        printf '%s\n' "$entry"
+    done < <(printf '%s\n' "${QML_IMPORT_PATH:-}" "${QML2_IMPORT_PATH:-}" \
+        "$HOME/.local/lib/qt6/qml" "$HOME/.local/lib/qml" | tr ':' '\n')
+}
+
+# Moves org/sunreactor/plasma copies found in the other scanned roots into a
+# stale-plugin-<timestamp> directory under the widget backup root. Only that
+# subtree is touched. Never fails the install: problems are logged as warnings.
+sweep_stale_plasma_copies() {
+    local installed="$1" root stale dest stale_root=""
+    while IFS= read -r root; do
+        stale="$root/org/sunreactor/plasma"
+        [[ -d "$stale" && ! -L "$stale" ]] || continue
+        if [[ -z "$stale_root" ]]; then
+            stale_root="$PLASMA_BACKUP_ROOT/stale-plugin-$(date +%Y%m%d-%H%M%S)-$$"
+            if ! mkdir -p "$stale_root"; then
+                log_warning "Cannot create $stale_root; stale plugin copies were left in place."
+                return 0
+            fi
+        fi
+        dest="$stale_root$root/org/sunreactor/plasma"
+        if mkdir -p "$(dirname "$dest")" && mv "$stale" "$dest"; then
+            log_warning "Moved stale SunReactor plugin copy out of the QML import path: $stale (backup: $dest)"
+        else
+            log_warning "Could not move stale SunReactor plugin copy: $stale"
+        fi
+    done < <(plasma_stale_scan_roots "$installed")
+    return 0
 }
 
 shell_single_quote() {
@@ -1164,6 +1209,8 @@ install_plasma_widget() {
             return 1
         fi
     done < <(cd "$staged_root" && find . -type f ! -path './share/plasma/*' -print0)
+
+    sweep_stale_plasma_copies "$qml_dir"
 
     rmdir "$backup_dir" 2>/dev/null || true
     log_success "Plasma widget installed: $PLASMA_PKG_DIR"
