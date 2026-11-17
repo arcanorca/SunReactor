@@ -924,7 +924,9 @@ readonly PLASMA_SRC_DIR="$SCRIPT_DIR/plasma/$PLASMA_ID"
 readonly DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 readonly PLASMA_PKG_DIR="$DATA_HOME/plasma/plasmoids/$PLASMA_ID"
 readonly PLASMA_BACKUP_ROOT="$DATA_HOME/sunreactor-backups"
+readonly PLASMA_QMLCACHE_DIR="$CACHE_HOME/plasmashell/qmlcache"
 readonly PLASMA_RESTART_CMD="systemctl --user restart plasma-plasmashell.service"
+readonly PLASMA_REPLACE_CMD="plasmashell --replace"
 
 # Sets PLASMA_DECISION to "install" or "skip: <reason>". Returns 0 to install.
 plasma_widget_decision() {
@@ -959,6 +961,7 @@ print_plasma_widget_plan() {
     printf '  qml-dir:  %s (system Qt path: %s)\n' "$PLASMA_PREFIX/$qml_relative_dir" "$qml_system_dir"
     printf '  package:  %s\n' "$PLASMA_PKG_DIR"
     printf '  backups:  %s/plasma-widget-<timestamp>-<pid>/\n' "$PLASMA_BACKUP_ROOT"
+    printf '  qmlcache: %s (cleared after install)\n' "$PLASMA_QMLCACHE_DIR"
     printf '  restart:  %s (never run by the installer)\n' "$PLASMA_RESTART_CMD"
     if [[ $NO_SERVICE -eq 1 ]]; then
         printf '  service:  disabled by --no-service\n'
@@ -1064,6 +1067,21 @@ EOF
     log_info "Qt QML import directory recorded: $qml_dir"
 }
 
+clear_plasma_qmlcache() {
+    if [[ -d "$PLASMA_QMLCACHE_DIR" ]]; then
+        rm -rf "$PLASMA_QMLCACHE_DIR"
+        log_info "Cleared Plasma QML cache: $PLASMA_QMLCACHE_DIR"
+    fi
+}
+
+plasmashell_is_running() {
+    if command -v pgrep >/dev/null 2>&1; then
+        pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
 # Builds, stages and installs the widget. Every step before the first change
 # to the user's files is a check, so a failure leaves the previous widget alone.
 install_plasma_widget() {
@@ -1165,8 +1183,18 @@ install_plasma_widget() {
         fi
     fi
 
-    log_info "Restart plasmashell to load the widget (the installer does not restart it):"
-    log_info "    $PLASMA_RESTART_CMD"
+    clear_plasma_qmlcache
+
+    if plasmashell_is_running; then
+        log_warning "plasmashell is currently running with the previous QML/plugin in memory."
+        log_warning "Restart it to load the updated widget (the installer does not restart it automatically):"
+        log_info "    $PLASMA_RESTART_CMD"
+        log_info "    or: $PLASMA_REPLACE_CMD"
+    else
+        log_info "Restart plasmashell to load the widget (the installer does not restart it):"
+        log_info "    $PLASMA_RESTART_CMD"
+        log_info "    or: $PLASMA_REPLACE_CMD"
+    fi
     return 0
 }
 

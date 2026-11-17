@@ -732,6 +732,7 @@ test_plasma_dry_run_changes_nothing() {
         bash "$ROOT_DIR/install.sh" --dry-run --with-plasma)
     assert_contains "$out" "decision: install"
     assert_contains "$out" "$home/data/plasma/plasmoids/org.sunreactor.plasma"
+    assert_contains "$out" "qmlcache"
     assert_contains "$out" "systemctl --user restart plasma-plasmashell.service"
     [[ ! -e "$home/.local" && ! -e "$home/data" && ! -e "$home/config" ]] || {
         printf 'dry run created files under HOME\n' >&2
@@ -914,6 +915,76 @@ test_plasma_failure_never_fails_install() {
     rm -rf "$home" "$fakebin"
 }
 
+test_plasma_qmlcache_cleared_and_running_warning() {
+    local home fakebin status
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    plasma_shims "$fakebin"
+
+    mkdir -p "$home/cache/plasmashell/qmlcache" "$home/cache/other"
+    printf 'stale\n' >"$home/cache/plasmashell/qmlcache/stale.qmlc"
+    printf 'keep\n' >"$home/cache/plasmashell/keep.txt"
+    printf 'keep\n' >"$home/cache/other/keep.txt"
+
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$fakebin/pgrep"
+    chmod +x "$fakebin/pgrep"
+
+    set +e
+    HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" CMAKE_STUB_LOG="$home/cmake-calls" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service --with-plasma >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    status=$?
+    set -e
+    [[ $status -eq 0 ]] || {
+        cat "$home/installer.log" >&2
+        exit 1
+    }
+
+    [[ ! -e "$home/cache/plasmashell/qmlcache" ]] || {
+        printf 'plasmashell/qmlcache was not cleared\n' >&2
+        exit 1
+    }
+    [[ -f "$home/cache/plasmashell/keep.txt" && -f "$home/cache/other/keep.txt" ]] || {
+        printf 'unrelated cache files were removed\n' >&2
+        exit 1
+    }
+    grep -F 'Cleared Plasma QML cache' "$home/installer.log" >/dev/null
+    grep -F 'plasmashell is currently running' "$home/installer.log" >/dev/null
+    grep -F 'systemctl --user restart plasma-plasmashell.service' "$home/installer.log" >/dev/null
+    grep -F 'plasmashell --replace' "$home/installer.log" >/dev/null
+
+    # When plasmashell is not running, the running-process warning is omitted.
+    printf '#!/usr/bin/env bash\nexit 1\n' >"$fakebin/pgrep"
+    chmod +x "$fakebin/pgrep"
+    HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" CMAKE_STUB_LOG="$home/cmake-calls" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service --with-plasma >/dev/null 2>"$HOME/installer-stopped.log"
+        ' _ "$ROOT_DIR/install.sh"
+
+    if grep -F 'plasmashell is currently running' "$home/installer-stopped.log" >/dev/null; then
+        printf 'running-plasmashell warning printed when plasmashell was stopped\n' >&2
+        exit 1
+    fi
+    grep -F 'Restart plasmashell to load the widget' "$home/installer-stopped.log" >/dev/null
+
+    rm -rf "$home" "$fakebin"
+}
+
 test_checksum_helpers() {
     local file expected
     file=$(mktemp)
@@ -958,6 +1029,7 @@ test_plasma_environment_is_idempotent
 test_qtpaths6_lib64_layout
 test_plasma_widget_success_is_atomic_and_keeps_backup
 test_plasma_failure_never_fails_install
+test_plasma_qmlcache_cleared_and_running_warning
 
 test_checksum_helpers
 test_archive_member_rejection
