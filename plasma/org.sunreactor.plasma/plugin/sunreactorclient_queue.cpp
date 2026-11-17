@@ -153,9 +153,10 @@ void SunReactorClient::processNextRequest()
     m_inFlightQueuedAtMs = queued.queuedAtMs;
     m_inFlightAttempts = queued.attempts;
     m_readBuffer.clear();
+    m_watchdogExtended = false;
 
     m_socket->abort();
-    m_watchdogTimer->start();
+    m_watchdogTimer->start(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS);
     m_socket->connectToServer(resolvedSocketPath());
 }
 

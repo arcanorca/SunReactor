@@ -261,4 +261,4 @@ target_link_libraries(test_cyberpunk_layout PRIVATE
 
 add_test(NAME test_cyberpunk_layout COMMAND test_cyberpunk_layout)
 set_tests_properties(test_cyberpunk_layout PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1.35;QT_FORCE_STDERR_LOGGING=1")

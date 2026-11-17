@@ -18,6 +18,8 @@ inline constexpr int kMaxReconnectBackoffMs = 8000;
 inline constexpr qsizetype kMaxDisplayStringLength = 64;
 inline constexpr qsizetype kMaxRequestIdentifierLength = 1024;
 inline constexpr int kMaxReadTransportRetries = 1;
+// Extra wait for a connected daemon that is busy applying a previous change.
+inline constexpr int kBusyDaemonGraceMs = 9000;
 
 inline const QString kStatus = QStringLiteral("status");
 inline const QString kDayCurve = QStringLiteral("day_curve");

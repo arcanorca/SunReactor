@@ -102,6 +102,18 @@ void SunReactorClient::onSocketError(QLocalSocket::LocalSocketError socketError)
 
 void SunReactorClient::onRequestTimeout()
 {
+    // The daemon is single threaded: after it acknowledges a command it applies
+    // the change to the hardware before it accepts the next connection, which
+    // can take longer than the base timeout. Giving up here closes a socket the
+    // daemon is about to answer (Broken pipe on its side), replays the command
+    // and, through setConnected(false), wipes the status the popup renders. A
+    // client that was connected a moment ago and holds an open socket waits one
+    // more grace period before it treats the daemon as gone.
+    if (m_isConnected && !m_watchdogExtended && m_socket->state() == QLocalSocket::ConnectedState) {
+        m_watchdogExtended = true;
+        m_watchdogTimer->start(kBusyDaemonGraceMs);
+        return;
+    }
     transportError(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
 }
 
