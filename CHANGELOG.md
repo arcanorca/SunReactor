@@ -95,8 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Installer**: an optional Plasma widget step. `--with-plasma` and `--no-plasma`
   choose it explicitly and `--dry-run` prints the plan. It builds the plugin with
   CMake, copies the plugin and QML module under `~/.local`, replaces the widget
-  package, and keeps the previous widget in `~/.local/share/sunreactor-backups/`.
-  It never restarts plasmashell and never fails the installation.
+  package, keeps the previous widget in `~/.local/share/sunreactor-backups/`,
+  clears `${XDG_CACHE_HOME:-~/.cache}/plasmashell/qmlcache` to prevent stale QML
+  bytecode mismatches, and warns when `plasmashell` is running so you know to
+  restart it (`systemctl --user restart plasma-plasmashell.service` or
+  `plasmashell --replace`). It never restarts plasmashell and never fails the
+  installation.
 - **Linux distribution portability**: installations without a usable systemd user
   manager now get an XDG autostart entry, and `--uninstall` removes it. OpenRC
   and runit user-level examples ship under `contrib/`; package hints select the

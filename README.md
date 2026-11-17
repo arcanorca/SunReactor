@@ -46,10 +46,11 @@ Top: brightness page in Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green and 
 - `sunreactord` from this version (older daemons work, but without themes and the day curve)
 
 ### Install
-From a clone, `./install.sh` builds and installs the widget (`--no-plasma` skips it). Then restart plasmashell:
+From a clone, `./install.sh` builds and installs the widget (`--no-plasma` skips it) and clears `~/.cache/plasmashell/qmlcache` so stale QML bytecode does not shadow the update. If `plasmashell` is already running, restart it to load the new plugin and QML files:
 
 ```bash
 systemctl --user restart plasma-plasmashell.service
+# or: plasmashell --replace
 ```
 
 Manual install and file locations are in [docs/PLASMA.md](docs/PLASMA.md).

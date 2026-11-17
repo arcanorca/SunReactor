@@ -38,7 +38,7 @@ without a usable systemd user manager, the daemon installer uses
 above is still generated and the suggested plasmashell restart command is
 printed for the user.
 
-The step builds the plugin with CMake in a temporary directory, copies the plugin and the QML module under `~/.local`, replaces the widget package in one piece, and keeps the previous widget in `~/.local/share/sunreactor-backups/`. A failed widget step is reported and never fails the installation or rolls back the daemon.
+The step builds the plugin with CMake in a temporary directory, copies the plugin and the QML module under `~/.local`, replaces the widget package in one piece, keeps the previous widget in `~/.local/share/sunreactor-backups/`, and clears `${XDG_CACHE_HOME:-~/.cache}/plasmashell/qmlcache` so stale QML/JS bytecode cannot break newly installed modules. When `plasmashell` is running, it warns you to restart it (`systemctl --user restart plasma-plasmashell.service` or `plasmashell --replace`). A failed widget step is reported and never fails the installation or rolls back the daemon.
 
 By hand, from the repository root:
 
@@ -46,6 +46,7 @@ By hand, from the repository root:
 cmake -S plasma/org.sunreactor.plasma -B build/plasma -DCMAKE_INSTALL_PREFIX="$HOME/.local"
 cmake --build build/plasma -j"$(nproc)"
 cmake --install build/plasma
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/plasmashell/qmlcache"
 systemctl --user restart plasma-plasmashell.service
 ```
 
