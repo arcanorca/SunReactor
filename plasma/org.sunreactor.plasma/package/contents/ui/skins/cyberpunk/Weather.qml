@@ -100,7 +100,7 @@ ColumnLayout {
                 }
             }
 
-            Row {
+            PixelRow {
                 Layout.alignment: Qt.AlignVCenter
                 spacing: root.style.gap * 0.5
 
@@ -182,7 +182,7 @@ ColumnLayout {
             Repeater {
                 model: root.extras
 
-                delegate: Row {
+                delegate: PixelRow {
                     id: extra
 
                     required property var modelData

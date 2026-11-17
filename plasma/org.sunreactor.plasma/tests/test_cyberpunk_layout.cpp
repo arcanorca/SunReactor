@@ -1,3 +1,5 @@
+#include <QQmlProperty>
+#include <cmath>
 #include <QCoreApplication>
 #include <QFont>
 #include <QGuiApplication>
@@ -176,6 +178,7 @@ class TestCyberpunkLayout : public QObject
 
 private Q_SLOTS:
     void cyberpunkLightCycleSettlesOnResize();
+    void cyberpunkPageIsStableAtFractionalScale();
 };
 
 void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
@@ -447,6 +450,182 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
                  qPrintable(QStringLiteral("CyberFrame.width changed %1 times on selected=%2")
                                 .arg(widthChanges)
                                 .arg(sel)));
+    }
+}
+
+// The Displays page inside the real popup structure must reach a fixed point:
+// once settled, a second of frames may not change any item's size. A Row whose
+// implicit width flips by one pixel per frame (fractional text advances against
+// pixel-snapped layout allocations) makes plasmashell polish forever.
+void TestCyberpunkLayout::cyberpunkPageIsStableAtFractionalScale()
+{
+    QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    MockDaemon daemon(sockPath);
+    QVERIFY(daemon.isListening());
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import QtQuick.Layouts
+        import org.kde.plasma.components as PlasmaComponents3
+        import org.kde.kirigami as Kirigami
+        import org.sunreactor.plasma
+        import "engine" as Engine
+        import "modules" as Mod
+        import "skins/cyberpunk" as Cyber
+
+        Item {
+            id: root
+            property alias displays: displaysLoader.item
+            readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * theme.scaleFactor)
+            width: theme.gridUnit * 19
+            height: 560
+            SunReactorClient { id: client; socketPath: testSocketPath }
+            Engine.Theme { id: theme; spec: client.theme; source: "follow"; overrides: ({ uiScale: 115 }) }
+            Mod.ModuleSettings { id: settings }
+            PlasmaComponents3.ScrollView {
+                id: panel
+                anchors.fill: parent
+                PlasmaComponents3.ScrollBar.horizontal.visible: false
+                ColumnLayout {
+                    x: root.edgeInset
+                    width: panel.width - 2 * root.edgeInset - theme.gridUnit
+                    spacing: theme.sectionSpacing
+                    Loader {
+                        id: cycleLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/LightCycle.qml"), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                    Loader {
+                        id: displaysLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/Displays.qml"), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestPage.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *displays = rootObj->property("displays").value<QObject *>();
+    for (int i = 0; i < 150 && !(displays && displays->property("available").toBool()); ++i) {
+        QTest::qWait(20);
+        displays = rootObj->property("displays").value<QObject *>();
+    }
+    QVERIFY(displays && displays->property("available").toBool());
+
+    const auto pump = [&view](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            view.requestUpdate();
+            QCoreApplication::processEvents();
+            QTest::qWait(8);
+        }
+    };
+    pump(60);
+
+    int widthChanges = 0;
+    QHash<QString, int> perItem;
+    const auto items = qobject_cast<QQuickItem *>(rootObj)->findChildren<QQuickItem *>();
+    for (QQuickItem *item : items) {
+        connect(item, &QQuickItem::widthChanged, this, [&widthChanges, &perItem, item]() {
+            ++widthChanges;
+            perItem[QString::fromLatin1(item->metaObject()->className())] += 1;
+        });
+    }
+    // A bracketed readout reports a size on the device-pixel grid, so a layout
+    // that snaps its allocation to pixels agrees with the size hint.
+    const qreal dpr = view.effectiveDevicePixelRatio();
+    int brackets = 0;
+    for (QQuickItem *item : items) {
+        if (!item->property("bracketColor").isValid()) {
+            continue;
+        }
+        ++brackets;
+        const double device = item->implicitWidth() * dpr;
+        qInfo() << "bracket" << item->implicitWidth() << item->implicitHeight() << "dpr" << dpr << "device" << device;
+        QVERIFY2(qAbs(device - std::round(device)) < 0.001,
+                 qPrintable(QStringLiteral("Bracket implicitWidth %1 is off the device pixel grid (dpr %2)")
+                                .arg(item->implicitWidth()).arg(dpr)));
+        const double deviceH = item->implicitHeight() * dpr;
+        QVERIFY2(qAbs(deviceH - std::round(deviceH)) < 0.001,
+                 qPrintable(QStringLiteral("Bracket implicitHeight %1 is off the device pixel grid").arg(item->implicitHeight())));
+    }
+    QVERIFY(brackets > 0);
+    // So does every positioner a layout places directly.
+    for (QQuickItem *item : items) {
+        const QString cls = QString::fromLatin1(item->metaObject()->className());
+        const QString parentCls = item->parentItem() ? QString::fromLatin1(item->parentItem()->metaObject()->className()) : QString();
+        if (cls.contains(QLatin1String("Layout")) || (!cls.startsWith(QLatin1String("QQuickRow")) && !cls.startsWith(QLatin1String("QQuickFlow")))) {
+            continue;
+        }
+        if (!parentCls.contains(QLatin1String("Layout"))) {
+            continue;
+        }
+        if (cls.startsWith(QLatin1String("QQuickFlow"))) {
+            // A wrapping container's width is the layout's to give.
+            const QVariant preferred = QQmlProperty(item, QStringLiteral("Layout.preferredWidth"),
+                                                    qmlContext(item)).read();
+            QVERIFY2(preferred.toDouble() == 0.0,
+                     "A Flow in a layout must not offer a fractional implicit width (Layout.preferredWidth: 0)");
+            continue;
+        }
+        const double device = item->implicitWidth() * dpr;
+        qInfo() << "positioner" << cls << "in" << parentCls << item->implicitWidth() << "device" << device;
+        QVERIFY2(qAbs(device - std::round(device)) < 0.001,
+                 qPrintable(QStringLiteral("%1 in %2: implicitWidth %3 is off the device pixel grid")
+                                .arg(cls, parentCls).arg(item->implicitWidth())));
+    }
+
+    // Open every channel's limit sliders and give them real-world labels.
+    int channel = 0;
+    for (QQuickItem *item : items) {
+        if (item->property("limitsOpen").isValid()) {
+            item->setProperty("limitsOpen", true);
+            item->setProperty("stateText", QStringLiteral("MAN"));
+            if (channel++ == 0) {
+                item->setProperty("name", QStringLiteral("Dell U2723QE Display Port Long"));
+            }
+        }
+    }
+    pump(30);
+    // Popup sizes as Plasma hands them out: fractional widths, short heights
+    // that make the page scroll, tall ones that do not.
+    const double widths[] = {312.4, 340.0, 351.7, 380.3, 402.9};
+    const double heights[] = {260.0, 420.0, 560.0, 900.0};
+    for (double w : widths) {
+        for (double h : heights) {
+            rootObj->setProperty("width", w);
+            rootObj->setProperty("height", h);
+            pump(25);
+            widthChanges = 0;
+            perItem.clear();
+            pump(60);
+            qInfo() << "scale" << qgetenv("QT_SCALE_FACTOR") << "size" << w << h
+                    << "width changes in ~0.5s:" << widthChanges << perItem;
+            QVERIFY2(widthChanges == 0,
+                     qPrintable(QStringLiteral("%1 item width changes after the page settled at %2x%3")
+                                    .arg(widthChanges).arg(w).arg(h)));
+        }
     }
 }
 

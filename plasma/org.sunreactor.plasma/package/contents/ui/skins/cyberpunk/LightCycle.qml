@@ -90,6 +90,9 @@ ColumnLayout {
         // The caption (what the readouts describe) and the channel chips: one line; the chips
         // wrap onto a second line when a display count leaves no room for them.
         Flow {
+            // A wrapping container asks for no width of its own: a fractional
+            // sum of its children would only fight the pixel-snapped allocation.
+            Layout.preferredWidth: 0
             Layout.fillWidth: true
             spacing: root.style.gap
 
@@ -136,7 +139,7 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: root.style.gap2
 
-            Row {
+            PixelRow {
                 spacing: root.style.gap * 0.5
 
                 GlitchValue {
@@ -162,7 +165,7 @@ ColumnLayout {
                 Layout.fillWidth: true
             }
 
-            Row {
+            PixelRow {
                 id: readouts
 
                 visible: !root.showAll && root.current !== null
