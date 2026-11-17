@@ -16,6 +16,9 @@ import "../package/contents/ui/modules"
 import "../package/contents/ui/modules/DayCurve.js" as DayCurve
 import "../package/contents/ui/modules/Monitors.js" as Monitors
 import "../package/contents/ui/skins/terminal"
+import "../package/contents/ui/skins/hackergreen/Hg.js" as Hg
+import "../package/contents/ui/components/weathericons"
+import "../package/contents/ui/engine"
 
 Item {
     id: stage
@@ -220,6 +223,71 @@ Item {
             control.setPct("mi-monitor", 400);
             compare(control.shownPct("mi-monitor", 40), 100, "clamped");
             control.flush();
+        }
+    }
+
+    Theme { id: iconTestTheme }
+
+    TerminalIcon {
+        id: termIconTest
+        condition: "clear"
+        night: false
+        theme: iconTestTheme
+        size: 32
+    }
+
+    TestCase {
+        name: "WeatherIcons"
+
+        readonly property var allTokens: [
+            "clear", "night_clear", "partly_cloudy", "night_partly_cloudy",
+            "cloudy", "drizzle", "rain", "heavy_rain", "thunderstorm",
+            "snow", "mist", "fog", "atmospheric", "unknown"
+        ]
+
+        function test_hgArtUniformDimensions() {
+            for (const key of allTokens) {
+                verify(Hg.ART.hasOwnProperty(key), "Hg.ART has " + key);
+                const rows = Hg.ART[key];
+                compare(rows.length, 4, key + " has 4 rows");
+                for (let i = 0; i < rows.length; ++i) {
+                    compare(rows[i].length, 9, key + " row " + i + " is 9 cells wide");
+                }
+            }
+        }
+
+        function test_hgArtNightRouting() {
+            compare(Hg.art("clear", false), Hg.ART.clear);
+            compare(Hg.art("clear", true), Hg.ART.night_clear);
+            compare(Hg.art("partly_cloudy", false), Hg.ART.partly_cloudy);
+            compare(Hg.art("partly_cloudy", true), Hg.ART.night_partly_cloudy);
+            compare(Hg.art("", false), Hg.ART.unknown);
+            compare(Hg.art("bogus", true), Hg.ART.unknown);
+        }
+
+        function test_terminalIconGridAndTokens() {
+            compare(termIconTest.gridCells, 16);
+            compare(termIconTest.artPx, 2);
+            for (const key of allTokens) {
+                verify(termIconTest.artTable16.hasOwnProperty(key), "artTable16 has " + key);
+                const g16 = termIconTest.artTable16[key];
+                compare(g16.length, 16, key + " 16x16 rows");
+                for (let y = 0; y < g16.length; ++y) {
+                    compare(g16[y].length, 16, key + " 16x16 row " + y);
+                }
+                verify(termIconTest.artTable11.hasOwnProperty(key), "artTable11 has " + key);
+                const g11 = termIconTest.artTable11[key];
+                compare(g11.length, 11, key + " 11x11 rows");
+                for (let y = 0; y < g11.length; ++y) {
+                    compare(g11[y].length, 11, key + " 11x11 row " + y);
+                }
+                verify(termIconTest.artTable6.hasOwnProperty(key), "artTable6 has " + key);
+                const g6 = termIconTest.artTable6[key];
+                compare(g6.length, 6, key + " 6x6 rows");
+                for (let y = 0; y < g6.length; ++y) {
+                    compare(g6[y].length, 6, key + " 6x6 row " + y);
+                }
+            }
         }
     }
 }
