@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.13.0] - Unreleased
 
 ### Changed
+- The not-connected notice shows the start command in a selectable field with a
+  Copy button.
 - External brightness changes are respected for the configured cooldown before
   SunReactor resumes automatic control; wake and topology recovery still correct
   immediately, and status/TUI expose active holds.

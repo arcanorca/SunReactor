@@ -351,7 +351,14 @@ PlasmaExtras.Representation {
                 iconName: "network-disconnect"
                 text: i18nd(root.domain, "Not connected")
                 explanation: i18nd(root.domain,
-                    "The background service is not answering. Start it with:\nsystemctl --user start sunreactord")
+                    "The background service is not answering. Start it with:")
+
+                CopyCommand {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignHCenter
+                    domain: root.domain
+                    command: "systemctl --user start sunreactord"
+                }
             }
 
             Repeater {
