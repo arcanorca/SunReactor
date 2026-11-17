@@ -34,12 +34,14 @@ ColumnLayout {
     property color stateTone: style.red
     /*! A hairline above the row: the row follows another one in the panel. */
     property bool ruled: false
+    property bool limitsOpen: false
 
     readonly property bool master: channel.length === 0
     readonly property bool showTarget: !master && target >= 0 && Math.round(target) !== applied
     readonly property bool showRange: !master && hasLimits
 
     signal requested(int percent)
+    signal limitsRequested(int minPct, int maxPct)
 
     spacing: style.gap * 0.5
 
@@ -137,13 +139,91 @@ ColumnLayout {
                     ? i18ndc(root.domain, "Label before the automatic minimum and maximum", "RANGE") : "RANGE"
                 textFormat: Text.PlainText
                 font: root.style.tinyFont
-                color: root.style.muted
+                color: root.limitsOpen ? root.style.cyan : root.style.muted
             }
             Bracket {
                 visible: root.showRange
                 Layout.alignment: Qt.AlignVCenter
                 style: root.style
                 value: root.minPct + "–" + root.maxPct
+                font: root.style.tinyFont
+                color: root.limitsOpen ? root.style.cyan : root.style.ink
+                bracketColor: root.limitsOpen ? root.style.cyan : root.style.muted
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.limitsOpen = !root.limitsOpen
+                }
+            }
+        }
+    }
+
+    ColumnLayout {
+        visible: root.showRange && root.limitsOpen
+        Layout.fillWidth: true
+        spacing: root.style.gap * 0.5
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: root.style.gap
+
+            Text {
+                Layout.preferredWidth: root.style.snap(root.style.unit * 2.8)
+                text: root.domain.length > 0
+                    ? i18ndc(root.domain, "Night minimum boundary, compact", "MIN") : "MIN"
+                textFormat: Text.PlainText
+                font: root.style.tinyFont
+                color: root.style.cyan
+            }
+            CellBar {
+                id: minBar
+
+                Layout.fillWidth: true
+                style: root.style
+                value: root.minPct
+                interactive: true
+                litColor: root.style.cyan
+                accessibleName: root.domain.length > 0
+                    ? i18ndc(root.domain, "Night minimum boundary", "Night minimum") : "Night minimum"
+                onCommitted: v => root.limitsRequested(Math.min(v, root.maxPct), root.maxPct)
+            }
+            Bracket {
+                style: root.style
+                value: minBar.shown + "%"
+                font: root.style.tinyFont
+                color: root.style.ink
+                bracketColor: root.style.muted
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: root.style.gap
+
+            Text {
+                Layout.preferredWidth: root.style.snap(root.style.unit * 2.8)
+                text: root.domain.length > 0
+                    ? i18ndc(root.domain, "Day maximum boundary, compact", "MAX") : "MAX"
+                textFormat: Text.PlainText
+                font: root.style.tinyFont
+                color: root.style.cyan
+            }
+            CellBar {
+                id: maxBar
+
+                Layout.fillWidth: true
+                style: root.style
+                value: root.maxPct
+                interactive: true
+                litColor: root.style.cyan
+                accessibleName: root.domain.length > 0
+                    ? i18ndc(root.domain, "Day maximum boundary", "Day maximum") : "Day maximum"
+                onCommitted: v => root.limitsRequested(root.minPct, Math.max(v, root.minPct))
+            }
+            Bracket {
+                style: root.style
+                value: maxBar.shown + "%"
                 font: root.style.tinyFont
                 color: root.style.ink
                 bracketColor: root.style.muted

@@ -82,14 +82,18 @@ Item {
 
                     required property var modelData
                     required property int index
+                    property bool expanded: false
 
                     readonly property bool master: modelData.master === true
                     readonly property bool unavailable: Monitors.unavailable(modelData)
                     readonly property bool controllable: modelData.enabled !== false && !unavailable
                     readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
+                    readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+                    readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                    readonly property bool hasLimits: !master && minPct >= 0 && maxPct >= 0
                     readonly property bool overridden: modelData.hasOverride === true
-                    /*! Name, then the 4-cell percent, a gap, and the CLR key (3 cells) when held. */
-                    readonly property int nameCols: surface.cols - 5 - (overridden ? 3 : 0)
+                    /*! Name, then the 4-cell percent, a gap, CLR key (3 cells) when held, RNG key (3 cells) for limits. */
+                    readonly property int nameCols: Math.max(4, surface.cols - 5 - (overridden ? 4 : 0) - (hasLimits ? 4 : 0))
 
                     width: body.width
 
@@ -129,6 +133,20 @@ Item {
                                 ? root.client.clearAllOverrides()
                                 : root.client.clearMonitorOverride(monitorRow.modelData.logicalId)
                         }
+                        Item {
+                            visible: monitorRow.overridden && monitorRow.hasLimits
+                            width: style.cw
+                            height: style.ch
+                        }
+                        C64Keycap {
+                            visible: monitorRow.hasLimits
+                            text: "RNG"
+                            fill: monitorRow.expanded ? style.hot : style.ink
+                            ink: style.screen
+                            Accessible.name: i18ndc(root.domain, "Range limits", "%1%–%2%", monitorRow.minPct, monitorRow.maxPct)
+
+                            onActivated: monitorRow.expanded = !monitorRow.expanded
+                        }
                     }
 
                     Item {
@@ -154,6 +172,53 @@ Item {
                             visible: !monitorRow.controllable
                             ink: style.quiet
                             text: monitorRow.unavailable ? "NO SIGNAL" : "OFF"
+                        }
+                    }
+
+                    Column {
+                        visible: monitorRow.hasLimits && monitorRow.expanded
+                        width: body.width
+
+                        Repeater {
+                            model: [
+                                { label: "MIN", which: 0 },
+                                { label: "MAX", which: 1 },
+                            ]
+
+                            delegate: Row {
+                                id: limitRow
+
+                                required property var modelData
+                                readonly property int current: modelData.which === 0 ? monitorRow.minPct : monitorRow.maxPct
+
+                                height: style.ch
+
+                                C64Text {
+                                    ink: style.quiet
+                                    text: limitRow.modelData.label + " "
+                                }
+                                C64Gauge {
+                                    cells: Math.max(4, surface.cols - 10)
+                                    cw: style.cw
+                                    value: limitRow.current
+                                    active: true
+                                    ink: style.ink
+                                    quiet: style.quiet
+                                    accessibleName: limitRow.modelData.which === 0
+                                        ? i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                                        : i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+
+                                    onCommitted: v => limitRow.modelData.which === 0
+                                        ? root.client.setMonitorLimits(monitorRow.modelData.logicalId,
+                                                                       Math.min(v, monitorRow.maxPct), monitorRow.maxPct)
+                                        : root.client.setMonitorLimits(monitorRow.modelData.logicalId,
+                                                                       monitorRow.minPct, Math.max(v, monitorRow.minPct))
+                                }
+                                C64Text {
+                                    ink: style.hot
+                                    text: (limitRow.current + "%").padStart(4, " ")
+                                }
+                            }
                         }
                     }
 

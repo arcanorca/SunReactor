@@ -251,6 +251,7 @@ ColumnLayout {
                             if (!pressed) {
                                 root.client.setMonitorLimits(card.modelData.logicalId, Math.round(minSlider.value),
                                                              Math.round(maxSlider.value));
+                                value = Qt.binding(() => card.minPct);
                             }
                         }
                     }
@@ -288,6 +289,7 @@ ColumnLayout {
                             if (!pressed) {
                                 root.client.setMonitorLimits(card.modelData.logicalId, Math.round(minSlider.value),
                                                              Math.round(maxSlider.value));
+                                value = Qt.binding(() => card.maxPct);
                             }
                         }
                     }

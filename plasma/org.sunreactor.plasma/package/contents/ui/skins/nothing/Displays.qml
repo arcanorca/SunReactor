@@ -66,10 +66,15 @@ Rectangle {
         property bool hasOverride: false
         property string overrideBadge: ""
         property string accessibleValue: ""
+        property int minPct: -1
+        property int maxPct: -1
+        property bool hasLimits: false
+        property bool limitsOpen: false
         /*! A hairline above the block, between two displays. */
         property bool ruled: false
 
         signal requested(int percent)
+        signal limitsRequested(int minPct, int maxPct)
         signal clearRequested()
 
         Layout.fillWidth: true
@@ -139,11 +144,87 @@ Rectangle {
 
             Pill {
                 Layout.alignment: Qt.AlignVCenter
+                visible: channel.hasLimits && channel.minPct >= 0 && channel.maxPct >= 0
+                style: root.style
+                active: channel.limitsOpen
+                text: i18ndc(root.domain, "Range limits", "RANGE %1–%2", channel.minPct, channel.maxPct)
+                accessibleDescription: i18nd(root.domain, "Open brightness range limits")
+                onClicked: channel.limitsOpen = !channel.limitsOpen
+            }
+
+            Pill {
+                Layout.alignment: Qt.AlignVCenter
                 visible: channel.hasOverride
                 style: root.style
                 text: i18ndc(root.domain, "Return to automatic solar tracking", "AUTO")
                 accessibleDescription: i18nd(root.domain, "Return this display to automatic brightness")
                 onClicked: channel.clearRequested()
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: channel.hasLimits && channel.limitsOpen && channel.minPct >= 0 && channel.maxPct >= 0
+            spacing: root.style.gap * 0.5
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.style.gap
+
+                Text {
+                    Layout.preferredWidth: root.style.unit * 2.2
+                    text: i18ndc(root.domain, "Night minimum boundary, compact", "MIN")
+                    textFormat: Text.PlainText
+                    font: root.style.label
+                    color: root.style.muted
+                }
+                DotSlider {
+                    id: minDotSlider
+
+                    Layout.fillWidth: true
+                    style: root.style
+                    value: channel.minPct
+                    accessibleName: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                    onRequested: p => channel.limitsRequested(Math.min(p, channel.maxPct), channel.maxPct)
+                }
+                Text {
+                    Layout.preferredWidth: root.style.unit * 2.0
+                    horizontalAlignment: Text.AlignRight
+                    text: minDotSlider.shown + "%"
+                    textFormat: Text.PlainText
+                    font: root.style.label
+                    color: root.style.ink
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.style.gap
+
+                Text {
+                    Layout.preferredWidth: root.style.unit * 2.2
+                    text: i18ndc(root.domain, "Day maximum boundary, compact", "MAX")
+                    textFormat: Text.PlainText
+                    font: root.style.label
+                    color: root.style.muted
+                }
+                DotSlider {
+                    id: maxDotSlider
+
+                    Layout.fillWidth: true
+                    style: root.style
+                    value: channel.maxPct
+                    accessibleName: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+                    onRequested: p => channel.limitsRequested(channel.minPct, Math.max(p, channel.minPct))
+                }
+                Text {
+                    Layout.preferredWidth: root.style.unit * 2.0
+                    horizontalAlignment: Text.AlignRight
+                    text: maxDotSlider.shown + "%"
+                    textFormat: Text.PlainText
+                    font: root.style.label
+                    color: root.style.ink
+                }
             }
         }
     }
@@ -198,6 +279,9 @@ Rectangle {
                 ruled: root.showAllDisplays || index > 0
                 name: monitorId
                 percent: strip.level
+                minPct: strip.minPct
+                maxPct: strip.maxPct
+                hasLimits: true
                 controllable: modelData.enabled === true && !unavailable
                 hasOverride: modelData.hasOverride === true
                 overrideBadge: root.client.overrideUntilEpochS > root.client.nowEpochS
@@ -218,6 +302,7 @@ Rectangle {
                 accessibleValue: level >= 0 ? i18ndc(root.domain, "Brightness percentage", "%1%", level)
                                             : i18ndc(root.domain, "No value is known yet", "—")
                 onRequested: percent => root.client.setMonitorOverride(monitorId, percent, root.settings.overrideMinutes)
+                onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(monitorId, lo, hi)
                 onClearRequested: root.client.clearMonitorOverride(monitorId)
             }
         }
