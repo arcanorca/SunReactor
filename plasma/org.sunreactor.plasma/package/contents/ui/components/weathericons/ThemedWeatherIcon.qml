@@ -64,7 +64,7 @@ Item {
 
         anchors.fill: parent
         // The registry file only when the caller drew no icon of its own.
-        active: root.isAuto && autoSlot.data.length === 0
+        active: root.isAuto && autoSlot.children.length === 0
         readonly property url iconUrl: Qt.resolvedUrl("../../" + root.iconPath)
 
         Component.onCompleted: if (active) load()
