@@ -240,3 +240,25 @@ if (QMLTESTRUNNER_EXECUTABLE)
     set_tests_properties(test_picker PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QML_IMPORT_PATH=${CMAKE_CURRENT_BINARY_DIR}/qml")
 endif()
+
+add_executable(test_cyberpunk_layout
+    tests/test_cyberpunk_layout.cpp
+)
+
+target_compile_definitions(test_cyberpunk_layout PRIVATE
+    QML_IMPORT_DIR="${CMAKE_CURRENT_BINARY_DIR}/qml"
+    PLASMA_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/package/contents/ui"
+)
+
+target_link_libraries(test_cyberpunk_layout PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Network
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::Test
+)
+
+add_test(NAME test_cyberpunk_layout COMMAND test_cyberpunk_layout)
+set_tests_properties(test_cyberpunk_layout PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")

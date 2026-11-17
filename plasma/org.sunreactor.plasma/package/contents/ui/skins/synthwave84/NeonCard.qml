@@ -17,7 +17,10 @@ Item {
     property color neon: style.cyan
     default property alias content: column.data
 
-    implicitWidth: column.implicitWidth + 2 * root.style.pad
+    // Fill-width container: column is anchored left/right to the card, so
+    // feeding column.implicitWidth back into implicitWidth creates a layout
+    // polish cycle when column holds width-dependent items like Flow.
+    implicitWidth: 0
     implicitHeight: column.implicitHeight + 2 * root.style.pad
 
     // The body and the outline.

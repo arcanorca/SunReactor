@@ -240,6 +240,7 @@ ColumnLayout {
             id: plotBox
 
             Layout.fillWidth: true
+            implicitWidth: 0
             implicitHeight: root.style.snap(root.style.unit * 3.2)
 
             readonly property real axisH: root.style.snap(root.style.sizeTiny * 2.2)
@@ -255,8 +256,14 @@ ColumnLayout {
             Item {
                 id: plot
 
-                width: root.style.snap(plotBox.width - plotBox.gutter)
-                height: root.style.snap(plotBox.height - plotBox.axisH)
+                width: Math.max(0, root.style.snap(plotBox.width - plotBox.gutter))
+                height: Math.max(0, root.style.snap(plotBox.height - plotBox.axisH))
+
+                property real cachedWidth: -1
+                property real cachedHeight: -1
+                property var cachedSamples: null
+                property var cachedClearSky: []
+                property var cachedBand: []
 
                 function xAt(t) {
                     return (t - root.t0) / Math.max(1, root.t1 - root.t0) * (width - root.style.hairline);
@@ -272,6 +279,42 @@ ColumnLayout {
                 }
                 function polyline(samples, field) {
                     return samples.map(s => Qt.point(xAt(s.t), yAt(s[field])));
+                }
+                function rebuildPaths() {
+                    if (width <= 0 || height <= 0 || !root.current || root.showAll) {
+                        if (cachedClearSky.length > 0 || cachedBand.length > 0) {
+                            cachedClearSky = [];
+                            cachedBand = [];
+                        }
+                        cachedWidth = width;
+                        cachedHeight = height;
+                        cachedSamples = null;
+                        return;
+                    }
+                    const samples = root.current.samples;
+                    if (width === cachedWidth && height === cachedHeight && samples === cachedSamples) {
+                        return;
+                    }
+                    cachedWidth = width;
+                    cachedHeight = height;
+                    cachedSamples = samples;
+                    const clear = polyline(samples, "pctNoWeather");
+                    const live = polyline(samples, "pct");
+                    cachedClearSky = clear;
+                    cachedBand = clear.concat(live.slice().reverse());
+                }
+
+                onWidthChanged: rebuildPaths()
+                onHeightChanged: rebuildPaths()
+                Component.onCompleted: rebuildPaths()
+
+                Connections {
+                    target: root
+
+                    function onCurrentChanged(): void { plot.rebuildPaths(); }
+                    function onShowAllChanged(): void { plot.rebuildPaths(); }
+                    function onT0Changed(): void { plot.cachedSamples = null; plot.rebuildPaths(); }
+                    function onT1Changed(): void { plot.cachedSamples = null; plot.rebuildPaths(); }
                 }
 
                 Rectangle {
@@ -350,10 +393,7 @@ ColumnLayout {
                         strokeWidth: -1
                         fillColor: root.style.theme.alpha(root.style.cyan, 0.22)
                         PathPolyline {
-                            path: root.current
-                                ? plot.polyline(root.current.samples, "pctNoWeather")
-                                    .concat(plot.polyline(root.current.samples, "pct").reverse())
-                                : []
+                            path: plot.cachedBand
                         }
                     }
                     ShapePath {
@@ -363,7 +403,7 @@ ColumnLayout {
                         strokeStyle: ShapePath.DashLine
                         dashPattern: [3, 3]
                         PathPolyline {
-                            path: root.current ? plot.polyline(root.current.samples, "pctNoWeather") : []
+                            path: plot.cachedClearSky
                         }
                     }
                 }
@@ -389,8 +429,43 @@ ColumnLayout {
                             required property var modelData
                             required property int index
 
+                            property real cachedW: -1
+                            property real cachedH: -1
+                            property var cachedSamples: null
+                            property var cachedPath: []
+
+                            function rebuildPath() {
+                                if (plot.width <= 0 || plot.height <= 0 || !modelData || !modelData.samples) {
+                                    if (cachedPath.length > 0) {
+                                        cachedPath = [];
+                                    }
+                                    cachedW = plot.width;
+                                    cachedH = plot.height;
+                                    cachedSamples = null;
+                                    return;
+                                }
+                                if (plot.width === cachedW && plot.height === cachedH && modelData.samples === cachedSamples) {
+                                    return;
+                                }
+                                cachedW = plot.width;
+                                cachedH = plot.height;
+                                cachedSamples = modelData.samples;
+                                cachedPath = plot.polyline(modelData.samples, "pct");
+                            }
+
                             anchors.fill: parent
                             preferredRendererType: Shape.CurveRenderer
+                            onWidthChanged: rebuildPath()
+                            onHeightChanged: rebuildPath()
+                            onModelDataChanged: rebuildPath()
+                            Component.onCompleted: rebuildPath()
+
+                            Connections {
+                                target: root
+
+                                function onT0Changed(): void { trace.cachedSamples = null; trace.rebuildPath(); }
+                                function onT1Changed(): void { trace.cachedSamples = null; trace.rebuildPath(); }
+                            }
 
                             ShapePath {
                                 strokeColor: trace.index === 0 ? root.style.yellow
@@ -400,7 +475,7 @@ ColumnLayout {
                                 joinStyle: ShapePath.RoundJoin
                                 capStyle: ShapePath.RoundCap
                                 PathPolyline {
-                                    path: plot.polyline(trace.modelData.samples, "pct")
+                                    path: trace.cachedPath
                                 }
                             }
                         }

@@ -37,7 +37,10 @@ Item {
 
     default property alias content: body.data
 
-    implicitWidth: body.implicitWidth + sideInset * 2
+    // Fill-width container: body is anchored left/right to the frame, so feeding
+    // body.implicitWidth back into implicitWidth creates a layout polish cycle
+    // when body holds width-dependent items like Flow.
+    implicitWidth: 0
     implicitHeight: topInset + body.implicitHeight + inset
 
     Accessible.role: Accessible.Grouping
