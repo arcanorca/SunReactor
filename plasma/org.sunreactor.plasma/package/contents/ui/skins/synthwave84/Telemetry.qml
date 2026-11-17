@@ -78,6 +78,9 @@ ColumnLayout {
     // A flow, not a row: with many displays the readouts wrap onto a second line
     // rather than push the clock off the strip.
     Flow {
+        // A wrapping container asks for no width of its own: a fractional
+        // sum of its children would only fight the pixel-snapped allocation.
+        Layout.preferredWidth: 0
         Layout.fillWidth: true
         spacing: root.style.gap2
 

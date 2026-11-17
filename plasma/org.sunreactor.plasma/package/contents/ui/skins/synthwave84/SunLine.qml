@@ -50,6 +50,9 @@ ColumnLayout {
         : ""
 
     Flow {
+        // A wrapping container asks for no width of its own: a fractional
+        // sum of its children would only fight the pixel-snapped allocation.
+        Layout.preferredWidth: 0
         Layout.fillWidth: true
         spacing: root.style.gap2
 
