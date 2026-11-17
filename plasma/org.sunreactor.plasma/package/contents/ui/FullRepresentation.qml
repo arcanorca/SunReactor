@@ -54,6 +54,12 @@ PlasmaExtras.Representation {
         showSolarElevation: Plasmoid.configuration.showSolarElevation // qmllint disable missing-property
     }
 
+    /*! The pointer is over the popup (main.qml keeps the popup open while it is). */
+    readonly property bool popupHovered: popupHover.hovered
+    HoverHandler {
+        id: popupHover
+    }
+
     Layout.minimumWidth: root.theme.gridUnit * 16
     Layout.preferredWidth: root.theme.gridUnit * 19
     Layout.maximumWidth: root.theme.gridUnit * 40

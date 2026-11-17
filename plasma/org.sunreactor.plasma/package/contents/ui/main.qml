@@ -21,6 +21,56 @@ PlasmoidItem {
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
 
+    // Plasma closes a popup the moment its window loses focus. With KWin's
+    // focus-follows-mouse that is the moment the pointer leaves it, so a pointer
+    // that overshoots the edge by a pixel closes the popup. Close it ourselves,
+    // after a grace period, and only if the window is still inactive and the
+    // pointer has not come back.
+    hideOnWindowDeactivate: false
+    readonly property var popupWindow: root.fullRepresentationItem ? root.fullRepresentationItem.Window.window : null
+
+    Timer {
+        id: deactivateGrace
+
+        interval: 1000
+        onTriggered: {
+            const w = root.popupWindow;
+            const hovered = root.fullRepresentationItem && root.fullRepresentationItem.popupHovered === true;
+            if (root.expanded && !(w && w.active) && !hovered) {
+                root.expanded = false;
+            }
+        }
+    }
+    Connections {
+        target: root.popupWindow
+        ignoreUnknownSignals: true
+
+        function onActiveChanged(): void {
+            if (root.popupWindow.active) {
+                deactivateGrace.stop();
+            } else if (root.expanded) {
+                deactivateGrace.restart();
+            }
+        }
+    }
+    Connections {
+        target: root.fullRepresentationItem
+        ignoreUnknownSignals: true
+
+        function onPopupHoveredChanged(): void {
+            if (root.fullRepresentationItem.popupHovered) {
+                deactivateGrace.stop();
+            } else if (root.expanded && !(root.popupWindow && root.popupWindow.active)) {
+                deactivateGrace.restart();
+            }
+        }
+    }
+    onExpandedChanged: {
+        if (!expanded) {
+            deactivateGrace.stop();
+        }
+    }
+
     SunReactorClient {
         id: daemon
 
