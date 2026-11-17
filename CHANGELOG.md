@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.13.0] - Unreleased
+## [0.13.0] - 2026-11-17
 
 ### Changed
 - Redesigned hackergreen 4x9 ASCII weather art (`Hg.js`, `Weather.qml`, `Forecast.qml`,
@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External brightness changes are respected for the configured cooldown before
   SunReactor resumes automatic control; wake and topology recovery still correct
   immediately, and status/TUI expose active holds.
+- **TUI**: palettes come from the registry (`src/tui/theme.rs`). The theme picker
+  lists built-in and user themes. The light-cycle preview uses the day-curve
+  sampler that the daemon also uses (`policy::preview`). The large digits of the
+  Automation tab follow `[tui] glyph_style`.
+- **Families**: `casiodigital`, `cyberpunk` and `synthwave84` are now instrument
+  themes, and `hackergreen` is a terminal theme. Nothing became an instrument
+  theme and draws its dot-matrix primitives in the widget.
+- **Plasma widget**: the popup and the panel render from the daemon's theme and
+  day curve. The 0.12.x Wardrobe directory (`contents/ui/wardrobe/`, with
+  `ThemeCatalog.js`, `ThemeTokens.qml` and `WardrobeCard.qml`) is removed.
+- **Weather icons**: redrawn for Nintendo Wii, Nintendo DS, Windows XP (Luna)
+  and the handheld theme, which uses the four DMG shades only.
+- **Documentation**: README gains a Plasma widget section and links to the theme
+  guide; the 0.12.2 Wardrobe notes stay as history.
 
 ### Added
 - External-hold controls: `sunreactorctl hold clear [MONITOR]` and a Plasma
@@ -113,22 +127,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   distro's package manager and privilege helper. Plasma QML installation follows
   the host's `lib` or `lib64` Qt layout and writes an idempotent `sunreactor.sh`
   environment file.
-
-### Changed
-- **TUI**: palettes come from the registry (`src/tui/theme.rs`). The theme picker
-  lists built-in and user themes. The light-cycle preview uses the day-curve
-  sampler that the daemon also uses (`policy::preview`). The large digits of the
-  Automation tab follow `[tui] glyph_style`.
-- **Families**: `casiodigital`, `cyberpunk` and `synthwave84` are now instrument
-  themes, and `hackergreen` is a terminal theme. Nothing became an instrument
-  theme and draws its dot-matrix primitives in the widget.
-- **Plasma widget**: the popup and the panel render from the daemon's theme and
-  day curve. The 0.12.x Wardrobe directory (`contents/ui/wardrobe/`, with
-  `ThemeCatalog.js`, `ThemeTokens.qml` and `WardrobeCard.qml`) is removed.
-- **Weather icons**: redrawn for Nintendo Wii, Nintendo DS, Windows XP (Luna)
-  and the handheld theme, which uses the four DMG shades only.
-- **Documentation**: README gains a Plasma widget section and links to the theme
-  guide; the 0.12.2 Wardrobe notes stay as history.
 
 ### Removed
 - The Wardrobe texture set, 12 SVG files under
