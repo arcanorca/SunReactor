@@ -226,6 +226,13 @@ if (QMLTESTRUNNER_EXECUTABLE)
     set_tests_properties(test_datarules PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QML_IMPORT_PATH=${CMAKE_CURRENT_BINARY_DIR}/qml")
 
+    # Copy-command field of the not-connected notice.
+    add_test(NAME test_copycmd
+        COMMAND ${QMLTESTRUNNER_EXECUTABLE} -input ${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_copycmd.qml
+                -import ${CMAKE_CURRENT_BINARY_DIR}/qml)
+    set_tests_properties(test_copycmd PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QML_IMPORT_PATH=${CMAKE_CURRENT_BINARY_DIR}/qml")
+
     # Theme picker: the button and the popover, clicks and keys (offscreen).
     add_test(NAME test_picker
         COMMAND ${QMLTESTRUNNER_EXECUTABLE} -input ${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_picker.qml
