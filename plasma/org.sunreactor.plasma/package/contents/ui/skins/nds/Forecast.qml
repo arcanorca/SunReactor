@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../components"
 import "../../components/weathericons"
 import "../../Format.js" as Format
 import "../../modules/ForecastRules.js" as ForecastRules
@@ -31,25 +32,12 @@ Item {
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, maxSlots)
     readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
 
-    /*! What the daemon's bounded weather multiplier does to the targets, in words. */
-    readonly property string effect: {
-        if (!client.hasWeatherReading) {
-            return client.weatherState === "no_api_key"
-                ? i18nd(domain, "No API key is configured")
-                : i18nd(domain, "No reading yet");
-        }
-        if (client.weatherStale) {
-            return i18nd(domain, "Last reading is out of date");
-        }
-        const change = Math.round((1.0 - client.weatherMultiplier) * 100);
-        if (change >= 2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Dimming displays by %1%", change);
-        }
-        if (change <= -2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Brightening displays by %1%", -change);
-        }
-        return i18nd(domain, "Not changing brightness right now");
+    WeatherText {
+        id: weatherText
     }
+
+    /*! What the daemon's bounded weather multiplier does to the targets, in words. */
+    readonly property string effect: weatherText.effect(client)
     readonly property var details: [
         { label: i18nd(domain, "Brightness"), value: effect },
         { label: i18nd(domain, "Reading"), value: reading }

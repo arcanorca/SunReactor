@@ -100,7 +100,7 @@ FocusScope {
         visible: root.arrow
         anchors.fill: chevron
         anchors.margins: -root.style.gap
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.arrowActivated()
     }
 
@@ -112,7 +112,7 @@ FocusScope {
         width: label.implicitWidth
         height: parent.height
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
             root.forceActiveFocus(Qt.MouseFocusReason);
             root.activated();

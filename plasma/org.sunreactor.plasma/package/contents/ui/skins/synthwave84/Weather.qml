@@ -142,18 +142,7 @@ ColumnLayout {
         Text {
             Layout.fillWidth: true
             visible: root.client.hasWeatherReading
-            text: {
-                if (root.client.weatherStale) {
-                    return i18nd(root.domain, "Last reading is out of date");
-                }
-                if (root.change >= 2) {
-                    return i18ndc(root.domain, "Placeholder is a percentage", "Dimming displays by %1%", root.change);
-                }
-                if (root.change <= -2) {
-                    return i18ndc(root.domain, "Placeholder is a percentage", "Brightening displays by %1%", -root.change);
-                }
-                return i18nd(root.domain, "Not changing brightness right now");
-            }
+            text: weatherText.effect(root.client)
             textFormat: Text.PlainText
             font: root.style.dataSmallFont
             color: root.client.weatherStale ? root.style.yellow

@@ -90,7 +90,7 @@ Item {
 
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.clicked()
     }
 
@@ -101,7 +101,7 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: Math.min(root.implicitWidth * 0.4, root.style.unit * 2)
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.arrowClicked()
     }
 }

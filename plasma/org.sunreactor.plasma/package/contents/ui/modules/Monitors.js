@@ -15,3 +15,23 @@ function unavailable(monitor) {
 function controllable(monitor) {
     return monitor.enabled && !unavailable(monitor);
 }
+
+/*! Display rows for repeater models: prepends a master "All displays" row when
+    multiple monitors are present. */
+function rowsWithMaster(monitors, globalPercent, isOverrideActive, masterLabel) {
+    var out = [];
+    if (monitors.length > 1) {
+        out.push({
+            master: true,
+            logicalId: masterLabel,
+            percent: globalPercent,
+            hasOverride: isOverrideActive,
+            enabled: true,
+            unreachable: false
+        });
+    }
+    for (var i = 0; i < monitors.length; ++i) {
+        out.push(monitors[i]);
+    }
+    return out;
+}

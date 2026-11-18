@@ -25,17 +25,8 @@ Item {
     readonly property string domain: settings.domain
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool available: client.isConnected && monitors.length > 0
-    readonly property var rows: {
-        const out = [];
-        if (monitors.length > 1) {
-            out.push({ master: true, logicalId: i18nd(domain, "All displays"), percent: client.globalPercent,
-                       hasOverride: client.isOverrideActive, enabled: true, unreachable: false });
-        }
-        for (const m of monitors) {
-            out.push(m);
-        }
-        return out;
-    }
+    readonly property var rows: Monitors.rowsWithMaster(
+        monitors, client.globalPercent, client.isOverrideActive, i18nd(domain, "All displays"))
 
     PixelStyle {
         id: pstyle

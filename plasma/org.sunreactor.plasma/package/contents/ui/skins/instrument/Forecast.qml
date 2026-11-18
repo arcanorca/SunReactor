@@ -20,6 +20,7 @@ import QtQuick.Shapes
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components"
 import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
@@ -55,33 +56,8 @@ ColumnLayout {
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
-    function shortCondition(condition) {
-        switch (condition) {
-        case "clear":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Clear");
-        case "partly_cloudy":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "P.cloudy");
-        case "cloudy":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Cloudy");
-        case "drizzle":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Drizzle");
-        case "rain":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Rain");
-        case "heavy_rain":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "H.rain");
-        case "thunderstorm":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Storm");
-        case "snow":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Snow");
-        case "mist":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Mist");
-        case "fog":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Fog");
-        case "atmospheric":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "Haze");
-        default:
-            return "—";
-        }
+    WeatherText {
+        id: weatherText
     }
 
     readonly property real tMin: points.length ? Math.min(...points.map(p => p.temperatureC)) : 0
@@ -222,7 +198,7 @@ ColumnLayout {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     horizontalAlignment: Text.AlignHCenter
-                    text: root.shortCondition(skySlot.modelData.condition)
+                    text: weatherText.shortConditionLabel(skySlot.modelData.condition) || "—"
                     textFormat: Text.PlainText
                     font: root.style.legendFont
                     color: root.style.ink

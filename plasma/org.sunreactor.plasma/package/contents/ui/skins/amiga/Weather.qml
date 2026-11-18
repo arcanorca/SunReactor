@@ -32,39 +32,7 @@ Item {
     }
     /*! The status phrase in the longest wording that fits the line: the forms
         are measured with AmigaText probes (below), never elided. */
-    readonly property var effectForms: {
-        if (!root.client.hasWeatherReading) {
-            switch (root.client.weatherState) {
-            case "no_api_key":
-                return [i18nd(root.domain, "No API key is configured"), i18nd(root.domain, "No API key")];
-            case "loading":
-                return [i18nd(root.domain, "Looking up the current conditions…"), i18nd(root.domain, "Looking up…")];
-            case "unauthorized":
-                return [i18nd(root.domain, "The weather provider rejected the API key"), i18nd(root.domain, "API key rejected")];
-            case "rate_limited":
-                return [i18nd(root.domain, "The weather provider is rate limiting requests"), i18nd(root.domain, "Rate limited")];
-            case "network_error":
-                return [i18nd(root.domain, "The weather provider could not be reached"), i18nd(root.domain, "Provider unreachable")];
-            default:
-                return [i18nd(root.domain, "No reading yet")];
-            }
-        }
-        if (root.client.weatherStale) {
-            return [i18nd(root.domain, "Last reading is out of date"), i18nd(root.domain, "Reading out of date")];
-        }
-        const change = Math.round((1.0 - root.client.weatherMultiplier) * 100);
-        if (change >= 2) {
-            return [i18ndc(root.domain, "Placeholder is a percentage", "Dimming displays by %1%", change),
-                    i18ndc(root.domain, "Placeholder is a percentage", "Dimming by %1%", change),
-                    i18ndc(root.domain, "Placeholder is a percentage", "Dim %1%", change)];
-        }
-        if (change <= -2) {
-            return [i18ndc(root.domain, "Placeholder is a percentage", "Brightening displays by %1%", -change),
-                    i18ndc(root.domain, "Placeholder is a percentage", "Brightening by %1%", -change),
-                    i18ndc(root.domain, "Placeholder is a percentage", "Brighter %1%", -change)];
-        }
-        return [i18nd(root.domain, "Not changing brightness right now"), i18nd(root.domain, "No change")];
-    }
+    readonly property var effectForms: weatherText.effectForms(root.client)
     readonly property string effect: effectForms[0]
 
     /*! The longest form whose art width fits `limit` (art px); the probes

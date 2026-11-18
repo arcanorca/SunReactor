@@ -55,7 +55,6 @@ QtObject {
     readonly property color blue: theme.accent
     /*! DS orange: the sun, the next sun time, the warm accents. */
     readonly property color orange: theme.secondaryAccent
-    readonly property color pearl: theme.bg
     readonly property color line: theme.borderInactive
     readonly property color success: theme.success
     readonly property color warning: theme.warning

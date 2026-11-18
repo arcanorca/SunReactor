@@ -44,27 +44,7 @@ ColumnLayout {
     /*! Line glyph: the sky in cyan, the sun and moon in yellow. */
     readonly property var glyphColours: theme.glyphColours(theme.bg, theme.secondaryAccent)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: {
-        const d = client.weatherDetails;
-        const out = [];
-        if (d.feelsLikeC !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: apparent temperature", "FEELS"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
-        }
-        if (d.humidityPercent !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: relative humidity", "RH"),
-                       v: i18ndc(domain, "Percentage", "%1%", Math.round(d.humidityPercent)) });
-        }
-        if (d.windSpeedMps !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: wind speed", "WIND"),
-                       v: i18ndc(domain, "Wind speed in metres per second", "%1 m/s", d.windSpeedMps.toFixed(1)) });
-        }
-        if (d.airQualityIndex !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: US EPA air quality index", "AQI"),
-                       v: String(Math.round(d.airQualityIndex)) });
-        }
-        return out;
-    }
+    readonly property var extras: weatherText.detailsList(client.weatherDetails, "caps")
 
     spacing: 0
 

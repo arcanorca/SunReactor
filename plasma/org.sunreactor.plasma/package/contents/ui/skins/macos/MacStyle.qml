@@ -123,7 +123,6 @@ QtObject {
     readonly property int padRow: Math.round(12 * scaleFactor)
     readonly property int padCard: Math.round(12 * scaleFactor)
     readonly property int gap: Math.round(6 * scaleFactor)
-    readonly property int section: Math.round(10 * scaleFactor)
     readonly property int sliderHeight: Math.round(28 * scaleFactor)
     readonly property int segmentHeight: Math.round(26 * scaleFactor)
     readonly property int chipHeight: Math.round(18 * scaleFactor)

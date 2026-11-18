@@ -231,7 +231,7 @@ Item {
 
         anchors.fill: parent
         enabled: root.live
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onPressed: event => {
             root.forceActiveFocus(Qt.MouseFocusReason);
             root.setLocal(root.valueAt(event.x));

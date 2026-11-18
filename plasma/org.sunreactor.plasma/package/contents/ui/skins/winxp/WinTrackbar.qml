@@ -164,7 +164,7 @@ Item {
     MouseArea {
         anchors.fill: parent
         enabled: root.controllable
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onPressed: mouse => {
             root.forceActiveFocus(Qt.MouseFocusReason);
             root.drag(mouse.x);

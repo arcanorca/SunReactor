@@ -31,17 +31,8 @@ Item {
     /*! The automation controls sit under the panels on this screen when the theme lists them. */
     readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
     readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
-    readonly property var rows: {
-        const out = [];
-        if (monitors.length > 1) {
-            out.push({ master: true, logicalId: i18nd(domain, "All displays"), percent: client.globalPercent,
-                       hasOverride: client.isOverrideActive, enabled: true, unreachable: false });
-        }
-        for (const m of monitors) {
-            out.push(m);
-        }
-        return out;
-    }
+    readonly property var rows: Monitors.rowsWithMaster(
+        monitors, client.globalPercent, client.isOverrideActive, i18nd(domain, "All displays"))
 
     readonly property real gu: style.gu
     readonly property real pad: Math.round(gu * 0.35)
@@ -390,7 +381,7 @@ Item {
 
             anchors.fill: parent
             enabled: slider.editable
-            cursorShape: Qt.PointingHandCursor
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onPressed: event => {
                 slider.forceActiveFocus(Qt.MouseFocusReason);
                 slider.lastSent = -1;

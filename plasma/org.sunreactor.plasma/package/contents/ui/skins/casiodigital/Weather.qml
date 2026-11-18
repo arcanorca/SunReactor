@@ -32,27 +32,7 @@ Item {
     /*! Percent points the weather takes off the targets (negative: adds). */
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: {
-        const d = client.weatherDetails;
-        const out = [];
-        if (d.feelsLikeC !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: apparent temperature", "Feels"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
-        }
-        if (d.humidityPercent !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: relative humidity", "RH"),
-                       v: i18ndc(domain, "Percentage", "%1%", Math.round(d.humidityPercent)) });
-        }
-        if (d.windSpeedMps !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: wind speed", "Wind"),
-                       v: i18ndc(domain, "Wind speed in metres per second", "%1 m/s", d.windSpeedMps.toFixed(1)) });
-        }
-        if (d.airQualityIndex !== undefined) {
-            out.push({ k: i18ndc(domain, "Short legend: US EPA air quality index", "AQI"),
-                       v: String(Math.round(d.airQualityIndex)) });
-        }
-        return out;
-    }
+    readonly property var extras: weatherText.detailsList(client.weatherDetails, "compact")
 
     implicitWidth: bezel.implicitWidth
     implicitHeight: bezel.implicitHeight

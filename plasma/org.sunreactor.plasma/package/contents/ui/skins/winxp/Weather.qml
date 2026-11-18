@@ -45,27 +45,7 @@ WinWindow {
 
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: {
-        const d = client.weatherDetails;
-        const out = [];
-        if (d.feelsLikeC !== undefined) {
-            out.push({ k: i18ndc(domain, "Weather details: apparent temperature", "Feels like"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
-        }
-        if (d.humidityPercent !== undefined) {
-            out.push({ k: i18ndc(domain, "Weather details: relative humidity", "Humidity"),
-                       v: i18ndc(domain, "Percentage", "%1%", Math.round(d.humidityPercent)) });
-        }
-        if (d.windSpeedMps !== undefined) {
-            out.push({ k: i18ndc(domain, "Weather details: wind speed", "Wind"),
-                       v: i18ndc(domain, "Wind speed in metres per second", "%1 m/s", d.windSpeedMps.toFixed(1)) });
-        }
-        if (d.airQualityIndex !== undefined) {
-            out.push({ k: i18ndc(domain, "Weather details: US EPA air quality index", "Air quality"),
-                       v: String(Math.round(d.airQualityIndex)) });
-        }
-        return out;
-    }
+    readonly property var extras: weatherText.detailsList(client.weatherDetails, "full")
 
     // The welcome pane: the sky icon at its left, the reading and what it does to the
     // targets, in the "Current conditions" group box as the XP welcome pane does.

@@ -77,7 +77,7 @@ WinWindow {
                 MouseArea {
                     anchors.fill: parent
                     enabled: row.hasLimits
-                    cursorShape: Qt.PointingHandCursor
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: row.limitsOpen = !row.limitsOpen
                 }
             }
@@ -108,7 +108,7 @@ WinWindow {
                 MouseArea {
                     anchors.fill: parent
                     enabled: row.hasOverride
-                    cursorShape: Qt.PointingHandCursor
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: row.clearOverrideRequested()
                 }
             }

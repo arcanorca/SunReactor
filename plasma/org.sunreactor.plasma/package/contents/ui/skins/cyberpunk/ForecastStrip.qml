@@ -19,6 +19,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../components"
 import "../../components/weathericons"
 import "../../modules"
 import "../../Format.js" as Format
@@ -41,33 +42,8 @@ ColumnLayout {
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
     readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
 
-    function shortCondition(condition) {
-        switch (condition) {
-        case "clear":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "CLEAR");
-        case "partly_cloudy":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "P.CLDY");
-        case "cloudy":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "CLOUDY");
-        case "drizzle":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "DRIZZLE");
-        case "rain":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "RAIN");
-        case "heavy_rain":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "H.RAIN");
-        case "thunderstorm":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "STORM");
-        case "snow":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "SNOW");
-        case "mist":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "MIST");
-        case "fog":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "FOG");
-        case "atmospheric":
-            return i18ndc(domain, "Short weather condition (max ~7 letters)", "HAZE");
-        default:
-            return "--";
-        }
+    WeatherText {
+        id: weatherText
     }
 
     spacing: 0
@@ -146,7 +122,7 @@ ColumnLayout {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.maximumWidth: column.width
-                        text: root.shortCondition(column.modelData.condition)
+                        text: weatherText.shortConditionLabel(column.modelData.condition, true) || "--"
                         textFormat: Text.PlainText
                         font: root.style.tinyFont
                         color: root.style.ink

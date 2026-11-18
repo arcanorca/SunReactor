@@ -51,37 +51,7 @@ Item {
 
     /*! The phrases of the status, longest first: the one that fits the text
         column is used (the labels are fixed, so they are shortened, never cut). */
-    readonly property var effectForms: {
-        if (!client.hasWeatherReading) {
-            switch (client.weatherState) {
-            case "no_api_key":
-                return [i18nd(domain, "No API key is configured"), i18nd(domain, "No API key")];
-            case "loading":
-                return [i18nd(domain, "Looking up the current conditions…"), i18nd(domain, "Looking up conditions…"),
-                        i18nd(domain, "Looking up…")];
-            case "unauthorized":
-                return [i18nd(domain, "The weather provider rejected the API key"), i18nd(domain, "API key rejected")];
-            case "rate_limited":
-                return [i18nd(domain, "The weather provider is rate limiting requests"), i18nd(domain, "Rate limited")];
-            case "network_error":
-                return [i18nd(domain, "The weather provider could not be reached"), i18nd(domain, "Provider unreachable")];
-            default:
-                return [i18nd(domain, "No reading yet")];
-            }
-        }
-        const change = Math.round((1.0 - client.weatherMultiplier) * 100);
-        if (change >= 2) {
-            return [i18ndc(domain, "Placeholder is a percentage", "Dimming displays by %1%", change),
-                    i18ndc(domain, "Placeholder is a percentage", "Dimming by %1%", change),
-                    i18ndc(domain, "Placeholder is a percentage", "Dim %1%", change)];
-        }
-        if (change <= -2) {
-            return [i18ndc(domain, "Placeholder is a percentage", "Brightening displays by %1%", -change),
-                    i18ndc(domain, "Placeholder is a percentage", "Brightening by %1%", -change),
-                    i18ndc(domain, "Placeholder is a percentage", "Brighter %1%", -change)];
-        }
-        return [i18nd(domain, "Not changing brightness"), i18nd(domain, "No change")];
-    }
+    readonly property var effectForms: weatherText.effectForms(client, false)
 
     /*! The sun is down: the solar elevation when the daemon sent it, else the sun times. */
     readonly property bool night: {

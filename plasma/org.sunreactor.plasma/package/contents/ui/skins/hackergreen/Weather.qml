@@ -48,32 +48,7 @@ Item {
         theme: root.theme
     }
 
-    readonly property string effect: {
-        if (!client.hasWeatherReading) {
-            switch (client.weatherState) {
-            case "no_api_key":
-                return i18nd(domain, "No API key is configured");
-            case "loading":
-                return i18nd(domain, "Looking up the current conditions…");
-            case "unauthorized":
-                return i18nd(domain, "The weather provider rejected the API key");
-            case "rate_limited":
-                return i18nd(domain, "The weather provider is rate limiting requests");
-            case "network_error":
-                return i18nd(domain, "The weather provider could not be reached");
-            default:
-                return i18nd(domain, "No reading yet");
-            }
-        }
-        const change = Math.round((1.0 - client.weatherMultiplier) * 100);
-        if (change >= 2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Dimming displays by %1%", change);
-        }
-        if (change <= -2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Brightening displays by %1%", -change);
-        }
-        return i18nd(domain, "Not changing brightness");
-    }
+    readonly property string effect: Term.firstFit(weatherText.effectForms(client, false), textCells)
 
     /*! [label, value] pairs the daemon actually reported. */
     readonly property var readings: {

@@ -1,6 +1,7 @@
 #include <QQmlProperty>
 #include <cmath>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QFont>
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -111,12 +112,43 @@ private:
         m2[QStringLiteral("min_pct")] = 20;
         m2[QStringLiteral("max_pct")] = 90;
 
+        QJsonObject details;
+        details[QStringLiteral("feels_like")] = 14.0;
+        details[QStringLiteral("humidity_percent")] = 62;
+        details[QStringLiteral("wind_speed_mps")] = 3.4;
+        QJsonObject airQuality;
+        airQuality[QStringLiteral("us_aqi")] = 42;
+        details[QStringLiteral("air_quality")] = airQuality;
+
+        QJsonArray forecast;
+        for (int i = 0; i < 5; ++i) {
+            QJsonObject pt;
+            pt[QStringLiteral("dt_epoch_s")] = 1700046000 + (i + 1) * 3600;
+            pt[QStringLiteral("temperature")] = 15.0 - i;
+            pt[QStringLiteral("condition")] = QStringLiteral("partly_cloudy");
+            pt[QStringLiteral("day_phase")] = QStringLiteral("day");
+            pt[QStringLiteral("cloud_cover_percent")] = 40 + i * 10;
+            forecast.append(pt);
+        }
+
+        QJsonObject weather;
+        weather[QStringLiteral("enabled")] = true;
+        weather[QStringLiteral("state")] = QStringLiteral("ok");
+        weather[QStringLiteral("condition")] = QStringLiteral("partly_cloudy");
+        weather[QStringLiteral("day_phase")] = QStringLiteral("day");
+        weather[QStringLiteral("temperature")] = 15.2;
+        weather[QStringLiteral("multiplier")] = 0.88;
+        weather[QStringLiteral("cloud_cover_percent")] = 45;
+        weather[QStringLiteral("details")] = details;
+        weather[QStringLiteral("forecast")] = forecast;
+
         QJsonObject status;
         status[QStringLiteral("now_epoch_s")] = 1700046000;
         status[QStringLiteral("sunrise_epoch_s")] = 1700024400;
         status[QStringLiteral("sunset_epoch_s")] = 1700060400;
         status[QStringLiteral("theme")] = theme;
         status[QStringLiteral("monitors")] = QJsonArray{m1, m2};
+        status[QStringLiteral("weather")] = weather;
         return status;
     }
 
@@ -182,6 +214,11 @@ public:
     {
         return formatArgs(text, a1, a2, a3);
     }
+    Q_INVOKABLE QString i18ndp(const QString &, const QString &singular, const QString &plural,
+                               int n, const QVariant &a1 = {}, const QVariant &a2 = {}) const
+    {
+        return formatArgs(n == 1 ? singular : plural, n, a1, a2);
+    }
 
 private:
     static QString formatArgs(const QString &text, const QVariant &a1,
@@ -209,6 +246,7 @@ private Q_SLOTS:
     void cyberpunkLightCycleSettlesOnResize();
     void cyberpunkPageIsStableAtFractionalScale();
     void cyberpunkHoverScrubDoesNotOscillate();
+    void weatherMetersUseArrowCursor();
     void allSkinsSettleAndScrubWithoutOscillation();
 };
 
@@ -783,6 +821,168 @@ void TestCyberpunkLayout::cyberpunkHoverScrubDoesNotOscillate()
     }
 }
 
+void TestCyberpunkLayout::weatherMetersUseArrowCursor()
+{
+    QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    MockDaemon daemon(sockPath);
+    QVERIFY(daemon.isListening());
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import QtQuick.Layouts
+        import org.sunreactor.plasma
+        import "engine" as Engine
+        import "modules" as Mod
+
+        Item {
+            id: root
+            property alias weatherItem: weatherLoader.item
+            property alias displaysItem: displaysLoader.item
+            width: 418
+            height: 760
+            SunReactorClient { id: client; socketPath: testSocketPath }
+            Engine.Theme { id: theme; spec: client.theme; source: "follow" }
+            Mod.ModuleSettings { id: settings }
+            ColumnLayout {
+                width: root.width
+                spacing: theme.sectionSpacing
+                Loader {
+                    id: weatherLoader
+                    Layout.fillWidth: true
+                    Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/Weather.qml"), {
+                        theme: theme, client: client, settings: settings })
+                }
+                Loader {
+                    id: displaysLoader
+                    Layout.fillWidth: true
+                    Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/Displays.qml"), {
+                        theme: theme, client: client, settings: settings })
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestWeatherCursor.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *weather = rootObj->property("weatherItem").value<QObject *>();
+    QObject *displays = rootObj->property("displaysItem").value<QObject *>();
+    for (int i = 0; i < 150 && !(weather && weather->property("available").toBool()
+                                   && displays && displays->property("available").toBool()); ++i) {
+        QTest::qWait(20);
+        weather = rootObj->property("weatherItem").value<QObject *>();
+        displays = rootObj->property("displaysItem").value<QObject *>();
+    }
+    QVERIFY(weather && weather->property("available").toBool());
+    QVERIFY(displays && displays->property("available").toBool());
+    for (int i = 0; i < 15; ++i) {
+        view.requestUpdate();
+        QCoreApplication::processEvents();
+        QTest::qWait(5);
+    }
+
+    auto *weatherItem = qobject_cast<QQuickItem *>(weather);
+    auto *displaysItem = qobject_cast<QQuickItem *>(displays);
+    QVERIFY(weatherItem != nullptr);
+    QVERIFY(displaysItem != nullptr);
+
+    const auto collectVisualItems = [](QQuickItem *rootItem) {
+        QList<QQuickItem *> result;
+        QList<QQuickItem *> stack{rootItem};
+        while (!stack.isEmpty()) {
+            QQuickItem *cur = stack.takeLast();
+            result.append(cur);
+            for (QQuickItem *ch : cur->childItems()) {
+                stack.append(ch);
+            }
+        }
+        return result;
+    };
+
+    int weatherMouseAreas = 0;
+    for (QQuickItem *item : collectVisualItems(weatherItem)) {
+        if (QString::fromLatin1(item->metaObject()->className()).startsWith(QLatin1String("QQuickMouseArea"))) {
+            ++weatherMouseAreas;
+            QVERIFY2(!item->property("enabled").toBool(), "ForecastStrip CellBar meters must not be enabled");
+            QCOMPARE(item->cursor().shape(), Qt::ArrowCursor);
+        }
+    }
+    QVERIFY2(weatherMouseAreas >= 5,
+             qPrintable(QStringLiteral("Expected >= 5 ForecastStrip CellBar MouseAreas, found %1")
+                            .arg(weatherMouseAreas)));
+
+    // Verify WeatherText helpers (with I18nStub providing i18nd/i18ndc)
+    QObject *wt = nullptr;
+    for (QObject *child : weather->findChildren<QObject *>()) {
+        if (QString::fromLatin1(child->metaObject()->className()).contains(QLatin1String("WeatherText"))) {
+            wt = child;
+            break;
+        }
+    }
+    QVERIFY(wt != nullptr);
+    QVariant shortCapVar;
+    QMetaObject::invokeMethod(wt, "shortConditionLabel", Q_RETURN_ARG(QVariant, shortCapVar),
+                              Q_ARG(QVariant, QStringLiteral("partly_cloudy")), Q_ARG(QVariant, true));
+    QCOMPARE(shortCapVar.toString(), QStringLiteral("P.CLDY"));
+    QVariant detailsVar;
+    QVariantMap sampleDetails{{QStringLiteral("feelsLikeC"), 14.2},
+                              {QStringLiteral("humidityPercent"), 62},
+                              {QStringLiteral("windSpeedMps"), 3.45},
+                              {QStringLiteral("airQualityIndex"), 42}};
+    QMetaObject::invokeMethod(wt, "detailsList", Q_RETURN_ARG(QVariant, detailsVar),
+                              Q_ARG(QVariant, sampleDetails), Q_ARG(QVariant, QStringLiteral("caps")));
+    const QVariantList detailsOut = detailsVar.toList();
+    QCOMPARE(detailsOut.size(), 4);
+    QCOMPARE(detailsOut.at(0).toMap().value(QStringLiteral("k")).toString(), QStringLiteral("FEELS"));
+
+    QQuickItem *sliderCellBar = nullptr;
+    QQuickItem *sliderMouseArea = nullptr;
+    for (QQuickItem *item : collectVisualItems(displaysItem)) {
+        if (item->property("interactive").toBool() && item->property("cells").isValid()) {
+            sliderCellBar = item;
+            for (QQuickItem *sub : collectVisualItems(item)) {
+                if (QString::fromLatin1(sub->metaObject()->className()).startsWith(QLatin1String("QQuickMouseArea"))) {
+                    sliderMouseArea = sub;
+                    break;
+                }
+            }
+            if (sliderMouseArea) {
+                break;
+            }
+        }
+    }
+    QVERIFY(sliderCellBar != nullptr && sliderMouseArea != nullptr);
+    QVERIFY(sliderMouseArea->property("enabled").toBool());
+    QCOMPARE(sliderMouseArea->cursor().shape(), Qt::PointingHandCursor);
+
+    sliderCellBar->setProperty("interactive", false);
+    QCoreApplication::processEvents();
+    QVERIFY(!sliderMouseArea->property("enabled").toBool());
+    QCOMPARE(sliderMouseArea->cursor().shape(), Qt::ArrowCursor);
+
+    sliderCellBar->setProperty("interactive", true);
+    QCoreApplication::processEvents();
+    QCOMPARE(sliderMouseArea->cursor().shape(), Qt::PointingHandCursor);
+    sliderCellBar->setProperty("enabled", false);
+    QCoreApplication::processEvents();
+    QCOMPARE(sliderMouseArea->cursor().shape(), Qt::ArrowCursor);
+}
+
 void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
 {
     QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
@@ -815,6 +1015,8 @@ void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
             property alias themeObj: theme
             property alias lightCycle: cycleLoader.item
             property alias displays: displaysLoader.item
+            property alias weather: weatherLoader.item
+            property alias forecast: forecastLoader.item
             readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * theme.scaleFactor)
             width: 352
             height: 664
@@ -851,6 +1053,28 @@ void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
                         Layout.maximumWidth: parent ? parent.width : 0
                         clip: true
                         readonly property string src: Modules.source("displays", theme.themeId, theme.renderer)
+                        onSrcChanged: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                        Component.onCompleted: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                    Loader {
+                        id: weatherLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        clip: true
+                        readonly property string src: Modules.source("weather", theme.themeId, theme.renderer)
+                        onSrcChanged: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                        Component.onCompleted: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                    Loader {
+                        id: forecastLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        clip: true
+                        readonly property string src: Modules.source("forecast", theme.themeId, theme.renderer)
                         onSrcChanged: setSource(Qt.resolvedUrl(src), {
                             theme: theme, client: client, settings: settings })
                         Component.onCompleted: setSource(Qt.resolvedUrl(src), {
@@ -924,6 +1148,41 @@ void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
             cycle = rootObj->property("lightCycle").value<QObject *>();
         }
         QVERIFY2(cycle && cycle->property("available").toBool(), skin.id);
+        QObject *weather = rootObj->property("weather").value<QObject *>();
+        QVERIFY2(weather && weather->property("available").toBool(), skin.id);
+        QObject *forecast = rootObj->property("forecast").value<QObject *>();
+        QVERIFY2(forecast != nullptr, skin.id);
+        const QVariant hostedVar = forecast->property("hosted");
+        if (!hostedVar.isValid() || !hostedVar.toBool()) {
+            QVERIFY2(forecast->property("available").toBool(), skin.id);
+        }
+
+        const auto collectVisualItems = [](QQuickItem *itemRoot) {
+            QList<QQuickItem *> result;
+            QList<QQuickItem *> stack{itemRoot};
+            while (!stack.isEmpty()) {
+                QQuickItem *cur = stack.takeLast();
+                result.append(cur);
+                for (QQuickItem *ch : cur->childItems()) {
+                    stack.append(ch);
+                }
+            }
+            return result;
+        };
+
+        for (QObject *modObj : {weather, forecast}) {
+            if (auto *modItem = qobject_cast<QQuickItem *>(modObj)) {
+                for (QQuickItem *item : collectVisualItems(modItem)) {
+                    if (QString::fromLatin1(item->metaObject()->className()).startsWith(QLatin1String("QQuickMouseArea"))) {
+                        if (!item->isEnabled() || !item->property("enabled").toBool()) {
+                            QVERIFY2(item->cursor().shape() != Qt::PointingHandCursor,
+                                     qPrintable(QStringLiteral("Disabled MouseArea in skin %1 has PointingHandCursor")
+                                                    .arg(QLatin1String(skin.id))));
+                        }
+                    }
+                }
+            }
+        }
 
         for (double w : {352.0, 418.0}) {
             QTest::mouseMove(&view, QPoint(1, 1));

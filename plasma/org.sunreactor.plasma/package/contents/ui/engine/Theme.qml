@@ -155,9 +155,6 @@ Item {
         return isNaN(wanted) ? 0 : wanted;
     }
 
-    /*! Automatic scale factor computed from screen resolution and physical dimensions. */
-    readonly property real autoScaleFactor: ScaleHelper.calculateAutoScale(Screen)
-
     /*! Resolved effective scale factor (e.g. 1.0, 1.15, 1.25, 1.5). */
     readonly property real scaleFactor: ScaleHelper.resolveScale(uiScale, Screen)
 

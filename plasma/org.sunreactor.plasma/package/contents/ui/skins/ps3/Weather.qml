@@ -35,47 +35,12 @@ ColumnLayout {
     }
     readonly property bool available: client.isConnected && client.weatherEnabled
 
-    readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
-
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
 
-    readonly property string effectText: {
-        if (!client.hasWeatherReading) {
-            return "";
-        }
-        if (client.weatherStale) {
-            return i18nd(domain, "Last reading is out of date");
-        }
-        if (change >= 2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Dimming displays by %1%", change);
-        }
-        if (change <= -2) {
-            return i18ndc(domain, "Placeholder is a percentage", "Brightening displays by %1%", -change);
-        }
-        return i18nd(domain, "Not changing brightness right now");
-    }
+    readonly property string effectText: client.hasWeatherReading ? weatherText.effect(client) : ""
 
     /*! The secondary readings, in the order of the list. */
-    readonly property var details: {
-        const d = client.weatherDetails;
-        const out = [];
-        if (d.feelsLikeC !== undefined) {
-            out.push({ k: i18nd(domain, "Feels like"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
-        }
-        if (d.humidityPercent !== undefined) {
-            out.push({ k: i18nd(domain, "Humidity"),
-                       v: i18ndc(domain, "Percentage", "%1%", Math.round(d.humidityPercent)) });
-        }
-        if (d.windSpeedMps !== undefined) {
-            out.push({ k: i18nd(domain, "Wind"),
-                       v: i18ndc(domain, "Wind speed in metres per second", "%1 m/s", d.windSpeedMps.toFixed(1)) });
-        }
-        if (d.airQualityIndex !== undefined) {
-            out.push({ k: i18nd(domain, "Air quality"), v: String(Math.round(d.airQualityIndex)) });
-        }
-        return out;
-    }
+    readonly property var details: weatherText.detailsList(client.weatherDetails, "full")
 
     WeatherText {
         id: weatherText

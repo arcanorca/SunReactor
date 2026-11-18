@@ -37,9 +37,6 @@ QtObject {
     function snap(v) {
         return Math.round(v * dpr) / dpr;
     }
-    function floorSnap(v) {
-        return Math.floor(v * dpr) / dpr;
-    }
 
     // --- colour -----------------------------------------------------------------
 
@@ -50,8 +47,6 @@ QtObject {
 
     readonly property color paper: theme.bg
     readonly property color face: theme.mix(theme.bg, theme.borderInactive, 0.18)
-    /*! The bottom of the popup's backdrop; the top is the theme background. */
-    readonly property color backdropBottom: theme.mix(theme.bg, theme.borderInactive, 0.5)
     readonly property color ink: theme.fg
     readonly property color inkSoft: theme.mix(theme.fg, theme.textMuted, 0.5)
     readonly property color inkFaint: theme.textMuted
@@ -67,7 +62,6 @@ QtObject {
     readonly property color danger: theme.error
     /*! The error red deepened for small text: AA on the face. */
     readonly property color dangerInk: theme.mix(theme.error, theme.fg, 0.35)
-    readonly property color shadow: theme.alpha(theme.fg, 0.10)
     readonly property color gloss: theme.alpha(theme.bg, 0.9)
     readonly property color glossClear: theme.alpha(theme.bg, 0)
     /*! WeatherGlyph roles on a channel tile, in the Wii's colours: a yellow sun,

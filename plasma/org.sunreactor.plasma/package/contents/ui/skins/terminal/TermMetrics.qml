@@ -48,8 +48,6 @@ Item {
     }
 
     readonly property string family: regular.status === FontLoader.Ready ? regular.font.family : theme.monoFont
-    /*! Loaded so `font.bold` picks the real bold face, never a smeared one. */
-    readonly property bool boldReady: bold.status === FontLoader.Ready
 
     readonly property real dpr: theme.grid.devicePixelRatio > 0 ? theme.grid.devicePixelRatio : 1
     readonly property bool comfortable: theme.density === "comfortable"

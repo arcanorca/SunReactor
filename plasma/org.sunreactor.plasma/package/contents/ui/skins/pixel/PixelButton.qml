@@ -148,7 +148,7 @@ Item {
         id: mouse
         anchors.fill: parent
         enabled: root.interactive
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
             root.forceActiveFocus(Qt.MouseFocusReason);
             root.clicked();

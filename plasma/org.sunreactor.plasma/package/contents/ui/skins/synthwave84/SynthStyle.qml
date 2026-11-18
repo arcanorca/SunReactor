@@ -32,8 +32,6 @@ QtObject {
     readonly property color mint: theme.success
     readonly property color red: theme.error
     readonly property color muted: theme.textMuted
-    /*! Quiet rules and dividers: the palette's inactive border. */
-    readonly property color lilac: theme.borderInactive
     readonly property color night: theme.bg
     /*! Card body: a shade of the night, a little see-through over the gradient. */
     readonly property color card: theme.alpha(theme.mix(theme.bg, Qt.rgba(0, 0, 0, 1), 0.2), 0.78)

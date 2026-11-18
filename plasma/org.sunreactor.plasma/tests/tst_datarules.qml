@@ -117,6 +117,22 @@ Item {
             verify(!Monitors.controllable({ enabled: true, unreachable: true, topology: "present" }));
             verify(!Monitors.controllable({ enabled: true, topology: "temporarily_unavailable" }));
         }
+
+        function test_rowsWithMaster() {
+            const single = [{ logicalId: "eDP-1", percent: 50, enabled: true }];
+            const singleRows = Monitors.rowsWithMaster(single, 50, false, "All displays");
+            compare(singleRows.length, 1);
+            compare(singleRows[0].logicalId, "eDP-1");
+
+            const multiRows = Monitors.rowsWithMaster(stage.monitors, 45, true, "All displays");
+            compare(multiRows.length, 3);
+            verify(multiRows[0].master === true);
+            compare(multiRows[0].logicalId, "All displays");
+            compare(multiRows[0].percent, 45);
+            verify(multiRows[0].hasOverride === true);
+            compare(multiRows[1].logicalId, "mi-monitor");
+            compare(multiRows[2].logicalId, "len-p24h-20");
+        }
     }
 
     TestCase {

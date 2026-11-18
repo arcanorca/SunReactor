@@ -33,17 +33,8 @@ Item {
     }
 
     /*! The rows: an ALL DISPLAYS line when there are several, then one per display. */
-    readonly property var rowsModel: {
-        const out = [];
-        if (monitors.length > 1) {
-            out.push({ master: true, logicalId: i18nd(root.domain, "All displays"), percent: client.globalPercent,
-                       hasOverride: client.isOverrideActive, enabled: true, unreachable: false });
-        }
-        for (const monitor of monitors) {
-            out.push(monitor);
-        }
-        return out;
-    }
+    readonly property var rowsModel: Monitors.rowsWithMaster(
+        monitors, client.globalPercent, client.isOverrideActive, i18nd(root.domain, "All displays"))
 
     implicitHeight: surface.implicitHeight
 

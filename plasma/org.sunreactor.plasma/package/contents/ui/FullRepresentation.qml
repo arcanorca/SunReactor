@@ -177,13 +177,10 @@ PlasmaExtras.Representation {
         focus ring of any skin touches the first or last device pixel column. */
     readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * root.theme.scaleFactor)
 
-    /*! A skin's popup backdrop (Modules.BACKDROP): a Gradient the Frame fills with, or nothing. */
-    Loader {
-        id: backdropSlot
+    component ThemeSlot: Loader {
+        required property string wanted
 
-        readonly property string wanted: Modules.backdropSource(root.theme.available ? root.theme.themeId : "")
-
-        function load() {
+        function load(): void {
             if (wanted.length > 0) {
                 setSource(Qt.resolvedUrl(wanted), { theme: root.theme });
             } else {
@@ -193,6 +190,13 @@ PlasmaExtras.Representation {
 
         onWantedChanged: load()
         Component.onCompleted: load()
+    }
+
+    /*! A skin's popup backdrop (Modules.BACKDROP): a Gradient the Frame fills with, or nothing. */
+    ThemeSlot {
+        id: backdropSlot
+
+        wanted: Modules.backdropSource(root.theme.available ? root.theme.themeId : "")
     }
 
     background: Frame {
@@ -205,22 +209,11 @@ PlasmaExtras.Representation {
         style: root.theme.border === "none" ? "none" : "line"
 
         /*! A skin's overlay (Modules.OVERLAY): an Item over the fill, under the content. */
-        Loader {
+        ThemeSlot {
             id: overlaySlot
 
             anchors.fill: parent
-            readonly property string wanted: Modules.overlaySource(root.theme.available ? root.theme.themeId : "")
-
-            function load() {
-                if (wanted.length > 0) {
-                    setSource(Qt.resolvedUrl(wanted), { theme: root.theme });
-                } else {
-                    source = "";
-                }
-            }
-
-            onWantedChanged: load()
-            Component.onCompleted: load()
+            wanted: Modules.overlaySource(root.theme.available ? root.theme.themeId : "")
         }
     }
 

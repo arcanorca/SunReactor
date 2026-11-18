@@ -137,7 +137,7 @@ Item {
 
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.clicked()
     }
     // The chevron's own target, drawn over the pill so it takes its clicks first.
@@ -147,7 +147,7 @@ Item {
         y: 0
         width: chevron.width + 2 * root.style.gap
         height: root.height
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.arrowClicked()
     }
 }

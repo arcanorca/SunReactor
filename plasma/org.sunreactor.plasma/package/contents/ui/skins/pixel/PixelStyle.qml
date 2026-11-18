@@ -259,11 +259,6 @@ QtObject {
                     theme.accent, theme.secondaryAccent, none, theme.warning];
         }
     }
-    /*! Same idea for the 8x8 symbols drawn on a reverse-video (hot/ink) block. */
-    readonly property var symbolColors: {
-        const c = spriteColors.slice();
-        return c;
-    }
     /*! The handheld's four-shade ramp (Sprites.isMonoRamp): weather art in those shades only. */
     readonly property bool dmgRamp: Sprites.isMonoRamp(theme)
     /*! Weather is the 16 px sprite on the handheld whatever the icon style: the vector

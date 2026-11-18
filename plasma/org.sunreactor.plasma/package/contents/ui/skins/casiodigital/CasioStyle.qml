@@ -50,7 +50,6 @@ QtObject {
 
     readonly property color glass: theme.mix(theme.secondaryAccent, theme.fg, 0.4)
     readonly property color glassShade: theme.mix(glass, theme.bg, 0.35)
-    readonly property color glassLight: theme.mix(glass, theme.fg, 0.35)
 
     readonly property color ink: theme.mix(theme.bg, theme.secondaryAccent, 0.12)
     readonly property color ghost: theme.alpha(ink, 0.08)
