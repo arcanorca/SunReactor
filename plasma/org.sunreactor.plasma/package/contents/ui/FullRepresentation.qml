@@ -60,8 +60,10 @@ PlasmaExtras.Representation {
         id: popupHover
     }
 
+    /*! The preferred width of the popup: 19 scaled grid units. */
+    readonly property real popupWidth: root.theme.gridUnit * 19
     Layout.minimumWidth: root.theme.gridUnit * 16
-    Layout.preferredWidth: root.theme.gridUnit * 19
+    Layout.preferredWidth: root.popupWidth
     Layout.maximumWidth: root.theme.gridUnit * 40
     // The height is the page on screen plus the chrome around it: see popupHeight.
     Layout.minimumHeight: root.popupMinHeight
@@ -114,6 +116,12 @@ PlasmaExtras.Representation {
         if (!w || !w.visible || root.height <= 0 || w.height < root.height) {
             return;
         }
+        if (root.width > 0 && w.width >= root.width) {
+            const wantedW = Math.round(root.popupWidth) + (w.width - Math.round(root.width));
+            if (wantedW !== w.width) {
+                w.width = wantedW;
+            }
+        }
         const wanted = Math.round(root.popupHeight) + (w.height - Math.round(root.height));
         if (wanted === w.height) {
             return;
@@ -123,6 +131,7 @@ PlasmaExtras.Representation {
         }
         w.height = wanted;
     }
+    onPopupWidthChanged: Qt.callLater(root.fitWindow)
     onPopupHeightChanged: Qt.callLater(root.fitWindow)
     /*! After the window shows, the first layout of a page can settle a little later (a
         curve that arrives late): fit again a few times, 120 ms apart, then stop. */

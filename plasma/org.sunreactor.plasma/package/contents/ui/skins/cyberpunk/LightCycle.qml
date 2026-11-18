@@ -96,7 +96,15 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: root.style.gap
 
+            TextMetrics {
+                id: captionMetrics
+
+                font: root.style.labelFont
+                text: i18ndc(root.domain, "Readout caption, then the time under the pointer", "CURSOR · %1", "23:59 AM")
+            }
+
             Text {
+                width: root.showAll ? implicitWidth : Math.ceil(Math.max(implicitWidth, captionMetrics.width))
                 text: root.showAll
                     ? i18ndc(root.domain, "Readout caption: every display is plotted", "TODAY · ALL DISPLAYS")
                     : (root.scrubbing
@@ -134,12 +142,21 @@ ColumnLayout {
             }
         }
 
-        // The hero figure, and beside it one row of four bracket readouts.
-        RowLayout {
+        // The hero figure, and beside it the four bracket readouts in a 2x2 grid.
+        // Hosted in a zero-implicitWidth Item so readout glyph changes during hover
+        // scrubbing can never feed back into the parent ColumnLayout or plot width.
+        Item {
+            id: readoutRow
+
             Layout.fillWidth: true
-            spacing: root.style.gap2
+            implicitWidth: 0
+            implicitHeight: Math.max(heroRow.implicitHeight, readouts.implicitHeight)
 
             PixelRow {
+                id: heroRow
+
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 spacing: root.style.gap * 0.5
 
                 GlitchValue {
@@ -161,37 +178,50 @@ ColumnLayout {
                 }
             }
 
-            Item {
-                Layout.fillWidth: true
+            TextMetrics {
+                id: clearSkyMetrics
+
+                font: root.style.tinyFont
+                text: i18ndc(root.domain, "Readout: target with a clear sky", "CLEAR SKY")
             }
 
-            PixelRow {
+            GridLayout {
                 id: readouts
 
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
                 visible: !root.showAll && root.current !== null
-                Layout.alignment: Qt.AlignVCenter
-                spacing: root.style.gap
+                columns: 2
+                columnSpacing: root.style.gap
+                rowSpacing: root.style.snap(root.style.unit * 0.2)
 
-                Column {
-                    spacing: root.style.snap(root.style.unit * 0.2)
+                PixelRow {
+                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                    spacing: root.style.gap * 0.5
 
                     Text {
+                        anchors.verticalCenter: parent.verticalCenter
                         text: i18ndc(root.domain, "Label before the automatic target value", "TARGET")
                         textFormat: Text.PlainText
                         font: root.style.tinyFont
                         color: root.style.muted
                     }
                     Bracket {
+                        anchors.verticalCenter: parent.verticalCenter
                         style: root.style
                         value: root.pctText(root.readTarget)
                         font: root.style.techFont
                         color: root.style.ink
                     }
                 }
-                Column {
-                    spacing: root.style.snap(root.style.unit * 0.2)
+                PixelRow {
+                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                    spacing: root.style.gap * 0.5
 
                     Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.ceil(Math.max(implicitWidth, clearSkyMetrics.width))
+                        horizontalAlignment: Text.AlignRight
                         text: root.scrubbing
                             ? i18ndc(root.domain, "Readout: target with a clear sky", "CLEAR SKY")
                             : i18ndc(root.domain, "Readout: brightness the daemon last applied", "APPLIED")
@@ -200,38 +230,45 @@ ColumnLayout {
                         color: root.style.muted
                     }
                     Bracket {
+                        anchors.verticalCenter: parent.verticalCenter
                         style: root.style
                         value: root.scrubbing ? root.pctText(root.readClearSky) : root.pctText(root.appliedNow)
                         font: root.style.techFont
                         color: root.style.ink
                     }
                 }
-                Column {
-                    spacing: root.style.snap(root.style.unit * 0.2)
+                PixelRow {
+                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                    spacing: root.style.gap * 0.5
 
                     Text {
+                        anchors.verticalCenter: parent.verticalCenter
                         text: i18ndc(root.domain, "Readout: brightness the weather takes away", "WEATHER")
                         textFormat: Text.PlainText
                         font: root.style.tinyFont
                         color: root.style.muted
                     }
                     Bracket {
+                        anchors.verticalCenter: parent.verticalCenter
                         style: root.style
                         value: Math.round(root.readCost) >= 1 ? "−" + Math.round(root.readCost) : "0"
                         font: root.style.techFont
                         color: root.style.cyan
                     }
                 }
-                Column {
-                    spacing: root.style.snap(root.style.unit * 0.2)
+                PixelRow {
+                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                    spacing: root.style.gap * 0.5
 
                     Text {
+                        anchors.verticalCenter: parent.verticalCenter
                         text: i18ndc(root.domain, "Readout: the display's automatic minimum and maximum", "RANGE")
                         textFormat: Text.PlainText
                         font: root.style.tinyFont
                         color: root.style.muted
                     }
                     Bracket {
+                        anchors.verticalCenter: parent.verticalCenter
                         style: root.style
                         value: root.current ? root.current.minPct + "–" + root.current.maxPct : "--"
                         font: root.style.techFont

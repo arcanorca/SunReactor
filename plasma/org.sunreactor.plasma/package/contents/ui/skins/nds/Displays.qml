@@ -155,7 +155,7 @@ Item {
             height: Math.round(root.gu * 1.1)
             radius: Math.round(height / 2)
             color: panel.expanded ? root.style.blue : root.style.track
-            border.width: root.style.hairline
+            border.width: 1
             border.color: root.style.line
 
             Text {
@@ -166,7 +166,7 @@ Item {
                 font.family: root.style.family
                 font.weight: Font.Bold
                 font.pixelSize: Math.round(root.gu * 0.65)
-                color: panel.expanded ? root.style.paper : root.style.ink
+                color: panel.expanded ? root.style.white : root.style.ink
             }
             MouseArea {
                 anchors.fill: parent

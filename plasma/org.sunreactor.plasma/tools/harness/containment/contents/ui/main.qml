@@ -45,7 +45,9 @@ ContainmentItem {
 
     function popupWidth(): real {
         if (root.gridUnits > 0) {
-            return root.gridUnits * Kirigami.Units.gridUnit;
+            const unit = root.full && root.full.theme && root.full.theme.gridUnit > 0
+                ? root.full.theme.gridUnit : Kirigami.Units.gridUnit;
+            return root.gridUnits * unit;
         }
         return root.full ? root.full.Layout.preferredWidth : root.placeholderWidth;
     }

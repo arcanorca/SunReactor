@@ -36,7 +36,7 @@ Item {
     property alias titleItems: titleSlot.data
     property bool footerShown: false
 
-    implicitWidth: caseBody.implicitWidth + 2 * root.style.pad
+    implicitWidth: 0
     implicitHeight: caseBody.implicitHeight + 2 * root.style.pad
 
     // The case: a dark moulded ring, a shade at the foot, a hairline edge.

@@ -89,6 +89,8 @@ ColumnLayout {
 
         Text {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.preferredWidth: 0
             Layout.alignment: Qt.AlignBaseline
             text: root.name
             textFormat: Text.PlainText

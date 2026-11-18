@@ -149,6 +149,8 @@ Rectangle {
         // --- the caption and the display pills ------------------------------------------
         RowLayout {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.preferredWidth: 0
             spacing: root.style.gap * 0.5
 
             Text {
@@ -185,6 +187,8 @@ Rectangle {
         // --- the dial and the readings beside it ----------------------------------------
         RowLayout {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.preferredWidth: 0
             spacing: root.style.gap * 2
 
             Item {

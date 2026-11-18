@@ -89,6 +89,8 @@ ColumnLayout {
             // The hero: the target now, with the time it is read at and what is applied.
             RowLayout {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: 0
                 spacing: 0
 
                 Text {
@@ -120,7 +122,8 @@ ColumnLayout {
                         color: root.style.inkSoft
                     }
                     Text {
-                        visible: root.appliedNow >= 0 && !root.hovering
+                        visible: root.appliedNow >= 0
+                        opacity: root.hovering ? 0 : 1
                         text: i18ndc(root.domain, "What the daemon last wrote, in percent", "Applied %1", root.appliedNow)
                         textFormat: Text.PlainText
                         font: root.style.captionFont

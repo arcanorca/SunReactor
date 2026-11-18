@@ -87,6 +87,7 @@ ColumnLayout {
                 readonly property int pct: modelData.cloudCoverPercent !== undefined ? modelData.cloudCoverPercent : -1
 
                 Layout.fillWidth: true
+                Layout.preferredWidth: 1
                 implicitHeight: body.implicitHeight
 
                 // Hairline between the columns.
@@ -153,6 +154,8 @@ ColumnLayout {
                     }
                     CellBar {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: 0
                         style: root.style
                         cells: 5
                         value: column.pct

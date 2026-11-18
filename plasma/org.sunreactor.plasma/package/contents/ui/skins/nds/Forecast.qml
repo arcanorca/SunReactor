@@ -67,7 +67,7 @@ Item {
     readonly property real tileGap: Math.round(gu * 0.25)
     readonly property real tileH: Math.round(gu * 3.3)
     readonly property real detailsTop: pad + tileH + Math.round(gu * 0.4)
-    readonly property real detailRowH: Math.round(gu * 1.0)
+    readonly property real detailRowH: Math.round(gu * 1.15)
     readonly property real detailsH: details.length * detailRowH + Math.round(gu * 0.4)
     readonly property real glassH: detailsTop + detailsH + pad
 
@@ -123,6 +123,8 @@ Item {
                 Accessible.name: modelData.label + " " + modelData.value
 
                 Text {
+                    id: detailLabel
+
                     x: Math.round(root.gu * 0.8)
                     anchors.verticalCenter: parent.verticalCenter
                     text: detailRow.modelData.label
@@ -134,7 +136,7 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: Math.round(root.gu * 0.8)
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.round(parent.width * 0.62)
+                    width: Math.max(0, parent.width - detailLabel.x - detailLabel.implicitWidth - Math.round(root.gu * 1.2))
                     horizontalAlignment: Text.AlignRight
                     elide: Text.ElideRight
                     text: detailRow.modelData.value

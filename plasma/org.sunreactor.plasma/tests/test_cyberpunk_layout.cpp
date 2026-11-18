@@ -53,8 +53,15 @@ public:
 
     bool isListening() const { return m_listening; }
 
+    void setThemeSpec(const QString &id, const QString &renderer, const QString &font)
+    {
+        m_themeId = id;
+        m_renderer = renderer;
+        m_font = font;
+    }
+
 private:
-    static QJsonObject statusPayload()
+    QJsonObject statusPayload() const
     {
         QJsonObject palette;
         palette[QStringLiteral("bg")] = QStringLiteral("#0a0a12");
@@ -69,21 +76,24 @@ private:
         palette[QStringLiteral("error")] = QStringLiteral("#ff003c");
 
         QJsonObject widget;
-        widget[QStringLiteral("renderer")] = QStringLiteral("vector");
-        widget[QStringLiteral("font")] = QStringLiteral("sans");
+        widget[QStringLiteral("renderer")] = m_renderer;
+        widget[QStringLiteral("font")] = m_font;
         widget[QStringLiteral("density")] = QStringLiteral("comfortable");
         widget[QStringLiteral("border")] = QStringLiteral("line");
         widget[QStringLiteral("radius")] = 0;
         widget[QStringLiteral("glow")] = 0.5;
+        widget[QStringLiteral("shades")] = QJsonArray{
+            QStringLiteral("#0a0a12"), QStringLiteral("#2a2a40"),
+            QStringLiteral("#7f849c"), QStringLiteral("#fcee0a")};
         widget[QStringLiteral("modules")] = QJsonArray{
             QStringLiteral("telemetry"), QStringLiteral("curve"), QStringLiteral("displays"),
             QStringLiteral("automation"), QStringLiteral("weather"), QStringLiteral("forecast"),
             QStringLiteral("suntimes")};
 
         QJsonObject theme;
-        theme[QStringLiteral("id")] = QStringLiteral("cyberpunk");
-        theme[QStringLiteral("name")] = QStringLiteral("Cyberpunk");
-        theme[QStringLiteral("family")] = QStringLiteral("instrument");
+        theme[QStringLiteral("id")] = m_themeId;
+        theme[QStringLiteral("name")] = m_themeId;
+        theme[QStringLiteral("family")] = m_renderer;
         theme[QStringLiteral("palette")] = palette;
         theme[QStringLiteral("widget")] = widget;
 
@@ -117,7 +127,7 @@ private:
         for (int i = 0; i < 96; ++i) {
             QJsonObject s;
             s[QStringLiteral("t")] = t0 + i * 900;
-            const int pct = (i >= 24 && i <= 64) ? 65 : 20;
+            const int pct = (i >= 24 && i <= 64) ? 55 : 15;
             s[QStringLiteral("pct")] = pct;
             s[QStringLiteral("pct_no_weather")] = pct + 10;
             samples.append(s);
@@ -150,6 +160,9 @@ private:
 
     QLocalServer m_server;
     bool m_listening = false;
+    QString m_themeId = QStringLiteral("cyberpunk");
+    QString m_renderer = QStringLiteral("vector");
+    QString m_font = QStringLiteral("sans");
 };
 
 class I18nStub : public QObject
@@ -157,9 +170,22 @@ class I18nStub : public QObject
     Q_OBJECT
 public:
     using QObject::QObject;
-    Q_INVOKABLE QString i18nd(const QString &, const QString &text) const { return text; }
+    Q_INVOKABLE QString i18nd(const QString &, const QString &text,
+                              const QVariant &a1 = {}, const QVariant &a2 = {},
+                              const QVariant &a3 = {}) const
+    {
+        return formatArgs(text, a1, a2, a3);
+    }
     Q_INVOKABLE QString i18ndc(const QString &, const QString &, const QString &text,
-                               const QVariant &a1 = {}, const QVariant &a2 = {}) const
+                               const QVariant &a1 = {}, const QVariant &a2 = {},
+                               const QVariant &a3 = {}) const
+    {
+        return formatArgs(text, a1, a2, a3);
+    }
+
+private:
+    static QString formatArgs(const QString &text, const QVariant &a1,
+                              const QVariant &a2, const QVariant &a3)
     {
         QString out = text;
         if (a1.isValid()) {
@@ -167,6 +193,9 @@ public:
         }
         if (a2.isValid()) {
             out.replace(QStringLiteral("%2"), a2.toString());
+        }
+        if (a3.isValid()) {
+            out.replace(QStringLiteral("%3"), a3.toString());
         }
         return out;
     }
@@ -179,6 +208,8 @@ class TestCyberpunkLayout : public QObject
 private Q_SLOTS:
     void cyberpunkLightCycleSettlesOnResize();
     void cyberpunkPageIsStableAtFractionalScale();
+    void cyberpunkHoverScrubDoesNotOscillate();
+    void allSkinsSettleAndScrubWithoutOscillation();
 };
 
 void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
@@ -372,6 +403,13 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
     }
     QVERIFY(frame != nullptr);
 
+    // Let initial layout pass complete after data arrival before measuring stability.
+    for (int turn = 0; turn < 10; ++turn) {
+        view.requestUpdate();
+        QCoreApplication::processEvents();
+        QTest::qWait(8);
+    }
+
     int implicitWidthChanges = 0;
     int widthChanges = 0;
     int allDescendantWidthChanges = 0;
@@ -406,7 +444,7 @@ void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
                     << "implicitWidth=" << child->implicitWidth() << "width=" << child->width();
         }
     }
-    QVERIFY2(allDescendantWidthChanges <= 50,
+    QVERIFY2(allDescendantWidthChanges == 0,
              qPrintable(QStringLiteral("Descendant widths oscillated (%1 changes) in initial 500ms")
                             .arg(allDescendantWidthChanges)));
 
@@ -625,6 +663,322 @@ void TestCyberpunkLayout::cyberpunkPageIsStableAtFractionalScale()
             QVERIFY2(widthChanges == 0,
                      qPrintable(QStringLiteral("%1 item width changes after the page settled at %2x%3")
                                     .arg(widthChanges).arg(w).arg(h)));
+        }
+    }
+}
+
+void TestCyberpunkLayout::cyberpunkHoverScrubDoesNotOscillate()
+{
+    QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    MockDaemon daemon(sockPath);
+    QVERIFY(daemon.isListening());
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import QtQuick.Layouts
+        import org.kde.plasma.components as PlasmaComponents3
+        import org.kde.kirigami as Kirigami
+        import org.sunreactor.plasma
+        import "engine" as Engine
+        import "modules" as Mod
+
+        Item {
+            id: root
+            property alias lightCycle: cycleLoader.item
+            readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * theme.scaleFactor)
+            width: 352
+            height: 664
+            SunReactorClient { id: client; socketPath: testSocketPath }
+            Engine.Theme { id: theme; spec: client.theme; source: "follow"; overrides: ({ uiScale: 120 }) }
+            Mod.ModuleSettings { id: settings }
+            PlasmaComponents3.ScrollView {
+                id: panel
+                anchors.fill: parent
+                PlasmaComponents3.ScrollBar.horizontal.visible: false
+                ColumnLayout {
+                    x: root.edgeInset
+                    width: panel.width - 2 * root.edgeInset - theme.gridUnit
+                    spacing: theme.sectionSpacing
+                    Loader {
+                        id: cycleLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        clip: true
+                        Component.onCompleted: setSource(Qt.resolvedUrl("skins/cyberpunk/LightCycle.qml"), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestHover.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *cycle = rootObj->property("lightCycle").value<QObject *>();
+    for (int i = 0; i < 150 && !(cycle && cycle->property("available").toBool()); ++i) {
+        QTest::qWait(20);
+        cycle = rootObj->property("lightCycle").value<QObject *>();
+    }
+    QVERIFY(cycle && cycle->property("available").toBool());
+
+    const auto pump = [&view](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            view.requestUpdate();
+            QCoreApplication::processEvents();
+            QTest::qWait(5);
+        }
+    };
+    pump(30);
+
+    auto *cycleItem = qobject_cast<QQuickItem *>(cycle);
+    QVERIFY(cycleItem != nullptr);
+
+    QQuickItem *hoverArea = nullptr;
+    for (QQuickItem *item : cycleItem->findChildren<QQuickItem *>()) {
+        if (item->property("hoverEnabled").toBool() && item->property("time").isValid()) {
+            hoverArea = item;
+            break;
+        }
+    }
+    QVERIFY(hoverArea != nullptr);
+
+    int widthChanges = 0;
+    for (QQuickItem *item : cycleItem->findChildren<QQuickItem *>()) {
+        connect(item, &QQuickItem::widthChanged, this, [&widthChanges]() {
+            ++widthChanges;
+        });
+    }
+
+    // Sweep mouse across the plot (including the sunrise transition and right edge)
+    // and verify that once positioned at a single point, layout widths do not oscillate.
+    const QPointF origin = hoverArea->mapToScene(QPointF(0, hoverArea->height() * 0.5));
+    const double plotW = hoverArea->width();
+    for (int step = 0; step <= 40; ++step) {
+        const double x = (plotW + 16.0) * step / 40.0;
+        const QPoint pt = (origin + QPointF(x, 0)).toPoint();
+        QTest::mouseMove(&view, pt);
+        pump(4);
+        widthChanges = 0;
+        pump(20);
+        QVERIFY2(widthChanges == 0,
+                 qPrintable(QStringLiteral("Hover scrub caused %1 layout width oscillations at x=%2")
+                                .arg(widthChanges)
+                                .arg(x)));
+    }
+}
+
+void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
+{
+    QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    MockDaemon daemon(sockPath);
+    QVERIFY(daemon.isListening());
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import QtQuick.Layouts
+        import org.kde.plasma.components as PlasmaComponents3
+        import org.kde.kirigami as Kirigami
+        import org.sunreactor.plasma
+        import "engine" as Engine
+        import "modules" as Mod
+        import "modules/Modules.js" as Modules
+
+        Item {
+            id: root
+            property alias client: client
+            property alias themeObj: theme
+            property alias lightCycle: cycleLoader.item
+            property alias displays: displaysLoader.item
+            readonly property real edgeInset: Math.round(Kirigami.Units.smallSpacing * theme.scaleFactor)
+            width: 352
+            height: 664
+            SunReactorClient { id: client; socketPath: testSocketPath }
+            Engine.Theme { id: theme; spec: client.theme; source: "follow"; overrides: ({ uiScale: 120 }) }
+            Mod.ModuleSettings { id: settings }
+            Binding {
+                target: theme
+                property: "gridContentWidth"
+                value: panel.width - 2 * root.edgeInset - theme.gridUnit
+            }
+            PlasmaComponents3.ScrollView {
+                id: panel
+                anchors.fill: parent
+                PlasmaComponents3.ScrollBar.horizontal.visible: false
+                ColumnLayout {
+                    x: root.edgeInset
+                    width: panel.width - 2 * root.edgeInset - theme.gridUnit
+                    spacing: theme.sectionSpacing
+                    Loader {
+                        id: cycleLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        clip: true
+                        readonly property string src: Modules.source("curve", theme.themeId, theme.renderer)
+                        onSrcChanged: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                        Component.onCompleted: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                    Loader {
+                        id: displaysLoader
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: parent ? parent.width : 0
+                        clip: true
+                        readonly property string src: Modules.source("displays", theme.themeId, theme.renderer)
+                        onSrcChanged: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                        Component.onCompleted: setSource(Qt.resolvedUrl(src), {
+                            theme: theme, client: client, settings: settings })
+                    }
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestAllSkins.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *client = rootObj->property("client").value<QObject *>();
+    QVERIFY(client != nullptr);
+
+    const auto pump = [&view](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            view.requestUpdate();
+            QCoreApplication::processEvents();
+            QTest::qWait(4);
+        }
+    };
+
+    struct SkinSpec {
+        const char *id;
+        const char *renderer;
+        const char *font;
+    };
+    const SkinSpec skins[] = {
+        {"cyberpunk", "vector", "sans"},
+        {"braun", "vector", "sans"},
+        {"synthwave84", "vector", "display"},
+        {"nothing", "vector", "sans"},
+        {"ps3", "vector", "sans"},
+        {"wii", "vector", "sans"},
+        {"macos", "vector", "sans"},
+        {"winxp", "vector", "sans"},
+        {"casiodigital", "vector", "mono"},
+        {"nds", "vector", "sans"},
+        {"handheld", "pixel", "bitmap8"},
+        {"amiga", "pixel", "bitmap8"},
+        {"commodore64", "pixel", "bitmap_vga"},
+        {"dracula", "terminal", "mono"},
+        {"hackergreen", "terminal", "mono"},
+    };
+
+    for (const SkinSpec &skin : skins) {
+        QTest::mouseMove(&view, QPoint(1, 1));
+        daemon.setThemeSpec(QString::fromLatin1(skin.id),
+                            QString::fromLatin1(skin.renderer),
+                            QString::fromLatin1(skin.font));
+        QMetaObject::invokeMethod(client, "queryStatus");
+        QObject *themeObj = rootObj->property("themeObj").value<QObject *>();
+        QVERIFY(themeObj != nullptr);
+        for (int i = 0; i < 50 && themeObj->property("themeId").toString() != QLatin1String(skin.id); ++i) {
+            QTest::qWait(10);
+        }
+        QCOMPARE(themeObj->property("themeId").toString(), QLatin1String(skin.id));
+        pump(20);
+
+        QObject *cycle = rootObj->property("lightCycle").value<QObject *>();
+        QVERIFY2(cycle != nullptr, skin.id);
+        for (int i = 0; i < 50 && !cycle->property("available").toBool(); ++i) {
+            QTest::qWait(10);
+            cycle = rootObj->property("lightCycle").value<QObject *>();
+        }
+        QVERIFY2(cycle && cycle->property("available").toBool(), skin.id);
+
+        for (double w : {352.0, 418.0}) {
+            QTest::mouseMove(&view, QPoint(1, 1));
+            rootObj->setProperty("width", w);
+            pump(15);
+
+            int sizeChanges = 0;
+            const auto allItems = qobject_cast<QQuickItem *>(rootObj)->findChildren<QQuickItem *>();
+            std::vector<QMetaObject::Connection> conns;
+            conns.reserve(allItems.size() * 2);
+            for (QQuickItem *item : allItems) {
+                conns.push_back(connect(item, &QQuickItem::widthChanged, this, [&sizeChanges]() {
+                    ++sizeChanges;
+                }));
+                conns.push_back(connect(item, &QQuickItem::heightChanged, this, [&sizeChanges]() {
+                    ++sizeChanges;
+                }));
+            }
+
+            pump(15);
+            QVERIFY2(sizeChanges == 0,
+                     qPrintable(QStringLiteral("Skin %1 oscillated (%2 size changes) while idle at width %3")
+                                    .arg(QLatin1String(skin.id))
+                                    .arg(sizeChanges)
+                                    .arg(w)));
+
+            auto *cycleItem = qobject_cast<QQuickItem *>(cycle);
+            QQuickItem *hoverArea = nullptr;
+            for (QQuickItem *item : cycleItem->findChildren<QQuickItem *>()) {
+                if (item->property("hoverEnabled").toBool() && item->width() > 40 && item->height() > 15) {
+                    hoverArea = item;
+                    break;
+                }
+            }
+            if (hoverArea) {
+                const QPointF origin = hoverArea->mapToScene(QPointF(0, hoverArea->height() * 0.5));
+                const double plotW = hoverArea->width();
+                for (int step = 0; step <= 10; ++step) {
+                    const double x = (plotW + 12.0) * step / 10.0;
+                    QTest::mouseMove(&view, (origin + QPointF(x, 0)).toPoint());
+                    pump(3);
+                    sizeChanges = 0;
+                    pump(10);
+                    QVERIFY2(sizeChanges == 0,
+                             qPrintable(QStringLiteral("Skin %1 oscillated (%2 size changes) on hover at x=%3 width=%4")
+                                            .arg(QLatin1String(skin.id))
+                                            .arg(sizeChanges)
+                                            .arg(x)
+                                            .arg(w)));
+                }
+            }
+
+            for (const auto &c : conns) {
+                disconnect(c);
+            }
         }
     }
 }

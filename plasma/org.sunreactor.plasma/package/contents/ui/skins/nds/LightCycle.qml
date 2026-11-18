@@ -130,7 +130,7 @@ Item {
 
         NdsStatusBar {
             x: root.pad
-            y: Math.round(root.gu * 0.35)
+            y: Math.round(root.gu * 0.3)
             width: root.glassW - 2 * root.pad
             theme: root.theme
             style: root.style
@@ -148,14 +148,14 @@ Item {
             text: root.title
             font.family: root.style.family
             font.weight: Font.Bold
-            font.pixelSize: Math.round(root.gu * 0.9)
+            font.pixelSize: Math.round(root.gu * 0.82)
             color: root.style.ink
         }
         MouseArea {
             x: root.pad
             y: Math.round(root.gu * 1.45)
             width: root.glassW - 2 * root.pad
-            height: Math.round(root.gu * 1.2)
+            height: Math.round(root.gu * 1.15)
             cursorShape: root.curves.length > 1 ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.cycle()
         }
@@ -165,30 +165,30 @@ Item {
             id: hero
 
             x: root.pad
-            y: Math.round(root.gu * 2.6)
+            y: Math.round(root.gu * 2.68)
             text: root.showAll ? "--%" : root.heroText
             font.family: root.style.family
             font.weight: Font.Bold
-            font.pixelSize: Math.round(root.gu * 1.75)
+            font.pixelSize: Math.round(root.gu * 1.65)
             color: root.style.ink
         }
         Text {
             x: hero.x + hero.implicitWidth + Math.round(root.gu * 0.6)
-            y: Math.round(root.gu * 2.85)
+            y: Math.round(root.gu * 2.75)
             text: root.scrubbing ? Format.timeText(root.scrubTime)
                 : i18ndc(root.domain, "The curve's brightness right now", "Now")
             font.family: root.style.family
-            font.pixelSize: Math.round(root.gu * 0.66)
+            font.pixelSize: Math.round(root.gu * 0.62)
             color: root.style.muted
         }
         Text {
             x: hero.x + hero.implicitWidth + Math.round(root.gu * 0.6)
-            y: Math.round(root.gu * 3.7)
+            y: Math.round(root.gu * 3.68)
             visible: !root.scrubbing && root.applied >= 0
             text: i18ndc(root.domain, "Brightness the display has right now", "Set %1%", root.applied)
             font.family: root.style.family
             font.weight: Font.Bold
-            font.pixelSize: Math.round(root.gu * 0.8)
+            font.pixelSize: Math.round(root.gu * 0.72)
             color: root.style.blue
         }
 

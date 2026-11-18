@@ -279,8 +279,6 @@ Rectangle {
                 ruled: root.showAllDisplays || index > 0
                 name: monitorId
                 percent: strip.level
-                minPct: strip.minPct
-                maxPct: strip.maxPct
                 hasLimits: true
                 controllable: modelData.enabled === true && !unavailable
                 hasOverride: modelData.hasOverride === true

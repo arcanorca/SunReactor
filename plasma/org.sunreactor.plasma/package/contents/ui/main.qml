@@ -66,7 +66,7 @@ PlasmoidItem {
         }
     }
     onExpandedChanged: {
-        if (!expanded) {
+        if (!root.expanded) {
             deactivateGrace.stop();
         }
     }

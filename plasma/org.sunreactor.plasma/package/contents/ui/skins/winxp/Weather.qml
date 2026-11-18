@@ -223,7 +223,7 @@ WinWindow {
                                 required property int index
 
                                 width: details.width / 2
-                                height: root.ui.rowH
+                                height: Math.max(root.ui.rowH, Math.ceil(val.implicitHeight) + root.ui.snap(4))
 
                                 Text {
                                     x: root.ui.pad

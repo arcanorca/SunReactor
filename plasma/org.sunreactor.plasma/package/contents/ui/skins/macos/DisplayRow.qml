@@ -39,7 +39,7 @@ Item {
 
     readonly property bool hasValue: percent >= 0
 
-    implicitWidth: body.implicitWidth + 2 * style.padRow
+    implicitWidth: 0
     implicitHeight: body.implicitHeight + 2 * style.snap(7)
 
     ColumnLayout {
@@ -60,6 +60,8 @@ Item {
 
             Text {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: 0
                 text: root.name
                 textFormat: Text.PlainText
                 font: root.style.caption
@@ -117,7 +119,7 @@ Item {
             }
 
             Text {
-                Layout.preferredWidth: root.style.snap(38)
+                Layout.preferredWidth: Math.max(implicitWidth, root.style.snap(38))
                 horizontalAlignment: Text.AlignRight
                 text: root.hasValue ? root.percent + "%" : "—"
                 textFormat: Text.PlainText
