@@ -503,8 +503,9 @@ ColumnLayout {
                     spacing: root.style.gap * 0.5
 
                     Flow {
-                        Layout.alignment: Qt.AlignRight
+                        Layout.fillWidth: true
                         Layout.maximumWidth: rightColumn.maxWidth
+                        layoutDirection: Qt.RightToLeft
                         visible: root.curves.length > 1
                         spacing: root.style.gap * 0.5
 

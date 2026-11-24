@@ -11,15 +11,32 @@ import QtQuick
 import org.kde.plasma.components as PlasmaComponents3
 
 import "../modules"
+import "PopupOverlay.js" as PopupOverlay
 
 PlasmaComponents3.Menu {
     id: root
 
     required property ModeControl control
 
+    property bool _overlayRegistered: false
+    property var _overlayHost: null
+    property Item _overlayAnchor: null
+
+    function syncOverlay(active: bool): void {
+        const target = root._overlayAnchor ? root._overlayAnchor : (root.parent ? root.parent : root);
+        const next = PopupOverlay.sync(target, _overlayHost, _overlayRegistered, active);
+        _overlayHost = next.host;
+        _overlayRegistered = next.registered;
+    }
+
+    onAboutToShow: syncOverlay(true)
+    onAboutToHide: syncOverlay(false)
+    Component.onDestruction: syncOverlay(false)
+
     /*! Opens the menu under `anchor`, left-aligned with it, in the coordinates of `host`
         (the item the menu is declared in). */
     function openBelow(anchor: Item, host: Item): void {
+        root._overlayAnchor = host ? host : anchor;
         x = Math.max(0, anchor.mapToItem(host, 0, 0).x);
         y = anchor.mapToItem(host, 0, anchor.height).y;
         open();

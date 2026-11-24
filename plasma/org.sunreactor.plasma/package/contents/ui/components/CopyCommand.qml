@@ -16,20 +16,20 @@ RowLayout {
     property string command: ""
     property string domain: ""
     readonly property alias copied: feedback.running
-    readonly property alias field: field
+    readonly property alias field: commandField
 
     function copy(): void {
-        field.forceActiveFocus();
-        field.selectAll();
-        field.copy();
-        field.deselect();
+        commandField.forceActiveFocus();
+        commandField.selectAll();
+        commandField.copy();
+        commandField.deselect();
         feedback.restart();
     }
 
     spacing: Kirigami.Units.smallSpacing
 
     QQC2.TextField {
-        id: field
+        id: commandField
 
         Layout.fillWidth: true
         Layout.maximumWidth: implicitWidth
@@ -53,7 +53,7 @@ RowLayout {
             radius: Kirigami.Units.cornerRadius
             color: Kirigami.Theme.alternateBackgroundColor
             border.width: 1
-            border.color: field.activeFocus ? Kirigami.Theme.highlightColor
+            border.color: commandField.activeFocus ? Kirigami.Theme.highlightColor
                 : Qt.alpha(Kirigami.Theme.textColor, 0.25)
         }
     }

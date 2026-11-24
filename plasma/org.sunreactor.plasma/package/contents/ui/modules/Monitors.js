@@ -35,3 +35,44 @@ function rowsWithMaster(monitors, globalPercent, isOverrideActive, masterLabel) 
     }
     return out;
 }
+
+/*! True when the range/limits drawer for logicalId is expanded in expandedMap. */
+function isExpanded(expandedMap, logicalId) {
+    return expandedMap !== undefined && expandedMap !== null
+        && expandedMap[String(logicalId)] === true;
+}
+
+/*! Returns a copy of expandedMap with logicalId's expanded state flipped. */
+function toggleExpanded(expandedMap, logicalId) {
+    var next = {};
+    if (expandedMap) {
+        for (var key in expandedMap) {
+            if (expandedMap[key] === true) {
+                next[key] = true;
+            }
+        }
+    }
+    var target = String(logicalId);
+    next[target] = !isExpanded(expandedMap, target);
+    return next;
+}
+
+/*! Remaining seconds of an active external brightness hold, or 0. */
+function externalHoldSeconds(monitor) {
+    if (!monitor || !monitor.externalHold) {
+        return 0;
+    }
+    var rem = Number(monitor.externalHold.remainingS);
+    return rem > 0 ? rem : 0;
+}
+
+/*! True while the daemon is holding automatic writes due to an external change. */
+function hasExternalHold(monitor) {
+    return externalHoldSeconds(monitor) > 0;
+}
+
+/*! Compact duration label ("<1m" or "Nm") for external-hold badges. */
+function externalHoldAge(seconds) {
+    var s = Math.max(0, Number(seconds) || 0);
+    return s < 60 ? "<1m" : Math.ceil(s / 60) + "m";
+}

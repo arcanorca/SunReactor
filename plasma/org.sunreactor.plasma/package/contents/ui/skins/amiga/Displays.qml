@@ -29,6 +29,7 @@ Item {
     readonly property bool available: client.isConnected && monitors.length > 0
     readonly property var rows: Monitors.rowsWithMaster(
         monitors, client.globalPercent, client.isOverrideActive, i18nd(root.domain, "All displays"))
+    property var expandedLimits: ({})
 
     AmigaStyle {
         id: tokens
@@ -70,7 +71,7 @@ Item {
 
                         required property var modelData
                         required property int index
-                        property bool expanded: false
+                        readonly property bool expanded: !master && Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
 
                         readonly property bool master: modelData.master === true
                         readonly property bool unavailable: Monitors.unavailable(modelData)
@@ -82,9 +83,9 @@ Item {
 
                         // The name on the top line (rows 0-7); the value and gadgets, and the
                         // slider under them, on the line below from row 8, so the name never
-                        // meets a gadget and may use the whole width. A row is 19 art px.
+                        // meets a gadget and may use the whole width. A row is 22 art px.
                         width: panel.contentWidth
-                        height: expanded && !master ? limits.y + limits.height : 19
+                        height: expanded && !master ? limits.y + limits.height + 2 : 22
 
                         AmigaText {
                             id: name
@@ -123,7 +124,7 @@ Item {
                                 style: tokens
                                 lit: row.expanded
                                 text: i18ndc(root.domain, "Range limits, compact", "Lim")
-                                onActivated: row.expanded = !row.expanded
+                                onActivated: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, row.modelData.logicalId)
                             }
                         }
 
@@ -149,7 +150,7 @@ Item {
                             id: limits
 
                             visible: row.expanded && !row.master
-                            y: 19
+                            y: 22
                             width: row.width
                             spacing: 2
 
@@ -183,6 +184,8 @@ Item {
                                         x: limitLabel.artWidth + 4
                                         y: 1
                                         width: row.width - x - 26
+                                        from: limit.modelData.which === 0 ? 0 : row.minPct
+                                        to: limit.modelData.which === 0 ? row.maxPct : 100
                                         value: limit.current
                                         accessibleName: limit.modelData.label
                                         onCommitted: v => limit.modelData.which === 0

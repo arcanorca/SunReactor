@@ -30,11 +30,105 @@ ColumnLayout {
         theme: root.theme
     }
     readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    property var expandedLimits: ({})
 
     // Each strip carries its shadow room below it (WiiTile), so the spacing
     // between strips is the rest of the row gap: the gap itself does not change.
     spacing: Math.max(0, style.rowGap - style.shadowRoom)
+
+    WiiTile {
+        id: masterTile
+
+        visible: root.showAllDisplays
+        style: root.style
+        Layout.fillWidth: true
+        implicitHeight: masterBody.implicitHeight + 2 * masterTile.pad
+        lit: masterFader.activeFocus || masterFader.dragging
+
+        ColumnLayout {
+            id: masterBody
+
+            anchors.fill: parent
+            spacing: root.style.gap
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.style.gap
+
+                Rectangle {
+                    Layout.alignment: Qt.AlignVCenter
+                    implicitWidth: root.style.snap(root.style.unit * 1.55)
+                    implicitHeight: root.style.snap(root.style.unit * 1.25)
+                    radius: height / 2
+                    antialiasing: true
+                    color: root.style.paper
+                    border.width: root.style.line
+                    border.color: root.style.outline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: i18ndc(root.domain, "Channel badge for master brightness row", "ALL")
+                        textFormat: Text.PlainText
+                        font: root.style.captionBoldFont
+                        color: root.style.inkSoft
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    text: i18nd(root.domain, "All displays")
+                    textFormat: Text.PlainText
+                    font: root.style.bodyBoldFont
+                    color: root.style.ink
+                    elide: Text.ElideRight
+                }
+                WiiPill {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.client.isOverrideActive
+                    style: root.style
+                    label: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
+                    variant: "outline"
+                    Accessible.role: Accessible.Button
+                    Accessible.name: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
+                    onClicked: root.client.clearAllOverrides()
+                }
+                Text {
+                    Layout.alignment: Qt.AlignBaseline
+                    text: root.client.globalPercent >= 0 ? String(Math.round(root.client.globalPercent)) : "--"
+                    textFormat: Text.PlainText
+                    font: root.style.valueFont
+                    color: masterFader.dragging ? root.style.accentInk : root.style.ink
+                }
+                Text {
+                    Layout.alignment: Qt.AlignBaseline
+                    text: "%"
+                    textFormat: Text.PlainText
+                    font: root.style.captionBoldFont
+                    color: root.style.inkSoft
+                }
+            }
+
+            WiiSlider {
+                id: masterFader
+
+                Layout.fillWidth: true
+                Layout.topMargin: root.style.gap
+                style: root.style
+                enabled: root.client.globalPercent >= 0
+                known: root.client.globalPercent >= 0
+                from: 0
+                to: 100
+                value: root.client.globalPercent >= 0 ? root.client.globalPercent : 0
+                Accessible.name: i18nd(root.domain, "All displays")
+                Accessible.description: root.client.globalPercent >= 0
+                    ? i18ndc(root.domain, "Brightness percentage", "%1%", Math.round(root.client.globalPercent))
+                    : i18ndc(root.domain, "No value is known yet", "—")
+                onRequested: value => root.client.setGlobalOverride(value, root.settings.overrideMinutes)
+            }
+        }
+    }
 
     Repeater {
         model: root.monitors
@@ -53,6 +147,7 @@ ColumnLayout {
             readonly property int maxPct: strip.modelData.maxPct !== undefined ? strip.modelData.maxPct : 60
             readonly property real target: DayCurve.targetAt(root.client.dayCurve, logicalId, root.client.nowEpochS)
             readonly property int applied: strip.modelData.appliedPercent !== undefined ? strip.modelData.appliedPercent : -1
+            readonly property bool hasHold: strip.modelData.hasOverride !== true && Monitors.hasExternalHold(strip.modelData)
             readonly property string stateText: {
                 if (strip.modelData.enabled !== true) {
                     return i18ndc(root.domain, "Tag: this display is excluded from automation", "Off");
@@ -63,11 +158,15 @@ ColumnLayout {
                 if (strip.modelData.hasOverride === true) {
                     return i18ndc(root.domain, "Tag: this brightness was set by hand", "By hand");
                 }
+                if (hasHold) {
+                    return i18ndc(root.domain, "External brightness hold badge", "Ext · %1",
+                                  Monitors.externalHoldAge(Monitors.externalHoldSeconds(strip.modelData)));
+                }
                 return "";
             }
             readonly property color stateTone: strip.modelData.enabled !== true ? root.style.inkSoft
                 : (unavailable ? root.style.dangerInk : root.style.accentInk)
-            property bool limitsOpen: false
+            readonly property bool limitsOpen: Monitors.isExpanded(root.expandedLimits, logicalId)
 
             style: root.style
             Layout.fillWidth: true
@@ -122,13 +221,15 @@ ColumnLayout {
                     }
                     WiiPill {
                         Layout.alignment: Qt.AlignVCenter
-                        visible: strip.modelData.hasOverride === true
+                        visible: strip.modelData.hasOverride === true || strip.hasHold
                         style: root.style
                         label: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
                         variant: "outline"
                         Accessible.role: Accessible.Button
                         Accessible.name: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
-                        onClicked: root.client.clearMonitorOverride(strip.logicalId)
+                        onClicked: strip.hasHold
+                            ? root.client.clearExternalHold(strip.logicalId)
+                            : root.client.clearMonitorOverride(strip.logicalId)
                     }
                     WiiPill {
                         Layout.alignment: Qt.AlignVCenter
@@ -140,7 +241,8 @@ ColumnLayout {
                         current: strip.limitsOpen
                         Accessible.role: Accessible.Button
                         Accessible.name: i18ndc(root.domain, "Strip control: automatic range, opens the limit sliders", "Range %1–%2", strip.minPct, strip.maxPct)
-                        onClicked: strip.limitsOpen = !strip.limitsOpen
+                        onClicked: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, strip.logicalId)
+                        onArrowClicked: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, strip.logicalId)
                     }
                     Text {
                         Layout.alignment: Qt.AlignBaseline
@@ -227,7 +329,7 @@ ColumnLayout {
                             Layout.fillWidth: true
                             style: root.style
                             enabled: strip.controllable
-                            from: 0
+                            from: Math.min(100, Math.round(minSlider.shown))
                             to: 100
                             value: strip.maxPct
                             Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
@@ -261,7 +363,7 @@ ColumnLayout {
                             style: root.style
                             enabled: strip.controllable
                             from: 0
-                            to: 100
+                            to: Math.max(0, Math.round(maxSlider.shown))
                             value: strip.minPct
                             Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
                             onRequested: value => root.client.setMonitorLimits(strip.logicalId,

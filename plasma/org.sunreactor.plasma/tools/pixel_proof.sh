@@ -18,7 +18,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 QMLDIR="$ROOT/build/qml"
 OUT="${SHOT_OUT:-}"
-THEMES="handheld commodore64 nothing"
+THEMES="handheld commodore64 amiga classicmacintosh nothing"
 SCALES="1.0 1.25 1.35 1.5 2.0"
 
 while [[ $# -gt 0 ]]; do

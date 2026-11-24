@@ -32,6 +32,7 @@ ColumnLayout {
     property bool controllable: true
     property string stateText: ""
     property color stateTone: style.red
+    property bool canClear: false
     /*! A hairline above the row: the row follows another one in the panel. */
     property bool ruled: false
     property bool limitsOpen: false
@@ -42,6 +43,8 @@ ColumnLayout {
 
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
+    signal limitsToggled()
+    signal clearRequested()
 
     spacing: style.gap * 0.5
 
@@ -81,6 +84,13 @@ ColumnLayout {
             textFormat: Text.PlainText
             font: root.style.labelFont
             color: root.stateTone
+
+            MouseArea {
+                anchors.fill: parent
+                enabled: root.canClear
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: root.clearRequested()
+            }
         }
         Bracket {
             style: root.style
@@ -160,7 +170,7 @@ ColumnLayout {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.limitsOpen = !root.limitsOpen
+                    onClicked: root.limitsToggled()
                 }
             }
         }
@@ -188,6 +198,8 @@ ColumnLayout {
 
                 Layout.fillWidth: true
                 style: root.style
+                from: 0
+                to: Math.max(0, maxBar.shown)
                 value: root.minPct
                 interactive: true
                 litColor: root.style.cyan
@@ -221,6 +233,8 @@ ColumnLayout {
 
                 Layout.fillWidth: true
                 style: root.style
+                from: Math.min(100, minBar.shown)
+                to: 100
                 value: root.maxPct
                 interactive: true
                 litColor: root.style.cyan

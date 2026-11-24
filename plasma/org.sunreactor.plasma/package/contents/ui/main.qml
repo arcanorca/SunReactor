@@ -28,6 +28,8 @@ PlasmoidItem {
     // pointer has not come back.
     hideOnWindowDeactivate: false
     readonly property var popupWindow: root.fullRepresentationItem ? root.fullRepresentationItem.Window.window : null
+    readonly property bool menuOpen: root.fullRepresentationItem
+        && root.fullRepresentationItem.activePopupMenus > 0 // qmllint disable missing-property
 
     Timer {
         id: deactivateGrace
@@ -36,7 +38,7 @@ PlasmoidItem {
         onTriggered: {
             const w = root.popupWindow;
             const hovered = root.fullRepresentationItem && root.fullRepresentationItem.popupHovered === true;
-            if (root.expanded && !(w && w.active) && !hovered) {
+            if (root.expanded && !(w && w.active) && !hovered && !root.menuOpen) {
                 root.expanded = false;
             }
         }
@@ -46,7 +48,7 @@ PlasmoidItem {
         ignoreUnknownSignals: true
 
         function onActiveChanged(): void {
-            if (root.popupWindow.active) {
+            if (root.popupWindow.active || root.menuOpen) {
                 deactivateGrace.stop();
             } else if (root.expanded) {
                 deactivateGrace.restart();
@@ -58,11 +60,20 @@ PlasmoidItem {
         ignoreUnknownSignals: true
 
         function onPopupHoveredChanged(): void {
-            if (root.fullRepresentationItem.popupHovered) {
+            if (root.fullRepresentationItem.popupHovered || root.menuOpen) {
                 deactivateGrace.stop();
             } else if (root.expanded && !(root.popupWindow && root.popupWindow.active)) {
                 deactivateGrace.restart();
             }
+        }
+    }
+    onMenuOpenChanged: {
+        if (root.menuOpen) {
+            deactivateGrace.stop();
+        } else if (root.expanded
+                   && !(root.popupWindow && root.popupWindow.active)
+                   && !(root.fullRepresentationItem && root.fullRepresentationItem.popupHovered)) {
+            deactivateGrace.restart();
         }
     }
     onExpandedChanged: {

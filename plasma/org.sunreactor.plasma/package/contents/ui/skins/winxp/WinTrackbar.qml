@@ -16,6 +16,8 @@ Item {
     required property WinStyle style
     /*! 0..100. */
     property int value: 0
+    property int from: 0
+    property int to: 100
     property bool controllable: true
 
     readonly property real pitch: 10
@@ -27,7 +29,7 @@ Item {
     readonly property real travel: Math.max(0, width - thumbW)
     /*! -1 while the pointer is not dragging; otherwise the value under it. */
     property int dragValue: -1
-    readonly property int shown: dragValue >= 0 ? dragValue : Math.max(0, Math.min(100, value))
+    readonly property int shown: dragValue >= 0 ? dragValue : Math.max(from, Math.min(to, value))
     readonly property real fillLength: shown / 100 * travel
 
     signal requested(int value)
@@ -35,12 +37,16 @@ Item {
     implicitWidth: thumbW * 6
     implicitHeight: thumbH
     opacity: controllable ? 1 : 0.45
-    activeFocusOnTab: true
+    activeFocusOnTab: controllable
 
     Accessible.role: Accessible.Slider
     Accessible.name: i18nd("plasma_applet_org.sunreactor.plasma", "Brightness")
 
-    onValueChanged: dragValue = -1
+    onValueChanged: {
+        if (!pointer.pressed) {
+            dragValue = -1;
+        }
+    }
 
     // The groove and the blocks.
     Rectangle {
@@ -110,7 +116,7 @@ Item {
 
     function valueFromX(px) {
         const v = (px - root.thumbW / 2) / Math.max(1, root.travel) * 100;
-        return Math.round(Math.max(0, Math.min(100, v)));
+        return Math.max(root.from, Math.min(root.to, Math.round(v)));
     }
 
     property bool pending: false
@@ -150,18 +156,51 @@ Item {
         }
     }
 
-    Keys.onLeftPressed: {
-        if (root.controllable) {
-            root.requested(Math.max(0, root.shown - 5));
+    function nudge(delta) {
+        if (!root.controllable) {
+            return;
         }
+        const next = Math.max(root.from, Math.min(root.to, root.shown + delta));
+        root.dragValue = next;
+        root.requested(next);
     }
-    Keys.onRightPressed: {
-        if (root.controllable) {
-            root.requested(Math.min(100, root.shown + 5));
+
+    Keys.onLeftPressed: root.nudge(-5)
+    Keys.onRightPressed: root.nudge(5)
+    Keys.onDownPressed: root.nudge(-1)
+    Keys.onUpPressed: root.nudge(1)
+    Keys.onPressed: event => {
+        if (!root.controllable) {
+            return;
+        }
+        if (event.key === Qt.Key_PageDown) {
+            root.nudge(-10);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_PageUp) {
+            root.nudge(10);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Home) {
+            root.nudge(root.from - root.shown);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_End) {
+            root.nudge(root.to - root.shown);
+            event.accepted = true;
         }
     }
 
+    Rectangle {
+        visible: root.activeFocus
+        anchors.fill: parent
+        anchors.margins: -root.style.line
+        radius: 2
+        color: "transparent"
+        border.width: root.style.line
+        border.color: root.style.focus
+    }
+
     MouseArea {
+        id: pointer
+
         anchors.fill: parent
         enabled: root.controllable
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor

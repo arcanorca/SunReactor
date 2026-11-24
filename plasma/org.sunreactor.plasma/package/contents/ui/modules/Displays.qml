@@ -26,6 +26,7 @@ ColumnLayout {
     /*! A master slider only earns its place once there is more than one display. */
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    property var expandedLimits: ({})
 
     spacing: root.theme.spacing
 
@@ -65,6 +66,7 @@ ColumnLayout {
             minPct: modelData.minPct !== undefined ? modelData.minPct : 15
             maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
             hasLimits: true
+            limitsExpanded: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
             externalHold: modelData.externalHold !== undefined ? modelData.externalHold : null
             hasOverride: modelData.hasOverride === true
             controllable: modelData.enabled && !unavailable
@@ -83,6 +85,7 @@ ColumnLayout {
 
             onRequested: percent => root.client.setMonitorOverride(modelData.logicalId, percent,
                                                                    root.settings.overrideMinutes)
+            onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, modelData.logicalId)
             onLimitsRequested: (minVal, maxVal) => root.client.setMonitorLimits(modelData.logicalId, minVal, maxVal)
             onClearOverrideRequested: () => root.client.clearMonitorOverride(modelData.logicalId)
             onClearExternalHoldRequested: () => root.client.clearExternalHold(modelData.logicalId)

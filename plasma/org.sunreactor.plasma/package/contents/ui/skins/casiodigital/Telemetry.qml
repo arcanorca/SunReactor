@@ -47,6 +47,7 @@ Item {
         style: root.style
 
         Flow {
+            Layout.preferredWidth: 0
             Layout.fillWidth: true
             spacing: root.style.gap
 

@@ -10,8 +10,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "../../engine"
+import "../../modules/Modules.js" as Modules
 
-Item {
+FocusScope {
     id: root
 
     required property Theme theme
@@ -27,6 +28,12 @@ Item {
     }
 
     implicitHeight: surface.implicitHeight
+    activeFocusOnTab: tabs.length > 1
+
+    Accessible.role: Accessible.PageTabList
+
+    Keys.onLeftPressed: root.picked(Modules.step(root.current, -1))
+    Keys.onRightPressed: root.picked(Modules.step(root.current, 1))
 
     PixelSurface {
         id: surface
@@ -56,6 +63,11 @@ Item {
                         ? i18ndc("plasma_applet_org.sunreactor.plasma", "Short tab label of the brightness page in the Amiga skin", "Light")
                         : modelData.text
                     lit: root.current === modelData.id
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: modelData.text
+                    Accessible.checkable: true
+                    Accessible.checked: root.current === modelData.id
+                    Accessible.onPressAction: root.picked(modelData.id)
                     onActivated: root.picked(modelData.id)
                 }
             }

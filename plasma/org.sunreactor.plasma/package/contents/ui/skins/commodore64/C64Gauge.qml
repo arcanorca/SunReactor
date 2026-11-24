@@ -18,6 +18,8 @@ Item {
     property int cw: 6
     /*! 0..100 as the daemon reports it. */
     property int value: 0
+    property int from: 0
+    property int to: 100
     /*! False: shows the value, takes no input. */
     property bool active: true
     property color ink: "transparent"
@@ -60,13 +62,17 @@ Item {
 
     /*! The value a click at art x `ax` (from the gauge's left edge) sets. */
     function valueAtX(ax) {
+        if (ax <= cw * 0.3) {
+            return from;
+        }
         const i = Math.floor(ax / cw) - 1;
-        return valueOf(Math.max(0, Math.min(slots - 1, i)) + 1);
+        return Math.max(from, Math.min(to, valueOf(Math.max(0, Math.min(slots - 1, i)) + 1)));
     }
 
     function step(delta) {
         if (active) {
-            committed(valueOf(cellsOf(shownValue) + delta));
+            const next = Math.max(from, Math.min(to, valueOf(cellsOf(shownValue) + delta)));
+            committed(next);
         }
     }
 
@@ -83,10 +89,10 @@ Item {
             step(-5);
             event.accepted = true;
         } else if (event.key === Qt.Key_Home) {
-            committed(0);
+            committed(from);
             event.accepted = true;
         } else if (event.key === Qt.Key_End) {
-            committed(100);
+            committed(to);
             event.accepted = true;
         }
     }
@@ -111,6 +117,11 @@ Item {
             }
         }
         onReleased: {
+            if (root.preview >= 0) {
+                root.committed(root.preview);
+            }
+        }
+        onCanceled: {
             if (root.preview >= 0) {
                 root.committed(root.preview);
             }

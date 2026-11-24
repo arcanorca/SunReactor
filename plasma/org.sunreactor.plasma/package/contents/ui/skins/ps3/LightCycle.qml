@@ -327,6 +327,7 @@ ColumnLayout {
                 property real time: root.now
 
                 anchors.fill: parent
+                acceptedButtons: Qt.NoButton
                 hoverEnabled: true
                 function scrubTo() {
                     const f = Math.max(0, Math.min(1, mouseX / Math.max(1, plot.width)));

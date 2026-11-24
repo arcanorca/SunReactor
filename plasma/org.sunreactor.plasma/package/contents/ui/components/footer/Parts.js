@@ -26,6 +26,9 @@ var SKINS = {
     "pixel": {},
     "terminal": {},
     "vector": {},
+    "id:cyberpunk": {
+        refresh: "skins/cyberpunk/RefreshControl.qml"
+    },
     "id:nothing": {
         refresh: "skins/nothing/RefreshControl.qml"
     }

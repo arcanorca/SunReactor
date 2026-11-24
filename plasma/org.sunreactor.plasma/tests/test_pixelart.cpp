@@ -8,6 +8,7 @@
 #include <limits>
 
 #include "pixelart.h"
+#include "pixelitems.h"
 
 class TestPixelArt : public QObject
 {
@@ -16,6 +17,7 @@ class TestPixelArt : public QObject
 private Q_SLOTS:
     void longElisionIsLinearEnough();
     void hostileInputsStayBounded();
+    void pixelTextOversizedInputsStayBounded();
 };
 
 class TestGlyphs : public PixelGlyphs
@@ -128,6 +130,43 @@ void TestPixelArt::hostileInputsStayBounded()
         QVERIFY(image2.width() <= 4096);
         QVERIFY(image2.height() <= 4096);
     }
+}
+
+namespace {
+class TestPixelText : public PixelText
+{
+public:
+    using PixelText::PixelText;
+    QImage renderForTest() const { return render(); }
+};
+} // namespace
+
+void TestPixelArt::pixelTextOversizedInputsStayBounded()
+{
+    TestPixelText item;
+    item.setText(QString(100000, QLatin1Char('X')));
+    QCOMPARE(item.text().size(), 16 * 1024);
+
+    item.setPixelSize(99999);
+    QCOMPARE(item.pixelSize(), 512);
+    item.setPixelSize(-10);
+    QCOMPARE(item.pixelSize(), 1);
+    item.setPixelSize(512);
+
+    item.setMaximumArtWidth(99999);
+    QCOMPARE(item.maximumArtWidth(), 4096);
+
+    const QImage image = item.renderForTest();
+    QVERIFY(!image.isNull());
+    QVERIFY(image.width() >= 1 && image.width() <= 4096);
+    QVERIFY(image.height() >= 1 && image.height() <= 4096);
+
+    // Without maximumArtWidth elision, rendered surface width must still be capped at 4096.
+    item.setMaximumArtWidth(0);
+    const QImage unelided = item.renderForTest();
+    QVERIFY(!unelided.isNull());
+    QVERIFY(unelided.width() >= 1 && unelided.width() <= 4096);
+    QVERIFY(unelided.height() >= 1 && unelided.height() <= 4096);
 }
 
 QTEST_MAIN(TestPixelArt)

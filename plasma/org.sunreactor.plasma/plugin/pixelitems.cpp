@@ -198,12 +198,20 @@ PixelText::PixelText(QQuickItem *parent)
 {
 }
 
+namespace
+{
+constexpr qsizetype kMaxPixelTextCodeUnits = 16 * 1024;
+constexpr int kMaxPixelTextSize = 512;
+constexpr int kMaxPixelTextDimension = 4096;
+} // namespace
+
 void PixelText::setText(const QString &text)
 {
-    if (m_text == text) {
+    const QString bounded = text.size() <= kMaxPixelTextCodeUnits ? text : text.left(kMaxPixelTextCodeUnits);
+    if (m_text == bounded) {
         return;
     }
-    m_text = text;
+    m_text = bounded;
     Q_EMIT textChanged();
     invalidate();
 }
@@ -230,7 +238,7 @@ void PixelText::setFontFamily(const QString &family)
 
 void PixelText::setPixelSize(int size)
 {
-    size = std::max(1, size);
+    size = std::clamp(size, 1, kMaxPixelTextSize);
     if (m_pixelSize == size) {
         return;
     }
@@ -241,7 +249,7 @@ void PixelText::setPixelSize(int size)
 
 void PixelText::setMaximumArtWidth(int width)
 {
-    width = std::max(0, width);
+    width = std::clamp(width, 0, kMaxPixelTextDimension);
     if (m_maximumArtWidth == width) {
         return;
     }
@@ -280,8 +288,8 @@ QImage PixelText::render() const
     const QString shown = m_maximumArtWidth > 0
         ? metrics.elidedText(m_text, Qt::ElideRight, m_maximumArtWidth)
         : m_text;
-    const int width = std::max(1, metrics.horizontalAdvance(shown));
-    const int height = std::max(1, metrics.height());
+    const int width = std::clamp(metrics.horizontalAdvance(shown), 1, kMaxPixelTextDimension);
+    const int height = std::clamp(metrics.height(), 1, kMaxPixelTextDimension);
 
     QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);

@@ -116,6 +116,7 @@ Item {
                     x: Math.round(root.gu * 0.8)
                     anchors.verticalCenter: parent.verticalCenter
                     text: detailRow.modelData.label
+                    textFormat: Text.PlainText
                     font.family: root.style.family
                     font.pixelSize: Math.round(root.gu * 0.72)
                     color: root.style.muted
@@ -128,6 +129,7 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     elide: Text.ElideRight
                     text: detailRow.modelData.value
+                    textFormat: Text.PlainText
                     font.family: root.style.family
                     font.weight: Font.Bold
                     font.pixelSize: Math.round(root.gu * 0.8)
@@ -163,6 +165,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             y: Math.round(root.gu * 0.2)
             text: Format.timeText(tile.modelData.epochS)
+            textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 0.6)
@@ -188,6 +191,7 @@ Item {
             y: tile.height - Math.round(root.gu * 1.1)
             text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
                          Math.round(tile.modelData.temperatureC))
+            textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 0.85)

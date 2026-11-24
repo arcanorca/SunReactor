@@ -27,6 +27,7 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"
+import "PopupOverlay.js" as PopupOverlay
 
 QQC2.Popup {
     id: root
@@ -67,10 +68,10 @@ QQC2.Popup {
         ? theme.bodyFont : Kirigami.Theme.defaultFont.family
     readonly property int textPx: Math.round(11 * theme.scaleFactor)
     readonly property int captionPx: Math.round(9 * theme.scaleFactor)
-    /*! The popover's fill: the theme's bg at 85%, so the widget behind shows through
-        while themes are flipped. Only the fill is translucent; text, swatches and
-        the hairline border stay opaque. */
-    readonly property color fill: root.theme.alpha(root.theme.bg, 0.85)
+    /*! The popover's fill: the theme's bg at 96%, keeping foreground labels
+        crisp even over neon themes while subtly tinting the surface. Only the
+        fill is translucent; text, swatches and the hairline border stay opaque. */
+    readonly property color fill: root.theme.alpha(root.theme.bg, 0.96)
     /*! Row text. The theme's fg when it reads on bg (WCAG 4.5:1); otherwise the
         darkest or lightest tone of bg, by whether the surface is light (bg luminance
         above 0.6) or dark. */
@@ -88,6 +89,14 @@ QQC2.Popup {
     readonly property real widthCap: root.theme.gridUnit * 11.5
     /*! Largest popover height: 60% of the window, and never past its bottom edge. */
     property real maxHeight: 0
+    property bool _overlayRegistered: false
+    property var _overlayHost: null
+
+    function syncOverlay(active: bool): void {
+        const next = PopupOverlay.sync(root.anchorItem ? root.anchorItem : root, _overlayHost, _overlayRegistered, active);
+        _overlayHost = next.host;
+        _overlayRegistered = next.registered;
+    }
     /*! The height the content wants, unclipped (the list's full length included). */
     readonly property real naturalHeight: contentLayout.implicitHeight + topPadding + bottomPadding
     /*! The rows last built; they are rebuilt only when a row's content changes. */
@@ -223,10 +232,13 @@ QQC2.Popup {
     }
 
     onAboutToShow: {
+        syncOverlay(true);
         place();
         rebuild();
         resetCursor();
     }
+    onClosed: syncOverlay(false)
+    Component.onDestruction: syncOverlay(false)
     onOpened: {
         place();
         scrollToCurrent();

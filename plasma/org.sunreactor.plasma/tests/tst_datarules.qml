@@ -318,5 +318,36 @@ Item {
                 }
             }
         }
+
+        function test_monitorExpandedMapAndExternalHoldHelpers() {
+            var map = ({});
+            verify(!Monitors.isExpanded(map, "mi-0"));
+            verify(!Monitors.isExpanded(null, "mi-0"));
+
+            map = Monitors.toggleExpanded(map, "mi-0");
+            verify(Monitors.isExpanded(map, "mi-0"));
+            verify(!Monitors.isExpanded(map, "len-1"));
+
+            // Toggling another id preserves existing expanded entries.
+            var map2 = Monitors.toggleExpanded(map, "len-1");
+            verify(Monitors.isExpanded(map2, "mi-0"));
+            verify(Monitors.isExpanded(map2, "len-1"));
+
+            // Original map remains immutable.
+            verify(!Monitors.isExpanded(map, "len-1"));
+
+            var map3 = Monitors.toggleExpanded(map2, "mi-0");
+            verify(!Monitors.isExpanded(map3, "mi-0"));
+            verify(Monitors.isExpanded(map3, "len-1"));
+
+            verify(!Monitors.hasExternalHold(null));
+            verify(!Monitors.hasExternalHold({ externalHold: { remainingS: 0 } }));
+            compare(Monitors.externalHoldSeconds({ externalHold: { remainingS: 95 } }), 95);
+            verify(Monitors.hasExternalHold({ externalHold: { remainingS: 95 } }));
+            compare(Monitors.externalHoldAge(0), "<1m");
+            compare(Monitors.externalHoldAge(59), "<1m");
+            compare(Monitors.externalHoldAge(60), "1m");
+            compare(Monitors.externalHoldAge(61), "2m");
+        }
     }
 }

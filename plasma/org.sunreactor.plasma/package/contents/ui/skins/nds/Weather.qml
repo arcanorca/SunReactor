@@ -100,6 +100,7 @@ Item {
             x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
             y: Math.round(root.gu * 1.6)
             text: root.client.hasTemperature ? String(Math.round(root.client.temperatureC)) : "--"
+            textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 2.0)
@@ -108,7 +109,8 @@ Item {
         Text {
             x: temperature.x + temperature.implicitWidth + Math.round(root.gu * 0.2)
             y: Math.round(root.gu * 2.0)
-            text: "°C"
+            text: i18ndc(root.domain, "Degrees Celsius unit", "°C")
+            textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 1.0)
@@ -121,6 +123,7 @@ Item {
             width: root.glassW - x - root.pad
             elide: Text.ElideRight
             text: root.condition
+            textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 1.0)

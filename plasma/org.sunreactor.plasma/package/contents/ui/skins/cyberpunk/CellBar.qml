@@ -23,6 +23,8 @@ Item {
     required property CyberStyle style
     /*! 0..100; -1 when unknown (nothing is lit and the slider is inert). */
     property int value: -1
+    property int from: 0
+    property int to: 100
     property int cells: 20
     /*! Where the automatic curve wants the value now; -1 for none. */
     property real target: -1
@@ -37,8 +39,8 @@ Item {
     signal committed(int value)
 
     // Accessible value interface (read by QAccessibleQuickItem for sliders).
-    readonly property int minimumValue: 0
-    readonly property int maximumValue: 100
+    readonly property int minimumValue: from
+    readonly property int maximumValue: to
     readonly property int stepSize: 1
 
     readonly property real markerH: style.snap(style.unit * 0.45)
@@ -85,7 +87,7 @@ Item {
     Accessible.onDecreaseAction: root.step(-1)
 
     function setLocal(v) {
-        const clamped = Math.max(0, Math.min(100, Math.round(v)));
+        const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
             localValue = Math.max(0, value);
@@ -114,8 +116,11 @@ Item {
     }
 
     function valueAt(x) {
+        if (x <= pitch * 0.3) {
+            return from;
+        }
         const cell = Math.max(0, Math.min(cells - 1, Math.floor(x / pitch)));
-        return Math.round((cell + 1) * 100 / cells);
+        return Math.max(from, Math.min(to, Math.round((cell + 1) * 100 / cells)));
     }
 
     // While the daemon catches up, keep showing what the user picked.
@@ -159,10 +164,10 @@ Item {
             delta = 10;
             break;
         case Qt.Key_Home:
-            delta = -root.shown;
+            delta = root.from - root.shown;
             break;
         case Qt.Key_End:
-            delta = 100 - root.shown;
+            delta = root.to - root.shown;
             break;
         default:
             return;

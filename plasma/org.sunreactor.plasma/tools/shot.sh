@@ -195,7 +195,7 @@ cp -r "$HERE/harness/containment" "$WORK/data/plasma/plasmoids/org.sunreactor.ha
 # The layout audit is loaded by the containment only under --audit; it lives next to main.qml.
 cp "$HERE/harness/Audit.qml" "$WORK/data/plasma/plasmoids/org.sunreactor.harness/contents/ui/Audit.qml"
 
-POPUP_W="${SHOT_POPUP_W:-460}"
+POPUP_W="${SHOT_POPUP_W:-560}"
 POPUP_H="${SHOT_POPUP_H:-1000}"
 PANEL_LEN="${SHOT_PANEL_LEN:-300}"
 PANEL_THICK="${SHOT_PANEL_THICK:-44}"

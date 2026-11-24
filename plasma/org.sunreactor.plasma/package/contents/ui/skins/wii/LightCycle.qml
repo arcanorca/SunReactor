@@ -301,6 +301,7 @@ ColumnLayout {
 
                 MouseArea {
                     anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
                     hoverEnabled: true
                     onEntered: root.hovering = true
                     onExited: root.hovering = false

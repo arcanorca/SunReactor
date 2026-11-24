@@ -103,6 +103,7 @@ ColumnLayout {
             ModeDurationMenu {
                 id: durations
 
+                parent: durationsButton
                 control: root.control
                 y: durationsButton.height
             }

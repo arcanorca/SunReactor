@@ -256,7 +256,7 @@ ColumnLayout {
             id: plotBox
 
             Layout.fillWidth: true
-            implicitHeight: root.style.snap(root.style.unit * (root.theme.compact ? 3.8 : 4.2))
+            implicitHeight: root.style.snap(root.style.unit * (root.theme.compact ? 2.2 : 2.3))
 
             TextMetrics {
                 id: gutterMetrics
@@ -512,7 +512,9 @@ ColumnLayout {
                     Text {
                         id: limitText
                         visible: limit.modelData.pct > 6 || limit.modelData.label.length === 0
-                        x: root.style.gap * 0.75
+                        // Scope corner labels ("CH1 ...", "3H/DIV") sit at x = gap, so inset limit
+                        // labels horizontally on oscilloscope to keep top and bottom corners clear.
+                        x: lp.scope ? root.style.snap(plot.width * 0.28) : root.style.gap * 0.75
                         y: limit.roomAbove ? plot.sy(limit.modelData.pct) - implicitHeight
                                            : plot.sy(limit.modelData.pct) + root.style.hairline * 2
                         text: limit.modelData.label + " " + limit.modelData.pct

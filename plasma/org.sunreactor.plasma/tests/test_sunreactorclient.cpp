@@ -84,6 +84,14 @@ private Q_SLOTS:
     void testThemeListIsAskedAgainAfterFailureOrEmptyAnswer();
     void testThemeListFollowsThemeWarningAndReconnect();
     void testPopupOpenAsksForAnEmptyThemeList();
+    void testSetSocketPathMidFlightAbortsCleanlyAndReconnectsToNewServer();
+    void testPollingDisabledAbortsInFlightWithoutReplay();
+    void testDestroyWhileInFlightDoesNotCrash();
+    void testClearStatusResetsSolarAndWeatherFieldsOnDisconnect();
+    void testExactMaxIpcFrameAcceptedAndOversizedFrameRejected();
+    void testExtendedBusyTimeoutReports12000Ms();
+    void testOverlongUnixSocketPathRejected();
+    void testPreDisconnectMutatingRequestExpiresAfterMaxOfflineAge();
 
 private:
     using Handler = std::function<QJsonObject(const QJsonObject &request)>;
@@ -2131,6 +2139,281 @@ void TestSunReactorClient::testPopupOpenAsksForAnEmptyThemeList()
     // Opening the popup asks again well before the two-second retry would.
     client.setPopupOpen(true);
     QTRY_COMPARE_WITH_TIMEOUT(countRequests(QStringLiteral("list_themes")), 2, 1500);
+}
+
+void TestSunReactorClient::testSetSocketPathMidFlightAbortsCleanlyAndReconnectsToNewServer()
+{
+    connect(m_server, &QLocalServer::newConnection, this, [this]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket]() {
+            socket->readAll(); // Hold in-flight without responding.
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(!client.m_inFlightRequest.isEmpty(), 2000);
+    client.setGlobalOverride(40, 15);
+    QVERIFY(!client.m_requestQueue.isEmpty());
+
+    const QString secondPath = m_tempDir.filePath(QStringLiteral("second_sunreactor.sock"));
+    QLocalServer::removeServer(secondPath);
+    QLocalServer server2;
+    QVERIFY(server2.listen(secondPath));
+    QList<QJsonObject> received2;
+    connect(&server2, &QLocalServer::newConnection, &server2, [&server2, &received2]() {
+        QLocalSocket *socket = server2.nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &received2]() {
+            const QByteArray data = socket->readAll();
+            if (!data.contains('\n')) {
+                return;
+            }
+            const QJsonObject req = QJsonDocument::fromJson(data).object();
+            received2.append(req);
+            QJsonObject resp;
+            if (req.value(QStringLiteral("request")).toString() == QStringLiteral("status")) {
+                QJsonObject st;
+                st[QStringLiteral("global_override_percent")] = 77;
+                resp = TestSunReactorClient::statusResponse(st);
+            } else {
+                resp[QStringLiteral("version")] = static_cast<int>(SunReactor::PROTOCOL_VERSION);
+                resp[QStringLiteral("response")] = QStringLiteral("ack");
+            }
+            socket->write(QJsonDocument(resp).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+            socket->disconnectFromServer();
+        });
+    });
+
+    client.setSocketPath(secondPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QCOMPARE(client.globalPercent(), 77);
+    QVERIFY(!received2.isEmpty());
+    for (const QJsonObject &req : std::as_const(received2)) {
+        QVERIFY(req.value(QStringLiteral("request")).toString() != QStringLiteral("set_override"));
+    }
+
+    client.setPollingEnabled(false);
+    server2.close();
+    QLocalServer::removeServer(secondPath);
+}
+
+void TestSunReactorClient::testPollingDisabledAbortsInFlightWithoutReplay()
+{
+    int connections = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &connections]() {
+        ++connections;
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket]() {
+            socket->readAll();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(connections >= 1 && !client.m_inFlightRequest.isEmpty(), 2000);
+    client.setGlobalOverride(42, 10);
+    QVERIFY(!client.m_requestQueue.isEmpty());
+
+    const int connectionsBeforeDisable = connections;
+    client.setPollingEnabled(false);
+    QVERIFY(!client.isBusy());
+    QVERIFY(client.m_inFlightRequest.isEmpty());
+    QVERIFY(client.m_requestQueue.isEmpty());
+    QVERIFY(!client.m_reconnectTimer->isActive());
+    QVERIFY(!client.m_pollTimer->isActive());
+
+    QTest::qWait(400);
+    QCOMPARE(connections, connectionsBeforeDisable);
+}
+
+void TestSunReactorClient::testDestroyWhileInFlightDoesNotCrash()
+{
+    bool sawRequest = false;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &sawRequest]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &sawRequest]() {
+            socket->readAll();
+            sawRequest = true;
+        });
+    });
+
+    auto *client = new SunReactorClient(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(sawRequest && client->isBusy(), 2000);
+    delete client;
+    QCoreApplication::processEvents();
+    QTest::qWait(50);
+}
+
+void TestSunReactorClient::testClearStatusResetsSolarAndWeatherFieldsOnDisconnect()
+{
+    QJsonObject weather;
+    weather[QStringLiteral("enabled")] = true;
+    weather[QStringLiteral("state")] = QStringLiteral("ok");
+    weather[QStringLiteral("condition")] = QStringLiteral("clear");
+    weather[QStringLiteral("temperature")] = 19.5;
+    weather[QStringLiteral("multiplier")] = 0.85;
+
+    QJsonObject status;
+    status[QStringLiteral("global_percent")] = 63;
+    status[QStringLiteral("now_epoch_s")] = 1700020000;
+    status[QStringLiteral("sunrise_epoch_s")] = 1700000000;
+    status[QStringLiteral("sunset_epoch_s")] = 1700040000;
+    status[QStringLiteral("solar_elevation")] = 24.5;
+    status[QStringLiteral("weather")] = weather;
+    serveStatus(status);
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.hasTemperature(), 3000);
+    QVERIFY(client.hasSolarElevation());
+    QVERIFY(client.weatherEnabled());
+    QCOMPARE(client.sunriseEpochS(), qint64(1700000000));
+    QCOMPARE(client.sunsetEpochS(), qint64(1700040000));
+    QCOMPARE(client.nowEpochS(), qint64(1700020000));
+
+    QSignalSpy nowSpy(&client, &SunReactorClient::nowChanged);
+    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
+
+    client.setPollingEnabled(false);
+    client.setSocketPath(m_tempDir.filePath(QStringLiteral("missing.sock")));
+
+    QVERIFY(!client.isConnected());
+    QVERIFY(!client.hasTemperature());
+    QVERIFY(!client.hasSolarElevation());
+    QCOMPARE(client.solarElevation(), 0.0);
+    QVERIFY(!client.weatherEnabled());
+    QCOMPARE(client.sunriseEpochS(), qint64(0));
+    QCOMPARE(client.sunsetEpochS(), qint64(0));
+    QCOMPARE(client.nowEpochS(), qint64(0));
+    QCOMPARE(client.weatherMultiplier(), 1.0);
+    QVERIFY(nowSpy.count() >= 1);
+    QVERIFY(statusSpy.count() >= 1);
+}
+
+void TestSunReactorClient::testExactMaxIpcFrameAcceptedAndOversizedFrameRejected()
+{
+    bool sendOversized = false;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &sendOversized]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &sendOversized]() {
+            const QByteArray raw = socket->readAll();
+            if (!raw.contains('\n')) {
+                return;
+            }
+            const QJsonObject req = QJsonDocument::fromJson(raw).object();
+            const QString kind = req.value(QStringLiteral("request")).toString();
+            QByteArray payload;
+            if (kind == QStringLiteral("status")) {
+                QJsonObject st;
+                st[QStringLiteral("global_override_percent")] = 61;
+                payload = QJsonDocument(TestSunReactorClient::statusResponse(st)).toJson(QJsonDocument::Compact);
+                if (!sendOversized) {
+                    const qsizetype pad = SunReactor::MAX_IPC_MESSAGE_BYTES - payload.size();
+                    QVERIFY(pad >= 0);
+                    payload.append(QByteArray(pad, ' '));
+                    QCOMPARE(payload.size(), SunReactor::MAX_IPC_MESSAGE_BYTES);
+                } else {
+                    const qsizetype pad = (SunReactor::MAX_IPC_MESSAGE_BYTES + 1) - payload.size();
+                    QVERIFY(pad > 0);
+                    payload.append(QByteArray(pad, ' '));
+                    QCOMPARE(payload.size(), SunReactor::MAX_IPC_MESSAGE_BYTES + 1);
+                }
+            } else {
+                payload = QJsonDocument(TestSunReactorClient::envelope(QStringLiteral("ack"))).toJson(QJsonDocument::Compact);
+            }
+            payload.append('\n');
+            socket->write(payload);
+            socket->flush();
+            socket->disconnectFromServer();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.globalPercent() == 61, 3000);
+
+    sendOversized = true;
+    QSignalSpy errorSpy(&client, &SunReactorClient::errorOccurred);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(errorSpy.count() >= 1, 2000);
+    QVERIFY(!client.isConnected());
+    QVERIFY(client.lastError().contains(QStringLiteral("exceeded 64 KiB ceiling")));
+}
+
+void TestSunReactorClient::testExtendedBusyTimeoutReports12000Ms()
+{
+    int reqCount = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &reqCount]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &reqCount]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            ++reqCount;
+            if (reqCount == 1) {
+                QJsonObject st;
+                st[QStringLiteral("global_percent")] = 55;
+                socket->write(QJsonDocument(TestSunReactorClient::statusResponse(st)).toJson(QJsonDocument::Compact) + '\n');
+                socket->flush();
+                socket->disconnectFromServer();
+            }
+            // Subsequent request remains open and silent.
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 2000);
+    client.setPollingEnabled(false);
+    client.setPollingEnabled(true);
+    client.m_pollTimer->stop();
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.m_inFlightRequest.isEmpty() && reqCount >= 2
+                                 && client.m_socket->state() == QLocalSocket::ConnectedState,
+                             2000);
+
+    client.onRequestTimeout();
+    QVERIFY(client.m_watchdogExtended);
+    QVERIFY(client.isConnected());
+
+    QSignalSpy errorSpy(&client, &SunReactorClient::errorOccurred);
+    client.onRequestTimeout();
+    QCOMPARE(errorSpy.count(), 1);
+    QVERIFY(!client.isConnected());
+    QVERIFY(client.lastError().contains(QStringLiteral("12000 ms")));
+}
+
+void TestSunReactorClient::testOverlongUnixSocketPathRejected()
+{
+    const QString longPath = m_tempDir.path() + QLatin1Char('/')
+        + QString(120, QLatin1Char('a')) + QStringLiteral(".sock");
+    QVERIFY(longPath.toUtf8().size() > 107);
+
+    SunReactorClient client(longPath);
+    QSignalSpy errorSpy(&client, &SunReactorClient::errorOccurred);
+    QTRY_VERIFY_WITH_TIMEOUT(errorSpy.count() >= 1, 2000);
+    client.setPollingEnabled(false);
+    QVERIFY(!client.isConnected());
+    QVERIFY(client.lastError().contains(QStringLiteral("107-byte Unix socket limit")));
+}
+
+void TestSunReactorClient::testPreDisconnectMutatingRequestExpiresAfterMaxOfflineAge()
+{
+    // Wait for initial offline failure so m_disconnectedAtMs is stamped, then
+    // backdate a pre-disconnect mutation past kMaxOfflineMutatingAgeMs (30000 ms).
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.m_disconnectedAtMs >= 0, 2000);
+    client.m_pollTimer->stop();
+    client.m_reconnectTimer->stop();
+
+    client.setMonitorOverride(QStringLiteral("desk"), 44, 30);
+    QCOMPARE(client.m_requestQueue.size(), 1);
+    const qint64 now = client.m_elapsed.elapsed();
+    client.m_requestQueue[0].queuedAtMs = now - 31000;
+    client.m_disconnectedAtMs = 0;
+
+    client.pruneStaleMutatingRequests();
+    QVERIFY(client.m_requestQueue.isEmpty());
+    QVERIFY(client.lastError().contains(QStringLiteral("Dropped 1 queued command while offline")));
 }
 
 QTEST_MAIN(TestSunReactorClient)

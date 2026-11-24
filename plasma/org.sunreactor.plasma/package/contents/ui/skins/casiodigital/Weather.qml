@@ -137,6 +137,7 @@ Item {
 
         // Readings that do not earn a figure: printed, not hidden in a tooltip.
         Flow {
+            Layout.preferredWidth: 0
             Layout.fillWidth: true
             visible: root.extras.length > 0 && root.client.hasWeatherReading
             spacing: root.style.gapWide

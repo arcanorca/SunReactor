@@ -27,6 +27,7 @@ Item {
     readonly property bool available: client.isConnected && monitors.length > 0
     readonly property var rows: Monitors.rowsWithMaster(
         monitors, client.globalPercent, client.isOverrideActive, i18nd(domain, "All displays"))
+    property var expandedLimits: ({})
 
     PixelStyle {
         id: pstyle
@@ -65,7 +66,7 @@ Item {
 
                         required property var modelData
                         required property int index
-                        property bool expanded: false
+                        readonly property bool expanded: !master && Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                         /*! The name / buttons / value line: the height of a framed button. */
                         readonly property int line: 11
 
@@ -128,7 +129,7 @@ Item {
                                 checked: row.expanded
                                 text: i18ndc(root.domain, "Range limits, compact", "%1–%2", row.minPct, row.maxPct)
                                 accessibleName: i18ndc(root.domain, "Range limits", "%1%–%2%", row.minPct, row.maxPct)
-                                onClicked: row.expanded = !row.expanded
+                                onClicked: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, row.modelData.logicalId)
                             }
                             PixelDigits {
                                 theme: root.theme
@@ -199,6 +200,8 @@ Item {
                                         y: 1
                                         width: row.width - 38 - 22
                                         cellHeight: 4
+                                        from: limit.modelData.which === 0 ? 0 : row.minPct
+                                        to: limit.modelData.which === 0 ? row.maxPct : 100
                                         value: limit.current
                                         accessibleName: limit.modelData.which === 0
                                             ? i18ndc(root.domain, "Night minimum boundary", "Night minimum")

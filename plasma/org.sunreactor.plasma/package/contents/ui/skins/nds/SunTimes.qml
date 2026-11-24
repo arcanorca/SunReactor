@@ -90,6 +90,7 @@ Item {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: column.modelData.label
+                            textFormat: Text.PlainText
                             font.family: root.style.family
                             font.pixelSize: Math.round(root.style.gu * 0.62)
                             color: root.style.muted
@@ -97,6 +98,7 @@ Item {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: Format.timeText(column.modelData.epoch)
+                            textFormat: Text.PlainText
                             font.family: root.style.family
                             font.weight: Font.Bold
                             font.pixelSize: Math.round(root.style.gu * 0.86)

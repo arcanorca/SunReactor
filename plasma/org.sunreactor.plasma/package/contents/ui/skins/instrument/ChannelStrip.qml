@@ -45,12 +45,13 @@ ColumnLayout {
 
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
+    signal limitsToggled()
     signal clearOverrideRequested()
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
     readonly property bool hasValue: percent >= 0
 
-    spacing: style.snap(style.gap * 0.75)
+    spacing: style.snap(style.gap * 0.5)
     Layout.fillWidth: true
 
     Timer {
@@ -254,7 +255,7 @@ ColumnLayout {
             text: i18ndc(root.domain, "Strip control: automatic range, opens the limit faders", "Range %1–%2 %3",
                          root.minPct, root.maxPct, root.limitsExpanded ? "▴" : "▾")
             Accessible.name: i18ndc(root.domain, "Range limits", "%1%–%2%", root.minPct, root.maxPct)
-            onClicked: root.limitsExpanded = !root.limitsExpanded
+            onClicked: root.limitsToggled()
         }
     }
 

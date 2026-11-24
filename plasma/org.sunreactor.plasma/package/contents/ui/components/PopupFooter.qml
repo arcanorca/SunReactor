@@ -25,9 +25,6 @@ Item {
 
     required property SunReactorClient client
     required property Theme theme
-    /*! No longer read: pausing moved to the Automation module. Kept because
-        FullRepresentation still passes it, and that file is not edited here. */
-    property int defaultPauseMinutes: 60
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
 

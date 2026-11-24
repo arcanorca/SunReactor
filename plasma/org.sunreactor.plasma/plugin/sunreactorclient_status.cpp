@@ -67,7 +67,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     m_themeTextMuted = themeObj.value(QStringLiteral("text_muted")).toString();
     // Optional and omitted when there is nothing to say; a non-string is
     // treated as nothing too.
-    m_themeWarning = statusObj.value(QStringLiteral("theme_warning")).toString().trimmed();
+    m_themeWarning = statusObj.value(QStringLiteral("theme_warning")).toString().trimmed().left(kMaxThemeWarningLength);
 
     parseWeather(statusObj);
     parseMonitors(statusObj);
@@ -460,10 +460,28 @@ void SunReactorClient::clearStatus()
     const bool previousSuspended = m_isSuspended;
     const bool previousOverride = m_isOverrideActive;
     const bool previousIdleDimmed = m_isDesktopIdleDimmed;
+    const bool previousHasElevation = m_hasSolarElevation;
+    const double previousElevation = m_solarElevation;
+    const qint64 previousNow = m_nowEpochS;
+    const qint64 previousSunrise = m_sunriseEpochS;
+    const qint64 previousSunset = m_sunsetEpochS;
+    const qint64 previousSuspendUntil = m_suspendUntilEpochS;
+    const qint64 previousGlobalOverrideUntil = m_globalOverrideUntilEpochS;
+    const qint64 previousMonitorOverrideUntil = m_perMonitorOverrideUntilEpochS;
     const int previousGlobalPercent = m_globalPercent;
     const int previousCloudDimming = m_cloudDimmingPercent;
     const QVariantList previousMonitors = m_monitors;
+    const bool previousWeatherEnabled = m_weatherEnabled;
+    const bool previousWeatherStale = m_weatherStale;
     const bool previousHasWeather = m_hasWeatherReading;
+    const QString previousWeatherState = m_weatherState;
+    const QString previousWeatherCondition = m_weatherCondition;
+    const QString previousWeatherDescription = m_weatherDescription;
+    const QString previousWeatherDayPhase = m_weatherDayPhase;
+    const int previousCloudCover = m_cloudCoverPercent;
+    const bool previousHasTemperature = m_hasTemperature;
+    const double previousTemperature = m_temperatureC;
+    const double previousWeatherMultiplier = m_weatherMultiplier;
     const QVariantList previousForecast = m_forecast;
     const QVariantMap previousDetails = m_weatherDetails;
     const QString previousThemeName = m_themeName;
@@ -473,13 +491,34 @@ void SunReactorClient::clearStatus()
     const QString previousThemeFg = m_themeFg;
     const QString previousThemeTextMuted = m_themeTextMuted;
     const QString previousThemeWarning = m_themeWarning;
+    const bool previousDaylight = isDaylight();
+    const bool previousWeatherNight = weatherIsNight();
+
     m_isSuspended = false;
     m_isOverrideActive = false;
     m_isDesktopIdleDimmed = false;
+    m_hasSolarElevation = false;
+    m_solarElevation = 0.0;
+    m_nowEpochS = 0;
+    m_sunriseEpochS = 0;
+    m_sunsetEpochS = 0;
+    m_suspendUntilEpochS = 0;
+    m_globalOverrideUntilEpochS = 0;
+    m_perMonitorOverrideUntilEpochS = 0;
     m_globalPercent = UNKNOWN_PERCENT;
     m_cloudDimmingPercent = UNKNOWN_PERCENT;
     m_monitors.clear();
+    m_weatherEnabled = false;
+    m_weatherStale = false;
     m_hasWeatherReading = false;
+    m_weatherState.clear();
+    m_weatherCondition.clear();
+    m_weatherDescription.clear();
+    m_weatherDayPhase.clear();
+    m_cloudCoverPercent = UNKNOWN_PERCENT;
+    m_hasTemperature = false;
+    m_temperatureC = 0.0;
+    m_weatherMultiplier = 1.0;
     m_forecast.clear();
     m_weatherDetails.clear();
     m_themeName.clear();
@@ -498,13 +537,27 @@ void SunReactorClient::clearStatus()
     if (previousDetails != m_weatherDetails) {
         Q_EMIT detailsChanged();
     }
+    if (previousNow != m_nowEpochS) {
+        Q_EMIT nowChanged();
+    }
     if (previousSuspended != m_isSuspended || previousOverride != m_isOverrideActive
-        || previousIdleDimmed != m_isDesktopIdleDimmed || previousGlobalPercent != m_globalPercent
-        || previousCloudDimming != m_cloudDimmingPercent
-        || previousHasWeather != m_hasWeatherReading || previousThemeName != m_themeName
+        || previousIdleDimmed != m_isDesktopIdleDimmed || previousHasElevation != m_hasSolarElevation
+        || previousElevation != m_solarElevation || previousSunrise != m_sunriseEpochS
+        || previousSunset != m_sunsetEpochS || previousSuspendUntil != m_suspendUntilEpochS
+        || previousGlobalOverrideUntil != m_globalOverrideUntilEpochS
+        || previousMonitorOverrideUntil != m_perMonitorOverrideUntilEpochS
+        || previousGlobalPercent != m_globalPercent || previousCloudDimming != m_cloudDimmingPercent
+        || previousWeatherEnabled != m_weatherEnabled || previousWeatherStale != m_weatherStale
+        || previousHasWeather != m_hasWeatherReading || previousWeatherState != m_weatherState
+        || previousWeatherCondition != m_weatherCondition
+        || previousWeatherDescription != m_weatherDescription
+        || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
+        || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
+        || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
         || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
-        || previousThemeTextMuted != m_themeTextMuted || previousThemeWarning != m_themeWarning) {
+        || previousThemeTextMuted != m_themeTextMuted || previousThemeWarning != m_themeWarning
+        || previousDaylight != isDaylight() || previousWeatherNight != weatherIsNight()) {
         Q_EMIT statusChanged();
     }
 }

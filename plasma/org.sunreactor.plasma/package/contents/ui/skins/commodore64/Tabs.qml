@@ -10,9 +10,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "../../engine"
+import "../../modules/Modules.js" as Modules
 import "Petscii.js" as Petscii
 
-Item {
+FocusScope {
     id: root
 
     required property Theme theme
@@ -50,8 +51,12 @@ Item {
     }
 
     implicitHeight: surface.implicitHeight
+    activeFocusOnTab: tabs.length > 1
 
     Accessible.role: Accessible.PageTabList
+
+    Keys.onLeftPressed: root.picked(Modules.step(root.current, -1))
+    Keys.onRightPressed: root.picked(Modules.step(root.current, 1))
 
     PixelSurface {
         id: surface

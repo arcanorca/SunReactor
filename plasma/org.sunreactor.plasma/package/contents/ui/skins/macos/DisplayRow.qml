@@ -35,6 +35,7 @@ Item {
 
     signal requested(int percent)
     signal limitsRequested(int minVal, int maxVal)
+    signal limitsToggled()
     signal clearOverrideRequested()
 
     readonly property bool hasValue: percent >= 0
@@ -94,7 +95,7 @@ Item {
                 text: i18ndc(root.domain,
                              "Range button: the automatic minimum and maximum", "Range %1–%2",
                              root.minPct, root.maxPct)
-                onClicked: root.limitsExpanded = !root.limitsExpanded
+                onClicked: root.limitsToggled()
             }
         }
 

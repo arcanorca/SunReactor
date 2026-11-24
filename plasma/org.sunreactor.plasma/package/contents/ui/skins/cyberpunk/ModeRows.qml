@@ -57,7 +57,7 @@ ColumnLayout {
     // The band: a thin stripe of hazard, the rule above the controls.
     HazardStrip {
         Layout.fillWidth: true
-        Layout.topMargin: root.style.gap * 0.5
+        Layout.topMargin: root.style.gap * 0.25
         style: root.style
     }
 

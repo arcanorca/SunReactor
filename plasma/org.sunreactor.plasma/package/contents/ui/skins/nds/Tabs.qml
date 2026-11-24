@@ -13,7 +13,7 @@ import QtQuick
 import "../../engine"
 import "../../modules/Modules.js" as Modules
 
-Item {
+FocusScope {
     id: root
 
     required property Theme theme
@@ -27,6 +27,7 @@ Item {
     }
 
     implicitHeight: Math.round(style.gu * 2.3)
+    activeFocusOnTab: tabs.length > 1
 
     Accessible.role: Accessible.PageTabList
 

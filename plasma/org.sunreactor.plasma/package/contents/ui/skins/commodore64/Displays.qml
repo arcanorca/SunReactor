@@ -35,6 +35,7 @@ Item {
     /*! The rows: an ALL DISPLAYS line when there are several, then one per display. */
     readonly property var rowsModel: Monitors.rowsWithMaster(
         monitors, client.globalPercent, client.isOverrideActive, i18nd(root.domain, "All displays"))
+    property var expandedLimits: ({})
 
     implicitHeight: surface.implicitHeight
 
@@ -61,7 +62,7 @@ Item {
 
             C64Text {
                 ink: style.ink
-                text: "LOAD \"MI-MONITOR\",8,1"
+                text: "LOAD \"" + i18ndc(root.domain, "C64 BASIC header label for Displays section", "DISPLAYS") + "\",8,1"
                 maximumArtWidth: body.width
             }
 
@@ -73,7 +74,7 @@ Item {
 
                     required property var modelData
                     required property int index
-                    property bool expanded: false
+                    readonly property bool expanded: !master && Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
 
                     readonly property bool master: modelData.master === true
                     readonly property bool unavailable: Monitors.unavailable(modelData)
@@ -136,7 +137,7 @@ Item {
                             ink: style.screen
                             Accessible.name: i18ndc(root.domain, "Range limits", "%1%–%2%", monitorRow.minPct, monitorRow.maxPct)
 
-                            onActivated: monitorRow.expanded = !monitorRow.expanded
+                            onActivated: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, monitorRow.modelData.logicalId)
                         }
                     }
 
@@ -149,7 +150,7 @@ Item {
                             cells: surface.cols - 2
                             cw: style.cw
                             value: monitorRow.percent < 0 ? 0 : monitorRow.percent
-                            active: monitorRow.controllable
+                            active: monitorRow.controllable && monitorRow.percent >= 0
                             ink: style.ink
                             quiet: style.quiet
                             accessibleName: monitorRow.modelData.logicalId
@@ -189,8 +190,11 @@ Item {
                                     text: limitRow.modelData.label + " "
                                 }
                                 C64Gauge {
+                                    id: limitGauge
                                     cells: Math.max(4, surface.cols - 10)
                                     cw: style.cw
+                                    from: limitRow.modelData.which === 0 ? 0 : monitorRow.minPct
+                                    to: limitRow.modelData.which === 0 ? monitorRow.maxPct : 100
                                     value: limitRow.current
                                     active: true
                                     ink: style.ink
@@ -207,7 +211,7 @@ Item {
                                 }
                                 C64Text {
                                     ink: style.hot
-                                    text: (limitRow.current + "%").padStart(4, " ")
+                                    text: (limitGauge.shownValue + "%").padStart(4, " ")
                                 }
                             }
                         }

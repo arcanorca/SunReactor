@@ -71,10 +71,21 @@ KCM.SimpleKCM {
         { minutes: 0, label: i18nd(root.domain, "Until I undo it") },
     ]
 
+    property string previewSocketPath: ""
+
+    onCfg_socketPathChanged: socketDebounce.restart()
+    Component.onCompleted: previewSocketPath = cfg_socketPath
+
+    Timer {
+        id: socketDebounce
+        interval: 350
+        onTriggered: root.previewSocketPath = root.cfg_socketPath
+    }
+
     // Its own connection: the settings window outlives no widget instance.
     SunReactorClient {
         id: preview
-        socketPath: root.cfg_socketPath
+        socketPath: root.previewSocketPath
         pollingEnabled: root.visible
         pinnedThemeId: root.cfg_themeMode === "pinned" ? root.cfg_pinnedTheme : ""
         onThemeRegistryChanged: {

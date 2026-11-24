@@ -36,8 +36,10 @@ void SunReactorClient::pruneStaleMutatingRequests()
     const qint64 now = m_elapsed.elapsed();
     int dropped = 0;
     for (auto it = m_requestQueue.begin(); it != m_requestQueue.end();) {
-        if (isMutatingRequest(it->object) && it->queuedAtMs > m_disconnectedAtMs
-            && now - it->queuedAtMs > m_lastBackoffWindowMs) {
+        const qint64 ageMs = now - it->queuedAtMs;
+        const bool offlineTooLong = ageMs > kMaxOfflineMutatingAgeMs;
+        const bool missedOfflineWindow = it->queuedAtMs > m_disconnectedAtMs && ageMs > m_lastBackoffWindowMs;
+        if (isMutatingRequest(it->object) && (offlineTooLong || missedOfflineWindow)) {
             it = m_requestQueue.erase(it);
             ++dropped;
         } else {
@@ -155,9 +157,16 @@ void SunReactorClient::processNextRequest()
     m_readBuffer.clear();
     m_watchdogExtended = false;
 
+    const QString socketPath = resolvedSocketPath();
+    if (socketPath.toUtf8().size() > kMaxUnixSocketPathBytes) {
+        transportError(QStringLiteral("Control socket path exceeds %1-byte Unix socket limit")
+                           .arg(kMaxUnixSocketPathBytes));
+        return;
+    }
+
     m_socket->abort();
     m_watchdogTimer->start(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS);
-    m_socket->connectToServer(resolvedSocketPath());
+    m_socket->connectToServer(socketPath);
 }
 
 

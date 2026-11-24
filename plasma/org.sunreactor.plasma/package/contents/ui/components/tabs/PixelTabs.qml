@@ -13,7 +13,7 @@ import "../../engine"
 import "../../modules/Modules.js" as Modules
 import "../../skins/pixel"
 
-Item {
+FocusScope {
     id: root
 
     required property Theme theme
@@ -29,6 +29,7 @@ Item {
     }
 
     implicitHeight: surface.implicitHeight
+    activeFocusOnTab: tabs.length > 1
 
     Accessible.role: Accessible.PageTabList
 
@@ -88,7 +89,12 @@ Item {
                         text: tab.modelData.text
                         variant: "tab"
                         checked: tab.modelData.id === root.current
-                        accessibleName: tab.modelData.text
+                        Accessible.role: Accessible.PageTab
+                        Accessible.name: tab.modelData.text
+                        Accessible.description: tab.modelData.hint || ""
+                        Accessible.checkable: true
+                        Accessible.checked: tab.modelData.id === root.current
+                        Accessible.onPressAction: root.picked(tab.modelData.id)
                         onClicked: root.picked(tab.modelData.id)
                     }
 

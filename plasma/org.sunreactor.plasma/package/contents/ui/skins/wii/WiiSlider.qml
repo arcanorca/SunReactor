@@ -210,5 +210,9 @@ Item {
             throttle.stop();
             root.requested(Math.round(root.dragValue));
         }
+        onCanceled: {
+            throttle.stop();
+            root.requested(Math.round(root.dragValue));
+        }
     }
 }

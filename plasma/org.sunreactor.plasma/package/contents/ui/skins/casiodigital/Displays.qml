@@ -34,6 +34,7 @@ Item {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    property var expandedLimits: ({})
 
     implicitWidth: bezel.implicitWidth
     implicitHeight: bezel.implicitHeight
@@ -55,6 +56,7 @@ Item {
 
         signal requested(int percent)
         signal limitsRequested(int minPct, int maxPct)
+        signal limitsToggled()
         signal clearRequested()
 
         Layout.fillWidth: true
@@ -110,7 +112,7 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: channel.limitsOpen = !channel.limitsOpen
+                    onClicked: channel.limitsToggled()
                 }
             }
 
@@ -162,6 +164,8 @@ Item {
 
                     Layout.fillWidth: true
                     style: root.style
+                    from: 0
+                    to: Math.max(0, maxBar.shown)
                     value: channel.minPct
                     interactive: true
                     accessibleName: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
@@ -193,6 +197,8 @@ Item {
 
                     Layout.fillWidth: true
                     style: root.style
+                    from: Math.min(100, minBar.shown)
+                    to: 100
                     value: channel.maxPct
                     interactive: true
                     accessibleName: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
@@ -238,6 +244,7 @@ Item {
                 required property var modelData
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
+                readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
 
                 name: modelData.logicalId
                 percent: modelData.percent !== undefined ? modelData.percent : -1
@@ -246,7 +253,8 @@ Item {
                 targetPct: Math.round(DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS))
                 controllable: modelData.enabled === true && !unavailable
                 hasLimits: true
-                hasOverride: modelData.hasOverride === true
+                limitsOpen: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
+                hasOverride: modelData.hasOverride === true || hasHold
                 stateText: {
                     if (modelData.enabled === false) {
                         return i18ndc(root.domain, "Tag: this display is excluded from automation", "OFF");
@@ -257,13 +265,20 @@ Item {
                     if (modelData.hasOverride === true) {
                         return i18ndc(root.domain, "Tag: this brightness was set by hand", "MAN");
                     }
+                    if (hasHold) {
+                        return i18ndc(root.domain, "External brightness hold badge, compact", "EXT %1",
+                                      Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)));
+                    }
                     return "";
                 }
 
                 onRequested: value => root.client.setMonitorOverride(modelData.logicalId, value,
                                                                      root.settings.overrideMinutes)
+                onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, modelData.logicalId)
                 onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(modelData.logicalId, lo, hi)
-                onClearRequested: root.client.clearMonitorOverride(modelData.logicalId)
+                onClearRequested: hasHold
+                    ? root.client.clearExternalHold(modelData.logicalId)
+                    : root.client.clearMonitorOverride(modelData.logicalId)
             }
         }
     }

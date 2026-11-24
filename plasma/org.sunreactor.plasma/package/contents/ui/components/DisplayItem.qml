@@ -40,6 +40,7 @@ PlasmaComponents3.ItemDelegate {
     /*! Emitted while dragging (throttled) and once on release. */
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
+    signal limitsToggled()
     signal clearOverrideRequested()
     signal clearExternalHoldRequested()
 
@@ -228,7 +229,7 @@ PlasmaComponents3.ItemDelegate {
                     text: i18ndc(root.domain, "Range limits", "%1%–%2%", root.minPct, root.maxPct)
                     display: PlasmaComponents3.AbstractButton.TextBesideIcon
                     font.family: root.theme.digitsFont
-                    onClicked: root.limitsExpanded = !root.limitsExpanded
+                    onClicked: root.limitsToggled()
                 }
 
                 PlasmaComponents3.Label {

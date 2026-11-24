@@ -13,13 +13,24 @@ void SunReactorClient::onSocketConnected()
 
 void SunReactorClient::sendInFlightRequest()
 {
-    const QByteArray data = QJsonDocument(m_inFlightRequest).toJson(QJsonDocument::Compact) + '\n';
-    if (data.size() > SunReactor::MAX_IPC_MESSAGE_BYTES) {
-        transportError(QStringLiteral("Outgoing IPC request exceeded 64 KiB ceiling (%1 bytes)").arg(data.size()));
+    if (m_socket->state() != QLocalSocket::ConnectedState) {
+        transportError(QStringLiteral("Control socket disconnected before write"));
         return;
     }
 
-    m_socket->write(data);
+    const QByteArray payload = QJsonDocument(m_inFlightRequest).toJson(QJsonDocument::Compact);
+    if (payload.size() > SunReactor::MAX_IPC_MESSAGE_BYTES) {
+        transportError(QStringLiteral("Outgoing IPC request exceeded 64 KiB ceiling (%1 bytes)").arg(payload.size()));
+        return;
+    }
+    const QByteArray data = payload + '\n';
+
+    const qint64 written = m_socket->write(data);
+    if (written < 0 || written != data.size()) {
+        const QString err = m_socket->errorString();
+        transportError(err.isEmpty() ? QStringLiteral("Failed to write IPC request") : err);
+        return;
+    }
     m_socket->flush();
 }
 
@@ -29,7 +40,9 @@ void SunReactorClient::onSocketReadyRead()
         return;
     }
 
-    const qsizetype remaining = SunReactor::MAX_IPC_MESSAGE_BYTES - m_readBuffer.size();
+    // Wire frame allows up to 64 KiB JSON payload plus its single trailing '\n'.
+    constexpr qsizetype kMaxWireFrameBytes = SunReactor::MAX_IPC_MESSAGE_BYTES + 1;
+    const qsizetype remaining = kMaxWireFrameBytes - m_readBuffer.size();
     if (remaining <= 0 || m_socket->bytesAvailable() > remaining) {
         transportError(QStringLiteral("Incoming IPC stream exceeded 64 KiB ceiling"));
         return;
@@ -38,6 +51,10 @@ void SunReactorClient::onSocketReadyRead()
 
     const int newlineIndex = m_readBuffer.indexOf('\n');
     if (newlineIndex < 0) {
+        return;
+    }
+    if (newlineIndex > SunReactor::MAX_IPC_MESSAGE_BYTES) {
+        transportError(QStringLiteral("Incoming IPC stream exceeded 64 KiB ceiling"));
         return;
     }
 
@@ -114,7 +131,10 @@ void SunReactorClient::onRequestTimeout()
         m_watchdogTimer->start(kBusyDaemonGraceMs);
         return;
     }
-    transportError(QStringLiteral("Request timed out after %1 ms").arg(SunReactor::DEFAULT_REQUEST_TIMEOUT_MS));
+    const int waitedMs = m_watchdogExtended
+        ? SunReactor::DEFAULT_REQUEST_TIMEOUT_MS + kBusyDaemonGraceMs
+        : SunReactor::DEFAULT_REQUEST_TIMEOUT_MS;
+    transportError(QStringLiteral("Request timed out after %1 ms").arg(waitedMs));
 }
 
 void SunReactorClient::onReconnectTimerTriggered()
@@ -287,6 +307,7 @@ void SunReactorClient::transportError(const QString &message)
             m_requestQueue.prepend({m_inFlightRequest, m_inFlightQueuedAtMs, m_inFlightAttempts + 1});
             requeued = true;
         } else if (mutating
+                   && now - m_inFlightQueuedAtMs <= kMaxOfflineMutatingAgeMs
                    && (m_inFlightQueuedAtMs <= m_disconnectedAtMs
                        || now - m_inFlightQueuedAtMs <= m_lastBackoffWindowMs)) {
             if (m_requestQueue.size() >= kMaxRequestQueue) {

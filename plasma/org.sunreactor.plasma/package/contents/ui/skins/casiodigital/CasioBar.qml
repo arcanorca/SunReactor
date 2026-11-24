@@ -19,6 +19,8 @@ Item {
     required property CasioStyle style
     /*! 0..100, or -1 when unknown (then the bar is inert). */
     property int value: -1
+    property int from: 0
+    property int to: 100
     property int minPct: -1
     property int maxPct: -1
     /*! Where the curve targets the display, or -1. */
@@ -42,8 +44,8 @@ Item {
     signal committed(int value)
 
     // Accessible value interface (read by QAccessibleQuickItem for sliders).
-    readonly property int minimumValue: 0
-    readonly property int maximumValue: 100
+    readonly property int minimumValue: from
+    readonly property int maximumValue: to
     readonly property int stepSize: 1
 
     implicitHeight: headroom + cellHeight
@@ -58,7 +60,7 @@ Item {
     Accessible.onDecreaseAction: nudge(-1)
 
     function setLocal(v) {
-        const clamped = Math.max(0, Math.min(100, Math.round(v)));
+        const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
             localValue = Math.max(0, value);
@@ -87,8 +89,11 @@ Item {
     }
 
     function valueAtX(x) {
+        if (x <= pitch * 0.3) {
+            return from;
+        }
         const cell = Math.max(0, Math.min(cells - 1, Math.floor(x / pitch)));
-        return (cell + 1) * 100 / cells;
+        return Math.max(from, Math.min(to, Math.round((cell + 1) * 100 / cells)));
     }
 
     // While the daemon catches up, keep showing what the user picked.

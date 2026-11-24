@@ -225,6 +225,6 @@ QtObject {
     readonly property real tagRadius: Math.min(2, radius)
     readonly property real gap: snap(Kirigami.Units.smallSpacing)
     readonly property real gap2: snap(Kirigami.Units.smallSpacing * 2)
-    readonly property real rowGap: snap(theme.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.smallSpacing * 1.5)
-    readonly property real glassPad: snap(theme.compact ? Kirigami.Units.smallSpacing * 1.5 : Kirigami.Units.smallSpacing * 2)
+    readonly property real rowGap: snap(theme.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.smallSpacing * 1.1)
+    readonly property real glassPad: snap(theme.compact ? Kirigami.Units.smallSpacing * 1.5 : Kirigami.Units.smallSpacing * 1.75)
 }

@@ -125,5 +125,16 @@ T.Slider {
                 color: control.neon
             }
         }
+
+        Rectangle {
+            visible: control.activeFocus
+            anchors.fill: face
+            anchors.margins: -control.style.line2 * 2
+            radius: width / 2
+            antialiasing: true
+            color: "transparent"
+            border.width: control.style.line2
+            border.color: control.style.cyan
+        }
     }
 }

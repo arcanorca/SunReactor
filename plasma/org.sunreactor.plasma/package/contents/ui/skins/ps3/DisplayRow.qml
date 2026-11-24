@@ -41,6 +41,7 @@ Item {
     /*! The user asked for a brightness (throttled while dragging, once on release). */
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
+    signal limitsToggled()
     signal clearOverrideRequested()
 
     /*! A text action: Tab reaches it, Space or Enter runs it, a click too. */
@@ -157,7 +158,7 @@ Item {
                 visible: row.hasLimits
                 label: row.minPct + "–" + row.maxPct
                 tone: row.style.inkSoft
-                onTriggered: row.limitsExpanded = !row.limitsExpanded
+                onTriggered: row.limitsToggled()
             }
 
             Text {

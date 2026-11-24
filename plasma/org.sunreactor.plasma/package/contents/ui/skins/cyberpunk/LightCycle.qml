@@ -87,12 +87,9 @@ ColumnLayout {
         title: i18ndc(root.domain, "Panel title: today's brightness curve", "Light cycle")
         tag: root.available ? i18ndc(root.domain, "Plot window in hours", "%1 H WINDOW", root.hours) : ""
 
-        // The caption (what the readouts describe) and the channel chips: one line; the chips
-        // wrap onto a second line when a display count leaves no room for them.
-        Flow {
-            // A wrapping container asks for no width of its own: a fractional
-            // sum of its children would only fight the pixel-snapped allocation.
-            Layout.preferredWidth: 0
+        // The caption (what the readouts describe) and the channel chips on one clean row;
+        // chips wrap only when many displays leave no room on the line.
+        RowLayout {
             Layout.fillWidth: true
             spacing: root.style.gap
 
@@ -104,7 +101,8 @@ ColumnLayout {
             }
 
             Text {
-                width: root.showAll ? implicitWidth : Math.ceil(Math.max(implicitWidth, captionMetrics.width))
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredWidth: root.showAll ? implicitWidth : Math.ceil(Math.max(implicitWidth, captionMetrics.width))
                 text: root.showAll
                     ? i18ndc(root.domain, "Readout caption: every display is plotted", "TODAY · ALL DISPLAYS")
                     : (root.scrubbing
@@ -116,28 +114,36 @@ ColumnLayout {
                 color: root.scrubbing ? root.style.ink : root.style.muted
             }
 
-            Repeater {
-                model: root.curves.length > 1 ? root.curves.length + 1 : 0
+            Flow {
+                Layout.preferredWidth: 0
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                spacing: root.style.gap
 
-                delegate: ChamferButton {
-                    id: chip
+                Repeater {
+                    model: root.curves.length > 1 ? root.curves.length + 1 : 0
 
-                    required property int index
-                    readonly property bool isAll: index === root.curves.length
-                    readonly property int value: isAll ? -1 : index
-                    // The model outlives the curves for a tick when they shrink.
-                    readonly property string monitorId: !isAll && index < root.curves.length
-                        && root.curves[index] ? root.curves[index].monitorId : ""
+                    delegate: ChamferButton {
+                        id: chip
 
-                    style: root.style
-                    height: root.style.tabHeight
-                    font: root.style.techFont
-                    text: isAll ? i18ndc(root.domain, "Channel chip: every display", "ALL")
-                        : DayCurve.shortName(chip.monitorId)
-                    active: root.selected === value
-                    Accessible.name: isAll ? text : chip.monitorId
+                        required property int index
+                        readonly property bool isAll: index === root.curves.length
+                        readonly property int value: isAll ? -1 : index
+                        // The model outlives the curves for a tick when they shrink.
+                        readonly property string monitorId: !isAll && index < root.curves.length
+                            && root.curves[index] ? root.curves[index].monitorId : ""
 
-                    onClicked: root.selected = value
+                        style: root.style
+                        height: root.style.tabHeight
+                        hpad: root.style.snap(root.style.pad * 0.45)
+                        font: root.style.techFont
+                        text: isAll ? i18ndc(root.domain, "Channel chip: every display", "ALL")
+                            : DayCurve.shortName(chip.monitorId)
+                        active: root.selected === value
+                        Accessible.name: isAll ? text : chip.monitorId
+
+                        onClicked: root.selected = value
+                    }
                 }
             }
         }

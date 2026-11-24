@@ -138,6 +138,7 @@ Item {
 
         MouseArea {
             anchors.fill: parent
+            enabled: root.interactive
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.arrowClicked()
         }

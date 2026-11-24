@@ -15,6 +15,7 @@
 #include <QQuickItem>
 #include <QQuickView>
 #include <QTemporaryDir>
+#include <QSignalSpy>
 #include <QTest>
 
 class MockDaemon : public QObject
@@ -61,6 +62,11 @@ public:
         m_font = font;
     }
 
+    void setM1Percent(int pct)
+    {
+        m_m1Percent = pct;
+    }
+
 private:
     QJsonObject statusPayload() const
     {
@@ -101,7 +107,7 @@ private:
         QJsonObject m1;
         m1[QStringLiteral("logical_id")] = QStringLiteral("DP-3");
         m1[QStringLiteral("enabled")] = true;
-        m1[QStringLiteral("last_applied_percent")] = 55;
+        m1[QStringLiteral("last_applied_percent")] = m_m1Percent;
         m1[QStringLiteral("min_pct")] = 15;
         m1[QStringLiteral("max_pct")] = 85;
 
@@ -195,6 +201,7 @@ private:
     QString m_themeId = QStringLiteral("cyberpunk");
     QString m_renderer = QStringLiteral("vector");
     QString m_font = QStringLiteral("sans");
+    int m_m1Percent = 55;
 };
 
 class I18nStub : public QObject
@@ -248,6 +255,10 @@ private Q_SLOTS:
     void cyberpunkHoverScrubDoesNotOscillate();
     void weatherMetersUseArrowCursor();
     void allSkinsSettleAndScrubWithoutOscillation();
+    void rangeDrawerPersistsAcrossMonitorsChanged();
+    void zeroPercentLeftEdgeReachableOnPixelSliders();
+    void instrumentPausedArrowOpensMenuAndTracksActivePopupMenus();
+    void tabBarsStepWithLeftRightKeys();
 };
 
 void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
@@ -1239,6 +1250,495 @@ void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
                 disconnect(c);
             }
         }
+    }
+}
+
+void TestCyberpunkLayout::rangeDrawerPersistsAcrossMonitorsChanged()
+{
+    QGuiApplication::setFont(QFont(QStringLiteral("Inter"), 12));
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    MockDaemon daemon(sockPath);
+    QVERIFY(daemon.isListening());
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import QtQuick.Layouts
+        import org.sunreactor.plasma
+        import "engine" as Engine
+        import "modules" as Mod
+        import "modules/Modules.js" as Modules
+
+        Item {
+            id: root
+            property alias client: client
+            property alias themeObj: theme
+            property alias displays: displaysLoader.item
+            width: 380
+            height: 760
+            SunReactorClient { id: client; socketPath: testSocketPath }
+            Engine.Theme { id: theme; spec: client.theme; source: "follow"; overrides: ({ uiScale: 100 }) }
+            Mod.ModuleSettings { id: settings }
+            Binding { target: theme; property: "gridContentWidth"; value: 360 }
+            ColumnLayout {
+                x: 8
+                y: 8
+                width: 360
+                Loader {
+                    id: displaysLoader
+                    Layout.fillWidth: true
+                    readonly property string src: Modules.source("displays", theme.themeId, theme.renderer)
+                    onSrcChanged: setSource(Qt.resolvedUrl(src), {
+                        theme: theme, client: client, settings: settings })
+                    Component.onCompleted: setSource(Qt.resolvedUrl(src), {
+                        theme: theme, client: client, settings: settings })
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestRangePersist.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *client = rootObj->property("client").value<QObject *>();
+    QObject *themeObj = rootObj->property("themeObj").value<QObject *>();
+    QVERIFY(client && themeObj);
+
+    const auto pump = [&view](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            view.requestUpdate();
+            QCoreApplication::processEvents();
+            QTest::qWait(8);
+        }
+    };
+
+    struct SkinSpec {
+        const char *id;
+        const char *renderer;
+        const char *font;
+    };
+    const SkinSpec skins[] = {
+        {"cyberpunk", "vector", "sans"},
+        {"nothing", "vector", "sans"},
+        {"casiodigital", "vector", "mono"},
+        {"amiga", "pixel", "bitmap8"},
+        {"wii", "vector", "sans"},
+        {"winxp", "vector", "sans"},
+    };
+
+    for (const SkinSpec &skin : skins) {
+        daemon.setM1Percent(55);
+        daemon.setThemeSpec(QString::fromLatin1(skin.id),
+                            QString::fromLatin1(skin.renderer),
+                            QString::fromLatin1(skin.font));
+        QMetaObject::invokeMethod(client, "queryStatus");
+        QTRY_VERIFY_WITH_TIMEOUT(themeObj->property("themeId").toString() == QLatin1String(skin.id), 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(client->property("monitors").toList().size() == 2, 3000);
+        QObject *displays = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((displays = rootObj->property("displays").value<QObject *>()) != nullptr
+                                     && displays->property("available").toBool(),
+                                 3000);
+        pump(20);
+
+        auto *displaysItem = qobject_cast<QQuickItem *>(displays);
+        QVERIFY(displaysItem != nullptr);
+
+        // Traverse the QtQuick visual tree (`childItems()`) so Repeater delegates
+        // are included alongside statically declared items.
+        const auto collectItems = [](QQuickItem *root) {
+            QList<QQuickItem *> result;
+            QList<QQuickItem *> stack{root};
+            while (!stack.isEmpty()) {
+                QQuickItem *cur = stack.takeFirst();
+                const auto kids = cur->childItems();
+                for (QQuickItem *kid : kids) {
+                    result.append(kid);
+                    stack.append(kid);
+                }
+            }
+            return result;
+        };
+
+        // Locate the UI toggle button for monitor DP-3 (15-85%) and click it.
+        QQuickItem *toggleTarget = nullptr;
+        const auto findToggle = [&]() -> QQuickItem * {
+            const auto children = collectItems(displaysItem);
+            if (QLatin1String(skin.id) == QLatin1String("nothing")) {
+                for (QQuickItem *it : children) {
+                    if (!it->isVisible() || !it->property("active").isValid()) {
+                        continue;
+                    }
+                    const QVariant txt = it->property("text");
+                    if (txt.isValid() && txt.toString().startsWith(QLatin1String("RANGE 15"))) {
+                        return it;
+                    }
+                }
+            } else if (QLatin1String(skin.id) == QLatin1String("cyberpunk")) {
+                for (QQuickItem *it : children) {
+                    if (it->isVisible() && it->property("bracketColor").isValid()
+                        && it->property("value").toString().contains(QLatin1String("15"))
+                        && it->property("value").toString().contains(QLatin1String("85"))) {
+                        return it->parentItem() ? it->parentItem() : it;
+                    }
+                }
+            } else if (QLatin1String(skin.id) == QLatin1String("casiodigital")) {
+                for (QQuickItem *it : children) {
+                    if (it->isVisible() && it->property("text").toString() == QLatin1String("15-85")) {
+                        return it->parentItem() ? it->parentItem() : it;
+                    }
+                }
+            } else if (QLatin1String(skin.id) == QLatin1String("amiga")) {
+                QQuickItem *best = nullptr;
+                qreal topY = 1e9;
+                for (QQuickItem *it : children) {
+                    if (it->isVisible() && it->property("text").toString() == QLatin1String("Lim")) {
+                        const qreal sy = it->mapToScene(QPointF(0, 0)).y();
+                        if (sy < topY) {
+                            topY = sy;
+                            best = it;
+                        }
+                    }
+                }
+                return best;
+            } else if (QLatin1String(skin.id) == QLatin1String("wii")) {
+                for (QQuickItem *it : children) {
+                    if (it->isVisible() && it->property("hint").isValid()
+                        && it->property("hint").toString().contains(QLatin1String("15"))
+                        && it->property("hint").toString().contains(QLatin1String("85"))) {
+                        return it;
+                    }
+                }
+            } else if (QLatin1String(skin.id) == QLatin1String("winxp")) {
+                for (QQuickItem *it : children) {
+                    if (it->isVisible() && it->property("text").toString() == QLatin1String("DP-3")) {
+                        return it;
+                    }
+                }
+            }
+            return nullptr;
+        };
+
+        for (int attempt = 0; attempt < 30 && !toggleTarget; ++attempt) {
+            toggleTarget = findToggle();
+            if (!toggleTarget) {
+                pump(2);
+            }
+        }
+        QVERIFY2(toggleTarget != nullptr, qPrintable(QStringLiteral("No range toggle found for %1").arg(QLatin1String(skin.id))));
+        const QPoint clickPt = toggleTarget->mapToScene(QPointF(toggleTarget->width() * 0.5, toggleTarget->height() * 0.5)).toPoint();
+        QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, clickPt);
+        pump(10);
+
+        QTRY_VERIFY2_WITH_TIMEOUT(
+            displays->property("expandedLimits").toMap().value(QStringLiteral("DP-3")).toBool(),
+            qPrintable(QStringLiteral("Clicking range toggle did not open DP-3 drawer on %1").arg(QLatin1String(skin.id))),
+            1500);
+
+        // Simulate daemon brightness update causing monitorsChanged() -> Repeater rebuild.
+        QSignalSpy monitorsSpy(client, SIGNAL(monitorsChanged()));
+        daemon.setM1Percent(33);
+        QMetaObject::invokeMethod(client, "queryStatus");
+        QVERIFY2(monitorsSpy.wait(3000), qPrintable(QStringLiteral("monitorsChanged not emitted on %1").arg(QLatin1String(skin.id))));
+        pump(15);
+
+        QVERIFY2(displays->property("expandedLimits").toMap().value(QStringLiteral("DP-3")).toBool(),
+                 qPrintable(QStringLiteral("DP-3 expandedLimits dropped across monitorsChanged on %1").arg(QLatin1String(skin.id))));
+
+        bool delegateStillOpen = false;
+        const auto updatedChildren = collectItems(displaysItem);
+        for (QQuickItem *it : updatedChildren) {
+            if (!it->isVisible()) {
+                continue;
+            }
+            if ((it->property("limitsOpen").isValid() && it->property("limitsOpen").toBool())
+                || (it->property("expanded").isValid() && it->property("expanded").toBool())) {
+                delegateStillOpen = true;
+                break;
+            }
+        }
+        QVERIFY2(delegateStillOpen,
+                 qPrintable(QStringLiteral("DP-3 delegate drawer closed after monitorsChanged on %1").arg(QLatin1String(skin.id))));
+    }
+}
+
+void TestCyberpunkLayout::zeroPercentLeftEdgeReachableOnPixelSliders()
+{
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import "engine" as Engine
+        import "skins/cyberpunk" as Cyber
+        import "skins/casiodigital" as Casio
+        import "skins/pixel" as Pix
+
+        Item {
+            id: root
+            property alias cellBar: cellBar
+            property alias casioBar: casioBar
+            property alias pixelSlider: pixelSlider
+            width: 300
+            height: 220
+
+            Engine.Theme { id: cyberTheme }
+            Engine.Theme { id: casioTheme }
+            Engine.Theme { id: pixelTheme }
+            Cyber.CyberStyle { id: cyberStyle; theme: cyberTheme }
+            Casio.CasioStyle { id: casioStyle; theme: casioTheme }
+            Pix.PixelStyle { id: pixelStyle; theme: pixelTheme }
+
+            Column {
+                x: 10
+                y: 10
+                width: 240
+                spacing: 12
+                Cyber.CellBar {
+                    id: cellBar
+                    width: 240
+                    height: 36
+                    style: cyberStyle
+                    interactive: true
+                    value: 50
+                }
+                Casio.CasioBar {
+                    id: casioBar
+                    width: 240
+                    height: 36
+                    style: casioStyle
+                    interactive: true
+                    value: 50
+                }
+                Pix.PixelCellSlider {
+                    id: pixelSlider
+                    width: 240
+                    theme: pixelTheme
+                    style: pixelStyle
+                    interactive: true
+                    value: 50
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestSliderBounds.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    const char *names[] = {"cellBar", "casioBar", "pixelSlider"};
+    for (const char *name : names) {
+        auto *slider = rootObj->property(name).value<QQuickItem *>();
+        QVERIFY(slider != nullptr);
+        QSignalSpy committedSpy(slider, SIGNAL(committed(int)));
+
+        // Left edge reaches 0% when from == 0.
+        slider->setProperty("from", 0);
+        slider->setProperty("to", 100);
+        slider->setProperty("value", 50);
+        const QPoint leftPt = slider->mapToScene(QPointF(1.0, slider->height() * 0.5)).toPoint();
+        QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, leftPt);
+        QTRY_VERIFY2_WITH_TIMEOUT(committedSpy.count() >= 1, name, 1000);
+        QCOMPARE(committedSpy.last().at(0).toInt(), 0);
+
+        // Constrained range [12, 75] clamps both edges to from..to.
+        committedSpy.clear();
+        slider->setProperty("from", 12);
+        slider->setProperty("to", 75);
+        slider->setProperty("value", 45);
+        QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, leftPt);
+        QTRY_VERIFY_WITH_TIMEOUT(committedSpy.count() >= 1, 1000);
+        QCOMPARE(committedSpy.last().at(0).toInt(), 12);
+
+        committedSpy.clear();
+        const QPoint rightPt = slider->mapToScene(QPointF(slider->width() - 2.0, slider->height() * 0.5)).toPoint();
+        QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, rightPt);
+        QTRY_VERIFY_WITH_TIMEOUT(committedSpy.count() >= 1, 1000);
+        QCOMPARE(committedSpy.last().at(0).toInt(), 75);
+    }
+}
+
+void TestCyberpunkLayout::instrumentPausedArrowOpensMenuAndTracksActivePopupMenus()
+{
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    MockDaemon daemon(sockPath);
+    QVERIFY(daemon.isListening());
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import org.sunreactor.plasma
+        import "engine" as Engine
+        import "modules" as Mod
+        import "skins/instrument" as Inst
+
+        Item {
+            id: host
+            property int activePopupMenus: 0
+            property alias client: client
+            property alias automation: automation
+            width: 380
+            height: 280
+
+            SunReactorClient { id: client; socketPath: testSocketPath }
+            Engine.Theme { id: theme; spec: client.theme; source: "follow"; overrides: ({ uiScale: 100 }) }
+            Mod.ModuleSettings { id: settings }
+
+            Inst.Automation {
+                id: automation
+                x: 10
+                y: 10
+                width: 340
+                height: implicitHeight
+                theme: theme
+                client: client
+                settings: settings
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestInstArrow.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *client = rootObj->property("client").value<QObject *>();
+    QTRY_VERIFY_WITH_TIMEOUT(client->property("isConnected").toBool(), 3000);
+    auto *automation = rootObj->property("automation").value<QQuickItem *>();
+    QVERIFY(automation != nullptr);
+
+    QQuickItem *arrowHit = nullptr;
+    QList<QQuickItem *> stack{automation};
+    while (!stack.isEmpty() && !arrowHit) {
+        QQuickItem *cur = stack.takeFirst();
+        const auto kids = cur->childItems();
+        for (QQuickItem *it : kids) {
+            if (it->isVisible() && qFuzzyCompare(it->z(), 1.0) && it->width() > 0 && it->height() > 0) {
+                arrowHit = it;
+                break;
+            }
+            stack.append(it);
+        }
+    }
+    QVERIFY2(arrowHit != nullptr && arrowHit->isVisible(), "Paused arrowHit item not found");
+
+    const QPoint pt = arrowHit->mapToScene(QPointF(arrowHit->width() * 0.5, arrowHit->height() * 0.5)).toPoint();
+    QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, pt);
+    QTRY_COMPARE_WITH_TIMEOUT(rootObj->property("activePopupMenus").toInt(), 1, 2000);
+
+    QObject *openedMenu = nullptr;
+    for (QObject *obj : automation->findChildren<QObject *>()) {
+        if (obj->property("_overlayRegistered").isValid() && obj->property("visible").toBool()) {
+            openedMenu = obj;
+            break;
+        }
+    }
+    QVERIFY2(openedMenu != nullptr, "ModeDurationMenu should be open");
+
+    QMetaObject::invokeMethod(openedMenu, "close");
+    QTRY_COMPARE_WITH_TIMEOUT(rootObj->property("activePopupMenus").toInt(), 0, 2000);
+}
+
+void TestCyberpunkLayout::tabBarsStepWithLeftRightKeys()
+{
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.setResizeMode(QQuickView::SizeViewToRootObject);
+
+    const char *tabUrls[] = {
+        "skins/amiga/Tabs.qml",
+        "skins/commodore64/Tabs.qml",
+        "skins/nds/Tabs.qml",
+        "components/tabs/PixelTabs.qml",
+    };
+
+    for (const char *relUrl : tabUrls) {
+        const QByteArray qml = R"(
+            import QtQuick
+            import "engine" as Engine
+
+            Item {
+                id: host
+                property alias tabBar: loader.item
+                width: 360
+                height: 80
+                Engine.Theme { id: theme }
+                function loadTab(url) {
+                    loader.setSource(url, {
+                        theme: theme,
+                        tabs: [{ id: "brightness", text: "Brightness", hint: "" },
+                               { id: "weather", text: "Weather", hint: "" }],
+                        current: "brightness"
+                    });
+                }
+                Loader {
+                    id: loader
+                    objectName: "tabLoader"
+                    x: 8
+                    y: 8
+                    width: 344
+                }
+            }
+        )";
+        QQmlComponent comp(view.engine());
+        comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestTabKeys.qml")));
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QObject *rootObj = comp.create();
+        QVERIFY(rootObj != nullptr);
+        view.setContent(QUrl(), &comp, rootObj);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+        const QUrl targetUrl = QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QLatin1Char('/') + QLatin1String(relUrl));
+        QMetaObject::invokeMethod(rootObj, "loadTab", Q_ARG(QVariant, targetUrl));
+        QQuickItem *tabBar = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((tabBar = rootObj->property("tabBar").value<QQuickItem *>()) != nullptr, 1500);
+
+        QVERIFY2(tabBar->activeFocusOnTab(), relUrl);
+        QSignalSpy pickedSpy(tabBar, SIGNAL(picked(QString)));
+        tabBar->forceActiveFocus();
+        QTRY_VERIFY_WITH_TIMEOUT(tabBar->hasActiveFocus(), 1000);
+
+        QTest::keyClick(&view, Qt::Key_Right);
+        QTRY_COMPARE_WITH_TIMEOUT(pickedSpy.count(), 1, 1000);
+        QCOMPARE(pickedSpy.at(0).at(0).toString(), QStringLiteral("weather"));
+
+        tabBar->setProperty("current", QStringLiteral("weather"));
+        QTest::keyClick(&view, Qt::Key_Left);
+        QTRY_COMPARE_WITH_TIMEOUT(pickedSpy.count(), 2, 1000);
+        QCOMPARE(pickedSpy.at(1).at(0).toString(), QStringLiteral("brightness"));
     }
 }
 

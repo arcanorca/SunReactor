@@ -36,6 +36,7 @@ ColumnLayout {
     /*! The automation card closes this column when the theme lists the automation module. */
     readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
     readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
+    property var expandedLimits: ({})
 
     spacing: style.rowGap
 
@@ -148,6 +149,7 @@ ColumnLayout {
             readonly property real target: DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
             readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : 15
             readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
+            readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
             readonly property string stateText: {
                 if (!modelData.enabled) {
                     return i18ndc(root.domain, "Tag: this display is excluded from automation", "Off");
@@ -158,11 +160,28 @@ ColumnLayout {
                 if (modelData.hasOverride === true) {
                     return i18ndc(root.domain, "Tag: this brightness was set by hand", "Manual");
                 }
+                if (hasHold) {
+                    return i18ndc(root.domain, "External brightness hold badge", "Ext · %1",
+                                  Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)));
+                }
                 return "";
             }
             readonly property color stateTone: !modelData.enabled ? root.style.muted
                 : (unavailable ? root.style.red : root.style.yellow)
-            property bool limitsOpen: false
+            readonly property bool limitsOpen: Monitors.isExpanded(root.expandedLimits, card.modelData.logicalId)
+
+            Timer {
+                id: cardThrottle
+                interval: 250
+                onTriggered: root.client.setMonitorOverride(card.modelData.logicalId, Math.round(slider.value),
+                                                            root.settings.overrideMinutes)
+            }
+            Timer {
+                id: cardLimitsThrottle
+                interval: 250
+                onTriggered: root.client.setMonitorLimits(card.modelData.logicalId, Math.round(minSlider.value),
+                                                          Math.round(maxSlider.value))
+            }
 
             Layout.fillWidth: true
             style: root.style
@@ -176,7 +195,7 @@ ColumnLayout {
                 stateTone: card.stateTone
                 rangeText: i18ndc(root.domain, "Range limits", "%1–%2%", card.minPct, card.maxPct)
                 rangeOpen: card.limitsOpen
-                onRangeClicked: card.limitsOpen = !card.limitsOpen
+                onRangeClicked: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, card.modelData.logicalId)
             }
 
             RowLayout {
@@ -199,24 +218,28 @@ ColumnLayout {
                     Accessible.description: card.hasValue
                         ? i18ndc(root.domain, "Brightness percentage", "%1%", card.modelData.percent)
                         : i18ndc(root.domain, "No value is known yet", "—")
+                    onMoved: cardThrottle.restart()
                     // While dragging, status updates are ignored: the daemon reports
                     // what it has written, which lags the thumb.
                     onPressedChanged: {
                         if (pressed) {
                             return;
                         }
+                        cardThrottle.stop();
                         root.client.setMonitorOverride(card.modelData.logicalId, Math.round(value),
                                                        root.settings.overrideMinutes);
                         value = Qt.binding(() => card.hasValue ? card.modelData.percent : 0);
                     }
                 }
                 Pill {
-                    visible: card.modelData.hasOverride === true
+                    visible: card.modelData.hasOverride === true || card.hasHold
                     Layout.alignment: Qt.AlignVCenter
                     style: root.style
                     text: i18ndc(root.domain, "Button: drop the brightness set by hand", "Auto")
                     tone: root.style.pink
-                    onClicked: root.client.clearMonitorOverride(card.modelData.logicalId)
+                    onClicked: card.hasHold
+                        ? root.client.clearExternalHold(card.modelData.logicalId)
+                        : root.client.clearMonitorOverride(card.modelData.logicalId)
                 }
             }
 
@@ -247,8 +270,10 @@ ColumnLayout {
                         to: Math.min(100, Math.round(maxSlider.value))
                         value: card.minPct
                         Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
+                        onMoved: cardLimitsThrottle.restart()
                         onPressedChanged: {
                             if (!pressed) {
+                                cardLimitsThrottle.stop();
                                 root.client.setMonitorLimits(card.modelData.logicalId, Math.round(minSlider.value),
                                                              Math.round(maxSlider.value));
                                 value = Qt.binding(() => card.minPct);
@@ -285,8 +310,10 @@ ColumnLayout {
                         to: 100
                         value: card.maxPct
                         Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
+                        onMoved: cardLimitsThrottle.restart()
                         onPressedChanged: {
                             if (!pressed) {
+                                cardLimitsThrottle.stop();
                                 root.client.setMonitorLimits(card.modelData.logicalId, Math.round(minSlider.value),
                                                              Math.round(maxSlider.value));
                                 value = Qt.binding(() => card.maxPct);

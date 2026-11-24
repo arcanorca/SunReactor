@@ -22,13 +22,14 @@ Item {
     property font font: style.labelFont
     /*! Shifts the label sideways, to make room for an icon at one side. */
     property real labelOffset: 0
+    property real hpad: style.pad
 
     readonly property bool hovered: mouse.containsMouse
     readonly property real cut: style.snap(style.tabHeight * 0.5)
 
     signal clicked()
 
-    implicitWidth: label.implicitWidth + style.pad * 2 + cut * 2
+    implicitWidth: label.implicitWidth + hpad * 2 + cut * 2
     implicitHeight: style.tabHeight + style.gap
 
     Shape {

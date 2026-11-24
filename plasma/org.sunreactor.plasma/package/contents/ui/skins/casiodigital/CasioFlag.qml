@@ -15,6 +15,9 @@ Item {
     required property CasioStyle style
     property string text: ""
     property bool lit: false
+    /*! True when drawn on the dark resin watch case (e.g. LightCycle header)
+        rather than the bright LCD glass. */
+    property bool onCase: false
 
     readonly property real markSize: style.snap(style.sizeCap * 0.62)
     readonly property real hpad: style.snap(style.sizeCap * 0.55)
@@ -32,9 +35,9 @@ Item {
         anchors.fill: parent
         radius: 2
         antialiasing: true
-        color: root.lit ? root.style.ink : "transparent"
+        color: root.lit ? (root.onCase ? root.style.legend : root.style.ink) : "transparent"
         border.width: root.lit ? 0 : root.style.hairline
-        border.color: root.style.inkFaint
+        border.color: root.onCase ? root.style.caseEdge : root.style.inkFaint
     }
 
     Row {
@@ -52,7 +55,8 @@ Item {
 
             ShapePath {
                 strokeWidth: -1
-                fillColor: root.lit ? root.style.glass : root.style.inkFaint
+                fillColor: root.lit ? (root.onCase ? root.style.caseTop : root.style.glass)
+                                    : (root.onCase ? root.style.legendMuted : root.style.inkFaint)
                 PathSvg {
                     path: "M0 0 H" + root.markSize + " L" + root.markSize / 2 + " " + root.markSize * 0.86 + " Z"
                 }
@@ -66,7 +70,8 @@ Item {
             text: root.text
             textFormat: Text.PlainText
             font: root.style.cap(root.style.sizeCap)
-            color: root.lit ? root.style.glass : root.style.inkFaint
+            color: root.lit ? (root.onCase ? root.style.caseTop : root.style.glass)
+                            : (root.onCase ? root.style.legendMuted : root.style.inkFaint)
         }
     }
 }

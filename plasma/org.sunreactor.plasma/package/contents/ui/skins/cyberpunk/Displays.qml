@@ -34,6 +34,7 @@ ColumnLayout {
     /*! The automation controls close this panel when the theme lists them; Automation.qml then stays away. */
     readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
     readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
+    property var expandedLimits: ({})
 
     spacing: style.rowGap
 
@@ -65,6 +66,7 @@ ColumnLayout {
                 required property int index
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
+                readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
 
                 Layout.fillWidth: true
                 style: root.style
@@ -78,7 +80,9 @@ ColumnLayout {
                 minPct: modelData.minPct !== undefined ? modelData.minPct : 15
                 maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
                 hasLimits: true
+                limitsOpen: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                 hasOverride: modelData.hasOverride === true
+                canClear: modelData.hasOverride === true || hasHold
                 controllable: modelData.enabled && !unavailable
                 stateText: {
                     if (!modelData.enabled) {
@@ -90,12 +94,21 @@ ColumnLayout {
                     if (modelData.hasOverride) {
                         return i18ndc(root.domain, "Tag: this brightness was set by hand", "MAN");
                     }
+                    if (hasHold) {
+                        return i18ndc(root.domain, "External brightness hold badge, compact", "EXT %1",
+                                      Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)));
+                    }
                     return "";
                 }
-                stateTone: modelData.enabled ? root.style.red : root.style.faint
+                stateTone: !modelData.enabled ? root.style.faint
+                    : (hasHold ? root.style.yellow : root.style.red)
 
                 onRequested: v => root.client.setMonitorOverride(modelData.logicalId, v, root.settings.overrideMinutes)
+                onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, modelData.logicalId)
                 onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(modelData.logicalId, lo, hi)
+                onClearRequested: hasHold
+                    ? root.client.clearExternalHold(modelData.logicalId)
+                    : root.client.clearMonitorOverride(modelData.logicalId)
             }
         }
 

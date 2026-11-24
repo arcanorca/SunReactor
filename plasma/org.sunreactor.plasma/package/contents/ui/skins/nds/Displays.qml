@@ -33,6 +33,7 @@ Item {
     readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
     readonly property var rows: Monitors.rowsWithMaster(
         monitors, client.globalPercent, client.isOverrideActive, i18nd(domain, "All displays"))
+    property var expandedLimits: ({})
 
     readonly property real gu: style.gu
     readonly property real pad: Math.round(gu * 0.35)
@@ -98,7 +99,7 @@ Item {
 
         required property var modelData
         required property int index
-        property bool expanded: false
+        readonly property bool expanded: !master && Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
 
         readonly property bool master: modelData.master === true
         readonly property bool unavailable: Monitors.unavailable(modelData)
@@ -162,7 +163,7 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: panel.expanded = !panel.expanded
+                onClicked: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, panel.modelData.logicalId)
             }
         }
         Text {
@@ -235,6 +236,8 @@ Item {
                         x: limitTag.width + Math.round(root.gu * 0.2)
                         width: parent.width - x - limitVal.width - Math.round(root.gu * 0.2)
                         height: parent.height
+                        from: limitRow.modelData.which === 0 ? 0 : panel.minPct
+                        to: limitRow.modelData.which === 0 ? panel.maxPct : 100
                         value: limitRow.current
                         editable: true
                         accessibleName: limitRow.modelData.which === 0
@@ -269,6 +272,8 @@ Item {
     component KnobSlider: Item {
         id: slider
 
+        property int from: 0
+        property int to: 100
         property int value: -1
         property int minMark: -1
         property int maxMark: -1
@@ -287,7 +292,8 @@ Item {
 
         function fromX(x) {
             const f = (x - travelX0) / Math.max(1, travelX1 - travelX0);
-            return Math.round(Math.max(0, Math.min(1, f)) * 100);
+            const raw = Math.round(Math.max(0, Math.min(1, f)) * 100);
+            return Math.max(slider.from, Math.min(slider.to, raw));
         }
 
         function markX(pct) {
@@ -297,8 +303,9 @@ Item {
         function send() {
             const v = Math.round(dragValue);
             if (v >= 0 && v !== lastSent) {
-                lastSent = v;
-                committed(v);
+                const clamped = Math.max(slider.from, Math.min(slider.to, v));
+                lastSent = clamped;
+                committed(clamped);
             }
         }
 
@@ -306,7 +313,7 @@ Item {
             if (!editable || shown < 0) {
                 return;
             }
-            const v = Math.max(0, Math.min(100, Math.round(shown) + delta));
+            const v = Math.max(slider.from, Math.min(slider.to, Math.round(shown) + delta));
             dragValue = v;
             lastSent = v;
             committed(v);
@@ -321,6 +328,23 @@ Item {
         activeFocusOnTab: editable
         Keys.onLeftPressed: slider.step(-5)
         Keys.onRightPressed: slider.step(5)
+        Keys.onDownPressed: slider.step(-1)
+        Keys.onUpPressed: slider.step(1)
+        Keys.onPressed: event => {
+            if (event.key === Qt.Key_PageDown) {
+                slider.step(-10);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_PageUp) {
+                slider.step(10);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Home) {
+                slider.step(slider.from - Math.round(slider.shown));
+                event.accepted = true;
+            } else if (event.key === Qt.Key_End) {
+                slider.step(slider.to - Math.round(slider.shown));
+                event.accepted = true;
+            }
+        }
 
         Accessible.role: Accessible.Slider
         Accessible.name: accessibleName
@@ -367,7 +391,7 @@ Item {
             height: slider.knobSize
             radius: width / 2
             border.width: root.style.outline
-            border.color: slider.editable ? root.style.blue : root.style.line
+            border.color: slider.activeFocus ? root.style.ink : (slider.editable ? root.style.blue : root.style.line)
             gradient: Gradient {
                 GradientStop { position: 0; color: root.style.white }
                 GradientStop { position: 1; color: root.style.panelBottom }

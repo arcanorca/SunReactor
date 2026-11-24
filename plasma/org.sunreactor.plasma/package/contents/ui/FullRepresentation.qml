@@ -56,6 +56,9 @@ PlasmaExtras.Representation {
 
     /*! The pointer is over the popup (main.qml keeps the popup open while it is). */
     readonly property bool popupHovered: popupHover.hovered
+    /*! Active floating menus or sub-popups inside the popup. main.qml checks this
+        so opening a menu (e.g. pause duration) never collapses the popup. */
+    property int activePopupMenus: 0
     HoverHandler {
         id: popupHover
     }
@@ -384,7 +387,7 @@ PlasmaExtras.Representation {
 
                 Layout.fillWidth: true
                 Layout.topMargin: Kirigami.Units.smallSpacing
-                visible: root.tabsShown || root.client.isConnected
+                visible: root.client.isConnected
                 spacing: 0
 
                 Loader {
@@ -460,12 +463,13 @@ PlasmaExtras.Representation {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.topMargin: root.theme.sectionSpacing
+            Layout.topMargin: root.client.isConnected ? root.theme.sectionSpacing : 0
+            visible: root.client.isConnected
             implicitHeight: {
                 for (let i = 0; i < pageRepeater.count; ++i) {
                     // The delegates are PagePanels; the Repeater types them as items.
                     const panel = pageRepeater.itemAt(i);
-                    if (panel.modelData === root.shownPage) { // qmllint disable missing-property
+                    if (panel && panel.modelData === root.shownPage) { // qmllint disable missing-property
                         return panel.columnHeight; // qmllint disable missing-property
                     }
                 }
@@ -579,8 +583,6 @@ PlasmaExtras.Representation {
 
         client: root.client
         theme: root.theme
-        // Plasma adds the main.xml configuration key dynamically.
-        defaultPauseMinutes: Plasmoid.configuration.defaultSuspendMinutes // qmllint disable missing-property
         visible: root.client.isConnected
     }
 }

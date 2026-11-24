@@ -92,6 +92,7 @@ Item {
                     id: flag
 
                     style: root.style
+                    onCase: true
                     text: DayCurve.shortName(chip.modelData.monitorId)
                     lit: root.selected === chip.index
                 }

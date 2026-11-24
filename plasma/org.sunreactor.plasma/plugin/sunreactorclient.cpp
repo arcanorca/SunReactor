@@ -20,7 +20,7 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_customSocketPath(customSocketPath)
 {
     m_elapsed.start();
-    m_socket->setReadBufferSize(SunReactor::MAX_IPC_MESSAGE_BYTES);
+    m_socket->setReadBufferSize(SunReactor::MAX_IPC_MESSAGE_BYTES + 1);
     connect(m_socket, &QLocalSocket::connected, this, &SunReactorClient::onSocketConnected);
     connect(m_socket, &QLocalSocket::readyRead, this, &SunReactorClient::onSocketReadyRead);
     connect(m_socket, &QLocalSocket::disconnected, this, &SunReactorClient::onSocketDisconnected);
@@ -51,12 +51,14 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
 
 SunReactorClient::~SunReactorClient()
 {
+    m_responseHandled = true;
     m_pollTimer->stop();
     m_watchdogTimer->stop();
     m_slowTimer->stop();
     m_themeListRetryTimer->stop();
     m_reconnectTimer->stop();
-    if (m_socket->isOpen()) {
+    disconnect(m_socket, nullptr, this, nullptr);
+    if (m_socket->isOpen() || m_socket->state() != QLocalSocket::UnconnectedState) {
         m_socket->abort();
     }
 }
@@ -123,13 +125,23 @@ void SunReactorClient::setSocketPath(const QString &path)
     }
 
     m_customSocketPath = path;
+    m_responseHandled = true;
+    m_inFlightRequest = QJsonObject{};
+    m_inFlightAttempts = 0;
+    m_inFlightQueuedAtMs = 0;
+    m_watchdogExtended = false;
+    m_processNextScheduled = false;
+    m_reconnectBackoffMs = kInitialReconnectBackoffMs;
+    m_lastBackoffWindowMs = kInitialReconnectBackoffMs;
+    m_disconnectedAtMs = -1;
     m_requestQueue.clear();
     m_readBuffer.clear();
     m_watchdogTimer->stop();
     m_reconnectTimer->stop();
-    if (m_socket->isOpen()) {
+    if (m_socket->isOpen() || m_socket->state() != QLocalSocket::UnconnectedState) {
         m_socket->abort();
     }
+    setConnected(false);
     setBusy(false);
     Q_EMIT socketPathChanged();
     queryStatus();
@@ -171,10 +183,17 @@ void SunReactorClient::setPollingEnabled(bool enabled)
         m_themeListRetryTimer->stop();
         m_reconnectTimer->stop();
         m_watchdogTimer->stop();
+        m_responseHandled = true;
+        m_inFlightRequest = QJsonObject{};
+        m_inFlightAttempts = 0;
+        m_inFlightQueuedAtMs = 0;
+        m_watchdogExtended = false;
+        m_processNextScheduled = false;
+        m_reconnectBackoffMs = kInitialReconnectBackoffMs;
+        m_lastBackoffWindowMs = kInitialReconnectBackoffMs;
         m_requestQueue.clear();
         m_readBuffer.clear();
-        m_responseHandled = true;
-        if (m_socket->isOpen()) {
+        if (m_socket->isOpen() || m_socket->state() != QLocalSocket::UnconnectedState) {
             m_socket->abort();
         }
         setBusy(false);
@@ -247,6 +266,7 @@ void SunReactorClient::setConnected(bool connected)
     m_isConnected = connected;
     Q_EMIT connectionChanged(connected);
     if (connected) {
+        m_disconnectedAtMs = -1;
         // Whatever answers next may be a different (newer or older) daemon: its theme list is read again.
         m_themeListStale = true;
     } else {

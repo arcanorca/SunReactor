@@ -21,6 +21,8 @@ Item {
     required property Theme theme
     required property AmigaStyle style
     property int value: -1
+    property int from: 0
+    property int to: 100
     property int minMark: -1
     property int maxMark: -1
     property string accessibleName: ""
@@ -47,7 +49,7 @@ Item {
         return Math.round(Math.max(0, Math.min(travel, artX - 1 - 4)) / travel * 100);
     }
     function setLocal(v) {
-        const clamped = Math.max(0, Math.min(100, v));
+        const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
         }
@@ -92,11 +94,11 @@ Item {
             root.step(-10);
             event.accepted = true;
         } else if (event.key === Qt.Key_Home) {
-            root.setLocal(0);
+            root.setLocal(root.from);
             root.finish();
             event.accepted = true;
         } else if (event.key === Qt.Key_End) {
-            root.setLocal(100);
+            root.setLocal(root.to);
             root.finish();
             event.accepted = true;
         }

@@ -52,6 +52,7 @@ QtObject {
     /*! The middle band of the title bar. */
     readonly property color frameLight: theme.mix(theme.borderActive, white, 0.32)
     readonly property color accent: theme.accent
+    readonly property color focus: theme.accent
     readonly property color green: theme.secondaryAccent
     readonly property color greenSheen: theme.mix(theme.secondaryAccent, white, 0.55)
     readonly property color orange: theme.warning

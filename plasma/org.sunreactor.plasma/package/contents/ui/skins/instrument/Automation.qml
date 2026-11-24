@@ -158,6 +158,7 @@ ColumnLayout {
 
                     Row {
                         anchors.centerIn: parent
+                        z: 2
                         spacing: root.style.gap
 
                         Text {
@@ -170,7 +171,10 @@ ColumnLayout {
 
                         // The arrow has its own hit area: a click there opens the durations.
                         Item {
+                            id: arrowHit
+
                             visible: cell.choiceId === "paused"
+                            z: 1
                             anchors.verticalCenter: parent.verticalCenter
                             width: arrow.width + root.style.gap * 2
                             height: root.style.snap(root.style.sizeLegend * 2)
@@ -197,6 +201,7 @@ ColumnLayout {
                         id: hover
 
                         anchors.fill: parent
+                        anchors.rightMargin: cell.choiceId === "paused" ? arrowHit.width : 0
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {

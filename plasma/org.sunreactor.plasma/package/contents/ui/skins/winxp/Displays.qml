@@ -34,6 +34,7 @@ WinWindow {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    property var expandedLimits: ({})
     title: i18ndc(domain, "Window title of the display brightness", "Displays")
 
     /*! One display: name, trackbar, value and range; the range trackbars open below. */
@@ -57,6 +58,7 @@ WinWindow {
 
         signal requested(int percent)
         signal limitsRequested(int minVal, int maxVal)
+        signal limitsToggled()
         signal clearOverrideRequested()
 
         spacing: row.style.gap
@@ -78,7 +80,7 @@ WinWindow {
                     anchors.fill: parent
                     enabled: row.hasLimits
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: row.limitsOpen = !row.limitsOpen
+                    onClicked: row.limitsToggled()
                 }
             }
             WinTrackbar {
@@ -131,11 +133,22 @@ WinWindow {
                     color: row.style.inkMuted
                 }
                 WinTrackbar {
+                    id: minTrack
                     Layout.fillWidth: true
                     style: row.style
+                    from: 0
+                    to: Math.max(0, row.maxPct)
                     value: row.minPct
                     controllable: row.controllable
-                    onRequested: v => row.limitsRequested(v, row.maxPct)
+                    onRequested: v => row.limitsRequested(Math.min(v, row.maxPct), row.maxPct)
+                }
+                Text {
+                    Layout.preferredWidth: row.style.snap(row.style.unit * 2.1)
+                    horizontalAlignment: Text.AlignRight
+                    text: minTrack.shown + "%"
+                    textFormat: Text.PlainText
+                    font: row.style.figureFont
+                    color: row.style.ink
                 }
             }
             RowLayout {
@@ -150,11 +163,22 @@ WinWindow {
                     color: row.style.inkMuted
                 }
                 WinTrackbar {
+                    id: maxTrack
                     Layout.fillWidth: true
                     style: row.style
+                    from: Math.min(100, row.minPct)
+                    to: 100
                     value: row.maxPct
                     controllable: row.controllable
-                    onRequested: v => row.limitsRequested(row.minPct, v)
+                    onRequested: v => row.limitsRequested(row.minPct, Math.max(v, row.minPct))
+                }
+                Text {
+                    Layout.preferredWidth: row.style.snap(row.style.unit * 2.1)
+                    horizontalAlignment: Text.AlignRight
+                    text: maxTrack.shown + "%"
+                    textFormat: Text.PlainText
+                    font: row.style.figureFont
+                    color: row.style.ink
                 }
             }
         }
@@ -185,6 +209,7 @@ WinWindow {
                 required property var modelData
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
+                readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
 
                 Layout.fillWidth: true
                 style: root.ui
@@ -193,7 +218,8 @@ WinWindow {
                 minPct: modelData.minPct !== undefined ? modelData.minPct : 15
                 maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
                 hasLimits: true
-                hasOverride: modelData.hasOverride === true
+                limitsOpen: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
+                hasOverride: modelData.hasOverride === true || hasHold
                 controllable: modelData.enabled && !unavailable
                 hint: {
                     if (!modelData.enabled) {
@@ -205,13 +231,20 @@ WinWindow {
                     if (modelData.hasOverride) {
                         return i18ndc(root.domain, "This brightness was set by hand", "Manual");
                     }
+                    if (hasHold) {
+                        return i18ndc(root.domain, "External brightness hold badge", "Ext · %1",
+                                      Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)));
+                    }
                     return "";
                 }
 
                 onRequested: v => root.client.setMonitorOverride(modelData.logicalId, v,
                                                                  root.settings.overrideMinutes)
+                onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, modelData.logicalId)
                 onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(modelData.logicalId, lo, hi)
-                onClearOverrideRequested: root.client.clearMonitorOverride(modelData.logicalId)
+                onClearOverrideRequested: hasHold
+                    ? root.client.clearExternalHold(modelData.logicalId)
+                    : root.client.clearMonitorOverride(modelData.logicalId)
             }
         }
     }

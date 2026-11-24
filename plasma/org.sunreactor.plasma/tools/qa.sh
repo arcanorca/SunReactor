@@ -153,7 +153,7 @@ stage_nest() {
 stage_pixel() {
     # The pixel-renderer themes only: nothing is a vector theme and its surfaces are
     # antialiased by design, so the palette proof does not apply to it.
-    local themes="handheld commodore64"
+    local themes="handheld commodore64 amiga classicmacintosh"
     flock "$LOCK" "$HERE/pixel_proof.sh" --out "$OUT/pixel" --themes "$themes" > "$OUT/pixel.log" 2>&1
     local rc=$?
     if [[ $rc -eq 0 ]]; then

@@ -96,8 +96,11 @@ Item {
     }
 
     function valueAtX(x) {
+        if (x <= pitch * 0.3) {
+            return from;
+        }
         const cell = Math.max(0, Math.min(cells - 1, Math.floor(x / pitch)));
-        return Math.round((cell + 1) * 100 / cells);
+        return Math.max(from, Math.min(to, Math.round((cell + 1) * 100 / cells)));
     }
 
     // While the daemon catches up, keep showing what the user picked.

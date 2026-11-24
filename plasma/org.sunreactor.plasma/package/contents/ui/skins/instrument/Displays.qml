@@ -31,6 +31,7 @@ ColumnLayout {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    property var expandedLimits: ({})
 
     spacing: style.rowGap
 
@@ -77,6 +78,7 @@ ColumnLayout {
                 required property int index
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
+                readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
 
                 style: root.style
                 channel: String(index + 1).padStart(2, "0")
@@ -87,8 +89,9 @@ ColumnLayout {
                 minPct: modelData.minPct !== undefined ? modelData.minPct : 15
                 maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
                 hasLimits: true
-                hasOverride: modelData.hasOverride === true
-                overrideUntil: hasOverride ? root.client.overrideUntilEpochS : 0
+                limitsExpanded: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
+                hasOverride: modelData.hasOverride === true || hasHold
+                overrideUntil: modelData.hasOverride === true ? root.client.overrideUntilEpochS : 0
                 controllable: modelData.enabled && !unavailable
                 stateText: {
                     if (!modelData.enabled) {
@@ -100,6 +103,10 @@ ColumnLayout {
                     if (modelData.hasOverride) {
                         return i18ndc(root.domain, "Tag: this brightness was set by hand", "Man");
                     }
+                    if (hasHold) {
+                        return i18ndc(root.domain, "External brightness hold badge", "Ext · %1",
+                                      Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)));
+                    }
                     return "";
                 }
                 stateTone: !modelData.enabled ? root.style.inkMuted
@@ -107,8 +114,11 @@ ColumnLayout {
 
                 onRequested: percent => root.client.setMonitorOverride(modelData.logicalId, percent,
                                                                        root.settings.overrideMinutes)
+                onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, modelData.logicalId)
                 onLimitsRequested: (minVal, maxVal) => root.client.setMonitorLimits(modelData.logicalId, minVal, maxVal)
-                onClearOverrideRequested: () => root.client.clearMonitorOverride(modelData.logicalId)
+                onClearOverrideRequested: () => hasHold
+                    ? root.client.clearExternalHold(modelData.logicalId)
+                    : root.client.clearMonitorOverride(modelData.logicalId)
             }
         }
     }

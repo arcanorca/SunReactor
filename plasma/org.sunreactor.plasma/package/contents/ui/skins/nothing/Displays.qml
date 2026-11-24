@@ -44,6 +44,7 @@ Rectangle {
     readonly property var monitors: client.isConnected ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
     readonly property bool available: client.isConnected && monitors.length > 0
+    property var expandedLimits: ({})
 
     implicitHeight: content.implicitHeight + 2 * style.pad
     radius: style.radius
@@ -75,6 +76,7 @@ Rectangle {
 
         signal requested(int percent)
         signal limitsRequested(int minPct, int maxPct)
+        signal limitsToggled()
         signal clearRequested()
 
         Layout.fillWidth: true
@@ -149,7 +151,7 @@ Rectangle {
                 active: channel.limitsOpen
                 text: i18ndc(root.domain, "Range limits", "RANGE %1–%2", channel.minPct, channel.maxPct)
                 accessibleDescription: i18nd(root.domain, "Open brightness range limits")
-                onClicked: channel.limitsOpen = !channel.limitsOpen
+                onClicked: channel.limitsToggled()
             }
 
             Pill {
@@ -183,6 +185,8 @@ Rectangle {
 
                     Layout.fillWidth: true
                     style: root.style
+                    from: 0
+                    to: Math.max(0, maxDotSlider.shown)
                     value: channel.minPct
                     accessibleName: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
                     onRequested: p => channel.limitsRequested(Math.min(p, channel.maxPct), channel.maxPct)
@@ -213,6 +217,8 @@ Rectangle {
 
                     Layout.fillWidth: true
                     style: root.style
+                    from: Math.min(100, minDotSlider.shown)
+                    to: 100
                     value: channel.maxPct
                     accessibleName: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
                     onRequested: p => channel.limitsRequested(channel.minPct, Math.max(p, channel.minPct))
@@ -269,23 +275,28 @@ Rectangle {
 
                 readonly property string monitorId: modelData.logicalId
                 readonly property bool unavailable: Monitors.unavailable(modelData)
+                readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
                 /*! What the slider shows: the override, else the applied value; -1 unknown. */
                 readonly property int level: modelData.percent !== undefined ? modelData.percent : -1
                 readonly property real aimAt: DayCurve.targetAt(root.client.dayCurve, monitorId,
                                                                   root.client.nowEpochS)
-                readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-                readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
 
                 ruled: root.showAllDisplays || index > 0
                 name: monitorId
                 percent: strip.level
+                minPct: modelData.minPct !== undefined ? modelData.minPct : 15
+                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
                 hasLimits: true
+                limitsOpen: Monitors.isExpanded(root.expandedLimits, monitorId)
                 controllable: modelData.enabled === true && !unavailable
-                hasOverride: modelData.hasOverride === true
-                overrideBadge: root.client.overrideUntilEpochS > root.client.nowEpochS
-                    ? i18ndc(root.domain, "Override badge: set by hand until a time of day", "MAN until %1",
-                             Format.timeText(root.client.overrideUntilEpochS))
-                    : i18ndc(root.domain, "Override badge: set by hand, no end time", "MAN")
+                hasOverride: modelData.hasOverride === true || hasHold
+                overrideBadge: hasHold
+                    ? i18ndc(root.domain, "External brightness hold badge, compact", "EXT · %1",
+                             Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)))
+                    : (root.client.overrideUntilEpochS > root.client.nowEpochS
+                        ? i18ndc(root.domain, "Override badge: set by hand until a time of day", "MAN until %1",
+                                 Format.timeText(root.client.overrideUntilEpochS))
+                        : i18ndc(root.domain, "Override badge: set by hand, no end time", "MAN"))
                 detail: {
                     if (!modelData.enabled) {
                         return i18ndc(root.domain, "Tag: this display is excluded from automation", "OFF");
@@ -300,8 +311,11 @@ Rectangle {
                 accessibleValue: level >= 0 ? i18ndc(root.domain, "Brightness percentage", "%1%", level)
                                             : i18ndc(root.domain, "No value is known yet", "—")
                 onRequested: percent => root.client.setMonitorOverride(monitorId, percent, root.settings.overrideMinutes)
+                onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, monitorId)
                 onLimitsRequested: (lo, hi) => root.client.setMonitorLimits(monitorId, lo, hi)
-                onClearRequested: root.client.clearMonitorOverride(monitorId)
+                onClearRequested: strip.hasHold
+                    ? root.client.clearExternalHold(monitorId)
+                    : root.client.clearMonitorOverride(monitorId)
             }
         }
     }

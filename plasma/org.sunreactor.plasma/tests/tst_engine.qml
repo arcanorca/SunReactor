@@ -318,5 +318,16 @@ Item {
             compare(holdClearSpy.count, 1, "cancel emits the ClearExternalHold request signal");
             verify(holdDisplay.externalHoldDismissed);
         }
+
+        function test_themeImmediateVsSettledScale() {
+            overridden.overrides = ({ uiScale: 100 });
+            compare(overridden.scaleFactor, 1.0);
+            overridden.overrides = ({ uiScale: 175 });
+            compare(overridden.scaleFactor, 1.75);
+            verify(overridden.scaleSettled);
+
+            overridden.overrides = {};
+            verify(overridden.scaleFactor > 0);
+        }
     }
 }
