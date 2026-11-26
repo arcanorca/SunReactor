@@ -102,7 +102,17 @@ for binary in sunreactord sunreactorctl; do
         printf '%s --version failed during packaging\n' "$binary" >&2
         exit 1
     fi
-    if [[ "$reported_version" != "$binary $version" ]]; then
+    version_matches=0
+    if [[ "$reported_version" == "$binary $version" ]]; then
+        version_matches=1
+    elif [[ "$reported_version" == "$binary $version ("*")" && "$reported_version" != *-dirty* ]]; then
+        hash_suffix="${reported_version#"$binary $version ("}"
+        hash_suffix="${hash_suffix%)}"
+        if [[ "$hash_suffix" =~ ^[0-9a-f]+$ ]]; then
+            version_matches=1
+        fi
+    fi
+    if [[ "$version_matches" -ne 1 ]]; then
         printf '%s reports %s; expected %s %s\n' \
             "$binary" "$reported_version" "$binary" "$version" >&2
         exit 1

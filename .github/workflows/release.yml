@@ -95,7 +95,13 @@ jobs:
           mkdir -p "$smoke"
           tar xzf "$archive" -C "$smoke"
           for binary in sunreactord sunreactorctl; do
-            test "$("$smoke/$binary" --version)" = "$binary $version"
+            reported="$("$smoke/$binary" --version)"
+            if [[ "$reported" != "$binary $version" ]]; then
+              suffix="${reported#"$binary $version ("}"
+              suffix="${suffix%)}"
+              test "$reported" = "$binary $version ($suffix)"
+              [[ "$suffix" =~ ^[0-9a-f]+$ ]]
+            fi
             "$smoke/$binary" --help >/dev/null
           done
           test "$(tar tzf "$archive" | sort)" = "$(printf '%s\n' LICENSE README.md sunreactorctl sunreactord sunreactord.service | sort)"

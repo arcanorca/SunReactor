@@ -73,7 +73,7 @@ SH
         cat >"$target_dir/$binary" <<SH
 #!/usr/bin/env bash
 if [[ \${1:-} == --version ]]; then
-    printf '%s %s\\n' '$binary' "$CARGO_VERSION"
+    printf '%s %s (991d5e4bb5d7)\\n' '$binary' "$CARGO_VERSION"
 elif [[ \${1:-} == --help ]]; then
     printf '%s\\n' '$binary help'
 else
@@ -127,6 +127,28 @@ SH
     chmod +x "$ARTIFACT_DIR/sunreactord"
     if verify_binary_versions "$ARTIFACT_DIR" "$CARGO_VERSION"; then
         printf 'installer accepted a stale binary from the downloaded archive\n' >&2
+        exit 1
+    fi
+
+    cat >"$ARTIFACT_DIR/sunreactord" <<SH
+#!/usr/bin/env bash
+[[ \${1:-} == --version ]] && printf 'sunreactord %s (991d5e4bb5d7-dirty)\\n' "$CARGO_VERSION"
+SH
+    chmod +x "$ARTIFACT_DIR/sunreactord"
+    if verify_binary_versions "$ARTIFACT_DIR" "$CARGO_VERSION"; then
+        printf 'installer accepted a dirty binary from the downloaded archive\n' >&2
+        exit 1
+    fi
+
+    cat >"$target_dir/sunreactord" <<SH
+#!/usr/bin/env bash
+[[ \${1:-} == --version ]] && printf 'sunreactord %s (991d5e4bb5d7-dirty)\\n' "$CARGO_VERSION"
+SH
+    chmod +x "$target_dir/sunreactord"
+    if PATH="$tools:$PATH" CARGO_TARGET_DIR="$fixture/target" \
+        "$ROOT_DIR/scripts/release.sh" "$CARGO_VERSION" x86_64-unknown-linux-gnu \
+        "$fixture/dirty-release" "$ROOT_DIR" 2>/dev/null; then
+        printf 'release helper accepted a dirty binary version\n' >&2
         exit 1
     fi
 

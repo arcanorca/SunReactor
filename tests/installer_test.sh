@@ -66,6 +66,7 @@ test_custom_paths_and_uninstall_paths() {
     # Never reach the real user manager: uninstall stops and disables sunreactord.
     local fakebin="$home/fakebin"
     mkdir -p "$fakebin"
+    # shellcheck disable=SC2016
     printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$*" >>"$SYSTEMCTL_MARKER"' 'exit 0' >"$fakebin/systemctl"
     chmod +x "$fakebin/systemctl"
     SYSTEMCTL_MARKER="$home/systemctl-called" PATH="$fakebin:/usr/bin:/bin" HOME="$home" \
@@ -929,8 +930,8 @@ test_plasma_widget_success_is_atomic_and_keeps_backup() {
     }
     grep -F 'Plasma widget installed' "$home/installer.log" >/dev/null
     grep -F 'systemctl --user restart plasma-plasmashell.service' "$home/installer.log" >/dev/null
-    cmp -s "$ROOT_DIR/plasma/org.sunreactor.plasma/package/metadata.json" \
-        "$data/plasma/plasmoids/org.sunreactor.plasma/metadata.json"
+    [[ "$(cksum <"$ROOT_DIR/plasma/org.sunreactor.plasma/package/metadata.json")" \
+        == "$(cksum <"$data/plasma/plasmoids/org.sunreactor.plasma/metadata.json")" ]]
     grep -Fx 'new plugin' "$home/.local/lib/libsunreactorplugin.so" >/dev/null
     grep -Fx 'new qml plugin' "$home/.local/lib/qt6/qml/org/sunreactor/plasma/libsunreactorpluginplugin.so" >/dev/null
     grep -Fx 'module org.sunreactor.plasma' "$home/.local/lib/qt6/qml/org/sunreactor/plasma/qmldir" >/dev/null
