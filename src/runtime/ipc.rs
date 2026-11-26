@@ -171,6 +171,8 @@ impl DaemonRuntime {
         match result {
             Ok(()) => {
                 let message = format!("reloaded config from {}", self.config.path.display());
+                self.capability_refresh.request();
+                self.clear_all_contested();
                 self.mark_pending_apply(true, false);
                 (
                     ipc::ResponseEnvelope::ack(format!("{message}; apply queued")),
@@ -205,6 +207,10 @@ impl DaemonRuntime {
     }
 
     fn handle_run_once(&mut self, force: bool) -> IpcReply {
+        if force {
+            // An explicit forced run re-observes the topology first.
+            self.capability_refresh.request();
+        }
         self.clear_external_holds(None);
         self.mark_pending_apply(force, false);
         (
@@ -281,21 +287,26 @@ impl DaemonRuntime {
         }
         let settings = self.force_apply_settings();
         let summary = apply::probe_and_correct_with_external_state(
-            &self.config.monitors,
-            &computed.policy,
-            &mut self.state,
-            now_epoch_s,
-            settings.dry_run,
-            settings.external_change_hold,
+            &apply::ProbeInputs {
+                monitors: &self.config.monitors,
+                policy: &computed.policy,
+                now_epoch_s,
+                dry_run: settings.dry_run,
+                external_change_hold: settings.external_change_hold,
+                recovery_until_epoch_s: self.recovery_until_epoch_s,
+            },
+            apply::ProbeSinks {
+                state: &mut self.state,
+                external_holds: Some(&mut self.external_holds),
+                fade_engine: Some(&mut self.fade_engine),
+                unreachable_monitors: None,
+            },
             |monitor| crate::apply::dispatch::probe_monitor_percent(runner, monitor, &settings),
             |monitor, target, percent| {
                 crate::apply::dispatch::apply_monitor_target(
                     runner, monitor, target, percent, &settings,
                 )
             },
-            Some(&mut self.external_holds),
-            self.recovery_until_epoch_s,
-            Some(&mut self.fade_engine),
         );
         if summary.corrected > 0 {
             let _ = self.persist_state_if_changed();
@@ -342,6 +353,7 @@ impl DaemonRuntime {
 
         self.state.suspend_until_epoch_s = None;
         self.state.suspend_indefinite = false;
+        self.clear_all_contested();
         self.clear_external_holds(None);
         self.open_recovery_window(crate::state::current_epoch_s());
         for monitor in self.state.monitors.values_mut() {
@@ -514,6 +526,10 @@ impl DaemonRuntime {
         }
 
         let previous_override = self.state.manual_override.clone();
+        match monitor_id {
+            Some(logical_id) => apply::clear_contested(logical_id),
+            None => self.clear_all_contested(),
+        }
         let changed = if let Some(logical_id) = monitor_id {
             self.ensure_configured_monitor(logical_id)?;
             self.state.clear_monitor_override(logical_id)

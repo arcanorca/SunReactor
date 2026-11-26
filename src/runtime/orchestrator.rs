@@ -1,9 +1,8 @@
 use crate::platform::{DisplayEventSources, DisplayRecoveryReason};
 use crate::runtime::fade::{self, FadeEngine};
 use chrono::{DateTime, Utc};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io;
 #[cfg(target_os = "linux")]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
@@ -63,11 +62,16 @@ pub struct DaemonRuntime {
     pub persisted_state_snapshot: RuntimeState,
     pub last_solar_elevation: Option<f64>,
     pub fade_engine: fade::FadeEngine,
-    /// Ephemeral ownership holds for monitors changed by another controller.
-    /// These intentionally disappear when the daemon restarts.
+    /// Ownership holds for monitors changed by another controller. Mirrored
+    /// into `state.external_holds` on every persist and restored (after
+    /// plausibility checks) at bootstrap, so a restart keeps respecting a
+    /// manual change.
     pub(super) external_holds: BTreeMap<String, apply::ExternalHold>,
     /// Shared recovery window opened by lifecycle/topology signals.
     pub(super) recovery_until_epoch_s: Option<u64>,
+    /// Monitors that failed their last probe read; one that answers again is
+    /// treated as reconnected (see the wake probe).
+    pub(super) unreachable_monitors: BTreeSet<String>,
     pub weather_engine: weather::WeatherEngine,
     /// Ephemeral capability observation from the last reconciliation.
     /// Not persisted; kept separate from user config.
@@ -79,6 +83,14 @@ pub struct DaemonRuntime {
     /// the policy config and the weather multiplier, so repeated widget
     /// requests are served from memory instead of re-running the policy.
     pub(super) day_curve_cache: Option<(String, crate::ipc::DayCurveResponse)>,
+    /// Single-instance lock taken before any state is touched; handed to the
+    /// listener when the loop starts.
+    #[cfg(target_os = "linux")]
+    pub(super) instance_lock: Option<ipc::InstanceLock>,
+    pub(super) last_deferred_kick: Option<Instant>,
+    pub(super) clock_watch: crate::runtime::clock::ClockWatch,
+    /// True while a clamp has already been logged for the current episode.
+    pub(super) clock_warned: bool,
     pending_apply: bool,
     pending_apply_force: bool,
     pending_apply_clear_backoff: bool,
@@ -145,6 +157,129 @@ impl DaemonRuntime {
             self.external_holds.clear();
             self.fade_engine.cancel_all();
         }
+        let _ = self.persist_state_if_changed();
+    }
+
+    /// Forgets the "another controller is fighting this monitor" verdict for
+    /// every configured monitor (config reload, resume, clear-override).
+    pub(super) fn clear_all_contested(&self) {
+        for monitor in &self.config.monitors {
+            apply::clear_contested(&monitor.logical_id);
+        }
+    }
+
+    fn max_hold_seconds(&self) -> u64 {
+        u64::from(self.config.daemon.external_change_hold_minutes).saturating_mul(60)
+    }
+
+    /// Restores holds and the write-budget ledger saved by the previous
+    /// process. Anything implausible (future timestamps, over-long holds,
+    /// expired windows) is discarded. A restored hold keeps the monitor held,
+    /// so the startup resync never "corrects" a person's manual choice.
+    fn restore_persisted_windows(&mut self) {
+        let now = state::current_epoch_s();
+        self.state
+            .sanitize_restored_ledgers(now, crate::apply::types::WRITE_BUDGET_WINDOW_SECONDS);
+        let restorable = self.state.restorable_holds(
+            now,
+            self.max_hold_seconds(),
+            self.config
+                .monitors
+                .iter()
+                .map(|monitor| monitor.logical_id.as_str()),
+        );
+        for (logical_id, hold) in restorable {
+            tracing::info!(
+                logical_id = %logical_id,
+                until_epoch_s = hold.until_epoch_s,
+                "external_hold_restored"
+            );
+            self.external_holds.insert(
+                logical_id,
+                apply::ExternalHold {
+                    since_epoch_s: hold.since_epoch_s,
+                    until_epoch_s: hold.until_epoch_s,
+                    observed_percent: hold.observed_percent,
+                },
+            );
+        }
+        self.sync_holds_into_state();
+    }
+
+    fn sync_holds_into_state(&mut self) {
+        let now = state::current_epoch_s();
+        self.state.external_holds = self
+            .external_holds
+            .iter()
+            .filter(|(_, hold)| hold.until_epoch_s > now)
+            .map(|(id, hold)| {
+                (
+                    id.clone(),
+                    state::PersistedHold {
+                        since_epoch_s: hold.since_epoch_s,
+                        until_epoch_s: hold.until_epoch_s,
+                        observed_percent: hold.observed_percent,
+                    },
+                )
+            })
+            .collect();
+    }
+
+    /// Detects a wall-clock step (wall vs `CLOCK_BOOTTIME` progress) and moves
+    /// every in-memory window by it so holds, budget events and backoff keep
+    /// their real remaining length.
+    pub(super) fn observe_clock(&mut self) {
+        let wall_ms = Utc::now().timestamp_millis();
+        let Some(jump_s) = self
+            .clock_watch
+            .observe(wall_ms, crate::runtime::clock::boottime_ms())
+        else {
+            return;
+        };
+        tracing::warn!(jump_s, "wall_clock_jump_detected; windows_shifted");
+        self.state.shift_window_timestamps(jump_s);
+        crate::runtime::clock::shift_holds(&mut self.external_holds, jump_s);
+        crate::apply::shift_windows(jump_s);
+        if let Some(until) = self.recovery_until_epoch_s.as_mut() {
+            *until = if jump_s >= 0 {
+                until.saturating_add(jump_s.unsigned_abs())
+            } else {
+                until.saturating_sub(jump_s.unsigned_abs())
+            };
+        }
+        self.clock_warned = false;
+    }
+
+    /// Safety net for any stored timestamp still in the future (beyond the
+    /// skew tolerance) at `now_epoch_s`: it is treated as "now" so writes can
+    /// never be frozen by a stepped clock. Logs once per episode.
+    pub(super) fn clamp_future_windows(&mut self, now_epoch_s: u64) {
+        let max_hold_s = self.max_hold_seconds();
+        let mut clamped = self.state.clamp_future_timestamps(now_epoch_s);
+        clamped +=
+            crate::runtime::clock::clamp_holds(&mut self.external_holds, now_epoch_s, max_hold_s);
+        clamped += crate::apply::clamp_future_windows(now_epoch_s);
+        if let Some(until) = self.recovery_until_epoch_s {
+            let max_until = now_epoch_s
+                .saturating_add(state::CLOCK_SKEW_TOLERANCE_S)
+                .saturating_add(apply::RECOVERY_WINDOW_SECONDS);
+            if until > max_until {
+                self.recovery_until_epoch_s =
+                    Some(now_epoch_s.saturating_add(apply::RECOVERY_WINDOW_SECONDS));
+                clamped += 1;
+            }
+        }
+        if clamped > 0 {
+            if !self.clock_warned {
+                tracing::warn!(
+                    clamped,
+                    "future_timestamps_clamped; wall clock stepped back"
+                );
+                self.clock_warned = true;
+            }
+        } else {
+            self.clock_warned = false;
+        }
     }
 
     /// Perform one complete capability observation before a one-shot apply.
@@ -194,18 +329,37 @@ impl DaemonRuntime {
         self.capability_refresh.begin_with_runner(runner);
     }
 
+    /// Installs a completed observation. Only monitors whose topology evidence
+    /// really changed lose their fade; an unchanged snapshot (the common case)
+    /// cancels nothing.
+    pub(super) fn apply_published_snapshot(&mut self, snapshot: CapabilitySnapshot) {
+        let changed_monitors = self
+            .last_capabilities
+            .as_ref()
+            .map_or_else(Vec::new, |previous| {
+                crate::runtime::topology::changed_monitors(
+                    &self.config.monitors,
+                    previous,
+                    &snapshot,
+                )
+            });
+        let topology_changed = self
+            .last_capabilities
+            .as_ref()
+            .is_some_and(|previous| previous != &snapshot);
+        for logical_id in &changed_monitors {
+            self.fade_engine.active_fades.remove(logical_id);
+        }
+        self.last_capabilities = Some(snapshot);
+        if topology_changed {
+            self.open_recovery_window(state::current_epoch_s());
+        }
+    }
+
     pub(super) fn publish_completed_capability_snapshot(&mut self) -> Option<bool> {
         match self.capability_refresh.publish_completed() {
             Some(CapabilityRefreshPublication::Published(snapshot)) => {
-                let topology_changed = self
-                    .last_capabilities
-                    .as_ref()
-                    .is_some_and(|previous| previous != &snapshot);
-                self.fade_engine.cancel_all();
-                self.last_capabilities = Some(snapshot);
-                if topology_changed {
-                    self.open_recovery_window(state::current_epoch_s());
-                }
+                self.apply_published_snapshot(snapshot);
                 Some(true)
             }
             Some(
@@ -239,6 +393,9 @@ impl DaemonRuntime {
 
     pub(super) fn handle_display_event(&mut self, reason: DisplayRecoveryReason) {
         self.fade_engine.cancel_all();
+        // Hotplug and resume are the events that justify a fresh `ddcutil
+        // detect`; ordinary ticks never do.
+        self.capability_refresh.request();
         let wake_reason = match reason {
             DisplayRecoveryReason::DrmHotplug => WakeReason::DrmHotplug,
             DisplayRecoveryReason::DrmConnectorChange => WakeReason::DrmConnectorChange,
@@ -277,21 +434,26 @@ impl DaemonRuntime {
         }
         let settings = self.force_apply_settings();
         let summary = apply::probe_and_correct_with_external_state(
-            &self.config.monitors,
-            &computed.policy,
-            &mut self.state,
-            computed.inputs.now_epoch_s,
-            settings.dry_run,
-            settings.external_change_hold,
+            &apply::ProbeInputs {
+                monitors: &self.config.monitors,
+                policy: &computed.policy,
+                now_epoch_s: computed.inputs.now_epoch_s,
+                dry_run: settings.dry_run,
+                external_change_hold: settings.external_change_hold,
+                recovery_until_epoch_s: self.recovery_until_epoch_s,
+            },
+            apply::ProbeSinks {
+                state: &mut self.state,
+                external_holds: Some(&mut self.external_holds),
+                fade_engine: Some(&mut self.fade_engine),
+                unreachable_monitors: Some(&mut self.unreachable_monitors),
+            },
             |monitor| crate::apply::dispatch::probe_monitor_percent(runner, monitor, &settings),
             |monitor, target, percent| {
                 crate::apply::dispatch::apply_monitor_target(
                     runner, monitor, target, percent, &settings,
                 )
             },
-            Some(&mut self.external_holds),
-            self.recovery_until_epoch_s,
-            Some(&mut self.fade_engine),
         );
         tracing::debug!(
             probe = self.probe_schedule.probes(),
@@ -301,9 +463,8 @@ impl DaemonRuntime {
             failed = summary.failed,
             "probe_completed"
         );
-        if summary.corrected > 0 {
-            let _ = self.persist_state_if_changed();
-        }
+        // A probe can open or release a hold without correcting anything.
+        let _ = self.persist_state_if_changed();
         ProbeOutcome {
             answered: summary.answered,
             unreachable: summary.unreachable,
@@ -312,6 +473,7 @@ impl DaemonRuntime {
     }
 
     pub(super) fn persist_state_if_changed(&mut self) -> Result<bool, RuntimeError> {
+        self.sync_holds_into_state();
         let candidate = self.state.normalized_for_persistence();
         if candidate == self.persisted_state_snapshot {
             return Ok(false);
@@ -359,17 +521,75 @@ pub(super) fn create_runtime_dir(path: &Path) -> Result<(), RuntimeError> {
     }
 }
 
-pub(super) fn is_transient_ipc_accept_error(error: &ipc::IpcError) -> bool {
-    matches!(
-        error,
-        ipc::IpcError::Io { source, .. }
-            if matches!(
-                source.kind(),
-                io::ErrorKind::Interrupted
-                    | io::ErrorKind::ConnectionAborted
-                    | io::ErrorKind::TimedOut
-            )
-    )
+/// How the drain loop reacts to an error from `accept()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AcceptErrorAction {
+    /// One connection was bad (foreign UID, peer reset, configure failure):
+    /// log it, drop it, keep serving.
+    DropConnection,
+    /// Resource exhaustion (EMFILE/ENFILE/ENOMEM/ENOBUFS): back off briefly,
+    /// then keep serving.
+    BackOff,
+    /// The listener itself is unusable: the only case that stops the loop.
+    ListenerDead,
+}
+
+pub(super) const ACCEPT_BACKOFF: Duration = Duration::from_millis(50);
+
+pub(super) fn classify_ipc_accept_error(error: &ipc::IpcError) -> AcceptErrorAction {
+    #[cfg(unix)]
+    if let ipc::IpcError::Io { source, .. } = error {
+        match source.raw_os_error() {
+            Some(code)
+                if [libc::EMFILE, libc::ENFILE, libc::ENOMEM, libc::ENOBUFS].contains(&code) =>
+            {
+                return AcceptErrorAction::BackOff;
+            }
+            Some(code)
+                if [
+                    libc::EBADF,
+                    libc::EINVAL,
+                    libc::ENOTSOCK,
+                    libc::EFAULT,
+                    libc::EOPNOTSUPP,
+                ]
+                .contains(&code) =>
+            {
+                return AcceptErrorAction::ListenerDead;
+            }
+            _ => {}
+        }
+    }
+    AcceptErrorAction::DropConnection
+}
+
+/// Minimum gap between two logged accept errors; the rest are counted.
+const ACCEPT_ERROR_LOG_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Logs a per-connection accept error at most once per
+/// [`ACCEPT_ERROR_LOG_INTERVAL`], reporting how many were suppressed.
+pub(super) fn log_accept_error_rate_limited(error: &ipc::IpcError, action: AcceptErrorAction) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
+    static LAST_LOG: Mutex<Option<Instant>> = Mutex::new(None);
+    static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
+
+    let now = Instant::now();
+    let mut last = LAST_LOG
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if last.is_some_and(|at| now.duration_since(at) < ACCEPT_ERROR_LOG_INTERVAL) {
+        SUPPRESSED.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
+    *last = Some(now);
+    let suppressed = SUPPRESSED.swap(0, Ordering::Relaxed);
+    tracing::warn!(
+        error = %error,
+        action = ?action,
+        suppressed_since_last_log = suppressed,
+        "ipc_accept_error; connection dropped"
+    );
 }
 
 // --- From logging.rs ---
@@ -544,6 +764,20 @@ impl DaemonRuntime {
 
         ensure_runtime_dirs(&state_path, &socket_path, create_socket_dir)?;
 
+        // A second daemon must fail here, before it can rewrite the state file
+        // the running one owns.
+        #[cfg(target_os = "linux")]
+        let instance_lock = if create_socket_dir {
+            Some(
+                ControlSocket {
+                    path: socket_path.clone(),
+                }
+                .acquire_instance_lock()?,
+            )
+        } else {
+            None
+        };
+
         let state = RuntimeState::load_from_path(&state_path)?;
 
         // Force a physical hardware sync on daemon startup.
@@ -584,17 +818,27 @@ impl DaemonRuntime {
             recovery_until_epoch_s: Some(
                 state::current_epoch_s().saturating_add(apply::RECOVERY_WINDOW_SECONDS),
             ),
+            unreachable_monitors: BTreeSet::new(),
             weather_engine,
             last_capabilities: None,
             capability_refresh: CapabilityRefreshState::default(),
             probe_schedule,
             display_events: None,
             day_curve_cache: None,
+            #[cfg(target_os = "linux")]
+            instance_lock,
+            last_deferred_kick: None,
+            clock_watch: crate::runtime::clock::ClockWatch::new(
+                Utc::now().timestamp_millis(),
+                crate::runtime::clock::boottime_ms(),
+            ),
+            clock_warned: false,
             pending_apply: false,
             pending_apply_force: false,
             pending_apply_clear_backoff: false,
         };
 
+        runtime.restore_persisted_windows();
         runtime.prepare_apply_resync(false);
 
         #[cfg(test)]

@@ -56,6 +56,13 @@ fn commit_write(
     now_epoch_s: u64,
 ) -> ApplyRecord {
     let monitor = write.monitor;
+    crate::apply::decision::record_attempted_hardware_write(
+        state,
+        &monitor.logical_id,
+        now_epoch_s,
+        &result,
+        "hardware_write",
+    );
     match result {
         Ok(done) => {
             state.record_apply_success(&monitor.logical_id, done.applied_percent, now_epoch_s);

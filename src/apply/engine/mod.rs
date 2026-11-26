@@ -26,7 +26,7 @@ mod write;
 
 #[cfg(test)]
 use probe::probe_and_correct_with;
-pub(crate) use probe::probe_and_correct_with_external_state;
+pub(crate) use probe::{probe_and_correct_with_external_state, ProbeInputs, ProbeSinks};
 
 use super::types::{ApplySettings, ApplySummary, ExternalHold};
 use crate::backends::{ProcessRunner, RealProcessRunner};

@@ -40,6 +40,11 @@ where
     }
 
     let mut snapshot = cached.cloned();
+    if let Some(cached) = snapshot.as_mut() {
+        // A backwards clock step must not keep a snapshot fresh (or dated in
+        // the future) forever: pin it to now so it ages from the step.
+        cached.fetched_at_epoch_s = cached.fetched_at_epoch_s.min(now_epoch_s);
+    }
     let mut error = None;
 
     let request = match provider_request(config, location, now_epoch_s, environment) {
@@ -122,6 +127,7 @@ mod tests {
     use crate::config::{WeatherConfig, WeatherProvider as ConfigWeatherProvider};
     use crate::solar::Location;
     use crate::state::WeatherSnapshotMetadata;
+    use crate::weather::{cache_ttl, WEATHER_EXPIRY_DECAY};
 
     use super::{
         cloud_cover_to_multiplier, refresh_interval, resolve_modifier_with_provider,
@@ -349,11 +355,14 @@ mod tests {
         assert_eq!(provider.calls(), 1);
         assert!(fresh.modifier.is_some());
 
+        let expired_at = 1_800_000_000
+            + cache_ttl(&weather_config(true)).as_secs()
+            + WEATHER_EXPIRY_DECAY.as_secs();
         let expired = resolve_modifier_with_provider(
             &weather_config(true),
             &location(),
             Some(&cached),
-            1_800_004_000,
+            expired_at,
             None,
             false,
             1,
@@ -362,6 +371,20 @@ mod tests {
         );
         assert_eq!(provider.calls(), 2);
         assert!(expired.modifier.is_none());
+
+        // Just past the TTL the dimming is still fading out, not gone.
+        let fading = resolve_modifier_with_provider(
+            &weather_config(true),
+            &location(),
+            Some(&cached),
+            expired_at - WEATHER_EXPIRY_DECAY.as_secs() / 2,
+            Some(expired_at + 1_000_000),
+            false,
+            1,
+            &provider,
+            &environment,
+        );
+        assert!(fading.modifier.is_some_and(|m| m < 1.0));
     }
 
     #[test]
@@ -445,9 +468,47 @@ mod tests {
         assert!(snapshot_modifier(
             &config,
             &snapshot,
-            1_800_000_000 + refresh_interval(&config).as_secs() * 3
+            1_800_000_000 + cache_ttl(&config).as_secs() + WEATHER_EXPIRY_DECAY.as_secs()
         )
         .is_none());
+    }
+
+    #[test]
+    fn future_dated_cached_snapshot_is_clamped_and_then_ages_normally() {
+        let config = weather_config(true);
+        let location = Location::from_timezone_name(41.0, 29.0, "UTC").expect("location");
+        let provider = FakeProvider::failure(WeatherError::Transport {
+            provider: "openweather",
+            message: String::from("offline"),
+        });
+        let cached = WeatherSnapshotMetadata {
+            provider: String::from("openweather"),
+            // The clock stepped back: the snapshot claims to be from the future.
+            fetched_at_epoch_s: 1_800_100_000,
+            cloud_cover_percent: Some(60),
+            smoothed_cloud_cover_percent: Some(60),
+            ..Default::default()
+        };
+        let resolution = resolve_modifier_with_provider(
+            &config,
+            &location,
+            Some(&cached),
+            1_800_000_000,
+            Some(1_800_000_000 + 10_000_000),
+            false,
+            0,
+            &provider,
+            &FakeEnvironment::with([(
+                String::from("OPENWEATHER_API_KEY"),
+                String::from("env-key"),
+            )]),
+        );
+        let clamped = resolution.snapshot.expect("snapshot kept");
+        assert_eq!(clamped.fetched_at_epoch_s, 1_800_000_000);
+        assert!(resolution.modifier.is_some());
+        let much_later =
+            1_800_000_000 + cache_ttl(&config).as_secs() + WEATHER_EXPIRY_DECAY.as_secs();
+        assert!(snapshot_modifier(&config, &clamped, much_later).is_none());
     }
 
     #[test]

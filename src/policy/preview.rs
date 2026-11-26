@@ -91,8 +91,9 @@ pub struct LocalDay {
     pub end_utc: DateTime<Utc>,
 }
 
-/// Resolves the local day containing `now_utc`. A nonexistent or ambiguous
-/// local midnight is a structured error, never a guessed boundary.
+/// Resolves the local day containing `now_utc`. Where DST skips or repeats
+/// local midnight the day starts at the earliest valid instant (see
+/// [`solar::resolve_date_boundary`]).
 pub fn local_day(now_utc: DateTime<Utc>, location: &Location) -> Result<LocalDay, SolarError> {
     let date = solar::local_datetime_at_utc(now_utc, location)?.date_naive();
     let next = date.succ_opt().ok_or(SolarError::DateOutOfRange)?;
@@ -227,6 +228,21 @@ pub fn day_curve(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn local_day_handles_dst_that_skips_midnight() {
+        let cairo = Location::from_timezone_name(30.0444, 31.2357, "Africa/Cairo").unwrap();
+        let now = Utc.with_ymd_and_hms(2025, 4, 25, 12, 0, 0).unwrap();
+        let day = local_day(now, &cairo).expect("day resolves");
+        assert_eq!(
+            day.start_utc,
+            Utc.with_ymd_and_hms(2025, 4, 24, 22, 0, 0).unwrap()
+        );
+        assert_eq!(
+            day.end_utc,
+            Utc.with_ymd_and_hms(2025, 4, 25, 21, 0, 0).unwrap()
+        );
+    }
 
     fn monitor(id: &str, min_pct: u8, max_pct: u8) -> MonitorConfig {
         MonitorConfig {

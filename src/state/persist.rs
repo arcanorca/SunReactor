@@ -50,11 +50,16 @@ impl RuntimeState {
             return Ok(Self::default());
         };
         if found != u64::from(crate::state::types::STATE_SCHEMA_VERSION) {
-            return Err(StateError::UnsupportedSchemaVersion {
-                path: path.to_path_buf(),
+            // A newer (or unknown) schema must never block startup: keep the
+            // file aside for a later downgrade/upgrade and start from defaults.
+            tracing::warn!(
+                path = %path.display(),
                 found,
-                supported: crate::state::types::STATE_SCHEMA_VERSION,
-            });
+                supported = crate::state::types::STATE_SCHEMA_VERSION,
+                "state_schema_unsupported; moving file aside and starting with defaults"
+            );
+            move_future_state_aside(path, found);
+            return Ok(Self::default());
         }
 
         let Ok(state) = serde_json::from_value::<RuntimeState>(document) else {
@@ -167,6 +172,26 @@ pub(crate) fn repair_corrupt_state_file(path: &Path, default_state: &RuntimeStat
     let _ = atomic_write_json(path, default_state);
 }
 
+/// Renames a state file written by an unknown schema to
+/// `runtime-state.json.future-<ver>-<ts>` and writes fresh defaults, reusing
+/// the corrupt-file repair path when the rename is impossible.
+fn move_future_state_aside(path: &Path, found: u64) {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(RUNTIME_STATE_FILE_NAME);
+    let aside = path.with_file_name(format!("{file_name}.future-{found}-{unique}"));
+    if fs::rename(path, &aside).is_ok() {
+        let _ = atomic_write_json(path, &RuntimeState::default());
+    } else {
+        repair_corrupt_state_file(path, &RuntimeState::default());
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn sync_parent_dir(path: &Path) -> Result<(), StateError> {
     let Some(parent) = path.parent() else {
@@ -266,6 +291,7 @@ mod tests {
                     consecutive_failures: 2,
                     suppress_until_epoch_s: Some(1_930),
                 }),
+                ..MonitorRuntimeState::default()
             },
         );
 
@@ -324,25 +350,70 @@ mod tests {
     }
 
     #[test]
-    fn future_schema_is_rejected_without_touching_the_file() {
+    fn future_schema_is_moved_aside_and_defaults_start() {
         let temp = TempDir::new();
         let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
         let original = br#"{"schema_version":2,"future":{"new":true},"monitors":{}}
 "#;
         fs::write(&path, original).expect("future state should write");
 
-        let error = RuntimeState::load_from_path(&path).expect_err("future state must reject");
+        let state = RuntimeState::load_from_path(&path).expect("future state must not block");
 
-        assert!(matches!(
-            error,
-            crate::state::StateError::UnsupportedSchemaVersion {
-                found: 2,
-                supported: 1,
-                ..
-            }
-        ));
-        assert_eq!(fs::read(&path).expect("state should remain"), original);
-        assert_eq!(corrupt_backup_count(temp.path()), 0);
+        assert_eq!(state, RuntimeState::default());
+        let aside: Vec<_> = fs::read_dir(temp.path())
+            .expect("dir")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("runtime-state.json.future-2-"))
+            .collect();
+        assert_eq!(aside.len(), 1, "{aside:?}");
+        assert_eq!(
+            fs::read(temp.path().join(&aside[0])).expect("aside file"),
+            original
+        );
+        // Fresh defaults replaced the live file, so the next load is clean.
+        assert_eq!(
+            RuntimeState::load_from_path(&path).expect("reload"),
+            RuntimeState::default()
+        );
+    }
+
+    #[test]
+    fn holds_and_budget_events_round_trip_and_old_files_still_load() {
+        let temp = TempDir::new();
+        let path = temp.path().join(RUNTIME_STATE_FILE_NAME);
+        let mut state = RuntimeState::default();
+        state.monitor_mut("desk").last_applied_percent = Some(40);
+        state.record_budget_event("desk", 1_000, 600);
+        state.external_holds.insert(
+            String::from("desk"),
+            crate::state::PersistedHold {
+                since_epoch_s: 990,
+                until_epoch_s: 2_000,
+                observed_percent: 77,
+            },
+        );
+        state.save_to_path(&path).expect("save");
+        let loaded = RuntimeState::load_from_path(&path).expect("load");
+        assert_eq!(
+            loaded.monitor("desk").expect("desk").ledger.recent_events,
+            vec![1_000]
+        );
+        assert_eq!(loaded.external_holds["desk"].observed_percent, 77);
+
+        fs::write(
+            &path,
+            br#"{"schema_version":1,"monitors":{"desk":{"last_applied_percent":10}}}"#,
+        )
+        .expect("write old file");
+        let old = RuntimeState::load_from_path(&path).expect("old file loads");
+        assert!(old.external_holds.is_empty());
+        assert!(old
+            .monitor("desk")
+            .expect("desk")
+            .ledger
+            .recent_events
+            .is_empty());
     }
 
     #[test]
@@ -419,19 +490,6 @@ mod tests {
             RuntimeState::load_from_path(&path).expect("state should load"),
             state.normalized()
         );
-    }
-
-    fn corrupt_backup_count(path: &Path) -> usize {
-        fs::read_dir(path)
-            .expect("temp dir should be readable")
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("runtime-state.json.corrupt-")
-            })
-            .count()
     }
 
     fn first_corrupt_backup(path: &Path) -> PathBuf {

@@ -104,6 +104,36 @@ fn ipc_status_reports_config_and_last_applied_values() {
 }
 
 #[test]
+fn ipc_status_uses_current_solar_phase_when_weather_snapshot_is_forecast() {
+    let temp = TempDir::new();
+    let state_path = temp.path().join("state/runtime-state.json");
+    let socket_path = temp.path().join("run/control.sock");
+    let mut config = test_config_report();
+    config.config.weather.enabled = true;
+    config.config.weather.api_key = Some(String::from("test-key"));
+
+    let mut runtime = DaemonRuntime::bootstrap_with_paths(config, state_path, socket_path)
+        .expect("runtime should bootstrap");
+    runtime.last_solar_elevation = Some(-20.6);
+    runtime.state.weather = Some(crate::state::WeatherSnapshotMetadata {
+        provider: String::from("openweather"),
+        fetched_at_epoch_s: 1_800_000_000,
+        valid_at_epoch_s: 1_800_010_800,
+        source_kind: crate::weather::WeatherSourceKind::Forecast,
+        condition: crate::weather::WeatherCondition::Clear,
+        day_phase: Some(crate::weather::WeatherDayPhase::Day),
+        ..Default::default()
+    });
+
+    let status = runtime.status_response(1_800_000_050);
+    let weather = status.weather.expect("weather payload should be present");
+    assert_eq!(
+        weather.day_phase,
+        Some(crate::weather::WeatherDayPhase::Night)
+    );
+}
+
+#[test]
 fn ipc_status_reports_topology_unavailability_and_ambiguity_in_configured_order() {
     let temp = TempDir::new();
     let state_path = temp.path().join("state/runtime-state.json");
@@ -252,7 +282,7 @@ fn ipc_theme_requests_serve_the_registry_and_status_carries_full_theme() {
     let Response::Themes { themes } = response.response else {
         panic!("themes response expected");
     };
-    assert_eq!(themes.len(), 40);
+    assert_eq!(themes.len(), 41);
     assert!(themes
         .iter()
         .any(|t| t.id == "vfd_hifi" && t.family == "instrument"));

@@ -219,6 +219,37 @@
     }
 
     #[test]
+    fn test_monitors_skip_reasons_are_shown_in_detail_header() {
+        let styles = crate::config::ThemeId::default().styles();
+        let now = 1_000_u64;
+
+        let mut contested = dummy_status(1).monitors.remove(0);
+        contested.contested = true;
+        contested.contested_until_epoch_s = Some(now + 120);
+        let (_, text, _) =
+            crate::tui::ui::monitors::detail::monitor_state(Some(&contested), now, &styles);
+        assert_eq!(text, "Contested · 2m");
+
+        let mut manual_cap = dummy_status(1).monitors.remove(0);
+        manual_cap.manual_deferred_until_epoch_s = Some(now + 5);
+        let (_, text, _) =
+            crate::tui::ui::monitors::detail::monitor_state(Some(&manual_cap), now, &styles);
+        assert_eq!(text, "Manual cap · 5s");
+
+        let mut budget = dummy_status(1).monitors.remove(0);
+        budget.writes = Some(crate::ipc::WriteBudgetStatus {
+            writes_total: 12,
+            window_used: 12,
+            window_max: 12,
+            window_seconds: 600,
+            deferred: true,
+        });
+        let (_, text, _) =
+            crate::tui::ui::monitors::detail::monitor_state(Some(&budget), now, &styles);
+        assert_eq!(text, "Write budget deferred");
+    }
+
+    #[test]
     fn test_monitors_workspace_compact_and_minimal_viewports() {
         // Compact: 60x18
         {

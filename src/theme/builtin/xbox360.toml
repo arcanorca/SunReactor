@@ -1,0 +1,27 @@
+id = "xbox360"
+name = "Xbox 360"
+aliases = ["360", "blades", "xbox"]
+family = "instrument"
+
+[palette]
+bg = "#dfe4ea"
+fg = "#161d24"
+accent = "#52b324"
+secondary_accent = "#378516"
+border_active = "#52b324"
+border_inactive = "#929da8"
+text_muted = "#525e6a"
+success = "#45a622"
+warning = "#e07d16"
+error = "#cf302b"
+
+[tui]
+glyph_style = "rounded"
+
+[widget]
+renderer = "vector"
+font = "sans"
+radius = 10
+glow = 0.25
+border = "bevel"
+density = "comfortable"

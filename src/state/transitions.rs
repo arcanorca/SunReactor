@@ -1,13 +1,18 @@
 use crate::backends::{BackendKind, FailureKind};
 use crate::state::types::{
     EffectiveControlState, FailureBackoffState, ManualOverrideState, MonitorRuntimeState,
-    RuntimeState, STATE_SCHEMA_VERSION,
+    PersistedHold, RuntimeState, WriteLedger, STATE_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(crate) const BACKOFF_BASE_SECONDS: u64 = 5;
 pub(crate) const BACKOFF_MAX_SECONDS: u64 = 300;
+/// Tolerated disagreement between a stored wall-clock timestamp and "now"
+/// before the timestamp is considered to come from a different clock epoch.
+pub(crate) const CLOCK_SKEW_TOLERANCE_S: u64 = 5;
+/// Upper bound on persisted budget events per monitor.
+const MAX_PERSISTED_BUDGET_EVENTS: usize = 64;
 
 impl RuntimeState {
     #[must_use]
@@ -285,6 +290,100 @@ impl RuntimeState {
         monitor.backoff = None;
     }
 
+    /// Counts one hardware write attempt (successful or not).
+    pub fn count_hardware_write(&mut self, logical_id: &str) -> u64 {
+        self.count_hardware_write_attempts(logical_id, 1)
+    }
+
+    /// Counts `attempts` actual setvcp/sysfs write attempts of one backend
+    /// call (a retry is a second EEPROM write and must be accounted for).
+    pub fn count_hardware_write_attempts(&mut self, logical_id: &str, attempts: u8) -> u64 {
+        let ledger = &mut self.monitor_mut(logical_id).ledger;
+        ledger.writes_total = ledger.writes_total.saturating_add(u64::from(attempts));
+        ledger.writes_total
+    }
+
+    /// Records one budgeted write event (a write, or the start of a fade).
+    pub fn record_budget_event(&mut self, logical_id: &str, now_epoch_s: u64, window_s: u64) {
+        let events = &mut self.monitor_mut(logical_id).ledger.recent_events;
+        events.retain(|at| now_epoch_s < at.saturating_add(window_s));
+        events.push(now_epoch_s);
+    }
+
+    /// Budgeted write events inside the rolling window ending at `now_epoch_s`.
+    pub fn budget_events_in_window(
+        &self,
+        logical_id: &str,
+        now_epoch_s: u64,
+        window_s: u64,
+    ) -> usize {
+        self.monitor(logical_id).map_or(0, |monitor| {
+            monitor
+                .ledger
+                .recent_events
+                .iter()
+                .filter(|at| now_epoch_s < at.saturating_add(window_s))
+                .count()
+        })
+    }
+
+    /// Earliest epoch at which a monitor holding `max` or more budgeted events
+    /// in the rolling window drops below `max`; `None` while under budget.
+    pub fn budget_resume_at(
+        &self,
+        logical_id: &str,
+        now_epoch_s: u64,
+        window_s: u64,
+        max: usize,
+    ) -> Option<u64> {
+        let monitor = self.monitor(logical_id)?;
+        let mut live: Vec<u64> = monitor
+            .ledger
+            .recent_events
+            .iter()
+            .copied()
+            .filter(|at| now_epoch_s < at.saturating_add(window_s))
+            .collect();
+        if live.len() < max {
+            return None;
+        }
+        live.sort_unstable();
+        Some(live[live.len() - max].saturating_add(window_s))
+    }
+
+    /// Notes that a correction from `observed` to `requested` is about to be
+    /// written and reports whether the identical correction was already made
+    /// within `window_s`: then the monitor evidently rounds `requested` to
+    /// `observed`, which becomes an accepted readback.
+    pub fn note_correction(
+        &mut self,
+        logical_id: &str,
+        requested: u8,
+        observed: u8,
+        now_epoch_s: u64,
+        window_s: u64,
+    ) -> bool {
+        let ledger = &mut self.monitor_mut(logical_id).ledger;
+        let seen_before = matches!(
+            ledger.correction_streak,
+            Some((r, o, _, at)) if r == requested && o == observed
+                && now_epoch_s < at.saturating_add(window_s)
+        );
+        if seen_before {
+            ledger.accepted_quantization = Some((requested, observed));
+            ledger.correction_streak = None;
+        } else {
+            ledger.correction_streak = Some((requested, observed, 1, now_epoch_s));
+        }
+        seen_before
+    }
+
+    /// True when `observed` is a learned rounding of `requested`.
+    pub fn quantization_accepted(&self, logical_id: &str, requested: u8, observed: u8) -> bool {
+        self.monitor(logical_id)
+            .is_some_and(|m| m.ledger.accepted_quantization == Some((requested, observed)))
+    }
+
     pub fn record_integrity_check(&mut self, logical_id: &str, now_epoch_s: u64) {
         self.monitor_mut(logical_id).last_integrity_check_at_epoch_s = Some(now_epoch_s);
     }
@@ -303,6 +402,119 @@ impl RuntimeState {
         next
     }
 
+    /// Treats every stored in-memory window timestamp that lies in the future
+    /// (beyond [`CLOCK_SKEW_TOLERANCE_S`]) as `now_epoch_s`; a wall clock that
+    /// stepped backwards must not freeze writes. Returns how many timestamps
+    /// were clamped.
+    pub(crate) fn clamp_future_timestamps(&mut self, now_epoch_s: u64) -> usize {
+        let limit = now_epoch_s.saturating_add(CLOCK_SKEW_TOLERANCE_S);
+        let mut clamped = 0;
+        let clamp = |value: &mut u64| -> usize {
+            if *value > limit {
+                *value = now_epoch_s;
+                1
+            } else {
+                0
+            }
+        };
+        for monitor in self.monitors.values_mut() {
+            if let Some(at) = monitor.last_applied_at_epoch_s.as_mut() {
+                clamped += clamp(at);
+            }
+            if let Some(at) = monitor.last_integrity_check_at_epoch_s.as_mut() {
+                clamped += clamp(at);
+            }
+            for at in &mut monitor.ledger.recent_events {
+                clamped += clamp(at);
+            }
+            if let Some((_, _, _, at)) = monitor.ledger.correction_streak.as_mut() {
+                clamped += clamp(at);
+            }
+            if let Some(backoff) = monitor.backoff.as_mut() {
+                let delay_s = backoff_delay(backoff.consecutive_failures).as_secs();
+                let max_until = now_epoch_s
+                    .saturating_add(delay_s)
+                    .saturating_add(CLOCK_SKEW_TOLERANCE_S);
+                if let Some(until) = backoff.suppress_until_epoch_s.as_mut() {
+                    if *until > max_until {
+                        *until = now_epoch_s.saturating_add(delay_s);
+                        clamped += 1;
+                    }
+                }
+            }
+        }
+        clamped
+    }
+
+    /// Shifts every in-memory window timestamp by a wall-clock jump so each
+    /// window keeps its monotonic remaining length (`delta_s` > 0: the clock
+    /// stepped forward). User-set absolute deadlines (suspend, manual override)
+    /// are deliberately untouched.
+    pub(crate) fn shift_window_timestamps(&mut self, delta_s: i64) {
+        let shift = |value: &mut u64| {
+            *value = if delta_s >= 0 {
+                value.saturating_add(delta_s.unsigned_abs())
+            } else {
+                value.saturating_sub(delta_s.unsigned_abs())
+            };
+        };
+        for monitor in self.monitors.values_mut() {
+            monitor.last_applied_at_epoch_s.iter_mut().for_each(shift);
+            monitor
+                .last_integrity_check_at_epoch_s
+                .iter_mut()
+                .for_each(shift);
+            monitor.ledger.recent_events.iter_mut().for_each(shift);
+            if let Some((_, _, _, at)) = monitor.ledger.correction_streak.as_mut() {
+                shift(at);
+            }
+            if let Some(until) = monitor
+                .backoff
+                .as_mut()
+                .and_then(|backoff| backoff.suppress_until_epoch_s.as_mut())
+            {
+                shift(until);
+            }
+        }
+    }
+
+    /// Drops restored write-ledger events that cannot be real: in the future
+    /// beyond the skew, or older than the budget window.
+    pub(crate) fn sanitize_restored_ledgers(&mut self, now_epoch_s: u64, window_s: u64) {
+        let limit = now_epoch_s.saturating_add(CLOCK_SKEW_TOLERANCE_S);
+        for monitor in self.monitors.values_mut() {
+            monitor
+                .ledger
+                .recent_events
+                .retain(|at| *at <= limit && now_epoch_s < at.saturating_add(window_s));
+        }
+    }
+
+    /// Persisted holds that are still plausible: not expired, not from the
+    /// future, not longer than the configured hold, for a known monitor.
+    pub(crate) fn restorable_holds<'a>(
+        &self,
+        now_epoch_s: u64,
+        max_hold_s: u64,
+        known_monitors: impl Iterator<Item = &'a str>,
+    ) -> BTreeMap<String, PersistedHold> {
+        let limit = now_epoch_s.saturating_add(CLOCK_SKEW_TOLERANCE_S);
+        let max_len = max_hold_s.saturating_add(CLOCK_SKEW_TOLERANCE_S);
+        known_monitors
+            .filter_map(|id| self.external_holds.get(id).map(|hold| (id, *hold)))
+            .filter(|(_, hold)| {
+                max_hold_s > 0
+                    && hold.since_epoch_s <= limit
+                    && hold.until_epoch_s > now_epoch_s
+                    && hold.until_epoch_s <= limit.saturating_add(max_hold_s)
+                    && hold.until_epoch_s >= hold.since_epoch_s
+                    && hold.until_epoch_s - hold.since_epoch_s <= max_len
+                    && hold.observed_percent <= 100
+            })
+            .map(|(id, hold)| (id.to_owned(), hold))
+            .collect()
+    }
+
     pub(crate) fn normalized(mut self) -> Self {
         self.schema_version = STATE_SCHEMA_VERSION;
         if self.suspend_indefinite {
@@ -318,6 +530,16 @@ impl RuntimeState {
             monitor.last_applied_percent =
                 monitor.last_applied_percent.map(|percent| percent.min(100));
             normalize_monitor_backoff(monitor);
+            let recent_events = std::mem::take(&mut monitor.ledger.recent_events);
+            monitor.ledger = WriteLedger {
+                recent_events: recent_events
+                    .into_iter()
+                    .rev()
+                    .take(MAX_PERSISTED_BUDGET_EVENTS)
+                    .rev()
+                    .collect(),
+                ..WriteLedger::default()
+            };
             monitor.last_applied_percent.is_some()
                 || monitor.last_applied_at_epoch_s.is_some()
                 || monitor.last_integrity_check_at_epoch_s.is_some()

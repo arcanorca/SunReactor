@@ -19,9 +19,11 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod bootstrap;
+mod fade_budget;
 mod ipc_characterization;
 mod ipc_mutations;
 mod ipc_queries;
+mod lifecycle;
 mod persistence;
 mod reload;
 mod run_once;

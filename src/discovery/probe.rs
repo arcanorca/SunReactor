@@ -30,6 +30,13 @@ pub(crate) fn discover_with_roots<R: ProcessRunner>(
     sysfs_root: &Path,
     drm_root: &Path,
 ) -> DiscoverySnapshot {
+    // Every ddcutil call (detect, capabilities, getvcp) takes the DDC process
+    // lock for its own duration, so discovery serializes with setvcp traffic
+    // without holding the bus between calls.
+    #[cfg(all(unix, not(test)))]
+    let locked_runner = crate::backends::ddc::DdcLockedRunner::new(runner);
+    #[cfg(all(unix, not(test)))]
+    let runner = &locked_runner;
     let (ddc_status, ddc_monitors, ddc_observation_complete) = discover_ddc_monitors(runner);
     let (brightnessctl_status, brightnessctl_devices) =
         discover_brightnessctl_backlights(runner, sysfs_root);

@@ -86,6 +86,7 @@
             lunar_phase: None,
             theme: None,
             theme_warning: None,
+            temperature_unit: None,
         });
         model
     }

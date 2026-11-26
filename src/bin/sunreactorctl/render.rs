@@ -1,6 +1,6 @@
 use sunreactor::{
     config::{self, ConfigSource},
-    ipc::{self, ExternalHoldStatus, Response, StatusResponse},
+    ipc::{self, ExternalHoldStatus, Response, StatusResponse, WriteBudgetStatus},
     paths,
 };
 
@@ -238,8 +238,23 @@ fn push_monitor_lines(lines: &mut Vec<String>, status: &StatusResponse) {
                 .as_ref()
                 .map(format_external_hold)
                 .map_or_else(String::new, |text| format!(" {text}"));
+            let contested = if monitor.contested {
+                match monitor.contested_until_epoch_s {
+                    Some(until) => format!(" contested(until={until})"),
+                    None => String::from(" contested"),
+                }
+            } else {
+                String::new()
+            };
+            let manual_cap = monitor
+                .manual_deferred_until_epoch_s
+                .map_or_else(String::new, |until| format!(" manual_cap(until={until})"));
+            let writes = monitor
+                .writes
+                .as_ref()
+                .map_or_else(String::new, |writes| format!(" {}", format_writes(writes)));
             lines.push(format!(
-                "  - logical_id={} backend={} enabled={} topology={} override_percent={} last_applied_percent={} last_applied_at_epoch_s={} backoff_until_epoch_s={}{hold}",
+                "  - logical_id={} backend={} enabled={} topology={} override_percent={} last_applied_percent={} last_applied_at_epoch_s={} backoff_until_epoch_s={}{hold}{contested}{manual_cap}{writes}",
                 monitor.logical_id,
                 backend_name(monitor.backend),
                 monitor.enabled,
@@ -251,6 +266,21 @@ fn push_monitor_lines(lines: &mut Vec<String>, status: &StatusResponse) {
             ));
         }
     }
+}
+
+/// Compact write accounting token, e.g. `writes=17 (3/12 in 10m)`;
+/// `deferred` is appended while automatic writes wait for the budget.
+pub(crate) fn format_writes(writes: &WriteBudgetStatus) -> String {
+    let window = if writes.window_seconds > 0 && writes.window_seconds.is_multiple_of(60) {
+        format!("{}m", writes.window_seconds / 60)
+    } else {
+        format!("{}s", writes.window_seconds)
+    };
+    let deferred = if writes.deferred { " deferred" } else { "" };
+    format!(
+        "writes={} ({}/{} in {window}){deferred}",
+        writes.writes_total, writes.window_used, writes.window_max
+    )
 }
 
 pub(crate) fn format_external_hold(hold: &ExternalHoldStatus) -> String {
@@ -476,11 +506,22 @@ mod tests {
                     remaining_s: 1_321,
                     observed_percent: 70,
                 }),
+                writes: Some(sunreactor::ipc::WriteBudgetStatus {
+                    writes_total: 17,
+                    window_used: 3,
+                    window_max: 12,
+                    window_seconds: 600,
+                    deferred: false,
+                }),
+                contested: false,
+                contested_until_epoch_s: None,
+                manual_deferred_until_epoch_s: None,
             }],
             solar_elevation: Some(15.0),
             lunar_phase: None,
             theme: None,
             theme_warning: None,
+            temperature_unit: None,
         };
 
         let rendered = render_status(&status);
@@ -489,5 +530,74 @@ mod tests {
         assert!(rendered.contains("weather_consecutive_failures: 2"));
         assert!(rendered.contains("weather_last_error: network timeout"));
         assert!(rendered.contains("external hold · 23m left (observed 70%)"));
+        assert!(rendered.contains("writes=17 (3/12 in 10m)"));
+    }
+
+    #[test]
+    fn writes_token_marks_deferred_budget() {
+        let writes = sunreactor::ipc::WriteBudgetStatus {
+            writes_total: 40,
+            window_used: 12,
+            window_max: 12,
+            window_seconds: 600,
+            deferred: true,
+        };
+        assert_eq!(
+            super::format_writes(&writes),
+            "writes=40 (12/12 in 10m) deferred"
+        );
+    }
+
+    #[test]
+    fn render_status_shows_contested_and_manual_cap_reasons() {
+        let mut status = StatusResponse {
+            now_epoch_s: 1_000,
+            sunrise_epoch_s: None,
+            sunset_epoch_s: None,
+            daemon_alive: true,
+            config_path: String::from("/tmp/config.toml"),
+            tick_seconds: 60,
+            dry_run: false,
+            suspended: false,
+            desktop_idle_dimmed: false,
+            suspend_until_epoch_s: None,
+            manual_override_active: false,
+            per_monitor_override_until_epoch_s: None,
+            global_override_percent: None,
+            global_override_until_epoch_s: None,
+            configured_monitors: 1,
+            stateful_monitors: 1,
+            weather: None,
+            monitors: vec![MonitorStatus {
+                logical_id: String::from("desk"),
+                backend: BackendKind::Ddc,
+                enabled: true,
+                override_percent: None,
+                last_applied_percent: Some(40),
+                last_applied_at_epoch_s: Some(990),
+                backoff_until_epoch_s: None,
+                topology: Some(String::from("present")),
+                min_pct: Some(15),
+                max_pct: Some(60),
+                external_hold: None,
+                writes: None,
+                contested: true,
+                contested_until_epoch_s: Some(22_600),
+                manual_deferred_until_epoch_s: Some(1_001),
+            }],
+            solar_elevation: None,
+            lunar_phase: None,
+            theme: None,
+            theme_warning: None,
+            temperature_unit: None,
+        };
+        let rendered = render_status(&status);
+        assert!(rendered.contains("contested(until=22600)"), "{rendered}");
+        assert!(rendered.contains("manual_cap(until=1001)"), "{rendered}");
+
+        status.monitors[0].contested_until_epoch_s = None;
+        status.monitors[0].manual_deferred_until_epoch_s = None;
+        let rendered = render_status(&status);
+        assert!(rendered.contains(" contested"), "{rendered}");
     }
 }

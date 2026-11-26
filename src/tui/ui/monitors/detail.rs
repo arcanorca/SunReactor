@@ -52,6 +52,36 @@ pub(crate) fn monitor_state(
             styles.status_warning,
         );
     }
+    if monitor.contested {
+        let label = match monitor
+            .contested_until_epoch_s
+            .filter(|until| *until > now_epoch_s)
+        {
+            Some(until) => format!(
+                "Contested · {}m",
+                (until - now_epoch_s).saturating_add(59) / 60
+            ),
+            None => String::from("Contested"),
+        };
+        return (kit::WARN, label, styles.status_warning);
+    }
+    if let Some(until) = monitor
+        .manual_deferred_until_epoch_s
+        .filter(|until| *until > now_epoch_s)
+    {
+        return (
+            kit::WARN,
+            format!("Manual cap · {}s", until - now_epoch_s),
+            styles.status_warning,
+        );
+    }
+    if monitor.writes.as_ref().is_some_and(|w| w.deferred) {
+        return (
+            kit::WARN,
+            String::from("Write budget deferred"),
+            styles.status_warning,
+        );
+    }
     match monitor.topology.as_deref() {
         Some("present") | None => (kit::DOT, String::from("Ready"), styles.status_success),
         Some("temporarily_unavailable") => (

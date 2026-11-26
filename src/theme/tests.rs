@@ -720,12 +720,12 @@ fn builtins_load_cleanly_and_sorted() {
         "{:?}",
         registry.diagnostics()
     );
-    assert_eq!(registry.themes().len(), 40);
+    assert_eq!(registry.themes().len(), 41);
     let ids: Vec<&str> = registry.themes().iter().map(|t| t.id.as_str()).collect();
     let mut sorted = ids.clone();
     sorted.sort_unstable();
     assert_eq!(ids, sorted);
-    let added = ["ps3", "winxp", "macos", "wii", "nds"];
+    let added = ["ps3", "winxp", "macos", "wii", "nds", "xbox360"];
     assert_eq!(
         ids.iter()
             .copied()
@@ -777,6 +777,7 @@ fn builtin_families_follow_design_classification() {
         "macos",
         "wii",
         "nds",
+        "xbox360",
     ];
     let registry = Registry::builtin();
     for theme in registry.themes() {
@@ -909,7 +910,7 @@ fn user_theme_shadows_builtin_and_aliases_follow_the_id() {
         "{:?}",
         registry.diagnostics()
     );
-    assert_eq!(registry.themes().len(), 40);
+    assert_eq!(registry.themes().len(), 41);
     let amiga = registry.get("amiga").unwrap();
     assert_eq!(amiga.name, "Mine");
     assert!(matches!(amiga.source, ThemeSource::User(_)));
@@ -946,7 +947,7 @@ accent = "#123456"
     assert_eq!(dusk.family, Family::Pixel);
     assert_eq!(dusk.widget.renderer, Renderer::Pixel);
     assert!(dusk.aliases.is_empty());
-    assert_eq!(registry.themes().len(), 41);
+    assert_eq!(registry.themes().len(), 42);
 }
 
 #[test]
@@ -1165,7 +1166,7 @@ fn fixture_user_theme_loads_from_directory() {
 fn load_dir_skips_bad_files_and_tolerates_missing_dir() {
     let missing = Registry::load_dir(std::path::Path::new("/nonexistent/sunreactor/themes"));
     assert!(missing.diagnostics().is_empty());
-    assert_eq!(missing.themes().len(), 40);
+    assert_eq!(missing.themes().len(), 41);
 
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("Bad-Name.toml"), MINIMAL).unwrap();
@@ -1176,7 +1177,7 @@ fn load_dir_skips_bad_files_and_tolerates_missing_dir() {
     std::fs::write(dir.path().join("huge.toml"), huge).unwrap();
 
     let registry = Registry::load_dir(dir.path());
-    assert_eq!(registry.themes().len(), 41);
+    assert_eq!(registry.themes().len(), 42);
     assert!(registry.get("mine").is_some());
     let stems: Vec<&str> = registry
         .diagnostics()

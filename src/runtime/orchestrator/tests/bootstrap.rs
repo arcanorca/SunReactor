@@ -92,7 +92,9 @@ fn hostile_ipc_connections_do_not_poison_the_next_valid_request() {
     let socket = crate::ipc::ControlSocket {
         path: socket_path.clone(),
     };
-    let listener = socket.bind_listener().expect("listener should bind");
+    let listener = socket
+        .bind_listener_with_lock(runtime.instance_lock.take())
+        .expect("listener should bind");
     let target = socket_path.display().to_string();
 
     // A complete oversized frame is rejected before it can consume the next
@@ -253,8 +255,12 @@ fn slow_capability_refresh_does_not_block_ipc_or_publish_partial_snapshot() {
         "IPC status handling must not wait for observation"
     );
 
-    std::thread::sleep(Duration::from_millis(600));
-    runtime.publish_completed_capability_snapshot();
+    // Poll for the background observation instead of assuming it finished.
+    let publish_deadline = Instant::now() + Duration::from_secs(10);
+    while runtime.last_capabilities.is_none() && Instant::now() < publish_deadline {
+        runtime.publish_completed_capability_snapshot();
+        std::thread::sleep(Duration::from_millis(5));
+    }
     assert!(runtime.last_capabilities.is_some());
     assert_eq!(discoveries.load(Ordering::Relaxed), 1);
 }
@@ -296,7 +302,7 @@ fn panicking_observation_clears_active_state_and_allows_retry() {
 }
 
 #[test]
-fn bootstrap_rejects_future_state_without_replacing_it() {
+fn bootstrap_with_future_state_moves_it_aside_and_starts() {
     let temp = TempDir::new();
     let state_path = temp.path().join("state/runtime-state.json");
     let socket_path = temp.path().join("run/control.sock");
@@ -305,30 +311,22 @@ fn bootstrap_rejects_future_state_without_replacing_it() {
     fs::create_dir_all(state_path.parent().expect("state dir")).expect("state dir should exist");
     fs::write(&state_path, original).expect("future state should write");
 
-    let error =
+    let runtime =
         DaemonRuntime::bootstrap_with_paths(test_config_report(), state_path.clone(), socket_path)
-            .expect_err("future state must prevent startup");
+            .expect("future state must not prevent startup");
+    assert!(runtime.state.monitors.is_empty());
 
-    assert!(matches!(
-        error,
-        RuntimeError::State(StateError::UnsupportedSchemaVersion {
-            found: 2,
-            supported: 1,
-            ..
+    let aside = fs::read_dir(temp.path().join("state"))
+        .expect("state dir should be readable")
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("runtime-state.json.future-2-")
         })
-    ));
-    assert_eq!(
-        fs::read(&state_path).expect("state should remain"),
-        original
-    );
-    assert_eq!(
-        fs::read_dir(temp.path().join("state"))
-            .expect("state dir should be readable")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
-            .count(),
-        0
-    );
+        .expect("future file must be kept aside");
+    assert_eq!(fs::read(aside.path()).expect("aside"), original);
 }
 
 #[test]

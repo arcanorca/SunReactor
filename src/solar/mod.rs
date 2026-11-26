@@ -230,6 +230,10 @@ pub(crate) fn resolve_local_datetime(
     resolve_local_datetime_in_timezone(datetime, &location.timezone, &location.timezone_name)
 }
 
+/// Start of a local calendar day. Where DST skips 00:00 (Cairo, Santiago,
+/// Havana, Beirut) the day starts at the earliest valid instant after the
+/// missing midnight; where 00:00 happens twice the earlier occurrence wins.
+/// Arbitrary wall times keep the strict [`resolve_local_datetime`] contract.
 pub(crate) fn resolve_date_boundary(
     date: NaiveDate,
     tz: &tz::TimeZone,
@@ -239,7 +243,70 @@ pub(crate) fn resolve_date_boundary(
         .and_hms_opt(0, 0, 0)
         .ok_or(SolarError::DateOutOfRange)?;
 
-    resolve_local_datetime_in_timezone(midnight, tz, timezone_label)
+    match resolve_local_datetime_in_timezone(midnight, tz, timezone_label) {
+        Err(SolarError::NonexistentLocalTime { .. }) => {
+            first_valid_instant_after(midnight, tz, timezone_label)
+        }
+        Err(SolarError::AmbiguousLocalTime { .. }) => earliest_occurrence(midnight, tz),
+        other => other,
+    }
+}
+
+/// Walks forward minute by minute from a skipped wall time to the first wall
+/// time that exists (the instant the clock jumped to).
+fn first_valid_instant_after(
+    skipped: NaiveDateTime,
+    tz: &tz::TimeZone,
+    timezone_label: &str,
+) -> Result<DateTime<FixedOffset>, SolarError> {
+    // The longest gap ever recorded is a skipped day (Samoa, 2011).
+    const MAX_GAP_MINUTES: i64 = 36 * 60;
+    for minutes in 1..=MAX_GAP_MINUTES {
+        let candidate = skipped + chrono::Duration::minutes(minutes);
+        match resolve_local_datetime_in_timezone(candidate, tz, timezone_label) {
+            Err(SolarError::NonexistentLocalTime { .. }) => {}
+            Err(SolarError::AmbiguousLocalTime { .. }) => {
+                return earliest_occurrence(candidate, tz)
+            }
+            other => return other,
+        }
+    }
+    Err(SolarError::DateOutOfRange)
+}
+
+/// The earliest instant a repeated wall time occurs at.
+fn earliest_occurrence(
+    datetime: NaiveDateTime,
+    tz: &tz::TimeZone,
+) -> Result<DateTime<FixedOffset>, SolarError> {
+    let found = TzDateTime::find(
+        datetime.year(),
+        datetime.month() as u8,
+        datetime.day() as u8,
+        datetime.hour() as u8,
+        datetime.minute() as u8,
+        datetime.second() as u8,
+        datetime.nanosecond(),
+        tz.as_ref(),
+    )
+    .map_err(|_| SolarError::DateOutOfRange)?;
+    found
+        .into_inner()
+        .iter()
+        .filter_map(|kind| match kind {
+            FoundDateTimeKind::Normal(candidate) => Some(candidate),
+            FoundDateTimeKind::Skipped { .. } => None,
+        })
+        .min_by_key(|candidate| candidate.unix_time())
+        .ok_or(SolarError::DateOutOfRange)
+        .and_then(|candidate| {
+            let offset = FixedOffset::east_opt(candidate.local_time_type().ut_offset())
+                .ok_or(SolarError::DateOutOfRange)?;
+            Utc.timestamp_opt(candidate.unix_time(), candidate.nanoseconds())
+                .single()
+                .map(|utc| utc.with_timezone(&offset))
+                .ok_or(SolarError::DateOutOfRange)
+        })
 }
 
 /// Resolve a wall time through tz-rs' canonical local-time inverse.
@@ -340,6 +407,64 @@ pub fn safe_get_sun_events(
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+
+    fn boundary_utc(zone: &str, y: i32, m: u32, d: u32) -> DateTime<Utc> {
+        let location = Location::from_timezone_name(0.0, 0.0, zone).expect("timezone");
+        let date = NaiveDate::from_ymd_opt(y, m, d).expect("date");
+        resolve_date_boundary(date, &location.timezone, zone)
+            .unwrap_or_else(|error| panic!("{zone} {date}: {error}"))
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn day_boundary_survives_dst_that_skips_local_midnight() {
+        // Cairo, Santiago and Havana jump 00:00 -> 01:00: the day starts at 01:00.
+        let utc = |y, m, d, h| Utc.with_ymd_and_hms(y, m, d, h, 0, 0).unwrap();
+        assert_eq!(
+            boundary_utc("Africa/Cairo", 2025, 4, 25),
+            utc(2025, 4, 24, 22)
+        );
+        assert_eq!(
+            boundary_utc("America/Santiago", 2025, 9, 7),
+            utc(2025, 9, 7, 4)
+        );
+        assert_eq!(
+            boundary_utc("America/Havana", 2025, 3, 9),
+            utc(2025, 3, 9, 5)
+        );
+        // Beirut also skips midnight at its spring transition.
+        let beirut = boundary_utc("Asia/Beirut", 2025, 3, 30);
+        assert_eq!(beirut, utc(2025, 3, 29, 22));
+    }
+
+    #[test]
+    fn day_boundary_takes_the_earliest_of_a_repeated_midnight() {
+        // Havana falls back 01:00 -> 00:00 on 2025-11-02: 00:00 happens twice.
+        let first = Utc.with_ymd_and_hms(2025, 11, 2, 4, 0, 0).unwrap();
+        assert_eq!(boundary_utc("America/Havana", 2025, 11, 2), first);
+    }
+
+    #[test]
+    fn strict_wall_time_resolution_still_rejects_nonexistent_times() {
+        let cairo = Location::from_timezone_name(30.0, 31.0, "Africa/Cairo").unwrap();
+        let skipped = NaiveDate::from_ymd_opt(2025, 4, 25)
+            .unwrap()
+            .and_hms_opt(0, 30, 0)
+            .unwrap();
+        assert!(matches!(
+            local_datetime(skipped, &cairo),
+            Err(SolarError::NonexistentLocalTime { .. })
+        ));
+    }
+
+    #[test]
+    fn sun_events_resolve_on_a_day_whose_midnight_is_skipped() {
+        let cairo = Location::from_timezone_name(30.0444, 31.2357, "Africa/Cairo").unwrap();
+        let date = NaiveDate::from_ymd_opt(2025, 4, 25).unwrap();
+        let events = safe_get_sun_events(date, &cairo).expect("day resolves");
+        assert!(events.sunrise.is_some() && events.sunset.is_some());
+    }
+
     #[test]
     fn sun_events_are_ordered_for_mid_latitudes() {
         let location = Location::from_timezone_name(41.0082, 28.9784, "Europe/Istanbul")

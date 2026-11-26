@@ -23,6 +23,20 @@ pub struct RuntimeState {
     pub desktop_idle_dimmed: bool,
     pub manual_override: Option<ManualOverrideState>,
     pub weather: Option<WeatherSnapshotMetadata>,
+    /// External-change holds (a person adjusted the monitor), persisted so a
+    /// restart does not "correct" the user's manual choice. Backward
+    /// compatible: absent in older files. Sanitized on load, see
+    /// [`RuntimeState::restorable_holds`].
+    pub external_holds: BTreeMap<String, PersistedHold>,
+}
+
+/// Persisted form of a runtime external-change hold.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PersistedHold {
+    pub since_epoch_s: u64,
+    pub until_epoch_s: u64,
+    pub observed_percent: u8,
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EffectiveControlState {
@@ -46,6 +60,7 @@ impl Default for RuntimeState {
             desktop_idle_dimmed: false,
             manual_override: None,
             weather: None,
+            external_holds: BTreeMap::new(),
         }
     }
 }
@@ -57,6 +72,28 @@ pub struct MonitorRuntimeState {
     #[serde(default)]
     pub last_integrity_check_at_epoch_s: Option<u64>,
     pub backoff: Option<FailureBackoffState>,
+    /// Write accounting. Only the rolling budget events are persisted (so a
+    /// restart cannot hand out a fresh write budget); the rest is in-memory.
+    pub ledger: WriteLedger,
+}
+
+/// Ephemeral per-monitor write accounting used by the write budget, learned
+/// quantization and tracing counters.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WriteLedger {
+    /// Hardware write attempts since the daemon started.
+    #[serde(skip)]
+    pub writes_total: u64,
+    /// Epochs of budgeted write events inside the rolling window (persisted).
+    pub recent_events: Vec<u64>,
+    /// `(requested, observed, times_seen, last_seen_epoch_s)` of the most
+    /// recent correction.
+    #[serde(skip)]
+    pub correction_streak: Option<(u8, u8, u8, u64)>,
+    /// `(requested, observed)` readback accepted as the monitor's own rounding.
+    #[serde(skip)]
+    pub accepted_quantization: Option<(u8, u8)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

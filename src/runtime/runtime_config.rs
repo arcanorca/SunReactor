@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::apply::ApplySettings;
-use crate::config::{ConfigReport, ConfigSource, MonitorConfig, WeatherConfig};
+use crate::config::{ConfigReport, ConfigSource, MonitorConfig, TemperatureUnit, WeatherConfig};
 use crate::runtime::orchestrator::RuntimeError;
 use crate::solar::Location;
 
@@ -20,6 +20,8 @@ pub(super) struct RuntimeConfig {
     pub tui_theme: std::sync::Arc<crate::theme::Theme>,
     /// Why `tui_theme` is a fallback, surfaced as `status.theme_warning`.
     pub tui_theme_warning: Option<String>,
+    /// Configured `tui.temperature_unit`, surfaced in `status.temperature_unit`.
+    pub tui_temperature_unit: TemperatureUnit,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -94,6 +96,7 @@ impl RuntimeConfig {
             weather: report.config.weather,
             tui_theme,
             tui_theme_warning,
+            tui_temperature_unit: report.config.tui.temperature_unit,
             location,
         })
     }

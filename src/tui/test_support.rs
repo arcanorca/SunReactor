@@ -29,6 +29,10 @@ pub(crate) fn dummy_status(monitor_count: usize) -> StatusResponse {
             min_pct: Some(15),
             max_pct: Some(60),
             external_hold: None,
+            writes: None,
+            contested: false,
+            contested_until_epoch_s: None,
+            manual_deferred_until_epoch_s: None,
         })
         .collect();
 
@@ -55,6 +59,7 @@ pub(crate) fn dummy_status(monitor_count: usize) -> StatusResponse {
         lunar_phase: None,
         theme: None,
         theme_warning: None,
+        temperature_unit: None,
     }
 }
 

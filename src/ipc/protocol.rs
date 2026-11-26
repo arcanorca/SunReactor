@@ -1,4 +1,5 @@
 use crate::backends::BackendKind;
+use crate::config::TemperatureUnit;
 use crate::paths::PathError;
 use crate::solar::LunarPhase;
 use serde::{Deserialize, Serialize};
@@ -322,6 +323,10 @@ pub struct StatusResponse {
     /// id, or its user theme file is invalid) and `theme` is a fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme_warning: Option<String>,
+    /// Preferred weather temperature unit (`"celsius"` or `"fahrenheit"`).
+    /// `None` only when an older daemon predates this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature_unit: Option<TemperatureUnit>,
 }
 
 /// A resolved theme as sent in `status.theme` and the `theme` response.
@@ -578,6 +583,39 @@ pub struct MonitorStatus {
     pub max_pct: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_hold: Option<ExternalHoldStatus>,
+    /// Hardware write accounting; omitted by older daemons.
+    #[serde(default)]
+    pub writes: Option<WriteBudgetStatus>,
+    /// Another controller keeps fighting this monitor; automatic writes are
+    /// backed off. Omitted by older daemons.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contested: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contested_until_epoch_s: Option<u64>,
+    /// Earliest epoch at which a rate-capped manual write will be retried.
+    /// Omitted by older daemons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manual_deferred_until_epoch_s: Option<u64>,
+}
+
+/// Per-monitor hardware write accounting (DDC writes wear the monitor).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WriteBudgetStatus {
+    /// Hardware write attempts since the daemon started.
+    #[serde(default)]
+    pub writes_total: u64,
+    /// Budgeted writes inside the current rolling window.
+    #[serde(default)]
+    pub window_used: u32,
+    /// Writes allowed per window.
+    #[serde(default)]
+    pub window_max: u32,
+    /// Length of the rolling window in seconds.
+    #[serde(default)]
+    pub window_seconds: u64,
+    /// Automatic writes are currently deferred because the budget is spent.
+    #[serde(default)]
+    pub deferred: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -663,8 +701,8 @@ mod tests {
     use super::{
         DayCurveMilestone, DayCurveMonitor, DayCurveResponse, DayCurveSample, DayCurveSun,
         ErrorCode, ExternalHoldStatus, MonitorStatus, Request, RequestEnvelope, Response,
-        ResponseEnvelope, RunOnceResponse, StatusResponse, ThemePaletteStatus, ThemeStatus,
-        ThemeSummary, ThemeWidgetStatus, WeatherStatus,
+        ResponseEnvelope, RunOnceResponse, StatusResponse, TemperatureUnit, ThemePaletteStatus,
+        ThemeStatus, ThemeSummary, ThemeWidgetStatus, WeatherStatus, WriteBudgetStatus,
     };
 
     fn every_request_variant() -> Vec<Request> {
@@ -711,8 +749,8 @@ mod tests {
         ]
     }
 
-    fn every_response_variant() -> Vec<ResponseEnvelope> {
-        let status = StatusResponse {
+    fn sample_status_response() -> StatusResponse {
+        StatusResponse {
             daemon_alive: true,
             config_path: String::from("/c.toml"),
             tick_seconds: 60,
@@ -742,6 +780,16 @@ mod tests {
                     remaining_s: 60,
                     observed_percent: 22,
                 }),
+                writes: Some(WriteBudgetStatus {
+                    writes_total: 17,
+                    window_used: 3,
+                    window_max: 12,
+                    window_seconds: 600,
+                    deferred: false,
+                }),
+                contested: false,
+                contested_until_epoch_s: None,
+                manual_deferred_until_epoch_s: None,
             }],
             solar_elevation: Some(12.5),
             now_epoch_s: 100,
@@ -750,7 +798,12 @@ mod tests {
             lunar_phase: Some(crate::solar::LunarPhase::FullMoon),
             theme: None,
             theme_warning: Some(String::from("fallback")),
-        };
+            temperature_unit: Some(TemperatureUnit::Fahrenheit),
+        }
+    }
+
+    fn every_response_variant() -> Vec<ResponseEnvelope> {
+        let status = sample_status_response();
         vec![
             ResponseEnvelope::pong(),
             ResponseEnvelope::ack("done"),
@@ -887,7 +940,7 @@ mod tests {
         let expected = [
             r#"{"version":1,"response":"pong","message":"pong"}"#,
             r#"{"version":1,"response":"ack","message":"done"}"#,
-            r#"{"version":1,"response":"status","status":{"daemon_alive":true,"config_path":"/c.toml","tick_seconds":60,"dry_run":false,"suspended":true,"desktop_idle_dimmed":false,"suspend_until_epoch_s":7,"manual_override_active":false,"per_monitor_override_until_epoch_s":null,"global_override_percent":30,"global_override_until_epoch_s":null,"configured_monitors":1,"stateful_monitors":1,"weather":{"enabled":false,"cloud_dimming_percent":0,"state":"disabled","active":false,"stale":false,"provider":null,"fetched_at_epoch_s":null,"valid_at_epoch_s":null,"source_kind":null,"last_refresh_attempt_epoch_s":null,"next_refresh_at_epoch_s":null,"consecutive_failures":0,"last_error":null,"cloud_cover_percent":null,"temperature":null,"condition":"unknown","condition_description":null,"day_phase":null,"forecast":[],"multiplier":null,"details":{"feels_like":null,"humidity_percent":null,"pressure_hpa":null,"wind_speed_mps":null,"wind_direction_deg":null,"visibility_m":null,"precipitation_percent":null,"air_quality":null}},"monitors":[{"logical_id":"desk","backend":"ddc","enabled":true,"override_percent":null,"last_applied_percent":50,"last_applied_at_epoch_s":3,"backoff_until_epoch_s":null,"topology":"ddc","min_pct":1,"max_pct":99,"external_hold":{"remaining_s":60,"observed_percent":22}}],"solar_elevation":12.5,"now_epoch_s":100,"sunrise_epoch_s":1,"sunset_epoch_s":null,"lunar_phase":"full_moon","theme_warning":"fallback"}}"#,
+            r#"{"version":1,"response":"status","status":{"daemon_alive":true,"config_path":"/c.toml","tick_seconds":60,"dry_run":false,"suspended":true,"desktop_idle_dimmed":false,"suspend_until_epoch_s":7,"manual_override_active":false,"per_monitor_override_until_epoch_s":null,"global_override_percent":30,"global_override_until_epoch_s":null,"configured_monitors":1,"stateful_monitors":1,"weather":{"enabled":false,"cloud_dimming_percent":0,"state":"disabled","active":false,"stale":false,"provider":null,"fetched_at_epoch_s":null,"valid_at_epoch_s":null,"source_kind":null,"last_refresh_attempt_epoch_s":null,"next_refresh_at_epoch_s":null,"consecutive_failures":0,"last_error":null,"cloud_cover_percent":null,"temperature":null,"condition":"unknown","condition_description":null,"day_phase":null,"forecast":[],"multiplier":null,"details":{"feels_like":null,"humidity_percent":null,"pressure_hpa":null,"wind_speed_mps":null,"wind_direction_deg":null,"visibility_m":null,"precipitation_percent":null,"air_quality":null}},"monitors":[{"logical_id":"desk","backend":"ddc","enabled":true,"override_percent":null,"last_applied_percent":50,"last_applied_at_epoch_s":3,"backoff_until_epoch_s":null,"topology":"ddc","min_pct":1,"max_pct":99,"external_hold":{"remaining_s":60,"observed_percent":22},"writes":{"writes_total":17,"window_used":3,"window_max":12,"window_seconds":600,"deferred":false}}],"solar_elevation":12.5,"now_epoch_s":100,"sunrise_epoch_s":1,"sunset_epoch_s":null,"lunar_phase":"full_moon","theme_warning":"fallback","temperature_unit":"fahrenheit"}}"#,
             r#"{"version":1,"response":"run_once","run_once":{"tick_duration_ms":0,"monitors_evaluated":0,"writes_attempted":0,"writes_skipped":0,"writes_succeeded":0,"writes_failed":0,"queued":true},"message":"daemon tick queued"}"#,
             r##"{"version":1,"response":"themes","themes":[{"id":"nord","name":"Nord","family":"terminal","bg":"#000000","fg":"#ffffff","accent":"#111111","secondary_accent":"#222222"}]}"##,
             r##"{"version":1,"response":"theme","theme":{"name":"Amber","accent":"#ffb000","secondary_accent":"#dc8c00","bg":"#0f0a05","fg":"#ffd296","text_muted":"#b47832","id":"amber","palette":{"bg":"","fg":"","accent":"","secondary_accent":"","border_active":"","border_inactive":"","text_muted":"","success":"","warning":"","error":""},"widget":{"renderer":"","font":"","pixel_scale":0,"shades":[],"density":"","border":"","radius":0,"dither":"","glow":0.0,"modules":[]}}}"##,
@@ -1064,6 +1117,7 @@ mod tests {
         let Response::Status { status } = parsed.response else {
             panic!("status expected");
         };
+        assert!(status.temperature_unit.is_none());
         let theme = status.theme.unwrap();
         assert_eq!(theme.name, "Amber");
         assert!(theme.id.is_none() && theme.palette.is_none() && theme.widget.is_none());
@@ -1138,5 +1192,22 @@ mod tests {
             serde_json::from_value::<ResponseEnvelope>(value).unwrap(),
             themes
         );
+    }
+
+    #[test]
+    fn old_monitor_status_json_without_skip_fields_still_parses() {
+        let raw = serde_json::json!({
+            "logical_id": "desk",
+            "backend": "ddc",
+            "enabled": true,
+            "override_percent": null,
+            "last_applied_percent": 50,
+            "last_applied_at_epoch_s": 3,
+            "backoff_until_epoch_s": null
+        });
+        let parsed: MonitorStatus = serde_json::from_value(raw).expect("legacy monitor status");
+        assert!(!parsed.contested);
+        assert_eq!(parsed.contested_until_epoch_s, None);
+        assert_eq!(parsed.manual_deferred_until_epoch_s, None);
     }
 }

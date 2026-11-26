@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use super::types::redact_api_key;
 use super::{
     WeatherCondition, WeatherDayPhase, WeatherError, WeatherProvider, WeatherRequest,
     WeatherSnapshot, WeatherSourceKind,
@@ -176,7 +177,7 @@ fn map_request_error(error: ureq::Error) -> WeatherError {
             // `ureq::Transport::Display` may include the request URL. The URL
             // contains OpenWeather's API key, so retain only its safe error
             // class for logs and user-facing diagnostics.
-            message: transport_error_message(transport.kind()),
+            message: redact_api_key(&transport_error_message(transport.kind())),
         },
     }
 }
@@ -333,8 +334,8 @@ fn normalize_description(description: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_openweather_condition, parse_snapshot, transport_error_message, WeatherCondition,
-        WeatherDayPhase, WeatherSourceKind,
+        map_request_error, normalize_openweather_condition, parse_snapshot,
+        transport_error_message, WeatherCondition, WeatherDayPhase, WeatherSourceKind,
     };
 
     #[test]
@@ -461,5 +462,76 @@ mod tests {
         let message = transport_error_message(ureq::ErrorKind::ConnectionFailed);
         assert_eq!(message, "network request failed (Connection Failed)");
         assert!(!message.contains("appid"));
+    }
+
+    const SECRET: &str = "SECRETKEY123";
+
+    #[test]
+    fn redaction_masks_the_key_in_any_url_shaped_text() {
+        use crate::weather::{redact_api_key, WeatherError};
+        let text = format!(
+            "GET https://api.openweathermap.org/data/2.5/forecast?lat=1&appid={SECRET}&cnt=9 failed; \
+             also (https://x/air_pollution?lat=1&APPID={SECRET}) and \"api_key={SECRET}\""
+        );
+        let redacted = redact_api_key(&text);
+        assert!(!redacted.contains(SECRET), "{redacted}");
+        assert!(redacted.contains("cnt=9"), "other parameters are kept");
+        for error in [
+            WeatherError::Transport {
+                provider: "openweather",
+                message: text.clone(),
+            },
+            WeatherError::Parse {
+                provider: "openweather",
+                message: text.clone(),
+            },
+            WeatherError::InvalidResponse {
+                provider: "openweather",
+                message: text,
+            },
+        ] {
+            assert!(!error.to_string().contains(SECRET), "{error}");
+        }
+        let request = crate::weather::WeatherRequest {
+            latitude: 1.0,
+            longitude: 2.0,
+            api_key: SECRET.to_owned(),
+            fetched_at_epoch_s: 0,
+            timeout: std::time::Duration::from_secs(1),
+        };
+        assert!(!format!("{request:?}").contains(SECRET));
+    }
+
+    #[test]
+    fn http_status_and_transport_errors_never_carry_the_request_url() {
+        use std::io::{Read, Write};
+        // Transport failure: nothing listens on the port.
+        let transport = ureq::get(&format!("http://127.0.0.1:1/forecast?appid={SECRET}"))
+            .call()
+            .expect_err("connection refused");
+        assert!(
+            transport.to_string().contains(SECRET),
+            "precondition: ureq itself embeds the URL"
+        );
+        assert!(!map_request_error(transport).to_string().contains(SECRET));
+
+        // HTTP status failure: a one-shot local server answers 401.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let _ = stream.write_all(
+                b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+        });
+        let status = ureq::get(&format!("http://127.0.0.1:{port}/forecast?appid={SECRET}"))
+            .call()
+            .expect_err("401");
+        server.join().expect("server thread");
+        let message = map_request_error(status).to_string();
+        assert!(message.contains("401"), "{message}");
+        assert!(!message.contains(SECRET), "{message}");
     }
 }

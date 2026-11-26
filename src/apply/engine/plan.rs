@@ -3,7 +3,12 @@
 use super::gate::{self, Ownership};
 use super::summary::monitor_record;
 use super::{ApplyInputs, ApplySinks};
-use crate::apply::types::{ApplyRecord, ApplySettings, ApplyStatus};
+use crate::apply::decision::{admit_write, AdmissionFacts, SkipReason, WritePath};
+use crate::apply::health;
+use crate::apply::types::{
+    ApplyRecord, ApplySettings, ApplyStatus, MANUAL_MAX_WRITES_PER_WINDOW, MANUAL_MIN_GAP_SECONDS,
+    MANUAL_WINDOW_SECONDS, WRITE_BUDGET_WINDOW_SECONDS,
+};
 use crate::backends::ProcessRunner;
 use crate::config::MonitorConfig;
 use crate::policy::PerMonitorTarget;
@@ -15,26 +20,23 @@ use std::ops::ControlFlow;
 /// The settings one apply run actually uses.
 pub(super) struct ResolvedSettings {
     pub(super) settings: ApplySettings,
-    /// Manual overrides skip failure backoff.
-    pub(super) bypass_backoff: bool,
+    /// Explicit user/IPC apply: bypasses failure backoff and write budget.
+    pub(super) forced: bool,
 }
 
 impl ResolvedSettings {
-    /// Invariant: an override replaces the defaults wholesale and bypasses
-    /// backoff. Disabled smooth transitions cancel every in-flight fade before
+    /// Invariant: an override replaces the defaults wholesale and marks the run
+    /// forced. Disabled smooth transitions cancel every in-flight fade before
     /// any target is planned, so a config reload takes effect immediately.
     pub(super) fn resolve<R>(inputs: &ApplyInputs<'_, R>, sinks: &mut ApplySinks<'_>) -> Self {
-        let bypass_backoff = inputs.settings_override.is_some();
+        let forced = inputs.settings_override.is_some();
         let settings = inputs.settings_override.unwrap_or(inputs.default_settings);
         if !settings.smooth_transition {
             if let Some(engine) = sinks.fade_engine.as_deref_mut() {
                 engine.cancel_all();
             }
         }
-        Self {
-            settings,
-            bypass_backoff,
-        }
+        Self { settings, forced }
     }
 }
 
@@ -55,7 +57,7 @@ pub(super) enum WorkItem<'a> {
     Dispatch(PlannedWrite<'a>),
 }
 
-/// Facts about one target computed once, before any gate runs.
+/// Facts about one target computed once, before readback gates run.
 pub(super) struct TargetFacts<'a> {
     pub(super) monitor: &'a MonitorConfig,
     pub(super) requested_percent: u8,
@@ -64,6 +66,8 @@ pub(super) struct TargetFacts<'a> {
     pub(super) monitor_state: MonitorRuntimeState,
     pub(super) ownership: Ownership,
     pub(super) now_epoch_s: u64,
+    /// Explicit user action (IPC): exempt from the write budget and backoff.
+    pub(super) forced: bool,
 }
 
 impl<'a> TargetFacts<'a> {
@@ -73,18 +77,23 @@ impl<'a> TargetFacts<'a> {
         state: &RuntimeState,
         recovery_until_epoch_s: Option<u64>,
         now_epoch_s: u64,
+        forced: bool,
     ) -> Self {
         let monitor_state = state
             .monitor(&monitor.logical_id)
             .cloned()
             .unwrap_or_default();
-        let ownership = Ownership::observe(&monitor_state, recovery_until_epoch_s, now_epoch_s);
+        let ownership =
+            Ownership::observe(&monitor_state, recovery_until_epoch_s, now_epoch_s).with_hardware(
+                health::observe_hardware(monitor, recovery_until_epoch_s, now_epoch_s),
+            );
         Self {
             monitor,
             requested_percent,
             monitor_state,
             ownership,
             now_epoch_s,
+            forced,
         }
     }
 }
@@ -120,6 +129,32 @@ pub(super) fn plan_targets<'a, R: ProcessRunner>(
         .collect()
 }
 
+fn build_admission_facts<'a>(
+    monitor: &'a MonitorConfig,
+    topology_allowed: bool,
+    active_hold_until_epoch_s: Option<u64>,
+    monitor_state: Option<&'a MonitorRuntimeState>,
+    settings: &ApplySettings,
+    forced: bool,
+    post_readback_in_recovery: Option<bool>,
+) -> AdmissionFacts<'a> {
+    AdmissionFacts {
+        logical_id: &monitor.logical_id,
+        backend: monitor.backend,
+        enabled: monitor.enabled,
+        topology_allowed,
+        active_hold_until_epoch_s,
+        last_applied_percent: monitor_state.and_then(|s| s.last_applied_percent),
+        last_applied_at_epoch_s: monitor_state.and_then(|s| s.last_applied_at_epoch_s),
+        backoff: monitor_state.and_then(|s| s.backoff.as_ref()),
+        min_apply_interval: settings.min_apply_interval,
+        in_recovery: post_readback_in_recovery.unwrap_or(false),
+        budget_exempt: forced,
+        fade_target_percent: None,
+        check_rate_limits: post_readback_in_recovery.is_some(),
+    }
+}
+
 /// Runs the gate chain for one target. The order of the gates is part of the
 /// observable behavior (it decides which skip reason wins).
 fn plan_target<'a, R: ProcessRunner>(
@@ -134,18 +169,41 @@ fn plan_target<'a, R: ProcessRunner>(
     let Some(&(position, monitor)) = index.get(target.logical_id.as_str()) else {
         return ControlFlow::Break(unmatched_target_record(target, requested_percent));
     };
-    topology_gate(
+    let path = if resolved.forced {
+        WritePath::Forced
+    } else {
+        WritePath::Tick
+    };
+    let reconcile_action = inputs.reconcile_actions.get(position).copied();
+    let topology_allowed = reconcile_action.is_none_or(ReconcileAction::allowed_to_apply);
+    let active_hold = sinks
+        .external_holds
+        .as_deref()
+        .and_then(|holds| holds.get(&monitor.logical_id).copied())
+        .filter(|hold| hold.until_epoch_s > inputs.now_epoch_s);
+    let snapshot_state = sinks.state.monitor(&monitor.logical_id);
+
+    // Pre-readback admission: never touch hardware (not even sysfs or getvcp)
+    // when topology, enablement, contested back-off, or an active hold skips it.
+    let pre_facts = build_admission_facts(
         monitor,
-        requested_percent,
-        inputs.reconcile_actions.get(position),
-    )?;
-    if !monitor.enabled {
-        return ControlFlow::Break(monitor_record(
+        topology_allowed,
+        active_hold.map(|hold| hold.until_epoch_s),
+        snapshot_state,
+        settings,
+        resolved.forced,
+        None,
+    );
+    if let Err(reason) = admit_write(path, &pre_facts, sinks.state, inputs.now_epoch_s) {
+        return ControlFlow::Break(skip_record_for_reason(
+            reason,
             monitor,
             requested_percent,
             requested_percent,
-            ApplyStatus::SkippedDisabled,
-            String::from("monitor is disabled"),
+            inputs.now_epoch_s,
+            reconcile_action,
+            active_hold.map(|hold| hold.observed_percent),
+            sinks,
         ));
     }
 
@@ -155,6 +213,7 @@ fn plan_target<'a, R: ProcessRunner>(
         sinks.state,
         inputs.recovery_until_epoch_s,
         inputs.now_epoch_s,
+        resolved.forced,
     );
     let expired_hold = gate::external_hold_gate(&facts, inputs.runner, settings, sinks)?;
     let reassert_is_due =
@@ -162,10 +221,31 @@ fn plan_target<'a, R: ProcessRunner>(
     hysteresis_gate(&facts, settings, reassert_is_due)?;
 
     let applied_percent = step_limited_percent(&facts, settings);
-    if !resolved.bypass_backoff {
-        backoff_gate(&facts, applied_percent)?;
+    let post_facts = build_admission_facts(
+        monitor,
+        topology_allowed,
+        None,
+        Some(&facts.monitor_state),
+        settings,
+        facts.forced,
+        Some(facts.ownership.in_recovery),
+    );
+    if let Err(reason) = admit_write(path, &post_facts, sinks.state, inputs.now_epoch_s) {
+        return ControlFlow::Break(skip_record_for_reason(
+            reason,
+            monitor,
+            requested_percent,
+            applied_percent,
+            inputs.now_epoch_s,
+            reconcile_action,
+            None,
+            sinks,
+        ));
     }
-    min_interval_gate(&facts, settings, applied_percent)?;
+
+    if !settings.dry_run {
+        gate::baseline_gate(&facts, inputs.runner, settings, sinks)?;
+    }
     if settings.dry_run {
         return ControlFlow::Break(monitor_record(
             monitor,
@@ -177,12 +257,131 @@ fn plan_target<'a, R: ProcessRunner>(
     }
     fade_gate(&facts, settings, applied_percent, sinks)?;
 
+    health::acknowledge_readback(&monitor.logical_id);
+    if facts.forced {
+        health::record_manual_write(&monitor.logical_id, facts.now_epoch_s);
+    }
     ControlFlow::Continue(PlannedWrite {
         monitor,
         target,
         applied_percent,
         requested_percent,
     })
+}
+
+fn cancel_active_fade(sinks: &mut ApplySinks<'_>, logical_id: &str) {
+    if let Some(engine) = sinks.fade_engine.as_deref_mut() {
+        engine.active_fades.remove(logical_id);
+    }
+}
+
+fn skip_record_for_reason(
+    reason: SkipReason,
+    monitor: &MonitorConfig,
+    requested_percent: u8,
+    applied_percent: u8,
+    now_epoch_s: u64,
+    reconcile_action: Option<ReconcileAction>,
+    hold_observed_percent: Option<u8>,
+    sinks: &mut ApplySinks<'_>,
+) -> ApplyRecord {
+    match reason {
+        SkipReason::Topology => monitor_record(
+            monitor,
+            requested_percent,
+            requested_percent,
+            ApplyStatus::SkippedTopology,
+            format!(
+                "runtime topology reconciliation: {}",
+                reconcile_action.map_or("unknown", ReconcileAction::name)
+            ),
+        ),
+        SkipReason::Disabled => monitor_record(
+            monitor,
+            requested_percent,
+            requested_percent,
+            ApplyStatus::SkippedDisabled,
+            String::from("monitor is disabled"),
+        ),
+        SkipReason::Contested { until_epoch_s } => {
+            cancel_active_fade(sinks, &monitor.logical_id);
+            gate::contested_record(monitor, requested_percent, Some(until_epoch_s))
+        }
+        SkipReason::Hold { until_epoch_s } => {
+            cancel_active_fade(sinks, &monitor.logical_id);
+            let remaining = until_epoch_s.saturating_sub(now_epoch_s);
+            ApplyRecord {
+                backoff_until_epoch_s: Some(until_epoch_s),
+                ..monitor_record(
+                    monitor,
+                    requested_percent,
+                    hold_observed_percent.unwrap_or(requested_percent),
+                    ApplyStatus::SkippedHysteresis,
+                    format!("external brightness hold active for {remaining}s"),
+                )
+            }
+        }
+        SkipReason::Backoff {
+            remaining_s,
+            suppress_until_epoch_s,
+            failure_kind,
+            consecutive_failures,
+        } => ApplyRecord {
+            failure_kind: Some(failure_kind),
+            consecutive_failures: Some(consecutive_failures),
+            backoff_until_epoch_s: Some(suppress_until_epoch_s),
+            ..monitor_record(
+                monitor,
+                requested_percent,
+                applied_percent,
+                ApplyStatus::SkippedBackoff,
+                format!("{failure_kind:?} failure backoff active for {remaining_s}s"),
+            )
+        },
+        SkipReason::MinInterval {
+            elapsed_s,
+            min_interval_s,
+        } => monitor_record(
+            monitor,
+            requested_percent,
+            applied_percent,
+            ApplyStatus::SkippedMinimumInterval,
+            format!("last apply was {elapsed_s}s ago; minimum apply interval is {min_interval_s}s"),
+        ),
+        SkipReason::Budget { used, .. } => {
+            tracing::warn!(logical_id = %monitor.logical_id, used, "write_budget_exhausted; deferring_to_latest_target");
+            monitor_record(
+                monitor,
+                requested_percent,
+                applied_percent,
+                ApplyStatus::SkippedBudget,
+                format!("write budget exhausted ({used} writes in {WRITE_BUDGET_WINDOW_SECONDS}s); deferred"),
+            )
+        }
+        SkipReason::ManualCap { retry_at_epoch_s } => {
+            tracing::debug!(logical_id = %monitor.logical_id, retry_at = retry_at_epoch_s, "forced_write_deferred; latest_value_applies_later");
+            ApplyRecord {
+                backoff_until_epoch_s: Some(retry_at_epoch_s),
+                ..monitor_record(
+                    monitor,
+                    requested_percent,
+                    applied_percent,
+                    ApplyStatus::SkippedManualCap,
+                    format!(
+                        "forced write rate cap ({MANUAL_MAX_WRITES_PER_WINDOW} per {MANUAL_WINDOW_SECONDS}s, \
+                         {MANUAL_MIN_GAP_SECONDS}s apart); deferred to {retry_at_epoch_s}"
+                    ),
+                )
+            }
+        }
+        SkipReason::CorrectionInterval | SkipReason::AlreadyMatches => monitor_record(
+            monitor,
+            requested_percent,
+            applied_percent,
+            ApplyStatus::SkippedHysteresis,
+            String::from("skipped"),
+        ),
+    }
 }
 
 fn unmatched_target_record(target: &PerMonitorTarget, requested_percent: u8) -> ApplyRecord {
@@ -200,25 +399,6 @@ fn unmatched_target_record(target: &PerMonitorTarget, requested_percent: u8) -> 
     }
 }
 
-/// Invariant: targets the runtime topology does not allow never reach a
-/// hardware read or write. A monitor without a verdict is not gated.
-fn topology_gate(
-    monitor: &MonitorConfig,
-    requested_percent: u8,
-    action: Option<&ReconcileAction>,
-) -> ControlFlow<ApplyRecord> {
-    match action {
-        Some(action) if !action.allowed_to_apply() => ControlFlow::Break(monitor_record(
-            monitor,
-            requested_percent,
-            requested_percent,
-            ApplyStatus::SkippedTopology,
-            format!("runtime topology reconciliation: {}", action.name()),
-        )),
-        _ => ControlFlow::Continue(()),
-    }
-}
-
 /// Invariant: a delta below `min_write_delta_pct` is skipped unless an
 /// integrity reassert is due.
 fn hysteresis_gate(
@@ -227,11 +407,19 @@ fn hysteresis_gate(
     reassert_is_due: bool,
 ) -> ControlFlow<ApplyRecord> {
     let last_applied_percent = facts.monitor_state.last_applied_percent;
-    let skip = state::should_skip_hysteresis(
-        last_applied_percent,
-        facts.requested_percent,
-        settings.min_write_delta_pct,
-    );
+    let learned_rounding = facts
+        .monitor_state
+        .ledger
+        .accepted_quantization
+        .is_some_and(|(requested, observed)| {
+            requested == facts.requested_percent && Some(observed) == last_applied_percent
+        });
+    let skip = learned_rounding
+        || state::should_skip_hysteresis(
+            last_applied_percent,
+            facts.requested_percent,
+            settings.min_write_delta_pct,
+        );
     if !skip || reassert_is_due {
         return ControlFlow::Continue(());
     }
@@ -263,72 +451,6 @@ fn step_limited_percent(facts: &TargetFacts<'_>, settings: &ApplySettings) -> u8
     }
 }
 
-/// Invariant: an unexpired backoff for the monitor's current backend skips
-/// the write.
-fn backoff_gate(facts: &TargetFacts<'_>, applied_percent: u8) -> ControlFlow<ApplyRecord> {
-    let monitor = facts.monitor;
-    let Some(backoff) = facts.monitor_state.backoff.as_ref().filter(|backoff| {
-        backoff.backend == monitor.backend
-            && backoff
-                .suppress_until_epoch_s
-                .is_some_and(|until| until > facts.now_epoch_s)
-    }) else {
-        return ControlFlow::Continue(());
-    };
-    let remaining = state::backoff_remaining(
-        facts.monitor_state.backoff.as_ref(),
-        monitor.backend,
-        facts.now_epoch_s,
-    )
-    .unwrap_or_default();
-    ControlFlow::Break(ApplyRecord {
-        failure_kind: Some(backoff.failure_kind),
-        consecutive_failures: Some(backoff.consecutive_failures),
-        backoff_until_epoch_s: backoff.suppress_until_epoch_s,
-        ..monitor_record(
-            monitor,
-            facts.requested_percent,
-            applied_percent,
-            ApplyStatus::SkippedBackoff,
-            format!(
-                "{:?} failure backoff active for {}s",
-                backoff.failure_kind,
-                remaining.as_secs()
-            ),
-        )
-    })
-}
-
-/// Invariant: at most one write per monitor per `min_apply_interval`.
-fn min_interval_gate(
-    facts: &TargetFacts<'_>,
-    settings: &ApplySettings,
-    applied_percent: u8,
-) -> ControlFlow<ApplyRecord> {
-    let last_applied_at_epoch_s = facts.monitor_state.last_applied_at_epoch_s;
-    if !state::write_interval_active(
-        last_applied_at_epoch_s,
-        facts.now_epoch_s,
-        settings.min_apply_interval,
-    ) {
-        return ControlFlow::Continue(());
-    }
-    let elapsed_s = facts
-        .now_epoch_s
-        .saturating_sub(last_applied_at_epoch_s.unwrap_or(facts.now_epoch_s));
-    ControlFlow::Break(monitor_record(
-        facts.monitor,
-        facts.requested_percent,
-        applied_percent,
-        ApplyStatus::SkippedMinimumInterval,
-        format!(
-            "last apply was {}s ago; minimum apply interval is {}s",
-            elapsed_s,
-            settings.min_apply_interval.as_secs()
-        ),
-    ))
-}
-
 /// Invariant: with smooth transitions on, a large enough step is handed to
 /// the fade engine (starting from our last write) instead of being written
 /// directly; the record reports success without a hardware attempt.
@@ -345,11 +467,21 @@ fn fade_gate(
         .unwrap_or(facts.requested_percent);
     let fade_queued = settings.smooth_transition
         && sinks.fade_engine.as_deref_mut().is_some_and(|engine| {
-            engine.maybe_enqueue(&monitor.logical_id, start_percent, applied_percent)
+            engine.maybe_enqueue_with(
+                &monitor.logical_id,
+                start_percent,
+                applied_percent,
+                facts.forced,
+            )
         });
     if !fade_queued {
         return ControlFlow::Continue(());
     }
+    // No budget event here: every fade step is counted when it is written.
+    if facts.forced {
+        health::record_manual_write(&monitor.logical_id, facts.now_epoch_s);
+    }
+    health::acknowledge_readback(&monitor.logical_id);
     ControlFlow::Break(monitor_record(
         monitor,
         facts.requested_percent,

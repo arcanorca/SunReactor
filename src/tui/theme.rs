@@ -640,10 +640,10 @@ mod tests {
             "zenburn",
         ];
 
-        assert_eq!(ThemeId::all().len(), 40);
+        assert_eq!(ThemeId::all().len(), 41);
         assert_eq!(legacy_names.len(), 35);
 
-        let added = ["ps3", "winxp", "macos", "wii", "nds"];
+        let added = ["ps3", "winxp", "macos", "wii", "nds", "xbox360"];
         let legacy_ids = ThemeId::all()
             .into_iter()
             .filter(|id| !added.contains(&id.as_str()));

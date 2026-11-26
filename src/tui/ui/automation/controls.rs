@@ -64,7 +64,6 @@ pub(super) fn render_controls_panel(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_compact_controls(
     f: &mut Frame,
     app: &Model,
@@ -84,7 +83,6 @@ fn render_compact_controls(
     place_curve_cursor(f, app, inner, 1);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_full_controls(
     f: &mut Frame,
     app: &Model,

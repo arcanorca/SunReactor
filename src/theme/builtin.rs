@@ -52,5 +52,6 @@ pub(super) const BUILTIN_THEMES: &[(&str, &str)] = &[
     ("vfd_hifi", include_str!("builtin/vfd_hifi.toml")),
     ("wii", include_str!("builtin/wii.toml")),
     ("winxp", include_str!("builtin/winxp.toml")),
+    ("xbox360", include_str!("builtin/xbox360.toml")),
     ("zenburn", include_str!("builtin/zenburn.toml")),
 ];

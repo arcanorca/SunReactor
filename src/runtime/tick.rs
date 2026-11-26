@@ -54,6 +54,7 @@ impl DaemonRuntime {
         force_weather_refresh: bool,
     ) -> Result<CollectedTickInputs, RuntimeError> {
         let now_epoch_s = now_utc.timestamp().max(0) as u64;
+        self.clamp_future_windows(now_epoch_s);
         let location = self.config.location.clone();
         let solar = solar::sample_at_utc(
             now_utc,

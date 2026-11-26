@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 #[cfg(unix)]
 use std::fs::{File, OpenOptions};
@@ -23,6 +24,9 @@ use super::{
 };
 
 const DDC_BRIGHTNESS_VCP_CODE: &str = "10";
+/// Upper bound for the extra reads of the write path (max lookup, readback
+/// after a failed write), so they never add more than a few seconds.
+const AUX_READ_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_DDC_ADDRESS: u16 = 0x37;
 #[cfg(unix)]
 const DDC_LOCK_FILE_NAME: &str = "sunreactor_i2c.lock";
@@ -34,15 +38,139 @@ static DDC_LOCK_OPEN_WARNED: AtomicBool = AtomicBool::new(false);
 #[cfg(unix)]
 static DDC_PROCESS_LOCK: Mutex<()> = Mutex::new(());
 
+/// VCP 0x10 maximum learned from the last successful read, per monitor.
+/// Writes scale percent to this range; an unknown monitor is assumed to use
+/// the common 0..=100 range.
+static VCP_MAX_CACHE: Mutex<BTreeMap<String, u16>> = Mutex::new(BTreeMap::new());
+
+/// Monitors whose VCP maximum was already looked up by the write path. The
+/// lookup (one bounded getvcp) happens at most once per monitor per process,
+/// whether or not it succeeded, so an unreadable monitor is never polled.
+static VCP_MAX_PROBED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn max_cache() -> MutexGuard<'static, BTreeMap<String, u16>> {
+    VCP_MAX_CACHE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn max_cache_key(selector: &MonitorSelector, identity: &DdcSelectorPlan) -> String {
+    format!(
+        "{}|{}",
+        selector.connector.as_deref().unwrap_or("").trim(),
+        identity.description
+    )
+}
+
+fn learned_max(key: &str) -> u16 {
+    max_cache().get(key).copied().unwrap_or(100)
+}
+
+/// Raw VCP value for a brightness percent: `round(percent * max / 100)`.
+/// Exact for `max == 100`. For `max < 100` several percents share one raw
+/// step, so percent -> raw -> percent is only stable to that resolution.
+fn percent_to_raw(percent: u8, max: u16) -> u16 {
+    let raw = (u32::from(percent.min(100)) * u32::from(max) + 50) / 100;
+    u16::try_from(raw).unwrap_or(max)
+}
+
+/// The percent a monitor with this `max` reads back after `percent` is
+/// written. Equal to `percent` for every value when `max >= 100`; for
+/// `max < 100` it snaps to the raw step (e.g. max 50 turns odd percents into
+/// the next even one). `quantize(quantize(p)) == quantize(p)`, so callers
+/// that compare a readback with a wanted value must compare against the
+/// reported `applied_percent` (which is already quantized), not the raw wish,
+/// or they would rewrite the panel for nothing.
+#[cfg(test)]
+fn quantize_percent(percent: u8, max: u16) -> u8 {
+    raw_to_percent(percent_to_raw(percent, max), max)
+}
+
+/// Brightness percent for a raw reading: `round(current * 100 / max)`.
+fn raw_to_percent(current: u16, max: u16) -> u8 {
+    let percent = (u32::from(current) * 100 + u32::from(max) / 2) / u32::from(max.max(1));
+    u8::try_from(percent.min(100)).unwrap_or(100)
+}
+
 /// Exclusive DDC access held for one ddcutil invocation.
 ///
 /// Fields drop in declaration order: the cross-process flock is released
-/// before the next in-process writer is let through.
+/// before the next in-process writer is let through. The lock is reentrant per
+/// thread: a thread already holding it gets a no-op guard, so nested helpers
+/// (a read inside a write, a locked runner inside a locked section) can never
+/// deadlock on the non-reentrant process mutex.
 #[cfg(unix)]
 #[derive(Debug)]
 struct DdcLock {
     _file: Option<File>,
-    _process: MutexGuard<'static, ()>,
+    _process: Option<MutexGuard<'static, ()>>,
+    owner: bool,
+}
+
+#[cfg(unix)]
+impl Drop for DdcLock {
+    fn drop(&mut self) {
+        if self.owner {
+            DDC_LOCK_HELD.with(|held| held.set(false));
+        }
+    }
+}
+
+#[cfg(unix)]
+thread_local! {
+    static DDC_LOCK_HELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runner decorator that serializes every `ddcutil` invocation (detect,
+/// capabilities, getvcp, setvcp) through the DDC process lock, so discovery
+/// and reads never interleave with writes on the I2C bus. Other programs pass
+/// through untouched. Safe to nest inside an already locked section.
+pub(crate) struct DdcLockedRunner<'a, R: ProcessRunner> {
+    inner: &'a R,
+    #[cfg(unix)]
+    lock_path: Option<std::path::PathBuf>,
+}
+
+impl<'a, R: ProcessRunner> DdcLockedRunner<'a, R> {
+    pub(crate) fn new(inner: &'a R) -> Self {
+        Self {
+            inner,
+            #[cfg(unix)]
+            lock_path: None,
+        }
+    }
+
+    #[cfg(all(unix, test))]
+    fn with_lock_path(inner: &'a R, lock_path: std::path::PathBuf) -> Self {
+        Self {
+            inner,
+            lock_path: Some(lock_path),
+        }
+    }
+}
+
+impl<R: ProcessRunner> ProcessRunner for DdcLockedRunner<'_, R> {
+    fn run(
+        &self,
+        program: &str,
+        args: &[String],
+        timeout: Duration,
+    ) -> Result<crate::process::CommandOutput, crate::process::CommandError> {
+        #[cfg(unix)]
+        let _lock = if program == "ddcutil" {
+            Some(
+                match &self.lock_path {
+                    Some(path) => acquire_ddc_lock_at(path, timeout),
+                    None => acquire_ddc_lock(timeout),
+                }
+                .map_err(|error| crate::process::CommandError::Io {
+                    program: program.to_owned(),
+                    message: error.to_string(),
+                })?,
+            )
+        } else {
+            None
+        };
+        self.inner.run(program, args, timeout)
+    }
 }
 
 pub fn apply(monitor: &MonitorConfig, percent: u8) -> Result<BackendWrite, BackendError> {
@@ -74,55 +202,152 @@ fn apply_with_runner_in<R: ProcessRunner>(
     let identity_selection = build_selector(&monitor.selector)?;
     let bus_selection = verified_bus_selection(&identity_selection, &monitor.selector, drm);
     let mut use_bus = bus_selection.is_some();
+    let cache_key = max_cache_key(&monitor.selector, &identity_selection);
 
     let mut attempts = 0u8;
 
     loop {
-        attempts += 1;
-        let selection = match (&bus_selection, use_bus) {
-            (Some(selection), true) => selection,
-            _ => &identity_selection,
+        let selection = if let (Some(selection), true) = (&bus_selection, use_bus) {
+            selection
+        } else {
+            refuse_ambiguous_identity(&monitor.selector, drm)?;
+            &identity_selection
         };
-        let args = build_setvcp_args(selection, percent);
 
+        // One lock section per attempt: the maximum lookup, the write and the
+        // post-failure readback must not interleave with other DDC traffic.
         #[cfg(unix)]
-        let _lock = acquire_ddc_lock(timeout)?;
+        let _lock = acquire_ddc_lock(timeout).map_err(|error| error.with_attempts(attempts))?;
 
+        ensure_max_known(runner, monitor, selection, &cache_key, timeout, drm);
+        let max = learned_max(&cache_key);
+        let raw = percent_to_raw(percent, max);
+        let args = build_setvcp_args(selection, raw);
+
+        attempts += 1;
         let run_result = DdcutilClient::run_with_compatible_arguments(runner, &args, timeout);
 
-        match run_result {
+        let error = match run_result {
             Ok(output) if output.success() => {
                 return Ok(BackendWrite {
                     backend: BackendKind::Ddc,
-                    applied_percent: percent,
+                    applied_percent: raw_to_percent(raw, max),
                     attempts,
                     detail: format!("applied via ddcutil using {}", selection.description),
                 });
             }
-            Ok(output) => {
-                let error = command_failure(BackendKind::Ddc, "ddcutil", &output);
-                if attempts == 1 && (use_bus || should_retry(&error)) {
-                    // A bus that stopped answering falls back to ddcutil's
-                    // own identity matching for the retry.
-                    use_bus = false;
-                    continue;
-                }
-                return Err(error.with_attempts(attempts));
+            Ok(output) => command_failure(BackendKind::Ddc, "ddcutil", &output),
+            Err(error) => map_command_error(BackendKind::Ddc, error),
+        };
+        if attempts == 1 && (use_bus || should_retry(&error)) {
+            // The failed command may still have taken effect (a non-zero exit
+            // after the value was set). One cheap read decides: if the panel
+            // already holds the target, a second write is pure EEPROM wear.
+            if let Some(applied_percent) =
+                readback_matches_target(runner, selection, &cache_key, percent, timeout)
+            {
+                return Ok(BackendWrite {
+                    backend: BackendKind::Ddc,
+                    applied_percent,
+                    attempts,
+                    detail: format!(
+                        "applied via ddcutil using {} (confirmed by readback after a failed exit)",
+                        selection.description
+                    ),
+                });
             }
-            Err(error) => {
-                let error = map_command_error(BackendKind::Ddc, error);
-                if attempts == 1 && (use_bus || should_retry(&error)) {
-                    use_bus = false;
-                    continue;
-                }
-                return Err(error.with_attempts(attempts));
-            }
+            // A bus that stopped answering falls back to ddcutil's own
+            // identity matching for the retry.
+            use_bus = false;
+            continue;
         }
+        return Err(error.with_attempts(attempts));
     }
+}
+
+fn getvcp_args(selection: &DdcSelectorPlan) -> Vec<String> {
+    let mut args = vec![String::from("--noconfig"), String::from("--terse")];
+    args.extend(selection.args.iter().cloned());
+    args.push(String::from("getvcp"));
+    args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
+    args
+}
+
+/// Learns the monitor's VCP maximum before its first write, so a forced first
+/// write to a max=255 monitor does not use the 0..=100 assumption. At most one
+/// bounded getvcp per monitor per process; it is skipped when the maximum is
+/// already known from a read, or the display is powered off. Failure keeps the
+/// 100 default (the pre-existing behaviour) and is never retried.
+fn ensure_max_known<R: ProcessRunner>(
+    runner: &R,
+    monitor: &MonitorConfig,
+    selection: &DdcSelectorPlan,
+    cache_key: &str,
+    timeout: Duration,
+    drm: &Path,
+) {
+    if max_cache().contains_key(cache_key) {
+        return;
+    }
+    if !VCP_MAX_PROBED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(cache_key.to_owned())
+    {
+        return;
+    }
+    if connector_is_powered_off(&monitor.selector, drm) {
+        return;
+    }
+    let args = getvcp_args(selection);
+    let learned =
+        DdcutilClient::run_with_compatible_arguments(runner, &args, timeout.min(AUX_READ_TIMEOUT))
+            .ok()
+            .filter(CommandOutput::success)
+            .and_then(|output| {
+                crate::ddcutil::parser::parse_getvcp_brightness(&output.stdout).ok()
+            });
+    if let Some(value) = learned {
+        max_cache().insert(cache_key.to_owned(), value.maximum);
+    } else {
+        tracing::warn!(
+            monitor = %monitor.logical_id,
+            "ddc_vcp_max_unknown_before_first_write; assuming 0..=100"
+        );
+    }
+}
+
+/// One getvcp after a failed setvcp. `Some(applied_percent)` when the monitor
+/// already reports the raw value the target maps to.
+fn readback_matches_target<R: ProcessRunner>(
+    runner: &R,
+    selection: &DdcSelectorPlan,
+    cache_key: &str,
+    percent: u8,
+    timeout: Duration,
+) -> Option<u8> {
+    let args = getvcp_args(selection);
+    let output =
+        DdcutilClient::run_with_compatible_arguments(runner, &args, timeout.min(AUX_READ_TIMEOUT))
+            .ok()?;
+    if !output.success() {
+        return None;
+    }
+    let value = crate::ddcutil::parser::parse_getvcp_brightness(&output.stdout).ok()?;
+    max_cache().insert(cache_key.to_owned(), value.maximum);
+    let target_raw = percent_to_raw(percent, value.maximum);
+    (value.current == target_raw).then(|| raw_to_percent(target_raw, value.maximum))
 }
 
 #[cfg(unix)]
 fn acquire_ddc_lock(timeout: Duration) -> Result<DdcLock, BackendError> {
+    // Unit tests must not contend with (or touch) a real daemon's lock file.
+    #[cfg(test)]
+    let lock_path = std::env::temp_dir().join(format!(
+        "sunreactor-test-{}-{DDC_LOCK_FILE_NAME}",
+        std::process::id()
+    ));
+    #[cfg(not(test))]
     let lock_path = crate::paths::runtime_socket_dir().map_or_else(
         |_| {
             let uid = rustix::process::geteuid().as_raw();
@@ -137,6 +362,13 @@ fn acquire_ddc_lock(timeout: Duration) -> Result<DdcLock, BackendError> {
 /// Waits (unbounded) for the in-process DDC queue, then takes the
 /// cross-process flock within `timeout`.
 fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<DdcLock, BackendError> {
+    if DDC_LOCK_HELD.with(std::cell::Cell::get) {
+        return Ok(DdcLock {
+            _file: None,
+            _process: None,
+            owner: false,
+        });
+    }
     // The mutex guards no data, so a panic in a previous holder leaves nothing
     // inconsistent; recover the guard instead of propagating the poison.
     let process = DDC_PROCESS_LOCK
@@ -153,9 +385,11 @@ fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<DdcLock, B
             if !DDC_LOCK_OPEN_WARNED.swap(true, Ordering::AcqRel) {
                 tracing::warn!(path = %lock_path.display(), error = %error, "ddc_lock_unavailable_continuing_without_lock");
             }
+            DDC_LOCK_HELD.with(|held| held.set(true));
             return Ok(DdcLock {
                 _file: None,
-                _process: process,
+                _process: Some(process),
+                owner: true,
             });
         }
     };
@@ -169,10 +403,12 @@ fn acquire_ddc_lock_at(lock_path: &Path, timeout: Duration) -> Result<DdcLock, B
             rustix::fs::FlockOperation::NonBlockingLockExclusive,
         ) {
             Ok(()) => {
+                DDC_LOCK_HELD.with(|held| held.set(true));
                 return Ok(DdcLock {
                     _file: Some(lock_file),
-                    _process: process,
-                })
+                    _process: Some(process),
+                    owner: true,
+                });
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 let remaining = deadline.saturating_duration_since(Instant::now());
@@ -215,7 +451,9 @@ fn read_with_runner_in<R: ProcessRunner>(
     timeout: Duration,
     drm: &Path,
 ) -> Result<super::BackendObservation, BackendError> {
+    let runner = &DdcLockedRunner::new(runner);
     let identity_selection = build_selector(&monitor.selector)?;
+    let cache_key = max_cache_key(&monitor.selector, &identity_selection);
     let read = |selection: &DdcSelectorPlan| {
         let mut args = vec![String::from("--noconfig"), String::from("--terse")];
         args.extend(selection.args.iter().cloned());
@@ -226,12 +464,14 @@ fn read_with_runner_in<R: ProcessRunner>(
     let bus_output = verified_bus_selection(&identity_selection, &monitor.selector, drm)
         .map(|selection| read(&selection))
         .filter(|output| output.as_ref().is_ok_and(CommandOutput::success));
-    let output = match bus_output {
-        Some(output) => output,
-        None => read(&identity_selection),
+    let output = if let Some(output) = bus_output {
+        output
+    } else {
+        refuse_ambiguous_identity(&monitor.selector, drm)?;
+        read(&identity_selection)
     }
     .map_err(|error| map_command_error(BackendKind::Ddc, error))?;
-    parse_brightness_output(&output)
+    parse_and_learn(&output, &cache_key)
 }
 
 /// Reads brightness only over the EDID-verified bus, never through ddcutil's
@@ -256,6 +496,7 @@ fn read_verified_bus_in<R: ProcessRunner>(
     timeout: Duration,
     drm: &Path,
 ) -> Result<Option<super::BackendObservation>, BackendError> {
+    let runner = &DdcLockedRunner::new(runner);
     let identity_selection = build_selector(&monitor.selector)?;
     let Some(selection) = verified_bus_selection(&identity_selection, &monitor.selector, drm)
     else {
@@ -278,13 +519,26 @@ fn read_verified_bus_in<R: ProcessRunner>(
     args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
     let output = DdcutilClient::run_with_compatible_arguments(runner, &args, timeout)
         .map_err(|error| map_command_error(BackendKind::Ddc, error))?;
-    parse_brightness_output(&output).map(Some)
+    let cache_key = max_cache_key(&monitor.selector, &identity_selection);
+    parse_and_learn(&output, &cache_key).map(Some)
 }
 
 #[cfg(any(target_os = "linux", test))]
+fn parse_and_learn(
+    output: &CommandOutput,
+    cache_key: &str,
+) -> Result<super::BackendObservation, BackendError> {
+    let (observation, max) = parse_brightness_output(output)?;
+    max_cache().insert(cache_key.to_owned(), max);
+    Ok(observation)
+}
+
+/// Returns the observation and the monitor's VCP maximum. A reading with
+/// `max == 0` or `current > max` is an error, not a clamped value.
+#[cfg(any(target_os = "linux", test))]
 fn parse_brightness_output(
     output: &CommandOutput,
-) -> Result<super::BackendObservation, BackendError> {
+) -> Result<(super::BackendObservation, u16), BackendError> {
     if !output.success() {
         return Err(command_failure(BackendKind::Ddc, "ddcutil", output));
     }
@@ -297,11 +551,49 @@ fn parse_brightness_output(
                 attempts: 1,
             }
         })?;
-    let percent =
-        u8::try_from(value.current.min(100)).expect("invariant: value clamped to 100 fits in u8");
-    Ok(super::BackendObservation {
-        percent: percent.min(100),
-    })
+    Ok((
+        super::BackendObservation {
+            percent: raw_to_percent(value.current, value.maximum),
+        },
+        value.maximum,
+    ))
+}
+
+/// ddcutil's own identity search (`--model`, `--sn`, `--edid`) silently picks
+/// the first match. When two connected displays are indistinguishable by the
+/// selector's identity fields, that could be the wrong monitor, so the search
+/// is refused and only the EDID-verified connector bus may be used.
+fn refuse_ambiguous_identity(selector: &MonitorSelector, root: &Path) -> Result<(), BackendError> {
+    if identity_match_count(selector, root) > 1 {
+        return Err(BackendError::Io {
+            backend: BackendKind::Ddc,
+            program: String::from("ddcutil"),
+            message: String::from(
+                "refusing ddcutil identity search: several connected displays match this selector",
+            ),
+            attempts: 0,
+        });
+    }
+    Ok(())
+}
+
+fn identity_match_count(selector: &MonitorSelector, root: &Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            let directory = entry.path();
+            let connected = std::fs::read_to_string(directory.join("status"))
+                .is_ok_and(|status| status.trim() == "connected");
+            connected
+                && std::fs::read(directory.join("edid"))
+                    .ok()
+                    .and_then(|bytes| EdidIdentity::parse(&bytes))
+                    .is_some_and(|identity| identity.matches(selector))
+        })
+        .count()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -338,12 +630,12 @@ fn normalize_compare(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
-fn build_setvcp_args(selection: &DdcSelectorPlan, percent: u8) -> Vec<String> {
+fn build_setvcp_args(selection: &DdcSelectorPlan, raw: u16) -> Vec<String> {
     let mut args = vec![String::from("--noconfig"), String::from("--noverify")];
     args.extend(selection.args.iter().cloned());
     args.push(String::from("setvcp"));
     args.push(String::from(DDC_BRIGHTNESS_VCP_CODE));
-    args.push(percent.to_string());
+    args.push(raw.to_string());
     args
 }
 
@@ -365,9 +657,14 @@ fn drm_root() -> &'static Path {
 /// the same identity evidence locally, and its I2C bus is then addressed
 /// directly. Every configured identity field must match; otherwise the normal
 /// ddcutil selection is used.
-/// Whether the kernel reports this monitor's connector as powered off
-/// (DPMS off or disconnected). Unknown states count as powered on, so a
-/// system without the `dpms` attribute keeps probing over DDC.
+/// Whether the kernel reports this monitor's connector as disconnected.
+///
+/// The sysfs `dpms` and `enabled` attributes are deliberately ignored: they
+/// mirror the legacy DPMS property, which atomic-modesetting compositors
+/// (KWin, Mutter, wlroots) never update. On amdgpu they read `Off` /
+/// `disabled` for displays that are lit, so trusting them silently disabled
+/// every wake probe and made each readback look like a power transition.
+/// Sleep is detected from DDC itself (repeated failed reads) instead.
 #[cfg(any(target_os = "linux", test))]
 fn connector_is_powered_off(selector: &MonitorSelector, root: &Path) -> bool {
     let Some(connector) = normalized(&selector.connector) else {
@@ -382,7 +679,13 @@ fn connector_is_powered_off(selector: &MonitorSelector, root: &Path) -> bool {
             .ok()
             .is_some_and(|value| !value.trim().eq_ignore_ascii_case(on))
     };
-    off("status", "connected") || off("dpms", "on")
+    off("status", "connected")
+}
+
+/// Connector power probe for callers outside this module (sysfs only, no DDC).
+#[cfg(target_os = "linux")]
+pub(crate) fn connector_powered_off(selector: &MonitorSelector) -> bool {
+    connector_is_powered_off(selector, drm_root())
 }
 
 fn verified_bus_selection(
@@ -735,6 +1038,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::backends::testutil::FakeRunner;
+    use crate::backends::ProcessRunner;
     use crate::config::{MonitorConfig, MonitorSelector};
 
     use super::{
@@ -791,6 +1095,220 @@ mod tests {
             second.is_ok(),
             "in-process writer should wait for the bus, got {second:?}"
         );
+    }
+
+    fn getvcp_args_for_bus(bus: &str) -> [&str; 6] {
+        ["--noconfig", "--terse", "--bus", bus, "getvcp", "10"]
+    }
+
+    #[test]
+    fn first_write_learns_vcp_max_once_before_writing() {
+        let monitor = bus_monitor(201);
+        let runner = FakeRunner::new()
+            .with_success(
+                "ddcutil",
+                &getvcp_args_for_bus("201"),
+                "VCP code 0x10 (Brightness): current value = 10, max value = 255\n",
+            )
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--bus",
+                    "201",
+                    "setvcp",
+                    "10",
+                    "128",
+                ],
+                "",
+            )
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--bus",
+                    "201",
+                    "setvcp",
+                    "10",
+                    "255",
+                ],
+                "",
+            );
+
+        let first = apply_with_runner(&runner, &monitor, 50, Duration::from_secs(4))
+            .expect("forced first write succeeds");
+        assert_eq!(first.attempts, 1);
+        let second = apply_with_runner(&runner, &monitor, 100, Duration::from_secs(4))
+            .expect("second write succeeds");
+        assert_eq!(second.applied_percent, 100);
+
+        let calls = runner.calls();
+        assert!(
+            calls[0].contains("getvcp"),
+            "max is learned before the write"
+        );
+        assert!(
+            calls[1].ends_with("setvcp|10|128"),
+            "raw uses max 255: {calls:?}"
+        );
+        assert_eq!(
+            calls.iter().filter(|call| call.contains("getvcp")).count(),
+            1,
+            "the lookup happens once per monitor per process"
+        );
+    }
+
+    #[test]
+    fn failed_lookup_is_not_retried_and_keeps_default_range() {
+        let monitor = bus_monitor(202);
+        let runner = FakeRunner::new()
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--bus",
+                    "202",
+                    "setvcp",
+                    "10",
+                    "40",
+                ],
+                "",
+            )
+            .with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--bus",
+                    "202",
+                    "setvcp",
+                    "10",
+                    "41",
+                ],
+                "",
+            );
+        apply_with_runner(&runner, &monitor, 40, Duration::from_secs(4)).expect("write");
+        apply_with_runner(&runner, &monitor, 41, Duration::from_secs(4)).expect("write");
+        assert_eq!(
+            runner
+                .calls()
+                .iter()
+                .filter(|call| call.contains("getvcp"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn nonzero_setvcp_exit_with_matching_readback_is_not_written_twice() {
+        let monitor = bus_monitor(203);
+        let setvcp = [
+            "--noconfig",
+            "--noverify",
+            "--bus",
+            "203",
+            "setvcp",
+            "10",
+            "30",
+        ];
+        let runner = FakeRunner::new()
+            .with_success(
+                "ddcutil",
+                &getvcp_args_for_bus("203"),
+                "VCP code 0x10 (Brightness): current value = 5, max value = 100\n",
+            )
+            .with_output("ddcutil", &setvcp, Some(1), "", "Device or resource busy")
+            .with_success(
+                "ddcutil",
+                &getvcp_args_for_bus("203"),
+                "VCP code 0x10 (Brightness): current value = 30, max value = 100\n",
+            );
+
+        let write = apply_with_runner(&runner, &monitor, 30, Duration::from_secs(4))
+            .expect("readback proves the write landed");
+        assert_eq!(write.attempts, 1);
+        assert_eq!(write.applied_percent, 30);
+        assert_eq!(
+            runner
+                .calls()
+                .iter()
+                .filter(|call| call.contains("setvcp"))
+                .count(),
+            1,
+            "no second setvcp"
+        );
+    }
+
+    #[test]
+    fn nonzero_setvcp_exit_with_different_readback_retries_and_counts_both_attempts() {
+        let monitor = bus_monitor(204);
+        let setvcp = [
+            "--noconfig",
+            "--noverify",
+            "--bus",
+            "204",
+            "setvcp",
+            "10",
+            "30",
+        ];
+        let runner = FakeRunner::new()
+            .with_success(
+                "ddcutil",
+                &getvcp_args_for_bus("204"),
+                "VCP code 0x10 (Brightness): current value = 5, max value = 100\n",
+            )
+            .with_output("ddcutil", &setvcp, Some(1), "", "Device or resource busy")
+            .with_success(
+                "ddcutil",
+                &getvcp_args_for_bus("204"),
+                "VCP code 0x10 (Brightness): current value = 5, max value = 100\n",
+            )
+            .with_success("ddcutil", &setvcp, "");
+
+        let write = apply_with_runner(&runner, &monitor, 30, Duration::from_secs(4))
+            .expect("retry succeeds");
+        assert_eq!(write.attempts, 2, "every actual setvcp is counted");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_runner_serializes_ddcutil_and_is_reentrant() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let lock_path = temp.path().join("ddc.lock");
+        let inner = FakeRunner::new().with_success("ddcutil", &["detect"], "ok");
+
+        // Reentrant: running a locked ddcutil call inside a locked section on
+        // the same thread must not deadlock.
+        {
+            let _held =
+                super::acquire_ddc_lock_at(&lock_path, Duration::from_secs(1)).expect("outer lock");
+            let runner = super::DdcLockedRunner::with_lock_path(&inner, lock_path.clone());
+            runner
+                .run("ddcutil", &[String::from("detect")], Duration::from_secs(1))
+                .expect("nested call must not deadlock");
+        }
+
+        // Cross-thread: the call waits for the holder.
+        let inner = FakeRunner::new().with_success("ddcutil", &["detect"], "ok");
+        let held = super::acquire_ddc_lock_at(&lock_path, Duration::from_secs(1)).expect("lock");
+        let worker_path = lock_path.clone();
+        std::thread::scope(|scope| {
+            let handle = scope.spawn(|| {
+                let runner = super::DdcLockedRunner::with_lock_path(&inner, worker_path);
+                runner.run("ddcutil", &[String::from("detect")], Duration::from_secs(5))
+            });
+            std::thread::sleep(Duration::from_millis(150));
+            assert!(inner.calls().is_empty(), "detect must wait for the holder");
+            drop(held);
+            handle
+                .join()
+                .expect("worker")
+                .expect("detect runs after release");
+        });
+        assert_eq!(inner.calls().len(), 1);
     }
 
     /// A minimal EDID base block with a monitor name and serial descriptor.
@@ -885,7 +1403,7 @@ mod tests {
     }
 
     #[test]
-    fn a_powered_off_display_is_reported_without_touching_the_bus() {
+    fn only_a_disconnected_connector_skips_the_bus() {
         let root = tempfile::tempdir().unwrap();
         let dp = connector(
             root.path(),
@@ -916,11 +1434,13 @@ mod tests {
         assert_eq!(result.expect("read").map(|value| value.percent), Some(41));
         assert_eq!(calls, 1);
 
-        // Powered off: reported as unreachable with no ddcutil call at all.
+        // A stale legacy `dpms`/`enabled` (atomic KMS never updates them) must
+        // not stop a lit display from being read.
         std::fs::write(dp.join("dpms"), "Off\n").unwrap();
+        std::fs::write(dp.join("enabled"), "disabled\n").unwrap();
         let (result, calls) = read();
-        assert!(result.is_err());
-        assert_eq!(calls, 0, "no bus traffic while powered off");
+        assert_eq!(result.expect("read").map(|value| value.percent), Some(41));
+        assert_eq!(calls, 1, "legacy dpms is ignored");
 
         // A disconnected connector has nothing to verify against.
         std::fs::write(dp.join("dpms"), "On\n").unwrap();
@@ -1245,10 +1765,15 @@ mod tests {
         assert_eq!(result.attempts, 2);
 
         let calls = runner.calls();
-        assert_eq!(calls.len(), 2);
-        assert!(calls[0].contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64"));
-        assert!(!calls[0].contains("|--bus|7|"));
-        assert!(!calls.iter().any(|call| call.contains("getvcp")));
+        let writes: Vec<_> = calls
+            .iter()
+            .filter(|call| call.contains("setvcp"))
+            .collect();
+        assert_eq!(writes.len(), 2);
+        assert!(writes[0].contains("|--sn|ABC123|--model|U2720Q|setvcp|10|64"));
+        assert!(!writes[0].contains("|--bus|7|"));
+        // Reads stay bounded: one max lookup plus one readback before the retry.
+        assert!(calls.iter().filter(|call| call.contains("getvcp")).count() <= 2);
     }
 
     #[test]
@@ -1370,7 +1895,12 @@ mod tests {
             .expect_err("second timeout should fail");
 
         assert!(error.to_string().contains("timed out"));
-        assert_eq!(runner.calls().len(), 2);
+        let calls = runner.calls();
+        assert_eq!(
+            calls.iter().filter(|call| call.contains("setvcp")).count(),
+            2
+        );
+        assert!(calls.iter().filter(|call| call.contains("getvcp")).count() <= 2);
     }
 
     #[test]
@@ -1470,6 +2000,282 @@ mod tests {
         let vcp_err = super::read_with_runner(&vcp_runner, &monitor, Duration::from_secs(4))
             .expect_err("unsupported VCP must fail immediately");
         assert!(vcp_err.to_string().contains("not supported"));
+    }
+
+    fn bus_monitor(bus: u8) -> MonitorConfig {
+        ddc_monitor(MonitorSelector {
+            ddc_bus: Some(bus),
+            ..MonitorSelector::default()
+        })
+    }
+
+    const NO_DRM: &str = "/nonexistent-drm";
+
+    #[test]
+    fn percent_raw_scaling_round_trips_exactly_for_max_100() {
+        for percent in 0..=100u8 {
+            let raw = super::percent_to_raw(percent, 100);
+            assert_eq!(raw, u16::from(percent));
+            assert_eq!(super::raw_to_percent(raw, 100), percent);
+        }
+        // max >= 100 is stable too; max < 100 only to the raw resolution.
+        for percent in 0..=100u8 {
+            let raw = super::percent_to_raw(percent, 255);
+            assert_eq!(super::raw_to_percent(raw, 255), percent);
+        }
+        assert_eq!(super::percent_to_raw(100, 50), 50);
+        assert_eq!(super::percent_to_raw(50, 50), 25);
+        assert_eq!(super::raw_to_percent(25, 50), 50);
+        assert_eq!(super::raw_to_percent(7, 7), 100);
+    }
+
+    #[test]
+    fn write_then_read_is_idempotent_so_no_redundant_writes() {
+        for percent in 0..=100u8 {
+            assert_eq!(super::quantize_percent(percent, 100), percent);
+            assert_eq!(super::quantize_percent(percent, 255), percent);
+        }
+        // max 50 cannot represent every percent; the readback is the
+        // quantized value and stays a fixed point.
+        for percent in 0..=100u8 {
+            let once = super::quantize_percent(percent, 50);
+            assert_eq!(super::quantize_percent(once, 50), once);
+            assert!(once.abs_diff(percent) <= 1);
+        }
+    }
+
+    #[test]
+    fn applied_percent_reports_what_the_monitor_will_read_back() {
+        let drm = std::path::Path::new(NO_DRM);
+        let monitor = bus_monitor(35);
+        let read = FakeRunner::new().with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "--bus", "35", "getvcp", "10"],
+            "VCP 10 C 10 50\n",
+        );
+        read_with_runner_in(&read, &monitor, Duration::from_secs(4), drm).expect("read");
+        let write = FakeRunner::new().with_success(
+            "ddcutil",
+            &[
+                "--noconfig",
+                "--noverify",
+                "--bus",
+                "35",
+                "setvcp",
+                "10",
+                "26",
+            ],
+            "",
+        );
+        let result =
+            apply_with_runner_in(&write, &monitor, 51, Duration::from_secs(4), drm).expect("write");
+        assert_eq!(result.applied_percent, 52);
+        assert_eq!(write.calls().len(), 1);
+    }
+
+    #[test]
+    fn read_scales_by_max_and_the_learned_max_scales_later_writes() {
+        let drm = std::path::Path::new(NO_DRM);
+        let monitor = bus_monitor(31);
+        let read = FakeRunner::new().with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "--bus", "31", "getvcp", "10"],
+            "VCP 10 C 128 255\n",
+        );
+        let observed =
+            read_with_runner_in(&read, &monitor, Duration::from_secs(4), drm).expect("read");
+        assert_eq!(observed.percent, 50);
+
+        let write = FakeRunner::new().with_success(
+            "ddcutil",
+            &[
+                "--noconfig",
+                "--noverify",
+                "--bus",
+                "31",
+                "setvcp",
+                "10",
+                "128",
+            ],
+            "",
+        );
+        apply_with_runner_in(&write, &monitor, 50, Duration::from_secs(4), drm).expect("write");
+    }
+
+    #[test]
+    fn write_uses_learned_max_and_unknown_monitors_default_to_100() {
+        let drm = std::path::Path::new(NO_DRM);
+        let monitor = bus_monitor(32);
+        let read = FakeRunner::new().with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "--bus", "32", "getvcp", "10"],
+            "VCP 10 C 25 50\n",
+        );
+        let observed =
+            read_with_runner_in(&read, &monitor, Duration::from_secs(4), drm).expect("read");
+        assert_eq!(observed.percent, 50);
+        let write = FakeRunner::new().with_success(
+            "ddcutil",
+            &[
+                "--noconfig",
+                "--noverify",
+                "--bus",
+                "32",
+                "setvcp",
+                "10",
+                "50",
+            ],
+            "",
+        );
+        apply_with_runner_in(&write, &monitor, 100, Duration::from_secs(4), drm).expect("write");
+
+        let unknown = bus_monitor(33);
+        let write = FakeRunner::new().with_success(
+            "ddcutil",
+            &[
+                "--noconfig",
+                "--noverify",
+                "--bus",
+                "33",
+                "setvcp",
+                "10",
+                "73",
+            ],
+            "",
+        );
+        apply_with_runner_in(&write, &unknown, 73, Duration::from_secs(4), drm).expect("write");
+    }
+
+    #[test]
+    fn impossible_readbacks_are_errors_not_values() {
+        let drm = std::path::Path::new(NO_DRM);
+        let monitor = bus_monitor(34);
+        for reply in [
+            "VCP 10 C 5 0\n",
+            "VCP 10 C 101 100\n",
+            "VCP 10 ERR\n",
+            "",
+            "Display not found\n",
+        ] {
+            let runner = FakeRunner::new().with_success(
+                "ddcutil",
+                &["--noconfig", "--terse", "--bus", "34", "getvcp", "10"],
+                reply,
+            );
+            assert!(
+                read_with_runner_in(&runner, &monitor, Duration::from_secs(4), drm).is_err(),
+                "{reply:?}"
+            );
+        }
+        // A failed read must not poison the learned max.
+        let write = FakeRunner::new().with_success(
+            "ddcutil",
+            &[
+                "--noconfig",
+                "--noverify",
+                "--bus",
+                "34",
+                "setvcp",
+                "10",
+                "40",
+            ],
+            "",
+        );
+        apply_with_runner_in(&write, &monitor, 40, Duration::from_secs(4), drm).expect("write");
+    }
+
+    #[test]
+    fn renumbered_bus_is_resolved_from_the_connector_on_every_write() {
+        let root = tempfile::tempdir().unwrap();
+        let dp = connector(
+            root.path(),
+            "card1-DP-1",
+            "connected",
+            &edid("Mi Monitor", ""),
+        );
+        let monitor = ddc_monitor(identified("card1-DP-1", "Mi Monitor", None));
+        for bus in ["7", "12"] {
+            for entry in std::fs::read_dir(&dp).unwrap().flatten() {
+                if entry.file_name().to_string_lossy().starts_with("i2c-") {
+                    std::fs::remove_dir(entry.path()).unwrap();
+                }
+            }
+            std::fs::create_dir(dp.join(format!("i2c-{bus}"))).unwrap();
+            let runner = FakeRunner::new().with_success(
+                "ddcutil",
+                &[
+                    "--noconfig",
+                    "--noverify",
+                    "--bus",
+                    bus,
+                    "setvcp",
+                    "10",
+                    "30",
+                ],
+                "",
+            );
+            let write =
+                apply_with_runner_in(&runner, &monitor, 30, Duration::from_secs(4), root.path())
+                    .expect("write");
+            assert!(write.detail.contains(&format!("bus {bus}")));
+        }
+    }
+
+    #[test]
+    fn identical_serialless_monitors_never_fall_back_to_the_first_match() {
+        let root = tempfile::tempdir().unwrap();
+        let first = connector(
+            root.path(),
+            "card1-DP-1",
+            "connected",
+            &edid("Mi Monitor", ""),
+        );
+        std::fs::create_dir(first.join("i2c-7")).unwrap();
+        let second = connector(
+            root.path(),
+            "card1-DP-2",
+            "connected",
+            &edid("Mi Monitor", ""),
+        );
+        std::fs::create_dir(second.join("i2c-9")).unwrap();
+        let monitor = ddc_monitor(identified("card1-DP-2", "Mi Monitor", None));
+        let bus_args = [
+            "--noconfig",
+            "--noverify",
+            "--bus",
+            "9",
+            "setvcp",
+            "10",
+            "40",
+        ];
+
+        // The verified bus targets the right connector.
+        let ok = FakeRunner::new().with_success("ddcutil", &bus_args, "");
+        let write = apply_with_runner_in(&ok, &monitor, 40, Duration::from_secs(4), root.path())
+            .expect("bus write");
+        assert!(write.detail.contains("bus 9"));
+
+        // If that bus fails, `--model` would hit either monitor: refuse.
+        let failing =
+            FakeRunner::new().with_output("ddcutil", &bus_args, Some(1), "", "No monitor");
+        let error =
+            apply_with_runner_in(&failing, &monitor, 40, Duration::from_secs(4), root.path())
+                .expect_err("ambiguous fallback must fail");
+        assert!(error.to_string().contains("several connected displays"));
+        assert!(failing.calls().iter().all(|call| !call.contains("--model")));
+
+        // Same for reads.
+        let read = FakeRunner::new().with_output(
+            "ddcutil",
+            &["--noconfig", "--terse", "--bus", "9", "getvcp", "10"],
+            Some(1),
+            "",
+            "No monitor",
+        );
+        let error = read_with_runner_in(&read, &monitor, Duration::from_secs(4), root.path())
+            .expect_err("ambiguous read fallback must fail");
+        assert!(error.to_string().contains("several connected displays"));
+        assert!(read.calls().iter().all(|call| !call.contains("--model")));
     }
 
     fn ddc_monitor(selector: MonitorSelector) -> MonitorConfig {

@@ -191,13 +191,59 @@ impl EnvironmentReader for ProcessEnvironment {
         env::var(key).ok().filter(|value| !value.trim().is_empty())
     }
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct WeatherRequest {
     pub latitude: f64,
     pub longitude: f64,
     pub api_key: String,
     pub fetched_at_epoch_s: u64,
     pub timeout: Duration,
+}
+
+/// `{:?}` of a request must never leak the API key.
+impl std::fmt::Debug for WeatherRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WeatherRequest")
+            .field("latitude", &self.latitude)
+            .field("longitude", &self.longitude)
+            .field("api_key", &"<redacted>")
+            .field("fetched_at_epoch_s", &self.fetched_at_epoch_s)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
+}
+
+/// Masks the value of every `appid=` / `api_key=` query parameter (and a bare
+/// `appid` JSON field) in `text`, so no error string can carry the key even
+/// when an upstream error embeds the full request URL.
+#[must_use]
+pub fn redact_api_key(text: &str) -> String {
+    const NAMES: [&str; 3] = ["appid=", "api_key=", "apikey="];
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while cursor < text.len() {
+        let next = NAMES
+            .iter()
+            .filter_map(|name| {
+                lower[cursor..]
+                    .find(name)
+                    .map(|at| (cursor + at, name.len()))
+            })
+            .min();
+        let Some((at, name_len)) = next else {
+            out.push_str(&text[cursor..]);
+            break;
+        };
+        let value_start = at + name_len;
+        out.push_str(&text[cursor..value_start]);
+        out.push_str("<redacted>");
+        let value_len = text[value_start..]
+            .find(['&', ' ', '"', '\'', ')', ']', '>', '\n', '\r'])
+            .unwrap_or(text.len() - value_start);
+        cursor = value_start + value_len;
+    }
+    out
 }
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WeatherError {
@@ -209,17 +255,17 @@ pub enum WeatherError {
     UnsupportedProvider { provider: String },
     #[error("{provider} returned HTTP {status}")]
     HttpStatus { provider: &'static str, status: u16 },
-    #[error("{provider} request failed: {message}")]
+    #[error("{provider} request failed: {}", redact_api_key(.message))]
     Transport {
         provider: &'static str,
         message: String,
     },
-    #[error("{provider} response parse failed: {message}")]
+    #[error("{provider} response parse failed: {}", redact_api_key(.message))]
     Parse {
         provider: &'static str,
         message: String,
     },
-    #[error("{provider} response was invalid: {message}")]
+    #[error("{provider} response was invalid: {}", redact_api_key(.message))]
     InvalidResponse {
         provider: &'static str,
         message: String,

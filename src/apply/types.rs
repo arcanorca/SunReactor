@@ -1,6 +1,6 @@
 use crate::backends::{BackendKind, FailureKind};
 use crate::config::Config;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// An in-memory quarantine for a monitor whose brightness was changed by
@@ -16,6 +16,29 @@ pub struct ExternalHold {
 pub const EXTERNAL_CHANGE_THRESHOLD_PCT: u8 = 2;
 pub const OWN_WRITE_GRACE_SECONDS: u64 = 5;
 pub const RECOVERY_WINDOW_SECONDS: u64 = 120;
+
+/// Write economy. Every DDC `setvcp` can wear the panel's EEPROM and ties up
+/// the I2C bus, so every non-user write path is budgeted per monitor.
+///
+/// Minimum gap between two probe corrections of one monitor. One probe cadence
+/// (15 s) plus slack: a correction that did not take is retried at most every
+/// other probe, never back to back.
+pub const MIN_CORRECTION_INTERVAL_SECONDS: u64 = 20;
+/// Rolling window for [`MAX_WRITES_PER_WINDOW`].
+pub const WRITE_BUDGET_WINDOW_SECONDS: u64 = 600;
+/// Hard ceiling on budgeted write events (a fade counts as one) per monitor
+/// per [`WRITE_BUDGET_WINDOW_SECONDS`], i.e. 72 per hour. Normal operation
+/// needs at most one per 60 s tick (10 per window); the ceiling only bites in
+/// a misbehaving loop. Over budget the write is deferred, not dropped: the
+/// next tick or probe recomputes the latest target.
+pub const MAX_WRITES_PER_WINDOW: usize = 12;
+/// A monitor whose brightness cannot be read back is reasserted blind at most
+/// this often (instead of every `apply_reassert_minutes`).
+pub const BLIND_REASSERT_INTERVAL_SECONDS: u64 = 900;
+/// The same (target, readback) mismatch seen again within this window means
+/// the monitor snaps to its own step grid: the readback is accepted instead of
+/// rewritten forever.
+pub const QUANTIZATION_LEARN_WINDOW_SECONDS: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApplySettings {
@@ -53,17 +76,22 @@ impl ApplySettings {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyStatus {
     SkippedDisabled,
     SkippedDryRun,
     SkippedHysteresis,
     SkippedMinimumInterval,
+    SkippedBudget,
+    SkippedManualCap,
+    SkippedContested,
     SkippedBackoff,
     SkippedTopology,
     Succeeded,
     Failed,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,7 +142,11 @@ impl ApplySummary {
             | ApplyStatus::SkippedDryRun
             | ApplyStatus::SkippedHysteresis
             | ApplyStatus::SkippedMinimumInterval
-            | ApplyStatus::SkippedTopology => {
+            | ApplyStatus::SkippedBudget
+            | ApplyStatus::SkippedManualCap
+            | ApplyStatus::SkippedContested
+            | ApplyStatus::SkippedTopology
+            | ApplyStatus::Unknown => {
                 self.skipped += 1;
             }
             ApplyStatus::SkippedBackoff => {
@@ -126,3 +158,33 @@ impl ApplySummary {
         self.records.push(record);
     }
 }
+
+/// Largest gap between target and readback that can be a monitor rounding to
+/// its own step grid. Bigger gaps (0, 50, 100 after a standby) are resets or
+/// ignored writes and are never "learned".
+pub const QUANTIZATION_LEARN_MAX_DELTA_PCT: u8 = 3;
+
+/// Consecutive failed reads (see [`DISCONNECT_MIN_SPAN_SECONDS`]) that count as
+/// evidence of a real disconnection. A bare transient error never does.
+pub const DISCONNECT_MIN_FAILED_READS: u32 = 3;
+/// The failed reads must span at least this long.
+pub const DISCONNECT_MIN_SPAN_SECONDS: u64 = 30;
+
+/// A deviation found this soon after our own write looks like another
+/// controller undoing it.
+pub const CONTEST_QUICK_REVERT_SECONDS: u64 = 180;
+/// This many such events within [`CONTEST_WINDOW_SECONDS`] make a monitor
+/// "contested".
+pub const CONTEST_THRESHOLD_EVENTS: usize = 3;
+pub const CONTEST_WINDOW_SECONDS: u64 = 600;
+/// How long automatic correction stays paused for a contested monitor.
+pub const CONTESTED_BACKOFF_SECONDS: u64 = 6 * 3600;
+
+/// User-forced writes (IPC overrides, limits, idle dim/wake) are not part of
+/// the automatic budget but have their own generous cap per monitor: one write
+/// per [`MANUAL_MIN_GAP_SECONDS`] and [`MANUAL_MAX_WRITES_PER_WINDOW`] per
+/// [`MANUAL_WINDOW_SECONDS`]. Over the cap the write is deferred and the
+/// latest value is applied later, never dropped.
+pub const MANUAL_MIN_GAP_SECONDS: u64 = 1;
+pub const MANUAL_MAX_WRITES_PER_WINDOW: usize = 60;
+pub const MANUAL_WINDOW_SECONDS: u64 = 600;

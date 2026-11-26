@@ -8,7 +8,7 @@ use crate::paths::{self, PathError};
 use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
@@ -33,7 +33,72 @@ impl ControlSocket {
         self.path.display().to_string()
     }
 
+    /// Takes the exclusive single-instance lock (`<socket>.lock`, `flock`) for
+    /// the daemon's lifetime. The kernel drops it with the process, so a crash
+    /// never leaves a stale lock. Fails with [`IpcError::SocketInUse`] while
+    /// another daemon holds it.
+    pub fn acquire_instance_lock(&self) -> Result<InstanceLock, IpcError> {
+        validate_socket_path_length(&self.path)?;
+        let lock_path = instance_lock_path(&self.path);
+        if let Some(parent) = lock_path.parent() {
+            let mut builder = fs::DirBuilder::new();
+            builder.recursive(true).mode(SOCKET_DIR_MODE);
+            builder.create(parent).map_err(|source| IpcError::Io {
+                target: parent.display().to_string(),
+                source,
+            })?;
+        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .mode(SOCKET_FILE_MODE)
+            .open(&lock_path)
+            .map_err(|source| IpcError::Io {
+                target: lock_path.display().to_string(),
+                source,
+            })?;
+        // A just-released lock can still look held for a moment: a previous
+        // daemon may be finishing its exit, or (in-process) another thread's
+        // fork has briefly inherited the descriptor before its exec closes it.
+        // Retry for a short, bounded grace before declaring a live instance.
+        let deadline = std::time::Instant::now() + INSTANCE_LOCK_GRACE;
+        loop {
+            match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+                Ok(()) => return Ok(InstanceLock { _file: file }),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(IpcError::SocketInUse {
+                            target: self.path.display().to_string(),
+                        });
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Err(error) => {
+                    return Err(IpcError::Io {
+                        target: lock_path.display().to_string(),
+                        source: io::Error::from(error),
+                    })
+                }
+            }
+        }
+    }
+
     pub fn bind_listener(&self) -> Result<BoundControlSocket, IpcError> {
+        self.bind_listener_with_lock(None)
+    }
+
+    /// Binds the listener, holding `lock` (taken early by the caller, before
+    /// any state is touched) or acquiring the instance lock itself.
+    pub fn bind_listener_with_lock(
+        &self,
+        lock: Option<InstanceLock>,
+    ) -> Result<BoundControlSocket, IpcError> {
+        validate_socket_path_length(&self.path)?;
+        let instance_lock = match lock {
+            Some(lock) => lock,
+            None => self.acquire_instance_lock()?,
+        };
         prepare_socket_path(&self.path)?;
 
         let listener = UnixListener::bind(&self.path).map_err(|source| {
@@ -63,9 +128,15 @@ impl ControlSocket {
             );
         }
 
+        let identity = fs::symlink_metadata(&self.path)
+            .ok()
+            .map(|metadata| (metadata.dev(), metadata.ino()));
+
         Ok(BoundControlSocket {
             listener,
             path: self.path.clone(),
+            identity,
+            _instance_lock: instance_lock,
         })
     }
 
@@ -101,10 +172,33 @@ impl ControlSocket {
     }
 }
 
+/// Exclusive single-instance guard; released when dropped or the process dies.
+/// How long a contended instance lock is retried before giving up.
+const INSTANCE_LOCK_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+#[derive(Debug)]
+pub struct InstanceLock {
+    _file: fs::File,
+}
+
+fn instance_lock_path(socket_path: &Path) -> PathBuf {
+    let mut name = socket_path
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    name.push(".lock");
+    socket_path.with_file_name(name)
+}
+
 #[derive(Debug)]
 pub struct BoundControlSocket {
     listener: UnixListener,
     path: PathBuf,
+    /// `(dev, ino)` of the socket file we bound, so Drop never unlinks a
+    /// socket another process created at the same path.
+    identity: Option<(u64, u64)>,
+    /// Declared last: released after the socket file is removed.
+    _instance_lock: InstanceLock,
 }
 
 impl BoundControlSocket {
@@ -163,7 +257,13 @@ impl BoundControlSocket {
 
 impl Drop for BoundControlSocket {
     fn drop(&mut self) {
-        fs::remove_file(&self.path).ok();
+        let still_ours = match (self.identity, fs::symlink_metadata(&self.path)) {
+            (Some(bound), Ok(current)) => bound == (current.dev(), current.ino()),
+            _ => false,
+        };
+        if still_ours {
+            fs::remove_file(&self.path).ok();
+        }
     }
 }
 
@@ -304,6 +404,44 @@ mod tests {
 
         assert!(matches!(error, super::IpcError::SocketInUse { .. }));
         drop(bound);
+    }
+
+    #[test]
+    fn instance_lock_blocks_second_holder_even_without_a_live_listener() {
+        let temp = TempDir::new();
+        let socket = ControlSocket {
+            path: temp.path().join("run/control.sock"),
+        };
+        let first = socket.acquire_instance_lock().expect("first lock");
+        let error = socket
+            .acquire_instance_lock()
+            .expect_err("second lock must be refused");
+        assert!(matches!(error, super::IpcError::SocketInUse { .. }));
+        // bind_listener acquires the same lock, so it is refused as well.
+        assert!(matches!(
+            socket.bind_listener().expect_err("bind must be refused"),
+            super::IpcError::SocketInUse { .. }
+        ));
+        drop(first);
+        socket.acquire_instance_lock().expect("lock is free again");
+    }
+
+    #[test]
+    fn drop_leaves_a_socket_replaced_by_another_process() {
+        let temp = TempDir::new();
+        let socket_path = temp.path().join("run/control.sock");
+        let socket = ControlSocket {
+            path: socket_path.clone(),
+        };
+        let bound = socket.bind_listener().expect("bind");
+        // Another process replaced the path while we were running.
+        fs::remove_file(&socket_path).expect("unlink ours");
+        let _other = UnixListener::bind(&socket_path).expect("foreign socket");
+        drop(bound);
+        assert!(
+            socket_path.exists(),
+            "a socket we did not bind must not be unlinked"
+        );
     }
 
     #[test]

@@ -538,8 +538,7 @@ fn ipc_set_monitor_limits_accepts_client_json_and_echoes_updated_limits_in_statu
     let mut runtime = DaemonRuntime::bootstrap_with_paths(report, state_path, socket_path)
         .expect("runtime should bootstrap");
 
-    let client_json =
-        r#"{"max_pct":82,"min_pct":22,"monitor_id":"internal","request":"set_monitor_limits","version":1}"#;
+    let client_json = r#"{"max_pct":82,"min_pct":22,"monitor_id":"internal","request":"set_monitor_limits","version":1}"#;
     let envelope: ipc::RequestEnvelope =
         serde_json::from_str(client_json).expect("client set_monitor_limits JSON should parse");
     let now = Utc

@@ -1,4 +1,5 @@
 pub(super) mod capabilities;
+pub(super) mod clock;
 #[cfg(target_os = "linux")]
 pub(crate) mod events;
 pub mod fade;

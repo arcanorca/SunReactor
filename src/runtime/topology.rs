@@ -129,6 +129,68 @@ pub fn reconcile(
         .collect()
 }
 
+/// Logical ids of configured monitors whose topology evidence differs between
+/// two snapshots: a different reconcile action, a different matching DDC
+/// display (bus, connector, identity) or a different viability of its backlight.
+#[must_use]
+pub(crate) fn changed_monitors(
+    configured: &[MonitorConfig],
+    before: &CapabilitySnapshot,
+    after: &CapabilitySnapshot,
+) -> Vec<String> {
+    if before == after {
+        return Vec::new();
+    }
+    configured
+        .iter()
+        .filter(|monitor| monitor_evidence(monitor, before) != monitor_evidence(monitor, after))
+        .map(|monitor| monitor.logical_id.clone())
+        .collect()
+}
+
+fn monitor_evidence(
+    monitor: &MonitorConfig,
+    snapshot: &CapabilitySnapshot,
+) -> (
+    ReconcileAction,
+    Vec<DdcMonitorDiscovery>,
+    Vec<BacklightDeviceDiscovery>,
+) {
+    let action = classify_monitor(monitor, snapshot);
+    match monitor.backend {
+        BackendKind::Ddc => (
+            action,
+            snapshot
+                .ddc_present
+                .iter()
+                .filter(|observed| {
+                    crate::backends::ddc::selector_matches_discovery(&monitor.selector, observed)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect(),
+            Vec::new(),
+        ),
+        BackendKind::Backlight => {
+            let configured_path = configured_backlight_path(monitor);
+            (
+                action,
+                Vec::new(),
+                snapshot
+                    .backlights_present
+                    .iter()
+                    .filter(|device| {
+                        configured_path
+                            .as_ref()
+                            .is_some_and(|path| resolved_backlight_device_path(device) == *path)
+                    })
+                    .cloned()
+                    .collect(),
+            )
+        }
+    }
+}
+
 /// Classifies one configured monitor against the snapshot.
 ///
 /// Evidence rules (do NOT infer sameness from names/ordering/serial

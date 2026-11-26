@@ -4,6 +4,30 @@ use crate::runtime::topology;
 use crate::weather;
 
 impl DaemonRuntime {
+    fn write_budget_status(&self, logical_id: &str, now_epoch_s: u64) -> ipc::WriteBudgetStatus {
+        use crate::apply::types::{MAX_WRITES_PER_WINDOW, WRITE_BUDGET_WINDOW_SECONDS};
+        let used = self.state.budget_events_in_window(
+            logical_id,
+            now_epoch_s,
+            WRITE_BUDGET_WINDOW_SECONDS,
+        );
+        let parked_fade = self
+            .fade_engine
+            .active_fades
+            .get(logical_id)
+            .is_some_and(|fade| fade.resume_at_epoch_s.is_some_and(|at| at > now_epoch_s));
+        ipc::WriteBudgetStatus {
+            writes_total: self
+                .state
+                .monitor(logical_id)
+                .map_or(0, |monitor| monitor.ledger.writes_total),
+            window_used: used as u32,
+            window_max: MAX_WRITES_PER_WINDOW as u32,
+            window_seconds: WRITE_BUDGET_WINDOW_SECONDS,
+            deferred: used >= MAX_WRITES_PER_WINDOW || parked_fade,
+        }
+    }
+
     pub(super) fn status_response(&self, now_epoch_s: u64) -> ipc::StatusResponse {
         let control = self.state.effective_control(now_epoch_s);
         let weather = self.weather_status(now_epoch_s);
@@ -50,6 +74,16 @@ impl DaemonRuntime {
                             remaining_s: hold.until_epoch_s.saturating_sub(now_epoch_s),
                             observed_percent: hold.observed_percent,
                         }),
+                    writes: Some(self.write_budget_status(&monitor.logical_id, now_epoch_s)),
+                    contested: crate::apply::is_contested(&monitor.logical_id, now_epoch_s),
+                    contested_until_epoch_s: crate::apply::contested_until(
+                        &monitor.logical_id,
+                        now_epoch_s,
+                    ),
+                    manual_deferred_until_epoch_s: crate::apply::deferred_manual_until(
+                        &monitor.logical_id,
+                        now_epoch_s,
+                    ),
                 }
             })
             .collect();
@@ -88,6 +122,7 @@ impl DaemonRuntime {
             lunar_phase: Some(crate::solar::calculate_lunar_phase(now_utc)),
             theme: Some(ipc::ThemeStatus::from_theme(&self.config.tui_theme)),
             theme_warning: self.config.tui_theme_warning.clone(),
+            temperature_unit: Some(self.config.tui_temperature_unit),
         }
     }
 
@@ -252,7 +287,24 @@ impl DaemonRuntime {
                 .unwrap_or_default(),
             condition_description: snapshot
                 .and_then(|weather| weather.condition_description.clone()),
-            day_phase: snapshot.and_then(|weather| weather.day_phase),
+            day_phase: {
+                let snapshot_day_phase = snapshot.and_then(|weather| weather.day_phase);
+                if snapshot.is_some_and(|weather| {
+                    weather.source_kind == weather::WeatherSourceKind::Forecast
+                }) {
+                    self.last_solar_elevation
+                        .map(|elevation| {
+                            if elevation < 0.0 {
+                                weather::WeatherDayPhase::Night
+                            } else {
+                                weather::WeatherDayPhase::Day
+                            }
+                        })
+                        .or(snapshot_day_phase)
+                } else {
+                    snapshot_day_phase
+                }
+            },
             forecast: snapshot
                 .map(|weather| weather.forecast.clone())
                 .unwrap_or_default(),

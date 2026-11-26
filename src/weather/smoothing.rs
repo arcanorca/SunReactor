@@ -4,6 +4,9 @@ use crate::state::WeatherSnapshotMetadata;
 use std::time::Duration;
 
 const WEATHER_CACHE_TTL_MULTIPLIER: u64 = 2;
+/// After the cache TTL the cloud dimming does not snap to 1.0 (a visible
+/// brightness step): it fades linearly back to neutral over this long.
+pub const WEATHER_EXPIRY_DECAY: Duration = Duration::from_mins(30);
 #[must_use]
 pub fn snapshot_state(
     config: &WeatherConfig,
@@ -34,20 +37,48 @@ pub fn snapshot_modifier(
     snapshot: &WeatherSnapshotMetadata,
     now_epoch_s: u64,
 ) -> Option<f64> {
-    if !config.enabled
-        || snapshot_state(config, Some(snapshot), now_epoch_s) != WeatherSnapshotState::Ready
-    {
+    if !config.enabled {
+        return None;
+    }
+    let state = snapshot_state(config, Some(snapshot), now_epoch_s);
+    if !matches!(
+        state,
+        WeatherSnapshotState::Ready | WeatherSnapshotState::Stale
+    ) {
         return None;
     }
 
     let cloud_cover_percent = snapshot
         .smoothed_cloud_cover_percent
         .or(snapshot.cloud_cover_percent)?;
+    let multiplier = cloud_cover_to_multiplier(cloud_cover_percent, config.min_multiplier);
+    if state == WeatherSnapshotState::Ready {
+        return Some(multiplier);
+    }
+    expired_multiplier(config, snapshot, multiplier, now_epoch_s)
+}
 
-    Some(cloud_cover_to_multiplier(
-        cloud_cover_percent,
-        config.min_multiplier,
-    ))
+/// Linear fade from `multiplier` back to 1.0 across [`WEATHER_EXPIRY_DECAY`]
+/// after the TTL; `None` once neutral. A future-dated snapshot (the clock
+/// stepped back) is not trusted here; the refresh worker clamps and persists
+/// its timestamp so it then decays from that moment.
+fn expired_multiplier(
+    config: &WeatherConfig,
+    snapshot: &WeatherSnapshotMetadata,
+    multiplier: f64,
+    now_epoch_s: u64,
+) -> Option<f64> {
+    if snapshot.provider.trim().is_empty() {
+        return None;
+    }
+    let age = now_epoch_s.checked_sub(snapshot.fetched_at_epoch_s)?;
+    let past_ttl = age.checked_sub(cache_ttl(config).as_secs())?;
+    let decay = WEATHER_EXPIRY_DECAY.as_secs();
+    if past_ttl >= decay {
+        return None;
+    }
+    let progress = past_ttl as f64 / decay as f64;
+    Some(multiplier + (1.0 - multiplier) * progress)
 }
 #[must_use]
 pub fn refresh_interval(config: &WeatherConfig) -> Duration {
@@ -90,7 +121,7 @@ pub(crate) fn merge_snapshot(
 
     WeatherSnapshotMetadata {
         provider: fresh_snapshot.provider,
-        fetched_at_epoch_s: fresh_snapshot.fetched_at_epoch_s,
+        fetched_at_epoch_s: fresh_snapshot.fetched_at_epoch_s.min(now_epoch_s),
         valid_at_epoch_s: fresh_snapshot.valid_at_epoch_s,
         source_kind: fresh_snapshot.source_kind,
         cloud_cover_percent: Some(fresh_snapshot.cloud_cover_percent),
@@ -140,5 +171,44 @@ mod tests {
         };
 
         assert!(!cache_is_fresh(&config, &snapshot, 1_800_000_000));
+        assert_eq!(snapshot_modifier(&config, &snapshot, 1_800_000_000), None);
+    }
+
+    fn cloudy(fetched_at_epoch_s: u64) -> WeatherSnapshotMetadata {
+        WeatherSnapshotMetadata {
+            provider: String::from("test"),
+            fetched_at_epoch_s,
+            cloud_cover_percent: Some(100),
+            smoothed_cloud_cover_percent: Some(100),
+            ..WeatherSnapshotMetadata::default()
+        }
+    }
+
+    #[test]
+    fn cloud_dimming_fades_out_after_the_ttl_instead_of_stepping() {
+        let config = WeatherConfig {
+            enabled: true,
+            min_multiplier: 0.6,
+            ..WeatherConfig::default()
+        };
+        let snapshot = cloudy(1_800_000_000);
+        let ttl = cache_ttl(&config).as_secs();
+        let at = |past: u64| snapshot_modifier(&config, &snapshot, 1_800_000_000 + ttl + past);
+
+        let fresh = at(0).expect("still fresh at the TTL");
+        assert!((fresh - 0.6).abs() < 1e-9);
+        let mut previous = fresh;
+        for minute in 1..30 {
+            let value = at(minute * 60).expect("decaying");
+            assert!(value > previous && value < 1.0, "monotonic, never a jump");
+            assert!(value - previous < 0.02, "no step larger than 2 points");
+            previous = value;
+        }
+        assert!(
+            (at(15 * 60).unwrap() - 0.8).abs() < 1e-9,
+            "halfway at 15 min"
+        );
+        assert_eq!(at(WEATHER_EXPIRY_DECAY.as_secs()), None);
+        assert_eq!(at(WEATHER_EXPIRY_DECAY.as_secs() + 3_600), None);
     }
 }

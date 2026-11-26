@@ -1,9 +1,17 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant};
 
 use crate::backends::ProcessRunner;
 use crate::runtime::topology::CapabilitySnapshot;
+
+/// Slow safety net: a full `ddcutil detect` + capabilities pass is heavy bus
+/// traffic, so without any event (hotplug, resume, reload, explicit request)
+/// the topology is only re-observed this often.
+pub(super) const CAPABILITY_SAFETY_REFRESH_INTERVAL: Duration = Duration::from_mins(30);
+/// Minimum gap between two observation starts, so event bursts coalesce.
+pub(super) const CAPABILITY_REFRESH_MIN_GAP: Duration = Duration::from_secs(10);
 
 #[derive(Debug)]
 enum CapabilityRefreshResult {
@@ -30,6 +38,9 @@ pub(super) struct CapabilityRefreshState {
     pending: bool,
     handle: Option<std::thread::JoinHandle<()>>,
     generation: Arc<AtomicU64>,
+    /// An event asked for a fresh observation (hotplug, resume, reload, ...).
+    requested: bool,
+    last_started: Option<Instant>,
 }
 
 impl Default for CapabilityRefreshState {
@@ -42,6 +53,8 @@ impl Default for CapabilityRefreshState {
             pending: false,
             handle: None,
             generation: Arc::new(AtomicU64::new(0)),
+            requested: false,
+            last_started: None,
         }
     }
 }
@@ -113,6 +126,33 @@ impl CapabilityRefreshState {
         }
     }
 
+    /// Asks for a fresh observation; honoured by [`Self::due`].
+    pub(super) fn request(&mut self) {
+        self.requested = true;
+    }
+
+    /// Whether a new observation should start now: the very first one (no
+    /// snapshot yet), an explicit request, or the slow safety net. Never while
+    /// one is in flight, and never closer than the minimum gap.
+    pub(super) fn due(&self, now: Instant, has_snapshot: bool) -> bool {
+        if self.pending || self.active.load(Ordering::Acquire) {
+            return false;
+        }
+        let Some(started) = self.last_started else {
+            return true;
+        };
+        let since = now.saturating_duration_since(started);
+        if since < CAPABILITY_REFRESH_MIN_GAP {
+            return false;
+        }
+        !has_snapshot || self.requested || since >= CAPABILITY_SAFETY_REFRESH_INTERVAL
+    }
+
+    pub(super) fn note_started(&mut self, now: Instant) {
+        self.requested = false;
+        self.last_started = Some(now);
+    }
+
     pub(super) fn invalidate(&self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
     }
@@ -143,5 +183,47 @@ struct CapabilityRefreshGuard(Arc<AtomicBool>);
 impl Drop for CapabilityRefreshGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_observation_is_due_then_only_on_request_or_safety_net() {
+        let mut state = CapabilityRefreshState::default();
+        let t0 = Instant::now();
+        assert!(state.due(t0, false), "startup observation is due");
+        state.note_started(t0);
+
+        // Ordinary ticks must not trigger detect again.
+        for minutes in [1_u64, 2, 5, 14] {
+            assert!(!state.due(t0 + Duration::from_mins(minutes), true));
+        }
+        // An event does, but not inside the coalescing gap.
+        state.request();
+        assert!(!state.due(t0 + Duration::from_secs(2), true));
+        assert!(state.due(t0 + Duration::from_secs(11), true));
+        state.note_started(t0 + Duration::from_secs(11));
+        assert!(!state.due(t0 + Duration::from_mins(1), true));
+        // Safety net.
+        assert!(state.due(
+            t0 + Duration::from_secs(11) + CAPABILITY_SAFETY_REFRESH_INTERVAL,
+            true
+        ));
+    }
+
+    #[test]
+    fn safety_net_is_at_least_fifteen_minutes() {
+        assert!(CAPABILITY_SAFETY_REFRESH_INTERVAL >= Duration::from_mins(15));
+    }
+
+    #[test]
+    fn nothing_is_due_while_pending() {
+        let mut state = CapabilityRefreshState::default();
+        state.set_pending();
+        state.request();
+        assert!(!state.due(Instant::now(), false));
     }
 }

@@ -338,7 +338,7 @@
             vec![named_monitor_config("mon-0", "Mi Monitor", 5, 60)],
         );
         let mut status = dummy_status(1);
-        status.monitors[0].last_applied_percent = Some(44);
+        status.monitors[0].last_applied_percent = Some(88);
         model.status = Some(status);
         model.daemon_connection = DaemonConnection::Connected;
         model.active_tab = Tab::Limits;
@@ -348,16 +348,16 @@
         let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
         terminal.draw(|frame| ui::ui(frame, &mut model)).unwrap();
         let known = buffer_text(terminal.backend().buffer());
-        // 44 in the three-row digit font: `╷ ╷ ╷ ╷` over `╰─┤ ╰─┤`.
+        // 88 in the three-row digit font: `╭─╮ ╭─╮` over `├─┤ ├─┤` over `╰─╯ ╰─╯`.
         assert!(known.contains("Output"), "{known}");
-        assert!(known.contains("╰─┤ ╰─┤"), "{known}");
+        assert!(known.contains("├─┤ ├─┤"), "{known}");
         assert!(!known.contains("not written yet"), "{known}");
 
         model.status.as_mut().expect("fixture status").monitors[0].last_applied_percent = None;
         terminal.draw(|frame| ui::ui(frame, &mut model)).unwrap();
         let unknown = buffer_text(terminal.backend().buffer());
         assert!(unknown.contains("Target · not written yet"), "{unknown}");
-        assert!(!unknown.contains("╰─┤ ╰─┤"), "{unknown}");
+        assert!(!unknown.contains("├─┤ ├─┤"), "{unknown}");
     }
 
     #[test]

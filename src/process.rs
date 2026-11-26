@@ -2,6 +2,8 @@ use std::fmt;
 use std::io::{self, Read};
 use std::process::{Child, Command, Stdio};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 #[cfg(target_os = "linux")]
@@ -12,6 +14,10 @@ use std::os::unix::process::CommandExt;
 use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
+/// Maximum bytes captured per output stream before the command is killed.
+const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
+/// How long to wait for a SIGKILLed child before abandoning it to a reaper.
+const REAP_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CommandOutput {
@@ -83,7 +89,10 @@ pub(crate) struct RealProcessRunner;
 impl ProcessRunner for RealProcessRunner {
     /// Runs a command as an isolated process group while retaining ownership of
     /// its direct child until cleanup is complete. Stdout and stderr are drained
-    /// concurrently so verbose children cannot block on full pipes.
+    /// concurrently (each capped at [`MAX_CAPTURE_BYTES`]) so verbose children
+    /// cannot block on full pipes. Cleanup after a kill is bounded by
+    /// [`REAP_GRACE`]: a child stuck in uninterruptible sleep is handed to a
+    /// detached reaper thread instead of blocking the caller.
     #[allow(clippy::too_many_lines)]
     fn run(
         &self,
@@ -104,7 +113,7 @@ impl ProcessRunner for RealProcessRunner {
 
         let Some(stdout) = child.stdout.take() else {
             let _ = terminate_process_group(&child);
-            let _ = child.wait();
+            abandon_to_reaper(child, Vec::new());
             return Err(CommandError::Io {
                 program: program.to_owned(),
                 message: String::from("failed to capture stdout"),
@@ -112,19 +121,23 @@ impl ProcessRunner for RealProcessRunner {
         };
         let Some(stderr) = child.stderr.take() else {
             let _ = terminate_process_group(&child);
-            let _ = child.wait();
+            abandon_to_reaper(child, Vec::new());
             return Err(CommandError::Io {
                 program: program.to_owned(),
                 message: String::from("failed to capture stderr"),
             });
         };
-        let stdout_thread = spawn_reader(stdout);
-        let stderr_thread = spawn_reader(stderr);
+        let overflow = Arc::new(AtomicBool::new(false));
+        let stdout_thread = spawn_reader(stdout, MAX_CAPTURE_BYTES, Arc::clone(&overflow));
+        let stderr_thread = spawn_reader(stderr, MAX_CAPTURE_BYTES, Arc::clone(&overflow));
         let deadline = Instant::now()
             .checked_add(timeout)
             .unwrap_or_else(Instant::now);
 
         let child_exited = loop {
+            if overflow.load(Ordering::Acquire) {
+                break Err(());
+            }
             match child_exited_without_reaping(&child) {
                 Ok(true) => break Ok(()),
                 Ok(false) if Instant::now() >= deadline => break Err(()),
@@ -133,9 +146,7 @@ impl ProcessRunner for RealProcessRunner {
                 ),
                 Err(error) => {
                     let _ = terminate_process_group(&child);
-                    let _ = child.wait();
-                    let _ = stdout_thread.join();
-                    let _ = stderr_thread.join();
+                    abandon_to_reaper(child, vec![stdout_thread, stderr_thread]);
                     return Err(CommandError::Io {
                         program: program.to_owned(),
                         message: error.to_string(),
@@ -146,21 +157,31 @@ impl ProcessRunner for RealProcessRunner {
 
         if child_exited.is_err() {
             let kill_error = terminate_process_group(&child).err();
-            let wait_result = child.wait();
-            let stdout_result = join_reader(stdout_thread, program, "stdout");
-            let stderr_result = join_reader(stderr_thread, program, "stderr");
+            let grace_deadline = Instant::now() + REAP_GRACE;
+            if !wait_reaped_bounded(&mut child, grace_deadline) {
+                // Uninterruptible child: never block the caller on it.
+                abandon_to_reaper(child, vec![stdout_thread, stderr_thread]);
+                return Err(CommandError::Timeout {
+                    program: program.to_owned(),
+                    after: timeout,
+                    stdout: String::new(),
+                    stderr: format!(
+                        "child did not exit {}s after SIGKILL; abandoned to reaper",
+                        REAP_GRACE.as_secs()
+                    ),
+                });
+            }
+            let stdout_result =
+                join_reader_bounded(stdout_thread, program, "stdout", grace_deadline);
+            let stderr_result =
+                join_reader_bounded(stderr_thread, program, "stderr", grace_deadline);
 
-            if let Some(error) = stdout_result
-                .as_ref()
-                .err()
-                .or(stderr_result.as_ref().err())
-            {
+            if let ReaderOutcome::Failed(error) = &stdout_result {
                 return Err(error.clone());
             }
-            wait_result.map_err(|error| CommandError::Io {
-                program: program.to_owned(),
-                message: format!("failed to reap timed-out child: {error}"),
-            })?;
+            if let ReaderOutcome::Failed(error) = &stderr_result {
+                return Err(error.clone());
+            }
             if let Some(error) = kill_error {
                 // The group may have disappeared between `try_wait` and the
                 // signal; the successful wait still proves direct-child reap.
@@ -174,8 +195,8 @@ impl ProcessRunner for RealProcessRunner {
             return Err(CommandError::Timeout {
                 program: program.to_owned(),
                 after: timeout,
-                stdout: stdout_result.unwrap_or_default(),
-                stderr: stderr_result.unwrap_or_default(),
+                stdout: stdout_result.into_text(),
+                stderr: stderr_result.into_text(),
             });
         }
 
@@ -186,14 +207,35 @@ impl ProcessRunner for RealProcessRunner {
         // the capture pipes, so close that group before joining readers.
         // ESRCH is harmless when the group became empty with the child exit.
         let group_result = terminate_process_group(&child);
-        let status = child.wait().map_err(|error| CommandError::Io {
-            program: program.to_owned(),
-            message: format!("failed to reap completed child: {error}"),
-        })?;
-        let stdout = join_reader(stdout_thread, program, "stdout");
-        let stderr = join_reader(stderr_thread, program, "stderr");
-        if let Some(error) = stdout.as_ref().err().or(stderr.as_ref().err()) {
-            return Err(error.clone());
+        let grace_deadline = Instant::now() + REAP_GRACE;
+        if !wait_reaped_bounded(&mut child, grace_deadline) {
+            abandon_to_reaper(child, vec![stdout_thread, stderr_thread]);
+            return Err(CommandError::Io {
+                program: program.to_owned(),
+                message: String::from("failed to reap completed child within grace period"),
+            });
+        }
+        let status = child
+            .try_wait()
+            .ok()
+            .flatten()
+            .ok_or_else(|| CommandError::Io {
+                program: program.to_owned(),
+                message: String::from("failed to reap completed child"),
+            })?;
+        let stdout = join_reader_bounded(stdout_thread, program, "stdout", grace_deadline);
+        let stderr = join_reader_bounded(stderr_thread, program, "stderr", grace_deadline);
+        for outcome in [&stdout, &stderr] {
+            match outcome {
+                ReaderOutcome::Failed(error) => return Err(error.clone()),
+                ReaderOutcome::Stuck => {
+                    return Err(CommandError::Io {
+                        program: program.to_owned(),
+                        message: String::from("output pipe did not close after child exit"),
+                    })
+                }
+                ReaderOutcome::Text(_) => {}
+            }
         }
         if let Err(error) = group_result {
             if error.kind() != io::ErrorKind::NotFound {
@@ -203,14 +245,91 @@ impl ProcessRunner for RealProcessRunner {
                 });
             }
         }
-        let stdout = stdout.expect("stdout reader result was checked");
-        let stderr = stderr.expect("stderr reader result was checked");
         Ok(CommandOutput {
-            stdout,
-            stderr,
+            stdout: stdout.into_text(),
+            stderr: stderr.into_text(),
             exit_code: status.code(),
         })
     }
+}
+
+/// Polls `try_wait` until the child is reaped or `deadline` passes.
+fn wait_reaped_bounded(child: &mut Child, deadline: Instant) -> bool {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {}
+            // ECHILD and friends: nothing left to wait for.
+            Err(_) => return true,
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return false;
+        }
+        thread::sleep(POLL_INTERVAL.min(deadline - now));
+    }
+}
+
+/// Hands a child that would not die (and its reader threads) to a detached
+/// thread that blocks on `wait`, so the zombie is reaped whenever the kernel
+/// finally releases it and the caller never blocks.
+fn abandon_to_reaper(mut child: Child, readers: Vec<JoinHandle<io::Result<Vec<u8>>>>) {
+    let spawned = thread::Builder::new()
+        .name(String::from("process-reaper"))
+        .spawn(move || {
+            let _ = child.wait();
+            for reader in readers {
+                let _ = reader.join();
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::warn!(error = %error, "process_reaper_spawn_failed");
+    }
+}
+
+enum ReaderOutcome {
+    Text(String),
+    Failed(CommandError),
+    Stuck,
+}
+
+impl ReaderOutcome {
+    fn into_text(self) -> String {
+        match self {
+            Self::Text(text) => text,
+            Self::Failed(_) | Self::Stuck => String::new(),
+        }
+    }
+}
+
+fn join_reader_bounded(
+    handle: JoinHandle<io::Result<Vec<u8>>>,
+    program: &str,
+    stream: &str,
+    deadline: Instant,
+) -> ReaderOutcome {
+    loop {
+        if handle.is_finished() {
+            return match join_reader(handle, program, stream) {
+                Ok(text) => ReaderOutcome::Text(text),
+                Err(error) => ReaderOutcome::Failed(error),
+            };
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            abandon_reader(handle);
+            return ReaderOutcome::Stuck;
+        }
+        thread::sleep(POLL_INTERVAL.min(deadline - now));
+    }
+}
+
+fn abandon_reader(handle: JoinHandle<io::Result<Vec<u8>>>) {
+    let _ = thread::Builder::new()
+        .name(String::from("process-reaper"))
+        .spawn(move || {
+            let _ = handle.join();
+        });
 }
 
 #[cfg(target_os = "linux")]
@@ -290,10 +409,32 @@ fn map_spawn_error(program: &str, error: &io::Error) -> CommandError {
     }
 }
 
-fn spawn_reader<R: Read + Send + 'static>(mut reader: R) -> JoinHandle<io::Result<Vec<u8>>> {
+fn spawn_reader<R: Read + Send + 'static>(
+    mut reader: R,
+    limit: usize,
+    overflow: Arc<AtomicBool>,
+) -> JoinHandle<io::Result<Vec<u8>>> {
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).map(|_| bytes)
+        let mut chunk = [0_u8; 8192];
+        loop {
+            let read = match reader.read(&mut chunk) {
+                Ok(0) => return Ok(bytes),
+                Ok(read) => read,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            };
+            if bytes.len() + read > limit {
+                // Dropping the reader closes the pipe; the supervisor sees the
+                // flag and terminates the process group.
+                overflow.store(true, Ordering::Release);
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("output exceeded {limit} bytes"),
+                ));
+            }
+            bytes.extend_from_slice(&chunk[..read]);
+        }
     })
 }
 
@@ -489,7 +630,7 @@ mod tests {
     fn timeout_path_handles_output_larger_than_pipe_buffers() {
         let started = Instant::now();
         let error = run_script(
-            "dd if=/dev/zero bs=1M count=4 2>/dev/null; dd if=/dev/zero bs=1M count=4 >&2 2>/dev/null; exec sleep 30",
+            "dd if=/dev/zero bs=1k count=512 2>/dev/null; dd if=/dev/zero bs=1k count=512 >&2 2>/dev/null; exec sleep 30",
             Duration::from_millis(400),
         )
         .expect_err("command should time out after producing large output");
@@ -497,8 +638,8 @@ mod tests {
         let CommandError::Timeout { stdout, stderr, .. } = error else {
             panic!("large-output command did not time out");
         };
-        assert!(stdout.len() >= 4 * 1024 * 1024);
-        assert!(stderr.len() >= 4 * 1024 * 1024);
+        assert!(stdout.len() >= 512 * 1024);
+        assert!(stderr.len() >= 512 * 1024);
     }
 
     #[test]
@@ -508,6 +649,45 @@ mod tests {
                 .expect_err("command should time out");
             assert!(matches!(error, CommandError::Timeout { .. }));
         }
+    }
+
+    #[test]
+    fn stdout_over_cap_is_reported_as_error_and_child_is_killed() {
+        let started = Instant::now();
+        let error = run_script(
+            "dd if=/dev/zero bs=1k count=2048 2>/dev/null; exec sleep 30",
+            Duration::from_secs(10),
+        )
+        .expect_err("oversized stdout must be an error");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let CommandError::Io { message, .. } = error else {
+            panic!("expected Io error, got {error:?}");
+        };
+        assert!(message.contains("exceeded"), "{message}");
+    }
+
+    #[test]
+    fn abandoned_child_is_reaped_by_detached_thread() {
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 0.4"])
+            .spawn()
+            .expect("child should spawn");
+        let pid = child.id() as i32;
+        let bounded =
+            super::wait_reaped_bounded(&mut child, Instant::now() + Duration::from_millis(50));
+        assert!(
+            !bounded,
+            "child must still be running after the short grace"
+        );
+        super::abandon_to_reaper(child, Vec::new());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if !process_exists(pid) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("abandoned child {pid} was never reaped (zombie)");
     }
 
     #[test]

@@ -195,7 +195,6 @@ impl ScheduleViewport {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn schedule_lines(
     app: &Model,
     logical_id: &str,
@@ -258,7 +257,6 @@ fn schedule_header(columns: ScheduleColumns, styles: &SemanticStyles) -> Line<'s
     Line::from(header)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn schedule_row(
     app: &Model,
     logical_id: &str,
