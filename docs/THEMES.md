@@ -13,7 +13,7 @@ The reference implementation is `src/theme/` (parser and validation in
 
 | Source | Location | Notes |
 |---|---|---|
-| Built-in | embedded in the binaries from `src/theme/builtin/*.toml` | 40 themes, listed in section 6 |
+| Built-in | embedded in the binaries from `src/theme/builtin/*.toml` | 41 themes, listed in section 6 |
 | User | `~/.config/sunreactor/themes/<id>.toml` | the file name must equal `id` |
 
 A user file shadows a built-in with the same `id`. Remove the user file to get
@@ -297,13 +297,13 @@ exist:
 - **Flagship skin**: the theme has its own folder under
   `plasma/org.sunreactor.plasma/package/contents/ui/skins/`, with its own
   telemetry, light cycle, displays, automation, weather, forecast and sun-times
-  modules, and often its own tabs and weather icons. There are 12.
+  modules, and often its own tabs and weather icons. There are 13.
 - **Instrument skin, own flavour**: the theme uses the shared instrument skin and
   picks its identity (VFD, Nixie, scope, ThinkPad, Braun) from the id and tokens.
 - **Family default**: the theme uses the skin of its renderer (`skins/pixel`,
   `skins/terminal`, or the instrument skin for `vector`).
 
-The registry contains 40 built-in themes:
+The registry contains 41 built-in themes:
 
 | id | name | family | renderer | widget skin |
 |---|---|---|---|---|
@@ -346,11 +346,12 @@ The registry contains 40 built-in themes:
 | `vfd_hifi` | VFD Hi-Fi | instrument | vector | instrument skin, own flavour |
 | `wii` | Nintendo Wii | instrument | vector | flagship skin |
 | `winxp` | Windows XP | instrument | vector | flagship skin |
+| `xbox360` | Xbox 360 | instrument | vector | flagship skin |
 | `zenburn` | Zenburn | terminal | terminal | family default |
 
-Summary: 12 flagship skins (Amiga, Casio Digital, Commodore 64, Cyberpunk, Hacker
+Summary: 13 flagship skins (Amiga, Casio Digital, Commodore 64, Cyberpunk, Hacker
 Green, macOS, Nintendo DS, Nothing, PlayStation 3, Synthwave '84, Nintendo Wii,
-Windows XP), 5 instrument flavours (Braun, Nixie, Oscilloscope, ThinkPad, VFD
+Windows XP, Xbox 360), 5 instrument flavours (Braun, Nixie, Oscilloscope, ThinkPad, VFD
 Hi-Fi), and 23 family defaults.
 
 ## 7. Screenshots

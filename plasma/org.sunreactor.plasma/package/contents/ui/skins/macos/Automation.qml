@@ -29,7 +29,7 @@ ColumnLayout {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     /*! The control's choices as segments: { id, text }. */
     readonly property var segments: control.choices.map(choice => ({ id: choice.id, text: choice.label }))
 
@@ -49,25 +49,42 @@ ColumnLayout {
         onArrowPicked: (id, anchorItem) => durations.openBelow(anchorItem, root)
     }
 
-    Text {
+    ColumnLayout {
         Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.displayText
-        textFormat: Text.PlainText
-        font: root.style.caption
-        color: root.control.hinting ? root.style.warning : root.style.inkSecondary
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
-    }
+        spacing: Math.max(2, Math.round(root.style.gap * 0.35))
 
-    Text {
-        Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.note
-        textFormat: Text.PlainText
-        font: root.style.caption
-        color: root.style.inkSecondary
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.primaryText
+            textFormat: Text.PlainText
+            font: root.style.captionMedium
+            color: root.control.hinting ? root.style.warning : root.style.ink
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.scheduleText
+            textFormat: Text.PlainText
+            font: root.style.caption
+            color: root.style.inkSecondary
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.note
+            textFormat: Text.PlainText
+            font: root.style.caption
+            color: root.style.inkSecondary
+        }
     }
 
     ModeDurationMenu {

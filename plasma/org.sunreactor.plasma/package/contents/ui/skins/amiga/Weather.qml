@@ -14,6 +14,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 import "../pixel/Sprites.js" as Sprites
 
 Item {
@@ -24,7 +25,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     readonly property string condition: {
         const text = weatherText.conditionLabel(root.client.weatherCondition);
@@ -123,7 +124,7 @@ Item {
                 y: 0
                 pitch: 2
                 color: tokens.ink
-                text: root.client.hasTemperature ? Math.round(root.client.temperatureC) + "°" : "--"
+                text: root.client.hasTemperature ? Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit) + "°" : "--"
             }
 
             AmigaText {

@@ -26,7 +26,7 @@ ColumnLayout {
     }
     /*! Drawn inside the Weather card instead, when the theme lists both. */
     readonly property bool hosted: root.theme.modules.indexOf("weather") >= 0
-        && client.isConnected && client.weatherEnabled
+        && (client.isConnected || client.statusStale) && client.weatherEnabled
     readonly property bool available: !hosted && line.available
 
     spacing: style.rowGap

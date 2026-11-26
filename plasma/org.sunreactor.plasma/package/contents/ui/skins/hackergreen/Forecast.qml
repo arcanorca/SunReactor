@@ -45,7 +45,7 @@ Item {
     /*! Slots that fit: each wants nine cells, at most five. */
     readonly property int slots: Math.max(1, Math.min(5, Math.floor(term.cols(root.width) / 9)))
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     implicitHeight: section.implicitHeight
 
@@ -126,7 +126,7 @@ Item {
                     y: term.cy(4)
                     x: slot.centred(usedCells)
                     value: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                  Math.round(slot.modelData.temperatureC))
+                                  Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
                     strong: true
                     color: root.theme.accent
                 }

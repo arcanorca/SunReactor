@@ -36,7 +36,7 @@ FocusScope {
         settings: root.settings
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     /*! The button the keys act on: 0 automatic, 1 manual, 2 paused. */
     property int cursor: 0

@@ -21,6 +21,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import org.sunreactor.plasma
 
+import "../../components"
 import "../../modules"
 import "../../modules/Monitors.js" as Monitors
 
@@ -35,6 +36,8 @@ Item {
     required property bool showAll
     /*! Home / End jump to the ends of the cursor's range. */
     property bool jumpKeys: false
+    /*! False when stale/disconnected so sliders and keys cannot queue writes. */
+    property bool interactive: true
 
     /*! logicalId -> true while that display's range is open. */
     property var expanded: ({})
@@ -43,6 +46,11 @@ Item {
     property var pendingPct: ({})
     /*! logicalId -> [min, max]. */
     property var pendingLimits: ({})
+    property var _dirtyPct: ({})
+    property var _dirtyLimits: ({})
+    property var _sentPct: ({})
+    property var _sentLimits: ({})
+    property int _throttleSeq: 0
     property int cursorIndex: 0
 
     readonly property var targets: {
@@ -52,7 +60,7 @@ Item {
         }
         monitors.forEach((m, i) => {
             out.push({ mon: i, field: "value" });
-            if (expanded[m.logicalId]) {
+            if (expanded[m.logicalId] && Monitors.hasValidLimits(m)) {
                 out.push({ mon: i, field: "min" });
                 out.push({ mon: i, field: "max" });
             }
@@ -80,87 +88,187 @@ Item {
     function shownLimits(m) {
         return pendingLimits[m.logicalId] !== undefined ? pendingLimits[m.logicalId] : [m.minPct, m.maxPct];
     }
-    function setPct(key, value) {
-        const next = Object.assign({}, pendingPct);
-        next[key] = Math.max(0, Math.min(100, Math.round(value)));
-        pendingPct = next;
-        sendTimer.restart();
+    function _reportedPct(key) {
+        if (key === "*") {
+            return Math.round(client.globalPercent);
+        }
+        for (let i = 0; i < monitors.length; ++i) {
+            if (monitors[i].logicalId === key) {
+                return monitors[i].percent !== undefined ? Math.round(monitors[i].percent) : -1;
+            }
+        }
+        return -1;
+    }
+    function _hasDirty() {
+        for (const k in _dirtyPct) {
+            if (Object.prototype.hasOwnProperty.call(_dirtyPct, k)) {
+                return true;
+            }
+        }
+        for (const k in _dirtyLimits) {
+            if (Object.prototype.hasOwnProperty.call(_dirtyLimits, k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    function _kickThrottle(fromKey) {
+        if (!_hasDirty()) {
+            sendThrottle.reset();
+            return;
+        }
+        _throttleSeq += 1;
+        if (fromKey) {
+            sendThrottle.nudge(_throttleSeq);
+        } else {
+            sendThrottle.schedule(_throttleSeq);
+        }
+    }
+    function setPct(key, value, fromKey) {
+        if (!interactive) {
+            return;
+        }
+        const clamped = Math.max(0, Math.min(100, Math.round(value)));
+        const baseline = _sentPct[key] !== undefined ? _sentPct[key] : _reportedPct(key);
+        const nextPending = Object.assign({}, pendingPct);
+        const nextDirty = Object.assign({}, _dirtyPct);
+        if (clamped === baseline) {
+            delete nextDirty[key];
+            if (_sentPct[key] === undefined) {
+                delete nextPending[key];
+            }
+            pendingPct = nextPending;
+            _dirtyPct = nextDirty;
+            _kickThrottle(fromKey);
+            return;
+        }
+        nextPending[key] = clamped;
+        nextDirty[key] = clamped;
+        pendingPct = nextPending;
+        _dirtyPct = nextDirty;
+        _kickThrottle(fromKey);
         settleTimer.restart();
     }
-    function setLimits(m, minPct, maxPct) {
-        const next = Object.assign({}, pendingLimits);
+    function setLimits(m, minPct, maxPct, fromKey) {
+        if (!interactive || !Monitors.hasValidLimits(m)) {
+            return;
+        }
         const lo = Math.max(0, Math.min(100, Math.round(minPct)));
-        next[m.logicalId] = [lo, Math.max(lo, Math.min(100, Math.round(maxPct)))];
-        pendingLimits = next;
-        sendTimer.restart();
+        const hi = Math.max(lo, Math.min(100, Math.round(maxPct)));
+        const key = m.logicalId;
+        const base = _sentLimits[key] !== undefined ? _sentLimits[key] : [m.minPct, m.maxPct];
+        const nextPending = Object.assign({}, pendingLimits);
+        const nextDirty = Object.assign({}, _dirtyLimits);
+        if (lo === base[0] && hi === base[1]) {
+            delete nextDirty[key];
+            if (_sentLimits[key] === undefined) {
+                delete nextPending[key];
+            }
+            pendingLimits = nextPending;
+            _dirtyLimits = nextDirty;
+            _kickThrottle(fromKey);
+            return;
+        }
+        nextPending[key] = [lo, hi];
+        nextDirty[key] = [lo, hi];
+        pendingLimits = nextPending;
+        _dirtyLimits = nextDirty;
+        _kickThrottle(fromKey);
         settleTimer.restart();
     }
     function flush() {
-        sendTimer.stop();
-        for (const key in pendingPct) {
+        sendThrottle.reset();
+        if (!interactive) {
+            return;
+        }
+        const sentP = Object.assign({}, _sentPct);
+        for (const key in _dirtyPct) {
+            if (!Object.prototype.hasOwnProperty.call(_dirtyPct, key)) {
+                continue;
+            }
+            const val = _dirtyPct[key];
+            sentP[key] = val;
             if (key === "*") {
-                client.setGlobalOverride(pendingPct[key], settings.overrideMinutes);
+                client.setGlobalOverride(val, settings.overrideMinutes);
             } else {
-                client.setMonitorOverride(key, pendingPct[key], settings.overrideMinutes);
+                client.setMonitorOverride(key, val, settings.overrideMinutes);
             }
         }
-        for (const key in pendingLimits) {
-            client.setMonitorLimits(key, pendingLimits[key][0], pendingLimits[key][1]);
+        const sentL = Object.assign({}, _sentLimits);
+        for (const key in _dirtyLimits) {
+            if (!Object.prototype.hasOwnProperty.call(_dirtyLimits, key)) {
+                continue;
+            }
+            const pair = _dirtyLimits[key];
+            sentL[key] = pair;
+            client.setMonitorLimits(key, pair[0], pair[1]);
         }
+        _sentPct = sentP;
+        _sentLimits = sentL;
+        _dirtyPct = ({});
+        _dirtyLimits = ({});
     }
     function toggleRange(m) {
+        if (!Monitors.hasValidLimits(m)) {
+            return;
+        }
         const next = Object.assign({}, expanded);
         next[m.logicalId] = !next[m.logicalId];
         expanded = next;
     }
     function automatic(mon) {
+        if (!interactive) {
+            return;
+        }
         if (mon < 0) {
             client.clearAllOverrides();
         } else {
             client.clearMonitorOverride(monitors[mon].logicalId);
         }
         pendingPct = ({});
+        _dirtyPct = ({});
+        _sentPct = ({});
     }
     /*! Writes the value of the cursor's bar (or the range boundary it is on). */
     function adjust(delta) {
-        if (!cursor) {
+        if (!cursor || !interactive) {
             return;
         }
         if (cursor.mon < 0) {
             if (client.globalPercent >= 0) {
-                setPct("*", shownPct("*", client.globalPercent) + delta);
+                setPct("*", shownPct("*", client.globalPercent) + delta, true);
             }
             return;
         }
         const m = monitors[cursor.mon];
         if (cursor.field === "value") {
             if (Monitors.controllable(m) && m.percent >= 0) {
-                setPct(m.logicalId, shownPct(m.logicalId, m.percent) + delta);
+                setPct(m.logicalId, shownPct(m.logicalId, m.percent) + delta, true);
             }
-        } else {
+        } else if (Monitors.hasValidLimits(m)) {
             const lim = shownLimits(m);
             if (cursor.field === "min") {
-                setLimits(m, Math.min(lim[0] + delta, lim[1]), lim[1]);
+                setLimits(m, Math.min(lim[0] + delta, lim[1]), lim[1], true);
             } else {
-                setLimits(m, lim[0], Math.max(lim[1] + delta, lim[0]));
+                setLimits(m, lim[0], Math.max(lim[1] + delta, lim[0]), true);
             }
         }
     }
     /*! Home / End: the bottom or top of the bar's range (0 and 100 for all). */
     function jump(top) {
-        if (!cursor || cursor.field !== "value") {
+        if (!cursor || cursor.field !== "value" || !interactive) {
             return;
         }
         if (cursor.mon < 0) {
             if (client.globalPercent >= 0) {
-                setPct("*", top ? 100 : 0);
+                setPct("*", top ? 100 : 0, true);
             }
             return;
         }
         const m = monitors[cursor.mon];
         if (Monitors.controllable(m) && m.percent >= 0) {
-            const lim = shownLimits(m);
-            setPct(m.logicalId, top ? lim[1] : lim[0]);
+            const lim = Monitors.hasValidLimits(m) ? shownLimits(m) : [0, 100];
+            setPct(m.logicalId, top ? lim[1] : lim[0], true);
         }
     }
 
@@ -264,11 +372,11 @@ Item {
         event.accepted = true;
     }
 
-    Timer {
-        id: sendTimer
+    CommitThrottle {
+        id: sendThrottle
 
-        interval: 250
-        onTriggered: root.flush()
+        reportedValue: -1
+        onCommitted: root.flush()
     }
     // After the last change, give the daemon time to report it back.
     Timer {
@@ -278,6 +386,10 @@ Item {
         onTriggered: {
             root.pendingPct = ({});
             root.pendingLimits = ({});
+            root._dirtyPct = ({});
+            root._dirtyLimits = ({});
+            root._sentPct = ({});
+            root._sentLimits = ({});
         }
     }
 }

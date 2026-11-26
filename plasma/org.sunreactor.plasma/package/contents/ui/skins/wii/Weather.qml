@@ -23,6 +23,7 @@ import "../../engine"
 import "../../modules"
 import "../../components"
 import "../../components/weathericons"
+import "../../Format.js" as Format
 
 ColumnLayout {
     id: root
@@ -35,7 +36,7 @@ ColumnLayout {
     readonly property WiiStyle style: WiiStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
@@ -57,7 +58,7 @@ ColumnLayout {
         const out = [];
         if (d.feelsLikeC !== undefined) {
             out.push({ k: i18ndc(domain, "Short legend: apparent temperature", "Feels"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
+                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(d.feelsLikeC, client.isFahrenheit)) });
         }
         if (d.humidityPercent !== undefined) {
             out.push({ k: i18ndc(domain, "Short legend: relative humidity", "Humidity"),
@@ -84,7 +85,7 @@ ColumnLayout {
         id: tile
 
         style: root.style
-        pad: root.style.gap
+        pad: root.style.tilePad
         Layout.fillWidth: true
         implicitHeight: inner.implicitHeight + 2 * tile.pad
 
@@ -116,7 +117,7 @@ ColumnLayout {
                 Text {
                     Layout.alignment: Qt.AlignBaseline
                     visible: root.client.hasTemperature
-                    text: String(Math.round(root.client.temperatureC))
+                    text: String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit))
                     textFormat: Text.PlainText
                     font: root.style.heroFont
                     color: root.style.accentInk
@@ -125,7 +126,7 @@ ColumnLayout {
                     Layout.alignment: Qt.AlignBaseline
                     Layout.leftMargin: root.style.gap
                     visible: root.client.hasTemperature
-                    text: "°C"
+                    text: Format.tempUnit(root.client.isFahrenheit)
                     textFormat: Text.PlainText
                     font: root.style.titleFont
                     color: root.style.accentInk
@@ -171,9 +172,9 @@ ColumnLayout {
                 required property var modelData
 
                 style: root.style
-                pad: root.style.gap
+                pad: root.style.tilePad
                 Layout.fillWidth: true
-                implicitHeight: line.implicitHeight + 2 * detail.pad
+                implicitHeight: Math.max(root.style.snap(root.style.unit * 1.65), line.implicitHeight + 2 * detail.pad)
 
                 RowLayout {
                     id: line

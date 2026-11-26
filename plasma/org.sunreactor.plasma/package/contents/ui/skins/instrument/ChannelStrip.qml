@@ -18,6 +18,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 
+import "../../components"
 import "../../Format.js" as Format
 
 ColumnLayout {
@@ -32,8 +33,8 @@ ColumnLayout {
     property int applied: -1
     /*! Where the automatic curve is now; -1 unknown. */
     property real target: -1
-    property int minPct: 15
-    property int maxPct: 60
+    property int minPct: -1
+    property int maxPct: -1
     property bool hasLimits: false
     property bool hasOverride: false
     property real overrideUntil: 0
@@ -41,6 +42,8 @@ ColumnLayout {
     /*! Short state tag ("OFF", "NO LINK", "MAN"), empty for none. */
     property string stateText: ""
     property color stateTone: style.warning
+    /*! Contested/deferred notice shown in the legend row. */
+    property string noticeText: ""
     property bool limitsExpanded: false
 
     signal requested(int percent)
@@ -54,16 +57,40 @@ ColumnLayout {
     spacing: style.snap(style.gap * 0.5)
     Layout.fillWidth: true
 
-    Timer {
+    CommitThrottle {
         id: throttle
-        interval: 250
-        onTriggered: root.requested(Math.round(fader.value))
+
+        reportedValue: root.hasValue ? root.percent : -1
+        onCommitted: val => {
+            root.requested(val);
+            if (!fader.pressed) {
+                fader.value = Qt.binding(() => root.hasValue ? root.percent : 0);
+            }
+        }
     }
 
-    Timer {
-        id: limitsThrottle
-        interval: 250
-        onTriggered: root.limitsRequested(Math.round(minFader.value), Math.round(maxFader.value))
+    CommitThrottle {
+        id: minThrottle
+
+        reportedValue: root.minPct
+        onCommitted: val => {
+            root.limitsRequested(val, Math.round(maxFader.value));
+            if (!minFader.pressed) {
+                minFader.value = Qt.binding(() => root.minPct >= 0 ? root.minPct : 0);
+            }
+        }
+    }
+
+    CommitThrottle {
+        id: maxThrottle
+
+        reportedValue: root.maxPct
+        onCommitted: val => {
+            root.limitsRequested(Math.round(minFader.value), val);
+            if (!maxFader.pressed) {
+                maxFader.value = Qt.binding(() => root.maxPct >= 0 ? root.maxPct : 100);
+            }
+        }
     }
 
     TextMetrics {
@@ -172,11 +199,10 @@ ColumnLayout {
             if (pressed) {
                 return;
             }
-            throttle.stop();
-            root.requested(Math.round(value));
+            throttle.release(Math.round(value));
             value = Qt.binding(() => root.hasValue ? root.percent : 0);
         }
-        onMoved: throttle.restart()
+        onMoved: pressed ? throttle.schedule(Math.round(value)) : throttle.nudge(Math.round(value))
 
         Accessible.name: root.name
         Accessible.description: root.hasValue ? i18ndc(root.domain, "Brightness percentage", "%1%", root.percent)
@@ -189,10 +215,21 @@ ColumnLayout {
         Layout.leftMargin: root.indent
         spacing: root.style.gap2
 
+        Text {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.noticeText.length > 0
+            text: root.noticeText
+            textFormat: Text.PlainText
+            font: root.style.legendFont
+            color: root.style.warning
+            elide: Text.ElideRight
+        }
+
         Row {
             Layout.alignment: Qt.AlignVCenter
             spacing: root.style.gap
-            visible: root.target >= 0
+            visible: root.noticeText.length === 0 && root.target >= 0
 
             Text {
                 anchors.baseline: targetValue.baseline
@@ -213,7 +250,7 @@ ColumnLayout {
         Row {
             Layout.alignment: Qt.AlignVCenter
             spacing: root.style.gap
-            visible: root.applied >= 0 && root.applied !== root.percent
+            visible: root.noticeText.length === 0 && root.applied >= 0 && root.applied !== root.percent
 
             Text {
                 anchors.baseline: appliedValue.baseline
@@ -233,7 +270,7 @@ ColumnLayout {
 
         Text {
             Layout.alignment: Qt.AlignVCenter
-            visible: !root.hasValue
+            visible: root.noticeText.length === 0 && !root.hasValue
             text: i18ndc(root.domain, "Strip legend: the display has not reported a value", "No reading")
             textFormat: Text.PlainText
             font: root.style.legendFont
@@ -242,6 +279,7 @@ ColumnLayout {
 
         Item {
             Layout.fillWidth: true
+            visible: root.noticeText.length === 0
         }
 
         Tag {
@@ -282,15 +320,15 @@ ColumnLayout {
             Layout.fillWidth: true
             style: root.style
             showScale: false
+            enabled: root.controllable && root.hasLimits
             from: Math.max(0, Math.round(minFader.value))
             to: 100
-            value: root.maxPct
-            onMoved: limitsThrottle.restart()
+            value: root.maxPct >= 0 ? root.maxPct : 100
+            onMoved: pressed ? maxThrottle.schedule(Math.round(value)) : maxThrottle.nudge(Math.round(value))
             onPressedChanged: {
                 if (!pressed) {
-                    limitsThrottle.stop();
-                    root.limitsRequested(Math.round(minFader.value), Math.round(maxFader.value));
-                    value = Qt.binding(() => root.maxPct);
+                    maxThrottle.release(Math.round(value));
+                    value = Qt.binding(() => root.maxPct >= 0 ? root.maxPct : 100);
                 }
             }
             Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
@@ -318,15 +356,15 @@ ColumnLayout {
             Layout.fillWidth: true
             style: root.style
             showScale: false
+            enabled: root.controllable && root.hasLimits
             from: 0
             to: Math.min(100, Math.round(maxFader.value))
-            value: root.minPct
-            onMoved: limitsThrottle.restart()
+            value: root.minPct >= 0 ? root.minPct : 0
+            onMoved: pressed ? minThrottle.schedule(Math.round(value)) : minThrottle.nudge(Math.round(value))
             onPressedChanged: {
                 if (!pressed) {
-                    limitsThrottle.stop();
-                    root.limitsRequested(Math.round(minFader.value), Math.round(maxFader.value));
-                    value = Qt.binding(() => root.minPct);
+                    minThrottle.release(Math.round(value));
+                    value = Qt.binding(() => root.minPct >= 0 ? root.minPct : 0);
                 }
             }
             Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")

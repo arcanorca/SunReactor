@@ -12,7 +12,8 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import org.sunreactor.plasma
+
+import "../../components"
 
 Item {
     id: root
@@ -35,8 +36,11 @@ Item {
     property int localValue: 0
     readonly property int shown: editing ? localValue : Math.max(0, value)
 
+    readonly property real trackH: style.snap(style.unit * 0.72)
+    readonly property real ratio: Math.max(0, Math.min(1, (shown - from) / Math.max(1, to - from)))
+
     implicitWidth: style.unit * 8
-    implicitHeight: bar.rows * bar.pitch
+    implicitHeight: trackH
     activeFocusOnTab: live
 
     Accessible.role: Accessible.Slider
@@ -49,28 +53,36 @@ Item {
     readonly property int minimumValue: from
     readonly property int maximumValue: to
 
-    function setLocal(v) {
+    function setLocal(v, fromKey) {
         if (!live) {
             return;
         }
-        editing = true;
-        localValue = Math.max(from, Math.min(to, Math.round(v)));
-        throttle.restart();
+        const clamped = Math.max(from, Math.min(to, Math.round(v)));
+        if (!editing) {
+            editing = true;
+            localValue = Math.max(0, value);
+        }
+        if (clamped === localValue) {
+            return;
+        }
+        localValue = clamped;
+        if (fromKey) {
+            throttle.nudge(clamped);
+        } else {
+            throttle.schedule(clamped);
+        }
     }
 
     function step(delta) {
         if (!live) {
             return;
         }
-        setLocal((editing ? localValue : value) + delta);
+        setLocal((editing ? localValue : value) + delta, true);
         settle.restart();
     }
 
     function finish() {
-        throttle.stop();
-        if (editing) {
-            root.requested(localValue);
-        }
+        throttle.release(localValue);
         settle.restart();
     }
 
@@ -79,11 +91,11 @@ Item {
     }
 
     // The daemon may answer late: hold the user's value for a while after the last change.
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 250
-        onTriggered: root.requested(root.localValue)
+        reportedValue: root.value
+        onCommitted: val => root.requested(val)
     }
 
     Timer {
@@ -92,6 +104,9 @@ Item {
         interval: 1500
         onTriggered: {
             if (!pointer.pressed) {
+                if (throttle.pending) {
+                    throttle.release(root.localValue);
+                }
                 root.editing = false;
             }
         }
@@ -127,20 +142,64 @@ Item {
         root.step(delta);
     }
 
-    DotBar {
+    // Nothing OS Quick-Settings tactile pill slider with dot-matrix scale ticks & red signal head
+    Item {
         id: bar
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        cols: Math.max(8, Math.floor(root.width / Math.max(1, bar.pitch)))
-        rows: 1
-        pitch: root.style.pitch
-        value: root.shown / 100
-        thumbAccent: root.known
-        litColor: root.enabled ? root.style.ink : root.style.muted
-        accentColor: root.style.accent
-        dimColor: root.style.dotGhost
+        anchors.fill: parent
+
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            color: root.style.theme.mix(root.style.theme.bg, root.style.theme.fg, 0.13)
+            border.width: root.style.hairline
+            border.color: root.activeFocus ? root.style.ink : root.style.outline
+            antialiasing: true
+        }
+
+        // Tactile dot ticks inside the track
+        Row {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Math.round(root.trackH * 0.45)
+            anchors.rightMargin: Math.round(root.trackH * 0.45)
+            spacing: Math.max(4, Math.floor((width - 12 * 2) / 11))
+
+            Repeater {
+                model: 12
+
+                delegate: Rectangle {
+                    width: 2
+                    height: 2
+                    radius: 1
+                    color: root.style.dotGhost
+                }
+            }
+        }
+
+        // Active bright white fill pill (at 0% collapses cleanly to the red signal dot)
+        Rectangle {
+            visible: root.known
+            x: 1
+            y: 1
+            height: parent.height - 2
+            width: root.ratio <= 0.01 ? height : Math.max(height, Math.round(root.ratio * (parent.width - 2)))
+            radius: height / 2
+            color: root.ratio <= 0.01 ? "transparent" : (root.enabled ? root.style.ink : root.style.muted)
+            antialiasing: true
+
+            // Signature Nothing red dot head inside the pill tip
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: Math.max(3, Math.round(parent.height * 0.28))
+                width: Math.max(4, Math.round(parent.height * 0.36))
+                height: width
+                radius: width / 2
+                color: root.style.accent
+            }
+        }
     }
 
     // Keyboard focus: one hairline under the bar.
@@ -149,7 +208,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: bar.bottom
-        anchors.topMargin: root.style.gap * 0.5
+        anchors.topMargin: root.style.gap * 0.35
         height: root.style.hairline
         color: root.style.ink
     }
@@ -165,11 +224,11 @@ Item {
         preventStealing: true
         onPressed: mouse => {
             root.forceActiveFocus(Qt.MouseFocusReason);
-            root.setLocal(root.valueAtX(mouse.x));
+            root.setLocal(root.valueAtX(mouse.x), false);
         }
         onPositionChanged: mouse => {
             if (pressed) {
-                root.setLocal(root.valueAtX(mouse.x));
+                root.setLocal(root.valueAtX(mouse.x), false);
             }
         }
         onReleased: root.finish()

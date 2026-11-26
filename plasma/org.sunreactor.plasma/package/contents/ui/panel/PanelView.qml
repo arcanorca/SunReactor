@@ -59,9 +59,9 @@ Item {
 
     // --- data ------------------------------------------------------------------
 
-    readonly property int percent: client.isConnected
+    readonly property int percent: (client.isConnected || client.statusStale)
         ? PanelData.displayPercent(client.monitors, displayId, client.globalPercent) : -1
-    readonly property var curve: client.isConnected ? PanelData.series(client.dayCurve, displayId) : null
+    readonly property var curve: (client.isConnected || client.statusStale) ? PanelData.series(client.dayCurve, displayId) : null
     /*! The mode actually drawn: a sparkline without a curve (older daemon,
         offline) falls back to the number, which shows "—" when unknown. */
     readonly property string effectiveMode: {

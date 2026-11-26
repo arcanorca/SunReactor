@@ -33,7 +33,7 @@ ColumnLayout {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     spacing: 0
 
@@ -120,11 +120,22 @@ ColumnLayout {
 
             Text {
                 Layout.fillWidth: true
-                text: root.control.displayText
+                text: root.control.primaryText
                 textFormat: Text.PlainText
-                font: root.style.bodyFont
+                font: root.style.bodyBoldFont
                 color: root.control.hinting ? root.style.accentInk : root.style.ink
-                // The sentence keeps its words: it wraps once when the tile is narrow.
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.control.scheduleText
+                textFormat: Text.PlainText
+                font: root.style.captionFont
+                color: root.style.inkSoft
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
                 elide: Text.ElideRight
@@ -135,8 +146,8 @@ ColumnLayout {
                 visible: text.length > 0
                 text: root.control.note
                 textFormat: Text.PlainText
-                font: root.style.captionFont
-                color: root.style.inkSoft
+                font: root.style.captionBoldFont
+                color: root.style.accentInk
             }
         }
     }

@@ -10,8 +10,11 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
+import "../../components"
 import "../../engine"
 import "../../modules"
 import "../../modules/Monitors.js" as Monitors
@@ -27,12 +30,12 @@ Item {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     /*! The automation controls sit under the panels on this screen when the theme lists them. */
     readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
-    readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
+    readonly property bool available: Monitors.hasStatus(client) && (monitors.length > 0 || hostsModes)
     readonly property var rows: Monitors.rowsWithMaster(
-        monitors, client.globalPercent, client.isOverrideActive, i18nd(domain, "All displays"))
+        monitors, client.globalPercent, client.isOverrideActive, settings.allDisplaysLabel)
     property var expandedLimits: ({})
 
     readonly property real gu: style.gu
@@ -103,10 +106,15 @@ Item {
 
         readonly property bool master: modelData.master === true
         readonly property bool unavailable: Monitors.unavailable(modelData)
-        readonly property bool controllable: modelData.enabled !== false && !unavailable
+        readonly property bool controllable: root.client.isConnected && modelData.enabled !== false && !unavailable
         readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
         readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : -1
         readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+        readonly property bool hasLimits: !master && Monitors.hasValidLimits(modelData)
+        readonly property string notice: master ? "" : Monitors.monitorNotice(
+            modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+        readonly property string tagNotice: master ? "" : Monitors.monitorTag(
+            modelData, root.settings.pausedTag, root.settings.queuedTag)
         readonly property string hint: {
             if (modelData.enabled === false) {
                 return i18ndc(root.domain, "This display is excluded from automation", "Off");
@@ -114,10 +122,13 @@ Item {
             if (unavailable) {
                 return i18ndc(root.domain, "This display is not answering, compact", "N/A");
             }
+            if (tagNotice.length > 0) {
+                return tagNotice;
+            }
             return "";
         }
         readonly property bool overridden: modelData.hasOverride === true || knob.dragValue >= 0
-        readonly property string name: master ? i18nd(root.domain, "All displays") : String(modelData.logicalId)
+        readonly property string name: master ? root.settings.allDisplaysLabel : String(modelData.logicalId)
 
         style: root.style
         kind: controllable ? "panel" : "quiet"
@@ -140,15 +151,15 @@ Item {
         Rectangle {
             id: rangePill
 
-            visible: !panel.master && panel.minPct >= 0 && panel.maxPct >= 0
+            visible: panel.hasLimits
             x: valueText.x - width - Math.round(root.gu * 0.4)
             y: Math.round(root.gu * 0.34)
-            width: rangeLabel.implicitWidth + Math.round(root.gu * 0.7)
-            height: Math.round(root.gu * 1.1)
-            radius: Math.round(height / 2)
+            width: rangeLabel.implicitWidth + Math.round(root.gu * 0.6)
+            height: Math.round(root.gu * 1.05)
+            radius: 0
             color: panel.expanded ? root.style.blue : root.style.track
             border.width: 1
-            border.color: root.style.line
+            border.color: "#2c3648"
 
             Text {
                 id: rangeLabel
@@ -176,8 +187,16 @@ Item {
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * (panel.hint.length > 0 ? 0.85 : 1.2))
-            color: panel.hint.length > 0 ? root.style.muted
-                : (panel.overridden ? root.style.blue : root.style.ink)
+            color: panel.tagNotice.length > 0 ? root.style.blue
+                : (panel.hint.length > 0 ? root.style.muted
+                : (panel.overridden ? root.style.blue : root.style.ink))
+
+            HoverHandler {
+                id: valueHover
+            }
+            QQC2.ToolTip.visible: valueHover.hovered && panel.notice.length > 0
+            QQC2.ToolTip.text: panel.notice
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
 
         KnobSlider {
@@ -198,7 +217,9 @@ Item {
         }
 
         Column {
-            visible: panel.expanded && !panel.master && panel.minPct >= 0 && panel.maxPct >= 0
+            id: limitsCol
+
+            visible: panel.expanded && panel.hasLimits
             x: Math.round(root.gu * 0.5)
             y: root.panelH
             width: panel.width - Math.round(root.gu * 1.0)
@@ -216,7 +237,7 @@ Item {
                     required property var modelData
                     readonly property int current: modelData.which === 0 ? panel.minPct : panel.maxPct
 
-                    width: parent.width
+                    width: limitsCol.width
                     height: Math.round(root.gu * 1.65)
 
                     Text {
@@ -239,7 +260,7 @@ Item {
                         from: limitRow.modelData.which === 0 ? 0 : panel.minPct
                         to: limitRow.modelData.which === 0 ? panel.maxPct : 100
                         value: limitRow.current
-                        editable: true
+                        editable: root.client.isConnected && panel.hasLimits
                         accessibleName: limitRow.modelData.which === 0
                             ? i18ndc(root.domain, "Night minimum boundary", "Night minimum")
                             : i18ndc(root.domain, "Day maximum boundary", "Day maximum")
@@ -281,12 +302,13 @@ Item {
         property string accessibleName: ""
         /*! The value under the finger while it is held, -1 when it is not. */
         property real dragValue: -1
-        readonly property real shown: dragValue >= 0 ? dragValue : value
-        readonly property real knobSize: Math.round(root.gu * 1.5)
-        readonly property real travelX0: knobSize / 2
-        readonly property real travelX1: width - knobSize / 2
+        readonly property real shown: dragValue >= 0 ? dragValue
+            : (throttle.pending ? throttle.pendingValue : value)
+        readonly property real knobW: Math.round(root.gu * 0.85)
+        readonly property real knobH: Math.round(root.gu * 1.15)
+        readonly property real travelX0: knobW / 2
+        readonly property real travelX1: width - knobW / 2
         readonly property real knobX: travelX0 + (travelX1 - travelX0) * Math.max(0, Math.min(100, shown)) / 100
-        property int lastSent: -1
 
         signal committed(int percent)
 
@@ -300,29 +322,27 @@ Item {
             return travelX0 + (travelX1 - travelX0) * pct / 100;
         }
 
-        function send() {
-            const v = Math.round(dragValue);
-            if (v >= 0 && v !== lastSent) {
-                const clamped = Math.max(slider.from, Math.min(slider.to, v));
-                lastSent = clamped;
-                committed(clamped);
-            }
-        }
-
         function step(delta) {
             if (!editable || shown < 0) {
                 return;
             }
-            const v = Math.max(slider.from, Math.min(slider.to, Math.round(shown) + delta));
+            const base = throttle.pending ? throttle.pendingValue : Math.round(shown);
+            const v = Math.max(slider.from, Math.min(slider.to, base + delta));
             dragValue = v;
-            lastSent = v;
-            committed(v);
+            throttle.nudge(v);
         }
 
         onValueChanged: {
-            if (!mouse.pressed) {
+            if (!mouse.pressed && !throttle.pending) {
                 dragValue = -1;
             }
+        }
+
+        CommitThrottle {
+            id: throttle
+
+            reportedValue: slider.value
+            onCommitted: val => slider.committed(val)
         }
 
         activeFocusOnTab: editable
@@ -350,21 +370,23 @@ Item {
         Accessible.name: accessibleName
         Accessible.description: shown >= 0 ? Math.round(shown) + "%" : ""
 
-        // The track, its fill, the automatic range's ends, and the knob.
+        // The crisp pixel track, its fill, the automatic range's ends, and the pixel thumb.
         Rectangle {
             x: slider.travelX0
             y: Math.round(slider.height / 2 - height / 2)
             width: slider.travelX1 - slider.travelX0
-            height: Math.round(root.gu * 0.42)
-            radius: height / 2
+            height: Math.round(root.gu * 0.44)
+            radius: 0
             color: slider.editable ? root.style.track : root.style.quietBottom
+            border.width: 1
+            border.color: "#2c3648"
         }
         Rectangle {
-            x: slider.travelX0
+            x: slider.travelX0 + 1
             y: Math.round(slider.height / 2 - height / 2)
-            width: Math.max(0, slider.knobX - slider.travelX0)
-            height: Math.round(root.gu * 0.42)
-            radius: height / 2
+            width: Math.max(0, slider.knobX - slider.travelX0 - 1)
+            height: Math.max(2, Math.round(root.gu * 0.44) - 2)
+            radius: 0
             color: slider.editable ? root.style.blue : root.style.muted
             visible: slider.shown >= 0
         }
@@ -374,7 +396,7 @@ Item {
             y: Math.round(slider.height / 2 - height / 2)
             width: 2
             height: Math.round(root.gu * 0.8)
-            color: root.style.muted
+            color: "#2c3648"
         }
         Rectangle {
             visible: slider.maxMark >= 0
@@ -382,14 +404,17 @@ Item {
             y: Math.round(slider.height / 2 - height / 2)
             width: 2
             height: Math.round(root.gu * 0.8)
-            color: root.style.muted
+            color: "#2c3648"
         }
+        // Crisp DS slider handle: clean beveled tab, no oversized sprite.
         Rectangle {
-            x: Math.round(slider.knobX - slider.knobSize / 2)
-            y: Math.round(slider.height / 2 - slider.knobSize / 2)
-            width: slider.knobSize
-            height: slider.knobSize
-            radius: width / 2
+            id: knobCap
+
+            x: Math.round(slider.knobX - slider.knobW / 2)
+            y: Math.round(slider.height / 2 - slider.knobH / 2)
+            width: slider.knobW
+            height: slider.knobH
+            radius: 2
             border.width: root.style.outline
             border.color: slider.activeFocus ? root.style.ink : (slider.editable ? root.style.blue : root.style.line)
             gradient: Gradient {
@@ -397,6 +422,14 @@ Item {
                 GradientStop { position: 1; color: root.style.panelBottom }
             }
             visible: slider.shown >= 0
+
+            Rectangle {
+                x: 2
+                y: 2
+                width: parent.width - 4
+                height: 1
+                color: root.style.white
+            }
         }
 
         // Holding the knob's hit area sets the value; the whole row is the target.
@@ -408,28 +441,28 @@ Item {
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onPressed: event => {
                 slider.forceActiveFocus(Qt.MouseFocusReason);
-                slider.lastSent = -1;
                 slider.dragValue = slider.fromX(event.x);
-                slider.send();
+                throttle.schedule(slider.dragValue);
             }
             onPositionChanged: event => {
                 if (mouse.pressed) {
                     slider.dragValue = slider.fromX(event.x);
+                    throttle.schedule(slider.dragValue);
                 }
             }
             onReleased: event => {
                 slider.dragValue = slider.fromX(event.x);
-                slider.send();
+                throttle.release(slider.dragValue);
+                if (!throttle.pending) {
+                    slider.dragValue = -1;
+                }
             }
-            onCanceled: slider.send()
-        }
-
-        // Steady writes while the knob is held (a repeat, not an animation).
-        Timer {
-            interval: 150
-            repeat: true
-            running: mouse.pressed
-            onTriggered: slider.send()
+            onCanceled: {
+                throttle.release(slider.dragValue >= 0 ? slider.dragValue : undefined);
+                if (!throttle.pending) {
+                    slider.dragValue = -1;
+                }
+            }
         }
     }
 }

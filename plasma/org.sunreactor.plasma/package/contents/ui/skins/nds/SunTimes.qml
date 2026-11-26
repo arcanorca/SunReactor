@@ -25,7 +25,7 @@ Item {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
         { label: i18ndc(domain, "Sunrise, compact", "Rise"), epoch: client.sunriseEpochS },
         { label: i18ndc(domain, "Solar noon, compact", "Noon"), epoch: client.solarNoonEpochS },
@@ -40,22 +40,20 @@ Item {
         return 0;
     }
 
-    readonly property real pillH: Math.round(style.gu * 1.75)
+    readonly property real pillH: Math.round(style.gu * 1.9)
 
     implicitHeight: pill.height
 
     Accessible.role: Accessible.StaticText
     Accessible.name: entries.map(e => e.label + " " + Format.timeText(e.epoch)).join(", ")
 
-    Rectangle {
+    NdsPanel {
         id: pill
 
+        style: root.style
+        kind: "panel"
         width: root.width
         height: root.pillH
-        radius: height / 2
-        color: root.style.white
-        border.width: 1
-        border.color: root.style.line
 
         Row {
             anchors.fill: parent
@@ -78,13 +76,13 @@ Item {
 
                     Row {
                         anchors.centerIn: parent
-                        spacing: Math.round(root.style.gu * 0.35)
+                        spacing: Math.round(root.style.gu * 0.22)
 
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: Math.round(root.style.gu * 0.5)
+                            width: Math.round(root.style.gu * 0.4)
                             height: width
-                            radius: width / 2
+                            radius: 0
                             color: root.style.orange
                         }
                         Text {
@@ -92,7 +90,7 @@ Item {
                             text: column.modelData.label
                             textFormat: Text.PlainText
                             font.family: root.style.family
-                            font.pixelSize: Math.round(root.style.gu * 0.62)
+                            font.pixelSize: Math.round(root.style.gu * 0.58)
                             color: root.style.muted
                         }
                         Text {
@@ -101,7 +99,7 @@ Item {
                             textFormat: Text.PlainText
                             font.family: root.style.family
                             font.weight: Font.Bold
-                            font.pixelSize: Math.round(root.style.gu * 0.86)
+                            font.pixelSize: Math.round(root.style.gu * 0.76)
                             color: column.isNext ? root.style.blue : root.style.ink
                         }
                     }

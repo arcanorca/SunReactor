@@ -15,6 +15,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../../components"
 import "../../engine"
 
 Item {
@@ -66,32 +67,33 @@ Item {
     Accessible.onIncreaseAction: step(1)
     Accessible.onDecreaseAction: step(-1)
 
-    function setLocal(v) {
+    function setLocal(v, fromKey) {
         const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
             localValue = Math.max(0, value);
         }
-        if (clamped === localValue) {
+        if (clamped === localValue && (editing || throttle.pending)) {
             return;
         }
         localValue = clamped;
-        throttle.restart();
+        if (fromKey) {
+            throttle.nudge(clamped);
+            settle.restart();
+        } else {
+            throttle.schedule(clamped);
+        }
     }
 
     function step(delta) {
         if (!live) {
             return;
         }
-        setLocal((editing ? localValue : value) + delta);
-        settle.restart();
+        setLocal((editing ? localValue : value) + delta, true);
     }
 
     function finish() {
-        throttle.stop();
-        if (editing) {
-            root.committed(localValue);
-        }
+        throttle.release(editing ? localValue : undefined);
         settle.restart();
     }
 
@@ -104,21 +106,18 @@ Item {
     }
 
     // While the daemon catches up, keep showing what the user picked.
-    Timer {
+    CommitThrottle {
         id: throttle
-        interval: 250
-        onTriggered: root.committed(root.localValue)
+
+        reportedValue: root.value
+        onCommitted: val => root.committed(val)
     }
 
     Timer {
         id: settle
         interval: 1500
         onTriggered: {
-            if (!mouse.pressed) {
-                if (throttle.running) {
-                    throttle.stop();
-                    root.committed(root.localValue);
-                }
+            if (!mouse.pressed && !throttle.pending) {
                 root.editing = false;
             }
         }
@@ -275,11 +274,11 @@ Item {
         preventStealing: true
         onPressed: event => {
             root.forceActiveFocus(Qt.MouseFocusReason);
-            root.setLocal(root.valueAtX(event.x));
+            root.setLocal(root.valueAtX(event.x), false);
         }
         onPositionChanged: event => {
             if (pressed) {
-                root.setLocal(root.valueAtX(event.x));
+                root.setLocal(root.valueAtX(event.x), false);
             }
         }
         onReleased: root.finish()

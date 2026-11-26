@@ -10,6 +10,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
 
+import "../../components"
+
 Item {
     id: root
 
@@ -29,7 +31,8 @@ Item {
     readonly property real travel: Math.max(0, width - thumbW)
     /*! -1 while the pointer is not dragging; otherwise the value under it. */
     property int dragValue: -1
-    readonly property int shown: dragValue >= 0 ? dragValue : Math.max(from, Math.min(to, value))
+    readonly property int shown: dragValue >= 0 ? dragValue
+        : (throttle.pending ? throttle.pendingValue : Math.max(from, Math.min(to, value)))
     readonly property real fillLength: shown / 100 * travel
 
     signal requested(int value)
@@ -43,7 +46,7 @@ Item {
     Accessible.name: i18nd("plasma_applet_org.sunreactor.plasma", "Brightness")
 
     onValueChanged: {
-        if (!pointer.pressed) {
+        if (!pointer.pressed && !throttle.pending) {
             dragValue = -1;
         }
     }
@@ -119,50 +122,33 @@ Item {
         return Math.max(root.from, Math.min(root.to, Math.round(v)));
     }
 
-    property bool pending: false
-
-    function emitDrag() {
-        root.requested(root.dragValue);
-        root.pending = false;
-        throttle.restart();
-    }
-
     function drag(px) {
         root.dragValue = root.valueFromX(px);
-        if (throttle.running) {
-            root.pending = true;
-        } else {
-            root.emitDrag();
-        }
+        throttle.schedule(root.dragValue);
     }
 
     function finish() {
-        throttle.stop();
-        root.pending = false;
-        if (root.dragValue >= 0) {
-            root.requested(root.dragValue);
+        throttle.release(root.dragValue >= 0 ? root.dragValue : undefined);
+        if (!throttle.pending) {
+            root.dragValue = -1;
         }
     }
 
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 160
-        repeat: false
-        onTriggered: {
-            if (root.pending) {
-                root.emitDrag();
-            }
-        }
+        reportedValue: root.value
+        onCommitted: val => root.requested(val)
     }
 
     function nudge(delta) {
         if (!root.controllable) {
             return;
         }
-        const next = Math.max(root.from, Math.min(root.to, root.shown + delta));
+        const base = throttle.pending ? throttle.pendingValue : root.shown;
+        const next = Math.max(root.from, Math.min(root.to, base + delta));
         root.dragValue = next;
-        root.requested(next);
+        throttle.nudge(next);
     }
 
     Keys.onLeftPressed: root.nudge(-5)

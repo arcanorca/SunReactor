@@ -21,6 +21,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 import "../terminal"
 import "../terminal/Term.js" as Term
 import "Hg.js" as Hg
@@ -33,7 +34,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     WeatherText {
         id: weatherText
@@ -55,7 +56,7 @@ Item {
         const d = client.weatherDetails;
         const out = [];
         if (d.feelsLikeC !== undefined) {
-            out.push([i18ndc(domain, "Apparent temperature", "Feels"), d.feelsLikeC.toFixed(1) + "°C"]);
+            out.push([i18ndc(domain, "Apparent temperature", "Feels"), Format.tempText(d.feelsLikeC, client.isFahrenheit, 1)]);
         }
         if (d.humidityPercent !== undefined) {
             out.push([i18ndc(domain, "Relative humidity", "Humidity"), Math.round(d.humidityPercent) + "%"]);
@@ -159,7 +160,7 @@ Item {
                     if (out.length > 0) {
                         out.push({ t: "  ", c: root.theme.textMuted });
                     }
-                    out.push({ t: root.client.temperatureC.toFixed(1) + "°C", c: root.theme.accent, b: true });
+                    out.push({ t: Format.tempText(root.client.temperatureC, root.client.isFahrenheit, 1), c: root.theme.accent, b: true });
                 }
                 if (out.length === 0) {
                     out.push({ t: i18nd(root.domain, "No weather reading"), c: root.theme.textMuted });

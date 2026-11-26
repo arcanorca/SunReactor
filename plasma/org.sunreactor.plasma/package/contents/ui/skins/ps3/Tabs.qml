@@ -49,7 +49,7 @@ FocusScope {
                 required property var modelData
                 readonly property bool selected: modelData.id === root.current
                 readonly property bool lit: selected || mouse.containsMouse
-                readonly property real iconSize: root.style.snap(root.style.unit * (selected ? 1.2 : 0.95))
+                readonly property real iconSize: root.style.snap(root.style.unit * (selected ? 1.55 : 1.15))
 
                 implicitWidth: Math.max(glyph.width, label.implicitWidth) + root.style.gap2
                 implicitHeight: glyph.height + label.height + root.style.gap * 2 + root.style.line2 * 3
@@ -67,6 +67,7 @@ FocusScope {
                     anchors.horizontalCenter: parent.horizontalCenter
                     kind: tab.modelData.id === "weather" ? "cloud" : "sun"
                     size: tab.iconSize
+                    lit: tab.lit
                     color: tab.lit ? root.style.ink : root.style.inkDim
                 }
 

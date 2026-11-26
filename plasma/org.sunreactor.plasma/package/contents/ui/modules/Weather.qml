@@ -15,6 +15,7 @@ import org.sunreactor.plasma
 
 import "../engine"
 import "../components"
+import "../Format.js" as Format
 
 PlasmaComponents3.ItemDelegate {
     id: root
@@ -24,7 +25,7 @@ PlasmaComponents3.ItemDelegate {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     readonly property string summary: {
         const text = weatherText.summary(client);
@@ -38,8 +39,10 @@ PlasmaComponents3.ItemDelegate {
         const details = client.weatherDetails;
         const parts = [];
         if (details.feelsLikeC !== undefined) {
-            parts.push(i18ndc(root.domain, "Apparent temperature", "Feels like %1 °C",
-                              Math.round(details.feelsLikeC)));
+            const feels = Format.tempRounded(details.feelsLikeC, client.isFahrenheit);
+            parts.push(client.isFahrenheit
+                ? i18ndc(root.domain, "Apparent temperature", "Feels like %1 °F", feels)
+                : i18ndc(root.domain, "Apparent temperature", "Feels like %1 °C", feels));
         }
         if (details.humidityPercent !== undefined) {
             parts.push(i18ndc(root.domain, "Relative humidity", "Humidity %1%",

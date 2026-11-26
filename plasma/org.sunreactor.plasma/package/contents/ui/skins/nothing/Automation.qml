@@ -86,7 +86,7 @@ Rectangle {
         }
         return sentenceChoices[sentenceChoices.length - 1];
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     implicitHeight: content.implicitHeight + 2 * style.pad
     radius: style.radius
@@ -118,8 +118,8 @@ Rectangle {
             Layout.fillWidth: true
             text: i18ndc(root.control.domain, "Section label of the automation card", "Automation")
             textFormat: Text.PlainText
-            font: root.style.label
-            color: root.style.muted
+            font: root.style.heading
+            color: root.style.ink
         }
 
         RowLayout {

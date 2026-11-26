@@ -12,6 +12,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../../components"
 import "../../engine"
 import "AmigaChrome.js" as Chrome
 
@@ -48,33 +49,57 @@ Item {
         }
         return Math.round(Math.max(0, Math.min(travel, artX - 1 - 4)) / travel * 100);
     }
-    function setLocal(v) {
+    onValueChanged: {
+        if (!throttle.pending && !pointer.pressed) {
+            editing = false;
+        }
+    }
+
+    function setLocal(v, fromKey) {
         const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
+            localValue = Math.max(0, value);
         }
         localValue = clamped;
-        throttle.restart();
+        if (fromKey) {
+            throttle.nudge(clamped);
+            settle.restart();
+        } else {
+            throttle.schedule(clamped);
+        }
     }
     function step(delta) {
         if (!enabled) {
             return;
         }
-        setLocal((editing ? localValue : Math.max(0, value)) + delta);
-        finish();
+        setLocal((editing ? localValue : Math.max(0, value)) + delta, true);
     }
     function finish() {
-        throttle.stop();
-        if (editing) {
-            root.committed(localValue);
+        throttle.release(editing ? localValue : undefined);
+        if (!throttle.pending) {
             editing = false;
+        } else {
+            settle.restart();
         }
     }
 
-    Timer {
+    CommitThrottle {
         id: throttle
-        interval: 250
-        onTriggered: root.committed(root.localValue)
+
+        reportedValue: root.value
+        onCommitted: val => root.committed(val)
+    }
+
+    Timer {
+        id: settle
+
+        interval: 1500
+        onTriggered: {
+            if (!pointer.pressed && !throttle.pending) {
+                root.editing = false;
+            }
+        }
     }
 
     Accessible.role: Accessible.Slider
@@ -87,6 +112,9 @@ Item {
     Keys.onDownPressed: root.step(-5)
     Keys.onUpPressed: root.step(5)
     Keys.onPressed: event => {
+        if (!enabled) {
+            return;
+        }
         if (event.key === Qt.Key_PageUp) {
             root.step(10);
             event.accepted = true;
@@ -94,12 +122,10 @@ Item {
             root.step(-10);
             event.accepted = true;
         } else if (event.key === Qt.Key_Home) {
-            root.setLocal(root.from);
-            root.finish();
+            root.setLocal(root.from, true);
             event.accepted = true;
         } else if (event.key === Qt.Key_End) {
-            root.setLocal(root.to);
-            root.finish();
+            root.setLocal(root.to, true);
             event.accepted = true;
         }
     }
@@ -145,16 +171,18 @@ Item {
     }
 
     MouseArea {
+        id: pointer
+
         anchors.fill: parent
         enabled: root.enabled
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onPressed: mouse => {
             root.forceActiveFocus(Qt.MouseFocusReason);
-            root.setLocal(root.valueAt(mouse.x));
+            root.setLocal(root.valueAt(mouse.x), false);
         }
         onPositionChanged: mouse => {
             if (pressed) {
-                root.setLocal(root.valueAt(mouse.x));
+                root.setLocal(root.valueAt(mouse.x), false);
             }
         }
         onReleased: root.finish()

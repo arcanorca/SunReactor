@@ -52,7 +52,7 @@ Item {
 
     readonly property var segments: {
         const out = [];
-        if (client.isConnected) {
+        if (client.isConnected || client.statusStale) {
             const names = client.monitors.map(m => Term.shortName(m.logicalId));
             const unique = names.every((n, i) => names.indexOf(n) === i);
             client.monitors.forEach((m, i) => {
@@ -62,8 +62,7 @@ Item {
                             c: theme.fg, b: true }]);
             });
             if (client.hasTemperature) {
-                out.push([{ t: i18ndc(domain, "Temperature in degrees Celsius, one decimal", "%1°C",
-                                      client.temperatureC.toFixed(1)), c: theme.fg }]);
+                out.push([{ t: Format.tempText(client.temperatureC, client.isFahrenheit, 1), c: theme.fg }]);
             }
         }
         if (client.nowEpochS > 0) {

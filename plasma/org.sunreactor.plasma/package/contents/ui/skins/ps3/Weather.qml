@@ -15,6 +15,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 
 ColumnLayout {
     id: root
@@ -33,14 +34,14 @@ ColumnLayout {
     readonly property XmbStyle style: XmbStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
 
     readonly property string effectText: client.hasWeatherReading ? weatherText.effect(client) : ""
 
     /*! The secondary readings, in the order of the list. */
-    readonly property var details: weatherText.detailsList(client.weatherDetails, "full")
+    readonly property var details: weatherText.detailsListInUnit(client.weatherDetails, "full", client.isFahrenheit)
 
     WeatherText {
         id: weatherText
@@ -57,18 +58,17 @@ ColumnLayout {
 
         ThemedWeatherIcon {
             theme: root.theme
-            size: root.style.snap(root.style.sizeHero * 1.0)
+            size: root.style.snap(root.style.sizeHero * 1.1)
             condition: root.client.weatherCondition
             night: root.client.weatherIsNight
             Layout.alignment: Qt.AlignTop
             visible: root.client.hasWeatherReading
-            WeatherGlyph {
+            Ps3Icon {
                 anchors.centerIn: parent
-                size: root.style.snap(root.style.sizeHero * 1.0)
+                theme: root.theme
+                size: root.style.snap(root.style.sizeHero * 1.1)
                 condition: root.client.weatherCondition
                 night: root.client.weatherIsNight
-                glyphStyle: "line"
-                palette: root.theme.glyphPalette
             }
         }
 
@@ -85,7 +85,7 @@ ColumnLayout {
                     spacing: root.style.gap * 0.5
 
                     Text {
-                        text: String(Math.round(root.client.temperatureC))
+                        text: String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit))
                         textFormat: Text.PlainText
                         font: root.style.heroFont
                         color: root.style.ink
@@ -96,7 +96,7 @@ ColumnLayout {
                     Text {
                         Layout.alignment: Qt.AlignBottom
                         Layout.bottomMargin: root.style.snap(root.style.sizeHero * 0.12)
-                        text: "°C"
+                        text: Format.tempUnit(root.client.isFahrenheit)
                         textFormat: Text.PlainText
                         font: root.style.unitFont
                         color: root.style.inkSoft

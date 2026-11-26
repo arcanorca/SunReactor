@@ -1131,6 +1131,7 @@ void TestCyberpunkLayout::allSkinsSettleAndScrubWithoutOscillation()
         {"winxp", "vector", "sans"},
         {"casiodigital", "vector", "mono"},
         {"nds", "vector", "sans"},
+        {"xbox360", "vector", "sans"},
         {"handheld", "pixel", "bitmap8"},
         {"amiga", "pixel", "bitmap8"},
         {"commodore64", "pixel", "bitmap_vga"},
@@ -1337,6 +1338,7 @@ void TestCyberpunkLayout::rangeDrawerPersistsAcrossMonitorsChanged()
         {"amiga", "pixel", "bitmap8"},
         {"wii", "vector", "sans"},
         {"winxp", "vector", "sans"},
+        {"xbox360", "vector", "sans"},
     };
 
     for (const SkinSpec &skin : skins) {
@@ -1413,7 +1415,8 @@ void TestCyberpunkLayout::rangeDrawerPersistsAcrossMonitorsChanged()
                     }
                 }
                 return best;
-            } else if (QLatin1String(skin.id) == QLatin1String("wii")) {
+            } else if (QLatin1String(skin.id) == QLatin1String("wii")
+                       || QLatin1String(skin.id) == QLatin1String("xbox360")) {
                 for (QQuickItem *it : children) {
                     if (it->isVisible() && it->property("hint").isValid()
                         && it->property("hint").toString().contains(QLatin1String("15"))

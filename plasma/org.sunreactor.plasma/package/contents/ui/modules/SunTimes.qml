@@ -25,7 +25,7 @@ PlasmaComponents3.ItemDelegate {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
         { label: i18nd(root.domain, "Sunrise"), epoch: client.sunriseEpochS },
         { label: i18nd(root.domain, "Solar noon"), epoch: client.solarNoonEpochS },

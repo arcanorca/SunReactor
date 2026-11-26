@@ -20,7 +20,7 @@ Item {
     required property SunReactorClient client
     required property ModuleSettings settings
 
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
 
     C64Style {
         id: style

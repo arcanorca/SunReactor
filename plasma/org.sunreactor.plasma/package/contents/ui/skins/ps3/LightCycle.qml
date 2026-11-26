@@ -51,7 +51,7 @@ ColumnLayout {
     readonly property real t0: samples.length > 0 ? samples[0].t : 0
     readonly property real t1: samples.length > 0 ? samples[samples.length - 1].t : 1
     readonly property real span: Math.max(1, t1 - t0)
-    readonly property bool available: client.isConnected && samples.length > 1
+    readonly property bool available: (client.isConnected || client.statusStale) && samples.length > 1
 
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: now >= t0 && now <= t1
@@ -263,43 +263,20 @@ ColumnLayout {
                 }
             }
 
-            // The now point: a bright dot with a soft halo.
-            Item {
+            // The now point: glowing crystal orb.
+            Image {
                 id: nowDot
 
-                readonly property real halo: root.style.snap(root.style.unit * 0.9)
-                readonly property real core: root.style.snap(root.style.unit * 0.22)
+                readonly property real d: root.style.snap(root.style.unit * 1.15)
 
                 visible: root.nowInDay && root.nowPct >= 0
-                x: root.style.snap((root.now - root.t0) / root.span * plot.width)
-                y: root.style.snap(plot.height * (1 - Math.max(0, Math.min(100, root.nowPct)) / 100))
-                width: 0
-                height: 0
-
-                Rectangle {
-                    x: -nowDot.halo
-                    y: -nowDot.halo
-                    width: nowDot.halo * 2
-                    height: width
-                    radius: width / 2
-                    color: root.style.alpha(root.style.ink, 0.10)
-                }
-                Rectangle {
-                    x: -nowDot.halo / 2
-                    y: -nowDot.halo / 2
-                    width: nowDot.halo
-                    height: width
-                    radius: width / 2
-                    color: root.style.alpha(root.style.ink, 0.24)
-                }
-                Rectangle {
-                    x: -nowDot.core
-                    y: -nowDot.core
-                    width: nowDot.core * 2
-                    height: width
-                    radius: width / 2
-                    color: root.style.ink
-                }
+                x: root.style.snap((root.now - root.t0) / root.span * plot.width) - d / 2
+                y: root.style.snap(plot.height * (1 - Math.max(0, Math.min(100, root.nowPct)) / 100)) - d / 2
+                width: d
+                height: d
+                source: Qt.resolvedUrl("assets/ps3_slider_orb.png")
+                smooth: true
+                mipmap: true
             }
 
             // Hover scrub: a hairline and a dot where the pointer is on the curve.

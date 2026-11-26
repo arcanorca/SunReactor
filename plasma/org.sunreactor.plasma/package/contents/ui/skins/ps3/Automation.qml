@@ -36,7 +36,7 @@ ColumnLayout {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     spacing: style.gap * 0.5
 
@@ -90,25 +90,42 @@ ColumnLayout {
         }
     }
 
-    Text {
+    ColumnLayout {
         Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.displayText
-        textFormat: Text.PlainText
-        font: root.style.legendFont
-        color: root.control.hinting ? root.style.warning : root.style.inkSoft
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
-    }
+        spacing: root.style.gap * 0.45
 
-    Text {
-        Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.note
-        textFormat: Text.PlainText
-        font: root.style.legendFont
-        color: root.style.inkSoft
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.primaryText
+            textFormat: Text.PlainText
+            font: root.style.labelFont
+            color: root.control.hinting ? root.style.warning : root.style.inkSoft
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.scheduleText
+            textFormat: Text.PlainText
+            font: root.style.legendFont
+            color: root.style.inkDim
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.note
+            textFormat: Text.PlainText
+            font: root.style.legendFont
+            color: root.style.inkSoft
+        }
     }
 
     ModeDurationMenu {

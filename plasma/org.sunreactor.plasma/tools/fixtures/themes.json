@@ -1,5 +1,5 @@
 {
- "_comment": "status.theme objects exported by `sunreactorctl theme show <id> --json` for all 35 built-ins (regenerate with tools/gen_fixtures.py; do not edit by hand). The two edge_* entries are synthetic and exercise widget-side derivation.",
+ "_comment": "status.theme objects exported by `sunreactorctl theme show <id> --json` for all 41 built-ins (regenerate with tools/gen_fixtures.py; do not edit by hand). The two edge_* entries are synthetic and exercise widget-side derivation.",
  "amber": {
   "name": "Amber",
   "accent": "#ffb000",
@@ -24,7 +24,7 @@
   },
   "widget": {
    "renderer": "vector",
-   "font": "sans",
+   "font": "mono",
    "pixel_scale": 0,
    "shades": [
     "#0f0a05",
@@ -36,7 +36,7 @@
    "border": "line",
    "radius": 4,
    "dither": "none",
-   "glow": 0.0,
+   "glow": 0.3,
    "modules": [
     "telemetry",
     "curve",
@@ -600,7 +600,7 @@
   },
   "widget": {
    "renderer": "vector",
-   "font": "sans",
+   "font": "mono",
    "pixel_scale": 0,
    "shades": [
     "#141414",
@@ -610,9 +610,9 @@
    ],
    "density": "comfortable",
    "border": "line",
-   "radius": 4,
+   "radius": 2,
    "dither": "none",
-   "glow": 0.0,
+   "glow": 0.15,
    "modules": [
     "telemetry",
     "curve",
@@ -1090,9 +1090,9 @@
    ],
    "density": "comfortable",
    "border": "line",
-   "radius": 4,
+   "radius": 6,
    "dither": "none",
-   "glow": 0.0,
+   "glow": 0.7,
    "modules": [
     "telemetry",
     "curve",
@@ -1272,7 +1272,7 @@
   },
   "widget": {
    "renderer": "vector",
-   "font": "sans",
+   "font": "mono",
    "pixel_scale": 0,
    "shades": [
     "#050906",
@@ -1280,11 +1280,11 @@
     "#2e8b3e",
     "#78ff78"
    ],
-   "density": "comfortable",
+   "density": "compact",
    "border": "line",
-   "radius": 4,
+   "radius": 6,
    "dither": "none",
-   "glow": 0.0,
+   "glow": 0.5,
    "modules": [
     "telemetry",
     "curve",
@@ -1320,7 +1320,7 @@
   },
   "widget": {
    "renderer": "vector",
-   "font": "sans",
+   "font": "mono",
    "pixel_scale": 0,
    "shades": [
     "#000000",
@@ -1330,9 +1330,9 @@
    ],
    "density": "comfortable",
    "border": "line",
-   "radius": 4,
+   "radius": 2,
    "dither": "none",
-   "glow": 0.0,
+   "glow": 0.45,
    "modules": [
     "telemetry",
     "curve",
@@ -1393,7 +1393,7 @@
   }
  },
  "rosepine": {
-  "name": "Rosé Pine",
+  "name": "Ros\u00e9 Pine",
   "accent": "#ebbcba",
   "secondary_accent": "#c4a7e7",
   "bg": "#191724",
@@ -1514,6 +1514,12 @@
    "renderer": "vector",
    "font": "display",
    "pixel_scale": 0,
+   "shades": [
+    "#262335",
+    "#614d85",
+    "#848bbd",
+    "#ffffff"
+   ],
    "density": "comfortable",
    "border": "line",
    "radius": 6,
@@ -1612,7 +1618,7 @@
    ],
    "density": "comfortable",
    "border": "line",
-   "radius": 4,
+   "radius": 0,
    "dither": "none",
    "glow": 0.0,
    "modules": [
@@ -1746,7 +1752,7 @@
   },
   "widget": {
    "renderer": "vector",
-   "font": "sans",
+   "font": "display",
    "pixel_scale": 0,
    "shades": [
     "#0b0e11",
@@ -1756,9 +1762,9 @@
    ],
    "density": "comfortable",
    "border": "line",
-   "radius": 4,
+   "radius": 2,
    "dither": "none",
-   "glow": 0.0,
+   "glow": 0.6,
    "modules": [
     "telemetry",
     "curve",
@@ -1866,6 +1872,54 @@
    ]
   }
  },
+ "xbox360": {
+  "name": "Xbox 360",
+  "accent": "#52b324",
+  "secondary_accent": "#378516",
+  "bg": "#dfe4ea",
+  "fg": "#161d24",
+  "text_muted": "#525e6a",
+  "id": "xbox360",
+  "family": "instrument",
+  "glyph_style": "rounded",
+  "palette": {
+   "bg": "#dfe4ea",
+   "fg": "#161d24",
+   "accent": "#52b324",
+   "secondary_accent": "#378516",
+   "border_active": "#52b324",
+   "border_inactive": "#929da8",
+   "text_muted": "#525e6a",
+   "success": "#45a622",
+   "warning": "#e07d16",
+   "error": "#cf302b"
+  },
+  "widget": {
+   "renderer": "vector",
+   "font": "sans",
+   "pixel_scale": 0,
+   "shades": [
+    "#dfe4ea",
+    "#929da8",
+    "#525e6a",
+    "#161d24"
+   ],
+   "density": "comfortable",
+   "border": "bevel",
+   "radius": 10,
+   "dither": "none",
+   "glow": 0.25,
+   "modules": [
+    "telemetry",
+    "curve",
+    "displays",
+    "automation",
+    "weather",
+    "forecast",
+    "suntimes"
+   ]
+  }
+ },
  "zenburn": {
   "name": "Zenburn",
   "accent": "#8cd0d3",
@@ -1917,24 +1971,24 @@
  "edge_noshades": {
   "name": "Edge: no shades",
   "accent": "#ffffff",
-  "secondary_accent": "#7fe5e5",
-  "bg": "#101225",
-  "fg": "#a7b7ff",
-  "text_muted": "#6672a8",
+  "secondary_accent": "#70a4b2",
+  "bg": "#3a3a9a",
+  "fg": "#a0a0ff",
+  "text_muted": "#959595",
   "id": "edge_noshades",
   "family": "pixel",
   "glyph_style": "pixel",
   "palette": {
-   "bg": "#101225",
-   "fg": "#a7b7ff",
+   "bg": "#3a3a9a",
+   "fg": "#a0a0ff",
    "accent": "#ffffff",
-   "secondary_accent": "#7fe5e5",
-   "border_active": "#ffffff",
-   "border_inactive": "#3b3f78",
-   "text_muted": "#6672a8",
+   "secondary_accent": "#70a4b2",
+   "border_active": "#a0a0ff",
+   "border_inactive": "#6c5eb5",
+   "text_muted": "#959595",
    "success": "#ffffff",
    "warning": "#ffffff",
-   "error": "#ff0000"
+   "error": "#9a6759"
   },
   "widget": {
    "renderer": "pixel",

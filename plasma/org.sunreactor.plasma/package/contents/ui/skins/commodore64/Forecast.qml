@@ -11,6 +11,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
+import "../../Format.js" as Format
 import "../pixel/PixelFormat.js" as PixelFormat
 import "Petscii.js" as Petscii
 
@@ -21,7 +22,7 @@ Item {
     required property SunReactorClient client
     required property ModuleSettings settings
 
-    readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && client.forecast.length > 0
     /*! Up to five slots; fewer when the popup is narrow (at least four cells each). */
     readonly property int slotCount: 5
     readonly property var points: client.forecast.slice(0, slotCount)
@@ -37,7 +38,7 @@ Item {
     function slotTemperature(point, cells) {
         // The glyph stands for the condition in "auto"; a chosen style draws the icon above.
         const icon = root.theme.weatherIconStyle === "auto" ? Petscii.icon(point.condition, point.isNight) : "";
-        const degrees = Math.round(point.temperatureC);
+        const degrees = Format.tempRounded(point.temperatureC, root.client.isFahrenheit);
         const full = icon + degrees + "°";
         return Petscii.cells(full) <= cells - 1 ? full : Petscii.fit(icon + degrees, cells - 1);
     }

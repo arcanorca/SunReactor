@@ -30,7 +30,7 @@ Item {
     readonly property string domain: settings.domain
     readonly property var curve: client.dayCurve
     readonly property var curves: curve && curve.monitors ? curve.monitors : []
-    readonly property bool available: client.isConnected && curves.length > 0 && curves[0].samples.length > 1
+    readonly property bool available: (client.isConnected || client.statusStale) && curves.length > 0 && curves[0].samples.length > 1
 
     property int selected: 0
     readonly property bool showAll: selected < 0 && curves.length > 1
@@ -126,6 +126,7 @@ Item {
         style: root.style
         wallpaper: "sky"
         hinge: true
+        daemonMode: root.client.mode
         glassHeight: root.glassH
 
         NdsStatusBar {
@@ -192,7 +193,7 @@ Item {
             color: root.style.blue
         }
 
-        // The chart card: white, with the curve, the night and the hour axis.
+        // The chart card: crisp DS pixel card with the curve, the night and the hour axis.
         Rectangle {
             id: card
 
@@ -200,10 +201,10 @@ Item {
             y: root.cardTop
             width: root.glassW - 2 * root.pad
             height: root.cardH
-            radius: 10
+            radius: 0
             color: root.style.white
             border.width: 1
-            border.color: root.style.line
+            border.color: "#2c3648"
         }
         Rectangle {
             visible: root.samples.length > 1 && root.sun.sunrise > 0
@@ -264,11 +265,11 @@ Item {
         }
         Rectangle {
             visible: root.samples.length > 1 && root.heroValue >= 0
-            x: Math.round(root.xAt(root.scrubbing ? root.scrubTime : root.now)) - 5
-            y: Math.round(root.yAt(root.heroValue)) - 5
-            width: 10
-            height: 10
-            radius: 5
+            x: Math.round(root.xAt(root.scrubbing ? root.scrubTime : root.now)) - 4
+            y: Math.round(root.yAt(root.heroValue)) - 4
+            width: 8
+            height: 8
+            radius: 0
             color: root.style.white
             border.width: 2
             border.color: root.style.blue

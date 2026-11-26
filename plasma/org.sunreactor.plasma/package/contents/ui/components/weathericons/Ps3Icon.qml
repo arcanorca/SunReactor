@@ -1,6 +1,7 @@
 /*
- * PlayStation 3 (XMB): a thin monoline glyph in one colour, the theme's ink on
- * the surface, with no accent roles: the XMB icons are white line work.
+ * PlayStation 3 (XMB) crystal-glass weather icons, backed by etched-crystal
+ * assets in skins/ps3/assets/weather/. Falls back to a clean white monoline
+ * WeatherGlyph below 16 logical px.
  */
 
 pragma ComponentBehavior: Bound
@@ -23,6 +24,24 @@ Item {
     implicitWidth: size
     implicitHeight: size
 
+    readonly property bool iconMode: size >= 16
+    readonly property string assetName: {
+        switch (condition) {
+        case "clear": return night ? "clear_night" : "clear_day";
+        case "partly_cloudy": return night ? "partly_cloudy_night" : "partly_cloudy_day";
+        case "cloudy": return "cloudy";
+        case "drizzle": return "drizzle";
+        case "rain": return "rain";
+        case "heavy_rain": return "heavy_rain";
+        case "thunderstorm": return "thunderstorm";
+        case "snow": return "snow";
+        case "mist": return "mist";
+        case "atmospheric": return "atmospheric";
+        case "fog": return "fog";
+        default: return "unknown";
+        }
+    }
+
     readonly property var mono: ({
         bg: theme.hexOf(surface),
         fg: theme.hexOf(ink),
@@ -32,8 +51,18 @@ Item {
         warning: theme.hexOf(ink)
     })
 
+    Image {
+        visible: root.iconMode
+        anchors.fill: parent
+        source: Qt.resolvedUrl("../../skins/ps3/assets/weather/" + root.assetName + ".png")
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        mipmap: true
+    }
+
     WeatherGlyph {
         anchors.centerIn: parent
+        visible: !root.iconMode
         condition: root.condition
         night: root.night
         glyphStyle: "line"

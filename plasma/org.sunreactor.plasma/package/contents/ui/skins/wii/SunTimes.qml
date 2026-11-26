@@ -28,7 +28,7 @@ ColumnLayout {
     readonly property WiiStyle style: WiiStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
 
     readonly property var curve: client.dayCurve && client.dayCurve.monitors && client.dayCurve.monitors.length > 0
         ? client.dayCurve.monitors[0] : null
@@ -46,7 +46,7 @@ ColumnLayout {
         id: tile
 
         style: root.style
-        pad: root.style.gap
+        pad: root.style.tilePad
         Layout.fillWidth: true
         implicitHeight: inner.implicitHeight + 2 * tile.pad
 

@@ -37,7 +37,7 @@ RowLayout {
     /*! How many intervals to show; five fits the popup at its narrowest. */
     readonly property int slots: 5
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     Layout.fillWidth: true
     spacing: 0
@@ -91,24 +91,23 @@ RowLayout {
 
                     ThemedWeatherIcon {
                         theme: root.theme
-                        size: root.style.snap(root.style.unit * 0.9)
+                        size: root.style.snap(root.style.unit * 1.15)
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight === true
                         anchors.verticalCenter: parent.verticalCenter
-                        WeatherGlyph {
+                        Ps3Icon {
                             anchors.centerIn: parent
-                            size: root.style.snap(root.style.unit * 0.9)
+                            theme: root.theme
+                            size: root.style.snap(root.style.unit * 1.15)
                             condition: slot.modelData.condition
                             night: slot.modelData.isNight === true
-                            glyphStyle: "line"
-                            palette: root.theme.glyphPalette
                         }
                     }
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                     Math.round(slot.modelData.temperatureC))
+                                     Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
                         textFormat: Text.PlainText
                         font: root.style.valueFont
                         color: root.style.ink

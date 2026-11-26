@@ -26,7 +26,7 @@ Item {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     AmigaStyle {
         id: tokens

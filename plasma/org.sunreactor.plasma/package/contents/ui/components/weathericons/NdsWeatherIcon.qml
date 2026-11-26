@@ -39,8 +39,15 @@ Item {
     readonly property real dpr: theme.grid.devicePixelRatio > 0 ? theme.grid.devicePixelRatio : 1
     readonly property int devSize: Math.max(1, Math.round(size * dpr))
     readonly property real side: devSize / dpr
-    /*! Outline width in design units: 2.6 (2.6 px at 48 px), wider when small. */
-    readonly property real outline: Math.max(2.6, 77 / devSize)
+
+    function luminance(c) {
+        function lin(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+        return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+    }
+
+    readonly property bool onDark: luminance(root.surface) < 0.25
+    /*! Outline width in design units: thinner on dark surfaces where the panel already silhouettes outer edges. */
+    readonly property real outline: onDark ? 1.8 : Math.max(2.4, 70 / Math.max(22, devSize))
 
     width: side
     height: side
@@ -53,11 +60,14 @@ Item {
         return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1);
     }
 
-    readonly property color navy: mixc(root.ink, root.theme.accent, 0.3)
+    readonly property color darkInk: luminance(root.ink) < 0.35 ? root.ink : root.theme.fg
+    readonly property color navy: mixc(darkInk, root.theme.accent, 0.3)
     readonly property color dsBlue: root.theme.accent
     readonly property color sunYellow: "#ffd24a"
     readonly property color sunOrange: root.theme.secondaryAccent
     readonly property color sunBand: mixc(sunYellow, sunOrange, 0.45)
+    readonly property color moonColour: "#ffbf1f"
+    readonly property color starColour: "#fff3bd"
     readonly property color cream: "#fffdf4"
     readonly property color creamBand: "#efe0b8"
     readonly property color dropColour: "#8ec9ff"
@@ -65,6 +75,7 @@ Item {
     readonly property color iceColour: "#e6f6ff"
     readonly property color mistColour: "#a9d6ff"
     readonly property color fogColour: "#f3ecd8"
+    readonly property color questionColour: navy
 
     // --- which kind of picture ---------------------------------------------------
 
@@ -75,7 +86,7 @@ Item {
 
     // Each table is keyed by kind. [dx, dy, scale] places the cloud on the grid.
     readonly property var sunTable: ({ "clear": [24, 24, 10], "partly_cloudy": [19, 18, 6.8] })
-    readonly property var moonTable: ({ "clear": [21, 24, 11.5], "partly_cloudy": [19, 18, 7] })
+    readonly property var moonTable: ({ "clear": [19.0, 25.5, 13.5], "partly_cloudy": [19, 18, 7] })
     readonly property var cloudTable: ({
         "": [0, 0, 1],
         "cloudy": [0, 0, 1],
@@ -160,9 +171,9 @@ Item {
              + "C" + f(cx - r) + " " + f(cy - 0.7 * r) + " " + f(cx - 0.42 * r) + " " + f(cy - 1.3 * r) + " " + f(cx) + " " + f(tip) + "Z";
     }
 
-    /*! A four-point sparkle with concave sides. */
+    /*! A four-point sparkle with concave sides, plump enough to stay crisp at panel sizes. */
     function star4(cx, cy, r) {
-        const k = 0.2 * r;
+        const k = 0.28 * r;
         return "M" + f(cx) + " " + f(cy - r)
              + "Q" + f(cx + k) + " " + f(cy - k) + " " + f(cx + r) + " " + f(cy)
              + "Q" + f(cx + k) + " " + f(cy + k) + " " + f(cx) + " " + f(cy + r)
@@ -231,12 +242,12 @@ Item {
     readonly property real sunGlintY: sunG[1] - 0.4 * sunG[2]
 
     readonly property string moonD: crescent(moonG[0], moonG[1], moonG[2],
-                                             0.6 * moonG[2], -0.5 * moonG[2], 0.85 * moonG[2])
+                                             0.56 * moonG[2], -0.48 * moonG[2], 0.80 * moonG[2])
     readonly property string moonGlintD: circ(moonG[0] - 0.45 * moonG[2], moonG[1] - 0.25 * moonG[2], 0.2 * moonG[2])
     readonly property real moonGlintX: moonG[0] - 0.45 * moonG[2]
     readonly property real moonGlintY: moonG[1] - 0.25 * moonG[2]
 
-    readonly property string starsD: star4(36, 13, 4.6) + star4(42, 24, 2.8) + star4(33, 37, 3.2)
+    readonly property string starsD: star4(32.5, 15.5, 5.0) + star4(39.5, 25.5, 3.2)
 
     readonly property string cloudD: circ(cloudX(15.5), cloudY(27), 7.5 * cloudG[2])
                                    + circ(cloudX(23.5), cloudY(20.5), 9.5 * cloudG[2])
@@ -316,24 +327,24 @@ Item {
         scale: root.side / 48
         transformOrigin: Item.TopLeft
         antialiasing: true
-        preferredRendererType: Shape.CurveRenderer
+        preferredRendererType: Shape.GeometryRenderer
 
         // Back to front: night stars, the sun or moon, drops, bars, flakes, cloud, bolt, question mark.
-        Part { shown: root.showStars; d: root.starsD; strokeC: root.navy; strokeW: 2 * root.outline }
-        Part { shown: root.showStars; d: root.starsD; fillC: root.sunYellow }
+        Part { shown: root.showStars; d: root.starsD; fillC: root.navy; strokeC: root.navy; strokeW: 2 * root.outline }
+        Part { shown: root.showStars; d: root.starsD; fillC: root.starColour }
 
         Part { shown: root.showSun; d: root.sunRaysD; strokeC: root.navy; strokeW: root.rayW + 2 * root.outline }
         Part { shown: root.showSun; d: root.sunRaysD; strokeC: root.sunOrange; strokeW: root.rayW }
-        Part { shown: root.showSun; d: root.sunD; strokeC: root.navy; strokeW: 2 * root.outline }
+        Part { shown: root.showSun; d: root.sunD; fillC: root.navy; strokeC: root.navy; strokeW: 2 * root.outline }
         Part { shown: root.showSun; d: root.sunD; fillC: root.sunYellow }
         Part { shown: root.showSun; d: root.sunBandD; fillC: root.sunBand }
         Glint { shown: root.showSun; d: root.sunGlintD; gx: root.sunGlintX; gy: root.sunGlintY; gr: 0.3 * root.sunG[2] }
 
-        Part { shown: root.showMoon; d: root.moonD; strokeC: root.navy; strokeW: 2 * root.outline }
-        Part { shown: root.showMoon; d: root.moonD; fillC: root.sunYellow }
+        Part { shown: root.showMoon; d: root.moonD; fillC: root.navy; strokeC: root.navy; strokeW: 2 * root.outline }
+        Part { shown: root.showMoon; d: root.moonD; fillC: root.moonColour }
         Glint { shown: root.showMoon; d: root.moonGlintD; gx: root.moonGlintX; gy: root.moonGlintY; gr: 0.3 * root.moonG[2] }
 
-        Part { shown: root.showDrops; d: root.dropsD; strokeC: root.navy; strokeW: 2 * root.outline }
+        Part { shown: root.showDrops; d: root.dropsD; fillC: root.navy; strokeC: root.navy; strokeW: 2 * root.outline }
         Part { shown: root.showDrops; d: root.dropsD; fillC: root.dropColour }
         Part { shown: root.showDrops; d: root.dropBandD; fillC: root.dropBand }
         Part { shown: root.showDrops; d: root.dropDotsD; fillC: Qt.rgba(1, 1, 1, 0.8) }
@@ -344,15 +355,15 @@ Item {
         Part { shown: root.showFlakes; d: root.flakesD; strokeC: root.navy; strokeW: root.flakeW + 2 * root.outline }
         Part { shown: root.showFlakes; d: root.flakesD; strokeC: root.iceColour; strokeW: root.flakeW }
 
-        Part { shown: root.showCloud; d: root.cloudD; strokeC: root.navy; strokeW: 2 * root.outline }
+        Part { shown: root.showCloud; d: root.cloudD; fillC: root.navy; strokeC: root.navy; strokeW: 2 * root.outline }
         Part { shown: root.showCloud; d: root.cloudD; fillC: root.cream }
         Part { shown: root.showCloud; d: root.cloudBandD; fillC: root.creamBand }
         Glint { shown: root.showCloud; d: root.cloudGlintD; gx: root.cloudGlintX; gy: root.cloudGlintY; gr: root.cloudGlintR }
 
-        Part { shown: root.showBolt; d: root.boltD; strokeC: root.navy; strokeW: 2 * root.outline }
+        Part { shown: root.showBolt; d: root.boltD; fillC: root.navy; strokeC: root.navy; strokeW: 2 * root.outline }
         Part { shown: root.showBolt; d: root.boltD; fillC: root.sunYellow }
 
-        Part { shown: root.showQuestion; d: root.questionD; strokeC: root.navy; strokeW: 2.6 }
-        Part { shown: root.showQuestion; d: root.questionDotD; fillC: root.navy }
+        Part { shown: root.showQuestion; d: root.questionD; strokeC: root.questionColour; strokeW: 2.6 }
+        Part { shown: root.showQuestion; d: root.questionDotD; fillC: root.questionColour }
     }
 }

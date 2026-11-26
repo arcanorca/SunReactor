@@ -25,7 +25,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     readonly property string stateText: stateWords.label(client.mode)
 
@@ -43,8 +43,7 @@ Item {
                          DayCurve.shortName(monitor.logicalId)));
         }
         if (client.hasTemperature) {
-            parts.push(i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°C",
-                              Math.round(client.temperatureC)));
+            parts.push(Format.tempText(client.temperatureC, client.isFahrenheit));
         }
         if (client.nowEpochS > 0) {
             parts.push(Format.timeText(client.nowEpochS));

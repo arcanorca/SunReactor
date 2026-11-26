@@ -54,7 +54,7 @@ ColumnLayout {
     readonly property int slots: Math.max(3, Math.min(6, Math.floor((width - labelWidth) / (timeMetrics.width + style.gap2 * 1.5))))
 
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     WeatherText {
         id: weatherText
@@ -118,7 +118,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
-                             Math.round(modelData.temperatureC))
+                             Format.tempRounded(modelData.temperatureC, root.client.isFahrenheit))
                 textFormat: Text.PlainText
                 font: root.style.dataFont
                 color: root.style.ink

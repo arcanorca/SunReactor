@@ -26,7 +26,7 @@ ColumnLayout {
     readonly property SynthStyle style: SynthStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var events: [
         { label: i18ndc(domain, "Short legend: sunrise", "Rise"), epoch: client.sunriseEpochS },
         { label: i18ndc(domain, "Short legend: solar noon", "Noon"), epoch: client.solarNoonEpochS },

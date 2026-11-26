@@ -1,7 +1,7 @@
 /*
  * Weather, casiodigital: the reading and what it does to the targets. The
  * temperature is in seven segments, the condition a printed caption, the icon a
- * solid glyph in the ink. The effect on the displays is an LCD flag (DIM, BOOST,
+ * monoline glyph in the ink. The effect on the displays is an LCD flag (DIM, BOOST,
  * NO EFFECT) and its size in segments; the secondary readings are printed below.
  */
 
@@ -15,6 +15,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 import "Casio.js" as Casio
 
 Item {
@@ -28,11 +29,11 @@ Item {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
     /*! Percent points the weather takes off the targets (negative: adds). */
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: weatherText.detailsList(client.weatherDetails, "compact")
+    readonly property var extras: weatherText.detailsListInUnit(client.weatherDetails, "compact", client.isFahrenheit)
 
     implicitWidth: bezel.implicitWidth
     implicitHeight: bezel.implicitHeight
@@ -61,19 +62,22 @@ Item {
                 size: root.style.digitHero
                 condition: root.client.weatherCondition
                 night: root.client.weatherIsNight
+                surface: root.style.glass
+                ink: root.style.ink
                 Layout.alignment: Qt.AlignVCenter
                 WeatherGlyph {
                     anchors.centerIn: parent
                     size: root.style.digitHero
                     condition: root.client.weatherCondition
                     night: root.client.weatherIsNight
-                    glyphStyle: "solid"
+                    glyphStyle: "line"
                     palette: root.style.glyphPalette
                 }
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 spacing: 0
 
                 RowLayout {
@@ -82,11 +86,11 @@ Item {
                     CasioDigits {
                         style: root.style
                         size: root.style.digitMedium
-                        text: root.client.hasTemperature ? Casio.numberText(root.client.temperatureC, 3) : "---"
+                        text: root.client.hasTemperature ? Casio.numberText(Format.tempValue(root.client.temperatureC, root.client.isFahrenheit), 3) : "---"
                     }
                     Text {
                         Layout.alignment: Qt.AlignBottom
-                        text: "°C"
+                        text: Format.tempUnit(root.client.isFahrenheit)
                         textFormat: Text.PlainText
                         font: root.style.cap(root.style.sizeBody)
                         color: root.style.inkMuted

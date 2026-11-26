@@ -36,7 +36,7 @@ ColumnLayout {
     }
 
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
     /*! The temperature range the trace is scaled to. */
     readonly property real tMin: points.length > 0 ? Math.min(...points.map(p => p.temperatureC)) : 0
     readonly property real tMax: points.length > 0 ? Math.max(...points.map(p => p.temperatureC)) : 1
@@ -125,7 +125,7 @@ ColumnLayout {
                     x: Math.round(column.width / 2 - width / 2)
                     y: Math.round(strip.yOf(column.modelData.temperatureC) - height - root.style.gap * 0.5)
                     text: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                 Math.round(column.modelData.temperatureC))
+                                 Format.tempRounded(column.modelData.temperatureC, root.client.isFahrenheit))
                     textFormat: Text.PlainText
                     font: root.style.dataFont
                     color: root.style.ink

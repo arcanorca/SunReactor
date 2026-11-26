@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../Format.js" as Format
 import "../pixel/PixelFormat.js" as PixelFormat
 
 Item {
@@ -22,7 +23,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     readonly property var clock: PixelFormat.timeParts(client.nowEpochS)
     readonly property string stateText: {
         switch (root.client.mode) {
@@ -37,7 +38,7 @@ Item {
         }
     }
     readonly property string tempText: client.hasTemperature
-        ? i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1°C", Math.round(root.client.temperatureC)) : ""
+        ? Format.tempText(root.client.temperatureC, root.client.isFahrenheit) : ""
 
     AmigaStyle {
         id: tokens

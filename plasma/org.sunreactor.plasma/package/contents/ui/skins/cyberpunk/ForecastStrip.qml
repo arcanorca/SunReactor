@@ -40,7 +40,7 @@ ColumnLayout {
     readonly property var glyphColours: theme.glyphColours(theme.bg, theme.secondaryAccent)
 
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     WeatherText {
         id: weatherText
@@ -113,7 +113,7 @@ ColumnLayout {
                         Text {
                             Layout.alignment: Qt.AlignVCenter
                             text: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                         Math.round(column.modelData.temperatureC))
+                                         Format.tempRounded(column.modelData.temperatureC, root.client.isFahrenheit))
                             textFormat: Text.PlainText
                             font: root.style.numFont
                             color: root.style.yellow

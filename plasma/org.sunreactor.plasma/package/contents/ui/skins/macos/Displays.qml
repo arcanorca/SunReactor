@@ -33,9 +33,9 @@ ColumnLayout {
     readonly property MacStyle style: MacStyle {
         theme: root.theme
     }
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     spacing: style.gap
@@ -55,8 +55,9 @@ ColumnLayout {
             Layout.fillWidth: true
             style: root.style
             domain: root.domain
-            name: i18nd(root.domain, "All displays")
+            name: root.settings.allDisplaysLabel
             percent: root.client.globalPercent
+            controllable: root.client.isConnected
             hasLimits: false
             hasOverride: false
             divided: true
@@ -75,25 +76,33 @@ ColumnLayout {
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
                 readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
+                readonly property string fullNotice: Monitors.monitorNotice(
+                    modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+                readonly property string tagNotice: Monitors.monitorTag(
+                    modelData, root.settings.pausedTag, root.settings.queuedTag)
 
                 Layout.fillWidth: true
                 style: root.style
                 domain: root.domain
                 name: modelData.logicalId
                 percent: modelData.percent
-                minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-                hasLimits: true
+                minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                hasLimits: Monitors.hasValidLimits(modelData)
                 limitsExpanded: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                 hasOverride: modelData.hasOverride === true || hasHold
-                controllable: modelData.enabled && !unavailable
+                controllable: root.client.isConnected && modelData.enabled && !unavailable
                 divided: index < root.monitors.length - 1
+                notice: fullNotice
                 stateText: {
                     if (!modelData.enabled) {
                         return i18ndc(root.domain, "Tag: this display is excluded from automation", "Off");
                     }
                     if (unavailable) {
                         return i18ndc(root.domain, "Tag: this display is not answering", "No link");
+                    }
+                    if (tagNotice.length > 0) {
+                        return tagNotice;
                     }
                     if (modelData.hasOverride) {
                         return i18ndc(root.domain, "Tag: this brightness was set by hand", "Manual");
@@ -104,7 +113,8 @@ ColumnLayout {
                     }
                     return "";
                 }
-                stateTone: unavailable && modelData.enabled ? root.style.danger : root.style.inkSecondary
+                stateTone: unavailable && modelData.enabled ? root.style.danger
+                    : (tagNotice.length > 0 ? root.style.accent : root.style.inkSecondary)
 
                 onRequested: percent => root.client.setMonitorOverride(modelData.logicalId, percent,
                                                                        root.settings.overrideMinutes)

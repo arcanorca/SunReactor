@@ -25,7 +25,7 @@ Item {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     readonly property real barH: ui.snap(ui.sizeBody * 2.3)
 
     width: parent ? parent.width : 0
@@ -56,8 +56,7 @@ Item {
                          DayCurve.shortName(monitor.logicalId)));
         }
         if (client.hasTemperature) {
-            parts.push(i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°C",
-                              Math.round(client.temperatureC)));
+            parts.push(Format.tempText(client.temperatureC, client.isFahrenheit));
         }
         return parts.join("  ·  ");
     }

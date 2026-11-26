@@ -9,6 +9,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../../components"
+
 Item {
     id: root
 
@@ -71,9 +73,19 @@ Item {
 
     function step(delta) {
         if (active) {
-            const next = Math.max(from, Math.min(to, valueOf(cellsOf(shownValue) + delta)));
-            committed(next);
+            const base = throttle.pending ? throttle.pendingValue : shownValue;
+            const next = Math.max(from, Math.min(to, valueOf(cellsOf(base) + delta)));
+            root.preview = next;
+            throttle.nudge(next);
         }
+    }
+
+    CommitThrottle {
+        id: throttle
+
+        debounceMs: -1
+        reportedValue: root.value
+        onCommitted: val => root.committed(val)
     }
 
     Keys.onLeftPressed: step(-1)
@@ -89,10 +101,12 @@ Item {
             step(-5);
             event.accepted = true;
         } else if (event.key === Qt.Key_Home) {
-            committed(from);
+            root.preview = from;
+            throttle.nudge(from);
             event.accepted = true;
         } else if (event.key === Qt.Key_End) {
-            committed(to);
+            root.preview = to;
+            throttle.nudge(to);
             event.accepted = true;
         }
     }
@@ -110,21 +124,15 @@ Item {
         onPressed: mouse => {
             root.forceActiveFocus(Qt.MouseFocusReason);
             root.preview = root.valueAtX(mouse.x * root.artWidth / root.width);
+            throttle.schedule(root.preview);
         }
         onPositionChanged: mouse => {
             if (pressed) {
                 root.preview = root.valueAtX(mouse.x * root.artWidth / root.width);
+                throttle.schedule(root.preview);
             }
         }
-        onReleased: {
-            if (root.preview >= 0) {
-                root.committed(root.preview);
-            }
-        }
-        onCanceled: {
-            if (root.preview >= 0) {
-                root.committed(root.preview);
-            }
-        }
+        onReleased: throttle.release(root.preview >= 0 ? root.preview : undefined)
+        onCanceled: throttle.release(root.preview >= 0 ? root.preview : undefined)
     }
 }

@@ -12,6 +12,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 
+import "../../components"
+
 Item {
     id: row
 
@@ -21,8 +23,8 @@ Item {
     property int percent: -1
     /*! Where the automatic curve wants this display now; -1 for none. */
     property real target: -1
-    property int minPct: 15
-    property int maxPct: 60
+    property int minPct: -1
+    property int maxPct: -1
     property bool hasLimits: false
     property bool hasOverride: false
     /*! False disables the slider: a display that is off, or not responding. */
@@ -104,12 +106,15 @@ Item {
         id: hover
     }
 
-    // The soft halo of the emphasised item, behind everything.
-    Rectangle {
+    // XMB horizontal spotlight beam behind the emphasised item.
+    Image {
+        visible: row.emphasised
+        property bool auditIgnore: true
         anchors.fill: parent
         anchors.margins: -row.style.gap
-        radius: row.style.snap(row.style.unit * 0.5)
-        color: row.emphasised ? row.style.glow : "transparent"
+        source: Qt.resolvedUrl("assets/ps3_spotlight.png")
+        fillMode: Image.Stretch
+        smooth: true
     }
 
     // The faint separator.
@@ -188,11 +193,10 @@ Item {
                 if (pressed) {
                     return;
                 }
-                throttle.stop();
-                row.requested(Math.round(value));
+                throttle.release(Math.round(value));
                 value = Qt.binding(() => row.hasValue ? row.percent : 0);
             }
-            onMoved: throttle.restart()
+            onMoved: pressed ? throttle.schedule(Math.round(value)) : throttle.nudge(Math.round(value))
         }
 
         // The state and the way back, in the legend size.
@@ -231,15 +235,15 @@ Item {
 
                 Layout.fillWidth: true
                 style: row.style
+                enabled: row.controllable && row.hasLimits
                 from: 0
                 to: Math.min(100, Math.round(maxSlider.value))
-                value: row.minPct
-                onMoved: limitsThrottle.restart()
+                value: row.minPct >= 0 ? row.minPct : 0
+                onMoved: pressed ? minThrottle.schedule(Math.round(value)) : minThrottle.nudge(Math.round(value))
                 onPressedChanged: {
                     if (!pressed) {
-                        limitsThrottle.stop();
-                        row.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
-                        value = Qt.binding(() => row.minPct);
+                        minThrottle.release(Math.round(value));
+                        value = Qt.binding(() => row.minPct >= 0 ? row.minPct : 0);
                     }
                 }
             }
@@ -249,15 +253,15 @@ Item {
 
                 Layout.fillWidth: true
                 style: row.style
+                enabled: row.controllable && row.hasLimits
                 from: Math.max(0, Math.round(minSlider.value))
                 to: 100
-                value: row.maxPct
-                onMoved: limitsThrottle.restart()
+                value: row.maxPct >= 0 ? row.maxPct : 100
+                onMoved: pressed ? maxThrottle.schedule(Math.round(value)) : maxThrottle.nudge(Math.round(value))
                 onPressedChanged: {
                     if (!pressed) {
-                        limitsThrottle.stop();
-                        row.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
-                        value = Qt.binding(() => row.maxPct);
+                        maxThrottle.release(Math.round(value));
+                        value = Qt.binding(() => row.maxPct >= 0 ? row.maxPct : 100);
                     }
                 }
             }
@@ -266,17 +270,39 @@ Item {
 
     // DDC/CI writes travel over an I2C bus that does not like packet storms,
     // so a drag sends one request every quarter second, not one per pixel.
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 250
-        onTriggered: row.requested(Math.round(slider.value))
+        reportedValue: row.hasValue ? row.percent : -1
+        onCommitted: val => {
+            row.requested(val);
+            if (!slider.pressed) {
+                slider.value = Qt.binding(() => row.hasValue ? row.percent : 0);
+            }
+        }
     }
 
-    Timer {
-        id: limitsThrottle
+    CommitThrottle {
+        id: minThrottle
 
-        interval: 250
-        onTriggered: row.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value))
+        reportedValue: row.minPct
+        onCommitted: val => {
+            row.limitsRequested(val, Math.round(maxSlider.value));
+            if (!minSlider.pressed) {
+                minSlider.value = Qt.binding(() => row.minPct >= 0 ? row.minPct : 0);
+            }
+        }
+    }
+
+    CommitThrottle {
+        id: maxThrottle
+
+        reportedValue: row.maxPct
+        onCommitted: val => {
+            row.limitsRequested(Math.round(minSlider.value), val);
+            if (!maxSlider.pressed) {
+                maxSlider.value = Qt.binding(() => row.maxPct >= 0 ? row.maxPct : 100);
+            }
+        }
     }
 }

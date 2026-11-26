@@ -39,7 +39,7 @@ ColumnLayout {
 
     readonly property var curve: client.dayCurve
     readonly property var curves: curve && curve.monitors ? curve.monitors : []
-    readonly property bool available: client.isConnected && curves.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && curves.length > 0
         && curves[0].samples.length > 1
 
     /*! Index into `curves`: the display whose curve is drawn. */
@@ -166,7 +166,7 @@ ColumnLayout {
                 id: plot
 
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.style.snap(root.style.unit * 3.2)
+                Layout.preferredHeight: root.style.snap(root.style.unit * 2.75)
 
                 function xAt(t) {
                     return (t - root.t0) / Math.max(1, root.t1 - root.t0) * width;
@@ -318,6 +318,7 @@ ColumnLayout {
                 id: axis
 
                 Layout.fillWidth: true
+                Layout.bottomMargin: root.style.gap * 0.2
                 implicitHeight: root.style.sizeCaption * 1.4
 
                 Repeater {

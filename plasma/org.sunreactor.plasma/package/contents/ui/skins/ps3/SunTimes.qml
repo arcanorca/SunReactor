@@ -31,7 +31,7 @@ ColumnLayout {
     readonly property XmbStyle style: XmbStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
         { label: i18ndc(root.domain, "Short legend: sunrise", "Rise"), epoch: client.sunriseEpochS },
         { label: i18ndc(root.domain, "Short legend: solar noon", "Noon"), epoch: client.solarNoonEpochS },
@@ -107,7 +107,7 @@ ColumnLayout {
 
         Layout.fillWidth: true
         Layout.bottomMargin: root.style.gap
-        implicitHeight: root.style.snap(root.style.unit * 0.36)
+        implicitHeight: root.style.snap(root.style.unit * 0.8)
 
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
@@ -126,14 +126,17 @@ ColumnLayout {
             color: root.style.ink
         }
 
-        Rectangle {
+        Image {
+            readonly property real d: root.style.snap(root.style.unit * 0.8)
+
             visible: root.daylight
-            x: root.style.snap(track.width * root.dayProgress) - width / 2
+            x: root.style.snap(track.width * root.dayProgress) - d / 2
             anchors.verticalCenter: parent.verticalCenter
-            width: root.style.snap(root.style.unit * 0.36)
-            height: width
-            radius: width / 2
-            color: root.style.ink
+            width: d
+            height: d
+            source: Qt.resolvedUrl("assets/ps3_slider_orb.png")
+            smooth: true
+            mipmap: true
         }
     }
 }

@@ -15,6 +15,7 @@ import "../../engine"
 import "../../modules"
 import "../../components"
 import "../../components/weathericons"
+import "../../Format.js" as Format
 
 Item {
     id: root
@@ -27,7 +28,7 @@ Item {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     readonly property string condition: {
         const text = weatherText.conditionLabel(client.weatherCondition);
@@ -57,6 +58,7 @@ Item {
         style: root.style
         wallpaper: "sky"
         hinge: true
+        daemonMode: root.client.mode
         glassHeight: root.glassH
 
         NdsStatusBar {
@@ -93,13 +95,13 @@ Item {
             }
         }
 
-        // The temperature: big rounded digits, the unit beside them.
+        // The temperature: crisp digits, the unit beside them.
         Text {
             id: temperature
 
             x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
             y: Math.round(root.gu * 1.6)
-            text: root.client.hasTemperature ? String(Math.round(root.client.temperatureC)) : "--"
+            text: root.client.hasTemperature ? String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit)) : "--"
             textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
@@ -109,7 +111,7 @@ Item {
         Text {
             x: temperature.x + temperature.implicitWidth + Math.round(root.gu * 0.2)
             y: Math.round(root.gu * 2.0)
-            text: i18ndc(root.domain, "Degrees Celsius unit", "°C")
+            text: Format.tempUnit(root.client.isFahrenheit)
             textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold

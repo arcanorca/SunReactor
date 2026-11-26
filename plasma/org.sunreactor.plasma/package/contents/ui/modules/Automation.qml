@@ -24,7 +24,7 @@ ColumnLayout {
     required property SunReactorClient client
     required property ModuleSettings settings
 
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     readonly property ModeControl control: ModeControl {
         client: root.client
@@ -110,23 +110,41 @@ ColumnLayout {
         }
     }
 
-    PlasmaComponents3.Label {
+    ColumnLayout {
         Layout.fillWidth: true
-        visible: root.control.displayText.length > 0
-        text: root.control.displayText
-        textFormat: Text.PlainText
-        font.pixelSize: root.theme.fontSizeBody
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
-        color: root.control.hinting ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
-    }
+        spacing: Math.max(2, Kirigami.Units.smallSpacing / 2)
 
-    PlasmaExtras.DescriptiveLabel {
-        Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.note
-        font.pixelSize: root.theme.fontSizeSmall
-        wrapMode: Text.WordWrap
+        PlasmaComponents3.Label {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.primaryText
+            textFormat: Text.PlainText
+            font.pixelSize: root.theme.fontSizeBody
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            color: root.control.hinting ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
+        }
+
+        PlasmaComponents3.Label {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.scheduleText
+            textFormat: Text.PlainText
+            font.pixelSize: root.theme.fontSizeSmall
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            opacity: 0.78
+            color: Kirigami.Theme.textColor
+        }
+
+        PlasmaExtras.DescriptiveLabel {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.note
+            font.pixelSize: root.theme.fontSizeSmall
+            wrapMode: Text.WordWrap
+        }
     }
 }

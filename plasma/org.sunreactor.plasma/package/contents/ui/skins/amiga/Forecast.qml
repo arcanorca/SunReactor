@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
+import "../../Format.js" as Format
 import "../pixel/PixelFormat.js" as PixelFormat
 import "../pixel/Sprites.js" as Sprites
 
@@ -25,7 +26,7 @@ Item {
     readonly property int maxSlots: 5
     readonly property int slotMin: 28
     readonly property var upcoming: client.forecast.filter(p => p.epochS > client.nowEpochS)
-    readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && client.forecast.length > 0
 
     AmigaStyle {
         id: tokens
@@ -75,7 +76,7 @@ Item {
 
                         Accessible.role: Accessible.StaticText
                         Accessible.name: PixelFormat.time(modelData.epochS) + " "
-                            + Math.round(modelData.temperatureC) + "°"
+                            + Format.tempRounded(modelData.temperatureC, root.client.isFahrenheit) + "°"
 
                         AmigaText {
                             x: Math.floor((slot.width - artWidth) / 2)
@@ -102,7 +103,7 @@ Item {
                         AmigaText {
                             x: Math.floor((slot.width - artWidth) / 2)
                             y: 23
-                            text: Math.round(slot.modelData.temperatureC) + "°"
+                            text: Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit) + "°"
                             color: tokens.ink
                             maximumArtWidth: slot.width
                         }

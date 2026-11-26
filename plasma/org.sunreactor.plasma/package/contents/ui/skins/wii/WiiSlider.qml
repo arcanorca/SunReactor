@@ -15,6 +15,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../../components"
+
 Item {
     id: root
 
@@ -33,7 +35,8 @@ Item {
 
     readonly property bool dragging: pointer.pressed
     property real dragValue: 0
-    readonly property real shown: dragging ? dragValue : value
+    readonly property real shown: dragging ? dragValue
+        : (throttle.pending ? throttle.pendingValue : value)
 
     readonly property real thumbD: style.snap(style.unit * 1.2)
     readonly property real trackH: style.snap(style.unit * 0.42)
@@ -52,8 +55,9 @@ Item {
         if (!root.known) {
             return;
         }
-        const v = Math.max(from, Math.min(to, Math.round(root.value) + step));
-        root.requested(v);
+        const base = throttle.pending ? throttle.pendingValue : Math.round(root.value);
+        const v = Math.max(from, Math.min(to, base + step));
+        throttle.nudge(v);
     }
 
     implicitWidth: 120
@@ -77,19 +81,19 @@ Item {
             root.nudge(10);
             event.accepted = true;
         } else if (event.key === Qt.Key_Home) {
-            root.requested(root.from);
+            throttle.nudge(root.from);
             event.accepted = true;
         } else if (event.key === Qt.Key_End) {
-            root.requested(root.to);
+            throttle.nudge(root.to);
             event.accepted = true;
         }
     }
 
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 250
-        onTriggered: root.requested(Math.round(root.dragValue))
+        reportedValue: Math.round(root.value)
+        onCommitted: val => root.requested(val)
     }
 
     // The track: light grey, round-ended.
@@ -147,8 +151,8 @@ Item {
         color: root.style.inkSoft
     }
 
-    // The thumb: a big white round knob with a grey ring and a faint shadow.
-    Item {
+    // The thumb: glossy 3D Wii puck asset.
+    Image {
         id: thumb
 
         visible: root.known
@@ -156,24 +160,9 @@ Item {
         height: root.thumbD
         x: root.xOf(root.shown) - width / 2
         y: (root.height - height) / 2
-
-        Rectangle {
-            x: 0
-            y: root.style.snap(1.5)
-            width: parent.width
-            height: parent.height
-            radius: width / 2
-            antialiasing: true
-            color: root.style.alpha(root.style.ink, 0.14)
-        }
-        Rectangle {
-            anchors.fill: parent
-            radius: width / 2
-            antialiasing: true
-            color: root.style.paper
-            border.width: root.style.line2
-            border.color: root.dragging ? root.style.accent : root.style.ring
-        }
+        source: Qt.resolvedUrl("assets/wii_slider_thumb.png")
+        smooth: true
+        mipmap: true
     }
 
     // Keyboard focus: a blue ring around the thumb.
@@ -199,20 +188,15 @@ Item {
         onPressed: mouse => {
             root.forceActiveFocus(Qt.MouseFocusReason);
             root.dragValue = root.valueAt(mouse.x);
+            throttle.schedule(Math.round(root.dragValue));
         }
         onPositionChanged: mouse => {
             if (pointer.pressed) {
                 root.dragValue = root.valueAt(mouse.x);
-                throttle.restart();
+                throttle.schedule(Math.round(root.dragValue));
             }
         }
-        onReleased: {
-            throttle.stop();
-            root.requested(Math.round(root.dragValue));
-        }
-        onCanceled: {
-            throttle.stop();
-            root.requested(Math.round(root.dragValue));
-        }
+        onReleased: throttle.release(Math.round(root.dragValue))
+        onCanceled: throttle.release(Math.round(root.dragValue))
     }
 }

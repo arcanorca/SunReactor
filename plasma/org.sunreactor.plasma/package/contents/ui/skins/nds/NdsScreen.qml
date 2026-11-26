@@ -1,15 +1,16 @@
 /*
- * One of the console's two screens: a thin black bezel with a glossy glass.
- * The top screen (wallpaper "sky") carries the light-blue system wallpaper with
- * a few translucent bubbles and a hinge strip under it; the touch screen
- * (wallpaper "touch") is a pale glass. A diagonal white gloss at 7% sits over
- * everything on the glass. Children are placed in the glass, in glass coordinates.
+ * Nintendo DS hardware screen shell:
+ *  - Top screen ("sky"): pearl DS Lite bezel with stereo speaker grilles
+ *    (assets/ds_top_bezel.png) and cylindrical barrel hinge (assets/ds_hinge.png)
+ *    with a live Power/Wi-Fi LED reflecting daemon mode.
+ *  - Bottom screen ("touch"): recessed touch bezel (assets/ds_bottom_bezel.png)
+ *    over a PictoChat graph-paper grid (assets/ds_picto_grid.png).
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Shapes
+import org.sunreactor.plasma
 
 import "../../engine"
 
@@ -24,35 +25,34 @@ Item {
     property real glassHeight: 100
     /*! Draw the hinge strip under the bezel (the top screen). */
     property bool hinge: false
+    /*! Daemon mode for the hinge status LEDs (SunReactorClient.Mode). */
+    property int daemonMode: SunReactorClient.Automatic
 
-    /*! Width of the glass, logical px. */
-    readonly property real glassWidth: root.width - 2 * root.style.bezel
+    readonly property real glassWidth: Math.max(1, root.width - 2 * root.style.bezel)
 
-    /*! Children are placed in the glass. */
     default property alias content: stage.data
 
     implicitHeight: bezelBox.height + (root.hinge ? root.style.hingeHeight : 0)
 
-    /*! Fixed bubbles of the system wallpaper: fractions of the glass, radius in px. */
-    readonly property var bubbles: [
-        { fx: 0.09, fy: 0.14, r: 14 },
-        { fx: 0.84, fy: 0.10, r: 21 },
-        { fx: 0.95, fy: 0.58, r: 9 },
-        { fx: 0.05, fy: 0.80, r: 11 },
-        { fx: 0.66, fy: 0.88, r: 17 },
-        { fx: 0.74, fy: 0.34, r: 6 }
-    ]
+    readonly property color ledColor: {
+        switch (daemonMode) {
+        case SunReactorClient.Offline: return root.style.danger;
+        case SunReactorClient.Paused:
+        case SunReactorClient.Manual: return root.style.warning;
+        default: return "#38d458";
+        }
+    }
 
-    Rectangle {
+    BorderImage {
         id: bezelBox
 
         width: root.width
         height: root.glassHeight + 2 * root.style.bezel
-        radius: root.style.radius
-        gradient: Gradient {
-            GradientStop { position: 0; color: root.style.bezelTop }
-            GradientStop { position: 1; color: root.style.bezelBottom }
-        }
+        source: Qt.resolvedUrl(root.wallpaper === "sky" ? "assets/ds_top_bezel.png" : "assets/ds_bottom_bezel.png")
+        border { left: 8; right: 8; top: 8; bottom: 8 }
+        horizontalTileMode: BorderImage.Stretch
+        verticalTileMode: BorderImage.Stretch
+        smooth: false
     }
 
     Item {
@@ -82,24 +82,12 @@ Item {
             }
         }
 
-        Repeater {
-            model: root.wallpaper === "sky" ? root.bubbles : []
-
-            delegate: Rectangle {
-                required property var modelData
-
-                // Kept whole inside the glass: the clip would cut a bubble at the edge.
-                x: Math.max(0, Math.min(glass.width - 2 * modelData.r,
-                                        Math.round(modelData.fx * glass.width) - modelData.r))
-                y: Math.max(0, Math.min(glass.height - 2 * modelData.r,
-                                        Math.round(modelData.fy * glass.height) - modelData.r))
-                width: 2 * modelData.r
-                height: 2 * modelData.r
-                radius: modelData.r
-                color: Qt.rgba(1, 1, 1, 0.2)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.45)
-            }
+        Image {
+            anchors.fill: parent
+            source: Qt.resolvedUrl(root.wallpaper === "sky" ? "assets/ds_sky_grid.png" : "assets/ds_picto_grid.png")
+            fillMode: Image.Tile
+            smooth: false
+            opacity: root.wallpaper === "sky" ? 0.55 : 0.85
         }
 
         Item {
@@ -107,37 +95,9 @@ Item {
 
             anchors.fill: parent
         }
-
-        // The gloss: a diagonal white band from the top-left corner, 7% at its edge.
-        Shape {
-            anchors.fill: parent
-
-            ShapePath {
-                strokeColor: "transparent"
-                strokeWidth: 0
-                fillGradient: LinearGradient {
-                    x1: 0
-                    y1: 0
-                    x2: glass.width * 0.7
-                    y2: glass.height * 0.7
-
-                    GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.07) }
-                    GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0) }
-                    GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) }
-                }
-
-                PathPolyline {
-                    path: [
-                        Qt.point(0, 0),
-                        Qt.point(glass.width * 0.9, 0),
-                        Qt.point(0, glass.height * 0.9)
-                    ]
-                }
-            }
-        }
     }
 
-    // The hinge: a pearl bar under the top screen, with its dark slot in the middle.
+    // The cylindrical barrel hinge with camera lens & crisp pixel LED indicators
     Item {
         visible: root.hinge
         x: 0
@@ -145,26 +105,41 @@ Item {
         width: root.width
         height: root.style.hingeHeight
 
+        BorderImage {
+            anchors.fill: parent
+            source: Qt.resolvedUrl("assets/ds_hinge.png")
+            border { left: 36; right: 36; top: 0; bottom: 0 }
+            horizontalTileMode: BorderImage.Stretch
+            verticalTileMode: BorderImage.Stretch
+            smooth: false
+        }
+
+        // Centered DSi camera / mic module (unstretched)
+        Image {
+            anchors.centerIn: parent
+            width: Math.round(parent.height * 2.2)
+            height: Math.round(parent.height * 0.78)
+            source: Qt.resolvedUrl("assets/ds_hinge_camera.png")
+            fillMode: Image.PreserveAspectFit
+            smooth: false
+        }
+
+        // Crisp rectangular pixel LEDs centered inside the right hinge LED windows
         Rectangle {
-            x: root.style.bezel * 2
-            y: 0
-            width: root.width - 4 * root.style.bezel
-            height: parent.height
-            radius: height / 2
-            gradient: Gradient {
-                GradientStop { position: 0; color: root.style.hingeTop }
-                GradientStop { position: 1; color: root.style.hingeBottom }
-            }
-            border.width: 1
-            border.color: root.style.line
+            width: Math.max(3, Math.round(parent.height * 0.22))
+            height: Math.max(4, Math.round(parent.height * 0.26))
+            x: Math.round(root.width - 19.5 - width / 2)
+            y: Math.round((parent.height - height) / 2)
+            radius: 0
+            color: root.ledColor
         }
         Rectangle {
-            x: Math.round(root.width / 2) - 16
-            y: Math.round(parent.height / 4)
-            width: 32
-            height: Math.round(parent.height / 2)
-            radius: height / 2
-            color: root.style.hingeSlot
+            width: Math.max(3, Math.round(parent.height * 0.22))
+            height: Math.max(4, Math.round(parent.height * 0.26))
+            x: Math.round(root.width - 12.5 - width / 2)
+            y: Math.round((parent.height - height) / 2)
+            radius: 0
+            color: root.daemonMode === SunReactorClient.Offline ? "#3a424e" : "#44c2ff"
         }
     }
 }

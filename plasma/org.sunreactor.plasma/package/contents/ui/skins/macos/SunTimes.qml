@@ -31,7 +31,7 @@ ColumnLayout {
     readonly property MacStyle style: MacStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property real dayLength: Math.max(0, client.sunsetEpochS - client.sunriseEpochS)
     /*! Where now is along the day: 0 at sunrise, 1 at sunset; outside 0..1 at night. */
     readonly property real fraction: dayLength > 0 ? (client.nowEpochS - client.sunriseEpochS) / dayLength : -1

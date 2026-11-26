@@ -20,7 +20,7 @@ Item {
     required property SunReactorClient client
     required property ModuleSettings settings
 
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     C64Style {
         id: style
@@ -30,7 +30,7 @@ Item {
 
     readonly property string stateWord: {
         const domain = root.settings.domain;
-        if (!root.client.isConnected) {
+        if (!(root.client.isConnected || root.client.statusStale)) {
             return i18ndc(domain, "Daemon state in the C64 banner", "OFFLINE");
         }
         switch (root.client.mode) {

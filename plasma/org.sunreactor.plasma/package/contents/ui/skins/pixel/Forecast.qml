@@ -12,6 +12,7 @@ import org.sunreactor.plasma
 import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
+import "../../Format.js" as Format
 import "PixelFormat.js" as PixelFormat
 import "Sprites.js" as Sprites
 import "../../modules/ForecastRules.js" as ForecastRules
@@ -27,7 +28,7 @@ Item {
     readonly property int slotMin: 26
     readonly property int slots: Math.max(1, Math.min(maxSlots, Math.floor(panel.contentWidth / slotMin)))
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
-    readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && client.forecast.length > 0
 
     PixelStyle {
         id: pstyle
@@ -73,7 +74,7 @@ Item {
                     height: panel.contentHeight
 
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: PixelFormat.time(modelData.epochS) + " " + Math.round(modelData.temperatureC) + "°"
+                    Accessible.name: PixelFormat.time(modelData.epochS) + " " + Format.tempRounded(modelData.temperatureC, root.client.isFahrenheit) + "°"
 
                     PixelLabel {
                         theme: root.theme
@@ -114,7 +115,7 @@ Item {
                         face: pstyle.bodyFace
                         color: pstyle.ink
                         text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
-                                     Math.round(slot.modelData.temperatureC))
+                                     Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
                     }
                 }
             }

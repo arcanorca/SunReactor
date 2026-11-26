@@ -27,7 +27,7 @@ ColumnLayout {
     readonly property CyberStyle style: CyberStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property real dayLength: client.sunsetEpochS - client.sunriseEpochS
     readonly property bool showElevation: settings.showSolarElevation && client.hasSolarElevation
     readonly property var entries: [

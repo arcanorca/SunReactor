@@ -29,9 +29,9 @@ ColumnLayout {
     readonly property WiiStyle style: WiiStyle {
         theme: root.theme
     }
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     // Each strip carries its shadow room below it (WiiTile), so the spacing
@@ -78,7 +78,7 @@ ColumnLayout {
                 Text {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    text: i18nd(root.domain, "All displays")
+                    text: root.settings.allDisplaysLabel
                     textFormat: Text.PlainText
                     font: root.style.bodyBoldFont
                     color: root.style.ink
@@ -87,6 +87,7 @@ ColumnLayout {
                 WiiPill {
                     Layout.alignment: Qt.AlignVCenter
                     visible: root.client.isOverrideActive
+                    enabled: root.client.isConnected
                     style: root.style
                     label: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
                     variant: "outline"
@@ -116,12 +117,12 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.topMargin: root.style.gap
                 style: root.style
-                enabled: root.client.globalPercent >= 0
+                enabled: root.client.isConnected && root.client.globalPercent >= 0
                 known: root.client.globalPercent >= 0
                 from: 0
                 to: 100
                 value: root.client.globalPercent >= 0 ? root.client.globalPercent : 0
-                Accessible.name: i18nd(root.domain, "All displays")
+                Accessible.name: root.settings.allDisplaysLabel
                 Accessible.description: root.client.globalPercent >= 0
                     ? i18ndc(root.domain, "Brightness percentage", "%1%", Math.round(root.client.globalPercent))
                     : i18ndc(root.domain, "No value is known yet", "—")
@@ -141,13 +142,16 @@ ColumnLayout {
 
             readonly property string logicalId: String(strip.modelData.logicalId)
             readonly property bool unavailable: Monitors.unavailable(strip.modelData)
-            readonly property bool controllable: strip.modelData.enabled === true && !unavailable
+            readonly property bool controllable: root.client.isConnected && strip.modelData.enabled === true && !unavailable
             readonly property bool hasValue: strip.modelData.percent !== undefined && strip.modelData.percent >= 0
-            readonly property int minPct: strip.modelData.minPct !== undefined ? strip.modelData.minPct : 15
-            readonly property int maxPct: strip.modelData.maxPct !== undefined ? strip.modelData.maxPct : 60
+            readonly property int minPct: strip.modelData.minPct !== undefined ? strip.modelData.minPct : -1
+            readonly property int maxPct: strip.modelData.maxPct !== undefined ? strip.modelData.maxPct : -1
+            readonly property bool hasLimits: Monitors.hasValidLimits(strip.modelData)
             readonly property real target: DayCurve.targetAt(root.client.dayCurve, logicalId, root.client.nowEpochS)
             readonly property int applied: strip.modelData.appliedPercent !== undefined ? strip.modelData.appliedPercent : -1
             readonly property bool hasHold: strip.modelData.hasOverride !== true && Monitors.hasExternalHold(strip.modelData)
+            readonly property string notice: Monitors.monitorNotice(
+                strip.modelData, root.settings.contestedNotice, root.settings.deferredNotice)
             readonly property string stateText: {
                 if (strip.modelData.enabled !== true) {
                     return i18ndc(root.domain, "Tag: this display is excluded from automation", "Off");
@@ -222,6 +226,7 @@ ColumnLayout {
                     WiiPill {
                         Layout.alignment: Qt.AlignVCenter
                         visible: strip.modelData.hasOverride === true || strip.hasHold
+                        enabled: root.client.isConnected
                         style: root.style
                         label: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
                         variant: "outline"
@@ -233,6 +238,7 @@ ColumnLayout {
                     }
                     WiiPill {
                         Layout.alignment: Qt.AlignVCenter
+                        visible: strip.hasLimits
                         style: root.style
                         hint: i18ndc(root.domain, "Automatic range of a display, as min–max percent", "%1–%2",
                                      strip.minPct, strip.maxPct)
@@ -281,11 +287,14 @@ ColumnLayout {
                                                                          root.settings.overrideMinutes)
                 }
 
-                // What the display is doing: target and applied.
+                // What the display is doing: notice, target and applied.
                 Text {
                     Layout.fillWidth: true
                     text: {
                         const parts = [];
+                        if (strip.notice.length > 0) {
+                            parts.push(strip.notice);
+                        }
                         if (strip.target >= 0) {
                             parts.push(i18ndc(root.domain, "Strip legend: where the automatic curve is now",
                                               "Target %1", Math.round(strip.target)));
@@ -302,14 +311,14 @@ ColumnLayout {
                     }
                     textFormat: Text.PlainText
                     font: root.style.captionFont
-                    color: root.style.inkSoft
+                    color: strip.notice.length > 0 ? root.style.accentInk : root.style.inkSoft
                     elide: Text.ElideRight
                 }
 
                 // The limits: the day maximum and the night minimum.
                 ColumnLayout {
                     Layout.fillWidth: true
-                    visible: strip.limitsOpen
+                    visible: strip.hasLimits && strip.limitsOpen
                     spacing: root.style.gap
 
                     RowLayout {
@@ -328,7 +337,7 @@ ColumnLayout {
 
                             Layout.fillWidth: true
                             style: root.style
-                            enabled: strip.controllable
+                            enabled: strip.controllable && strip.hasLimits
                             from: Math.min(100, Math.round(minSlider.shown))
                             to: 100
                             value: strip.maxPct
@@ -361,7 +370,7 @@ ColumnLayout {
 
                             Layout.fillWidth: true
                             style: root.style
-                            enabled: strip.controllable
+                            enabled: strip.controllable && strip.hasLimits
                             from: 0
                             to: Math.max(0, Math.round(maxSlider.shown))
                             value: strip.minPct

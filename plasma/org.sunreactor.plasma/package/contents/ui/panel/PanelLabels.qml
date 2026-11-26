@@ -13,6 +13,7 @@ import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../engine"
+import "../Format.js" as Format
 
 ColumnLayout {
     id: root
@@ -27,12 +28,12 @@ ColumnLayout {
     property color color: Kirigami.Theme.textColor
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
-    readonly property bool temperatureShown: showTemperature && client.isConnected && client.hasTemperature
-    readonly property bool elevationShown: showElevation && client.isConnected && client.hasSolarElevation
+    readonly property bool temperatureShown: showTemperature && (client.isConnected || client.statusStale) && client.hasTemperature
+    readonly property bool elevationShown: showElevation && (client.isConnected || client.statusStale) && client.hasSolarElevation
     readonly property int visibleCount: (temperatureShown ? 1 : 0) + (elevationShown ? 1 : 0)
 
     readonly property string temperatureText: i18ndc(domain, "Temperature in degrees, panel-sized",
-                                                      "%1°", Math.round(client.temperatureC))
+                                                      "%1°", Format.tempRounded(client.temperatureC, client.isFahrenheit))
     readonly property string elevationText: i18ndc(domain, "Sun height above the horizon, panel-sized",
                                                     "%1°", client.solarElevation.toFixed(1))
     readonly property bool bitmap: theme.isPixel

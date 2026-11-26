@@ -236,6 +236,9 @@ class FakeDaemon:
         extra = {}
         if self.args.theme_warning and not self.args.old:
             extra["theme_warning"] = self.args.theme_warning
+        temp_unit = self.args.temperature_unit or os.environ.get("SHOT_TEMPERATURE_UNIT", "")
+        if temp_unit and not self.args.old:
+            extra["temperature_unit"] = temp_unit
         return {
             **extra,
             "daemon_alive": True, "config_path": "/fake/config.toml", "tick_seconds": 60, "dry_run": True,
@@ -419,6 +422,8 @@ def main() -> None:
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--theme-warning", default="",
                     help="send this as status.theme_warning (the daemon fell back to another theme)")
+    ap.add_argument("--temperature-unit", default="", choices=["", "celsius", "fahrenheit"],
+                    help="send this as status.temperature_unit")
     ap.add_argument("--log")
     ap.add_argument("--dump", choices=["status", "day_curve", "themes"],
                     help="print one response body and exit (no socket)")

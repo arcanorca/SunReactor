@@ -38,6 +38,7 @@ Item {
     property var modulesOverride: []
     /*! Module ids to leave out (plasmoid config hiddenModules). */
     property var hiddenModules: []
+    property bool xboxDarkModeOverride: false
 
     /*! The resolved tokens every module reads. */
     readonly property Theme theme: resolved
@@ -72,6 +73,7 @@ Item {
             weatherIconStyle: root.weatherIconStyleOverride,
             modules: root.modulesOverride,
             hidden: root.hiddenModules,
+            xboxDarkMode: root.xboxDarkModeOverride,
         })
     }
 }

@@ -39,7 +39,7 @@ ColumnLayout {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     spacing: style.rowGap
 
@@ -224,24 +224,41 @@ ColumnLayout {
         }
     }
 
-    Text {
+    ColumnLayout {
         Layout.fillWidth: true
-        text: root.control.displayText
-        textFormat: Text.PlainText
-        font: root.style.bodyFont
-        color: root.control.hinting ? root.style.warning : root.style.ink
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
-    }
+        spacing: root.style.gap * 0.55
 
-    Text {
-        Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.note
-        textFormat: Text.PlainText
-        font: root.style.legendFont
-        color: root.style.inkMuted
+        Text {
+            Layout.fillWidth: true
+            text: root.control.primaryText
+            textFormat: Text.PlainText
+            font: root.style.legendFont
+            color: root.control.hinting ? root.style.warning : root.style.ink
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.scheduleText
+            textFormat: Text.PlainText
+            font: root.style.dataFont
+            color: root.style.inkMuted
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.note
+            textFormat: Text.PlainText
+            font: root.style.legendFont
+            color: root.style.inkMuted
+        }
     }
 
     ModeDurationMenu {

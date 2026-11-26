@@ -32,7 +32,7 @@ WinWindow {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     title: i18ndc(control.domain, "Window title of the automation mode", "Automation")
 
     WinGroupBox {
@@ -80,23 +80,39 @@ WinWindow {
         }
     }
 
-    Text {
+    ColumnLayout {
         Layout.fillWidth: true
-        text: root.control.displayText
-        textFormat: Text.PlainText
-        font: root.ui.bodyFont
-        color: root.control.hinting ? root.ui.frame : root.ui.ink
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
-    }
-    Text {
-        Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.note
-        textFormat: Text.PlainText
-        font: root.ui.smallFont
-        color: root.ui.inkMuted
+        spacing: Math.max(2, Math.round(root.ui.gap * 0.35))
+
+        Text {
+            Layout.fillWidth: true
+            text: root.control.primaryText
+            textFormat: Text.PlainText
+            font: root.ui.bodyFont
+            color: root.control.hinting ? root.ui.frame : root.ui.ink
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.scheduleText
+            textFormat: Text.PlainText
+            font: root.ui.smallFont
+            color: root.ui.inkMuted
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.note
+            textFormat: Text.PlainText
+            font: root.ui.smallFont
+            color: root.ui.inkMuted
+        }
     }
 
     ModeDurationMenu {

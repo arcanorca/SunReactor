@@ -27,7 +27,7 @@ Item {
     }
     /*! Drawn inside the touch screen by Displays.qml when the theme lists the displays. */
     readonly property bool hosted: root.theme.modules.indexOf("displays") >= 0
-    readonly property bool available: client.isConnected && !hosted
+    readonly property bool available: (client.isConnected || client.statusStale) && !hosted
 
     implicitHeight: tray.implicitHeight
 

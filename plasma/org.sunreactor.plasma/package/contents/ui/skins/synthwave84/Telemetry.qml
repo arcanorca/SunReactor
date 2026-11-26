@@ -32,7 +32,7 @@ ColumnLayout {
     readonly property SynthStyle style: SynthStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     readonly property color tone: {
         switch (client.mode) {
@@ -64,7 +64,7 @@ ColumnLayout {
                        + (monitor.appliedPercent >= 0 ? monitor.appliedPercent + "%" : "—"));
         }
         if (client.hasTemperature) {
-            parts.push(Math.round(client.temperatureC) + "°C");
+            parts.push(Format.tempText(client.temperatureC, client.isFahrenheit));
         }
         parts.push(Format.timeText(client.nowEpochS));
         return parts.join(", ");
@@ -122,7 +122,7 @@ ColumnLayout {
 
         // One readout per display.
         Repeater {
-            model: root.client.isConnected ? root.client.monitors : []
+            model: (root.client.isConnected || root.client.statusStale) ? root.client.monitors : []
 
             delegate: RowLayout {
                 id: readout
@@ -148,8 +148,7 @@ ColumnLayout {
 
         Text {
             visible: root.client.hasTemperature
-            text: i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1 °C",
-                         Math.round(root.client.temperatureC))
+            text: Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit) + " " + Format.tempUnit(root.client.isFahrenheit)
             textFormat: Text.PlainText
             font: root.style.dataFont
             color: root.style.ink

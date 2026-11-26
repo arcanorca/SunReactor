@@ -11,7 +11,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 
 Item {
     id: root
@@ -22,14 +24,16 @@ Item {
     property string name: ""
     /*! The value the row shows, -1 while unknown. */
     property int percent: -1
-    property int minPct: 15
-    property int maxPct: 60
+    property int minPct: -1
+    property int maxPct: -1
     property bool hasLimits: false
     property bool hasOverride: false
     property bool controllable: true
     /*! Short state word in the name row ("Off", "No link", "Manual"); empty for none. */
     property string stateText: ""
     property color stateTone: style.inkSecondary
+    /*! Full contested/deferred notice shown as tooltip on stateText. */
+    property string notice: ""
     property bool divided: false
     property bool limitsExpanded: false
 
@@ -77,6 +81,14 @@ Item {
                 textFormat: Text.PlainText
                 font: root.style.captionMedium
                 color: root.stateTone
+
+                HoverHandler {
+                    id: stateHover
+                }
+
+                QQC2.ToolTip.visible: stateHover.hovered && root.notice.length > 0
+                QQC2.ToolTip.text: root.notice
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
 
             Chip {
@@ -153,6 +165,7 @@ Item {
                     style: root.style
                     trackHeight: root.style.snap(18)
                     showSun: false
+                    enabled: root.controllable && root.hasLimits
                     percent: root.maxPct
                     from: Math.round(nightMin.value)
                     onRequested: p => root.limitsRequested(Math.round(nightMin.value), p)
@@ -186,6 +199,7 @@ Item {
                     style: root.style
                     trackHeight: root.style.snap(18)
                     showSun: false
+                    enabled: root.controllable && root.hasLimits
                     percent: root.minPct
                     to: Math.round(dayMax.value)
                     onRequested: p => root.limitsRequested(p, Math.round(dayMax.value))

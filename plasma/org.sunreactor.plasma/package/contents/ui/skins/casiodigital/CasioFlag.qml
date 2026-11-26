@@ -15,6 +15,8 @@ Item {
     required property CasioStyle style
     property string text: ""
     property bool lit: false
+    property bool interactive: false
+    property bool hovered: false
     /*! True when drawn on the dark resin watch case (e.g. LightCycle header)
         rather than the bright LCD glass. */
     property bool onCase: false
@@ -28,16 +30,19 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    Accessible.role: Accessible.StaticText
-    Accessible.name: text + (lit ? "" : " (off)")
+    Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
+    Accessible.name: text + (!interactive && !lit ? " (off)" : "")
 
     Rectangle {
         anchors.fill: parent
         radius: 2
         antialiasing: true
-        color: root.lit ? (root.onCase ? root.style.legend : root.style.ink) : "transparent"
-        border.width: root.lit ? 0 : root.style.hairline
-        border.color: root.onCase ? root.style.caseEdge : root.style.inkFaint
+        color: root.lit
+            ? (root.onCase ? root.style.legend : root.style.ink)
+            : (root.interactive ? root.style.theme.alpha(root.style.ink, root.hovered ? 0.18 : 0.09) : "transparent")
+        border.width: root.lit ? 0 : (root.interactive ? root.style.hairline * 1.4 : root.style.hairline)
+        border.color: root.onCase ? root.style.caseEdge
+            : (root.interactive ? root.style.theme.alpha(root.style.ink, 0.55) : root.style.inkFaint)
     }
 
     Row {
@@ -56,7 +61,8 @@ Item {
             ShapePath {
                 strokeWidth: -1
                 fillColor: root.lit ? (root.onCase ? root.style.caseTop : root.style.glass)
-                                    : (root.onCase ? root.style.legendMuted : root.style.inkFaint)
+                                    : (root.onCase ? root.style.legendMuted
+                                       : (root.interactive ? root.style.ink : root.style.inkFaint))
                 PathSvg {
                     path: "M0 0 H" + root.markSize + " L" + root.markSize / 2 + " " + root.markSize * 0.86 + " Z"
                 }
@@ -71,7 +77,8 @@ Item {
             textFormat: Text.PlainText
             font: root.style.cap(root.style.sizeCap)
             color: root.lit ? (root.onCase ? root.style.caseTop : root.style.glass)
-                            : (root.onCase ? root.style.legendMuted : root.style.inkFaint)
+                            : (root.onCase ? root.style.legendMuted
+                               : (root.interactive ? root.style.ink : root.style.inkFaint))
         }
     }
 }

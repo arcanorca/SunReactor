@@ -38,7 +38,7 @@ Item {
 
     readonly property var points: ForecastRules.upcoming(root.client.forecast, root.client.nowEpochS, root.slots)
 
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     implicitHeight: row.implicitHeight
 
@@ -92,33 +92,26 @@ Item {
                     ThemedWeatherIcon {
                         Layout.alignment: Qt.AlignHCenter
                         theme: root.theme
-                        size: root.style.pitchFine * 12
+                        size: root.style.snap(root.style.unit * 1.75)
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight
 
-                        DotIcon {
+                        NothingIcon {
                             anchors.centerIn: parent
-                            pitch: root.style.pitchFine
+                            theme: root.theme
+                            size: root.style.snap(root.style.unit * 1.75)
                             condition: slot.modelData.condition
                             night: slot.modelData.isNight
-                            litColor: root.style.ink
-                            accentColor: root.style.accent
-                            dimColor: root.style.textGhost
                         }
                     }
 
-                    DotText {
+                    Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
-                                     Math.round(slot.modelData.temperatureC))
-                        face: "small"
-                        size: 1
-                        letterSpacing: 1
-                        pitch: root.style.pitchDigit
-                        dotScale: root.style.digitScale
-                        litColor: root.style.ink
-                        accentColor: root.style.accent
-                        dimColor: root.style.textGhost
+                                     Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
+                        textFormat: Text.PlainText
+                        font: root.style.dotValue
+                        color: root.style.ink
                     }
                 }
             }

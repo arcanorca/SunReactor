@@ -17,10 +17,9 @@ var FILES = {
     refresh: "components/footer/RefreshControl.qml"
 };
 
-/*! Left to right; a null entry is the flexible gap. Pausing lives in the
-    Automation module (modules/ModeControl.qml), and the theme choice in the
-    tab row (components/ThemeButton.qml), not here. */
-var ORDER = [null, "refresh"];
+/*! Left to right; empty by default since sunreactord syncs automatically and
+    the panel context menu keeps an on-demand Update Now action. */
+var ORDER = [];
 
 var SKINS = {
     "pixel": {},
@@ -31,6 +30,15 @@ var SKINS = {
     },
     "id:nothing": {
         refresh: "skins/nothing/RefreshControl.qml"
+    },
+    "id:xbox360": {
+        refresh: "skins/xbox360/RefreshControl.qml"
+    },
+    "id:wii": {
+        refresh: "skins/wii/RefreshControl.qml"
+    },
+    "id:ps3": {
+        refresh: "skins/ps3/RefreshControl.qml"
     }
 };
 

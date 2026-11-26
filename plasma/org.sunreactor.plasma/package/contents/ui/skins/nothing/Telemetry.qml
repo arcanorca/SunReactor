@@ -28,7 +28,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     readonly property NothingStyle style: NothingStyle {
         theme: root.theme
     }
@@ -42,7 +42,7 @@ Item {
 
     /*! Temperature and the daemon's clock, one string: "15° 2:30 PM" (or "15° 14:30"). */
     readonly property string clockText: (client.hasTemperature
-        ? i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°", Math.round(client.temperatureC)) + " "
+        ? i18ndc(domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(client.temperatureC, client.isFahrenheit)) + " "
         : "") + Format.timeText(client.nowEpochS)
 
     /*! Air above the status line, so the digits clear the popup's edge. */
@@ -59,7 +59,7 @@ Item {
                        + (monitor.appliedPercent >= 0 ? monitor.appliedPercent + "%" : "—"));
         }
         if (client.hasTemperature) {
-            parts.push(Math.round(client.temperatureC) + "°C");
+            parts.push(Format.tempText(client.temperatureC, client.isFahrenheit));
         }
         parts.push(Format.timeText(client.nowEpochS));
         return parts.join(", ");

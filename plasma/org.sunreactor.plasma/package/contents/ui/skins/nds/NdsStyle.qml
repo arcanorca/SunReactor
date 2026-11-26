@@ -22,25 +22,24 @@ QtObject {
 
     // --- type ---------------------------------------------------------------------
 
-    /*! Nunito Regular and Bold (the Bold file is the same family at weight 700). */
+    /*! Pixelated DS System Menu face (unscii-16, crisp bitmap glyphs). */
     readonly property FontLoader regularFace: FontLoader {
-        source: Qt.resolvedUrl("../../../fonts/Nunito-Regular.ttf")
+        source: Qt.resolvedUrl("../../../fonts/unscii-16.ttf")
     }
     readonly property FontLoader boldFace: FontLoader {
-        source: Qt.resolvedUrl("../../../fonts/Nunito-Bold.ttf")
+        source: Qt.resolvedUrl("../../../fonts/unscii-16.ttf")
     }
 
-    /*! Nunito once it has loaded, a generic sans-serif until then. */
     readonly property string family: regularFace.status === FontLoader.Ready
-        ? regularFace.font.family : "sans-serif"
+        ? regularFace.font.family : "monospace"
 
     // --- metrics ------------------------------------------------------------------
 
     /*! The popup's grid unit, logical px. */
     readonly property real gu: theme.gridUnit
-    /*! Panel corners: the theme's radius (14 px). */
-    readonly property real radius: theme.radius > 0 ? theme.radius : 14
-    /*! Thickness of the black bezel around each screen. */
+    /*! Panel corners: crisp pixelated 2px step. */
+    readonly property real radius: 2
+    /*! Thickness of the black bezel around each screen (matches original DS theme). */
     readonly property int bezel: 6
     /*! Outline of a touch button, DS blue. */
     readonly property int outline: 2

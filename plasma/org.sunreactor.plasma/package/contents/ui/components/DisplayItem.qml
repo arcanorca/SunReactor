@@ -27,11 +27,13 @@ PlasmaComponents3.ItemDelegate {
     /*! False disables the slider: a display that is off, or not responding. */
     property bool controllable: true
 
-    property int minPct: 15
-    property int maxPct: 60
+    property int minPct: -1
+    property int maxPct: -1
     property bool hasLimits: false
     property bool hasOverride: false
     property bool limitsExpanded: false
+    /*! Full contested/deferred notice shown as tooltip on the compact tag. */
+    property string notice: ""
     /*! Optional daemon hold map: { remainingS, observedPercent }. */
     property var externalHold: null
     /*! Hides the hold immediately after a cancel click until the next status. */
@@ -112,16 +114,40 @@ PlasmaComponents3.ItemDelegate {
 
     // DDC/CI writes travel over an I2C bus that does not like packet storms,
     // so a drag sends one request every quarter second instead of one per pixel.
-    Timer {
+    CommitThrottle {
         id: throttle
-        interval: 250
-        onTriggered: root.requested(Math.round(slider.value))
+
+        reportedValue: root.hasValue ? root.percent : -1
+        onCommitted: val => {
+            root.requested(val);
+            if (!slider.pressed) {
+                slider.value = Qt.binding(() => root.hasValue ? root.percent : 0);
+            }
+        }
     }
 
-    Timer {
-        id: limitsThrottle
-        interval: 250
-        onTriggered: root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value))
+    CommitThrottle {
+        id: minThrottle
+
+        reportedValue: root.minPct
+        onCommitted: val => {
+            root.limitsRequested(val, Math.round(maxSlider.value));
+            if (!minSlider.pressed) {
+                minSlider.value = Qt.binding(() => root.minPct);
+            }
+        }
+    }
+
+    CommitThrottle {
+        id: maxThrottle
+
+        reportedValue: root.maxPct
+        onCommitted: val => {
+            root.limitsRequested(Math.round(minSlider.value), val);
+            if (!maxSlider.pressed) {
+                maxSlider.value = Qt.binding(() => root.maxPct);
+            }
+        }
     }
 
     contentItem: RowLayout {
@@ -217,8 +243,16 @@ PlasmaComponents3.ItemDelegate {
                     textFormat: Text.PlainText
                     font.family: root.theme.bodyFont
                     font.pixelSize: root.theme.fontSizeSmall
-                    color: root.theme.textMuted
-                    visible: root.hint.length > 0 && !root.hasOverride
+                    color: root.notice.length > 0 ? root.theme.warning : root.theme.textMuted
+                    visible: root.hint.length > 0 && (!root.hasOverride || root.notice.length > 0)
+
+                    HoverHandler {
+                        id: hintHover
+                    }
+
+                    QQC2.ToolTip.visible: hintHover.hovered && root.notice.length > 0
+                    QQC2.ToolTip.text: root.notice
+                    QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 }
 
                 PlasmaComponents3.ToolButton {
@@ -260,12 +294,11 @@ PlasmaComponents3.ItemDelegate {
                     if (pressed) {
                         return;
                     }
-                    throttle.stop();
-                    root.requested(Math.round(value));
+                    throttle.release(Math.round(value));
                     value = Qt.binding(() => root.hasValue ? root.percent : 0);
                 }
 
-                onMoved: throttle.restart()
+                onMoved: pressed ? throttle.schedule(Math.round(value)) : throttle.nudge(Math.round(value))
 
                 Accessible.name: root.text
                 Accessible.description: root.valueText
@@ -299,13 +332,13 @@ PlasmaComponents3.ItemDelegate {
                     from: 0
                     to: Math.min(100, Math.round(maxSlider.value))
                     stepSize: 1
-                    value: root.minPct
-                    onMoved: limitsThrottle.restart()
+                    enabled: root.controllable && root.hasLimits
+                    value: root.minPct >= 0 ? root.minPct : 0
+                    onMoved: pressed ? minThrottle.schedule(Math.round(value)) : minThrottle.nudge(Math.round(value))
                     onPressedChanged: {
                         if (!pressed) {
-                            limitsThrottle.stop();
-                            root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
-                            value = Qt.binding(() => root.minPct);
+                            minThrottle.release(Math.round(value));
+                            value = Qt.binding(() => root.minPct >= 0 ? root.minPct : 0);
                         }
                     }
                     Accessible.name: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
@@ -341,13 +374,13 @@ PlasmaComponents3.ItemDelegate {
                     from: Math.max(0, Math.round(minSlider.value))
                     to: 100
                     stepSize: 1
-                    value: root.maxPct
-                    onMoved: limitsThrottle.restart()
+                    enabled: root.controllable && root.hasLimits
+                    value: root.maxPct >= 0 ? root.maxPct : 100
+                    onMoved: pressed ? maxThrottle.schedule(Math.round(value)) : maxThrottle.nudge(Math.round(value))
                     onPressedChanged: {
                         if (!pressed) {
-                            limitsThrottle.stop();
-                            root.limitsRequested(Math.round(minSlider.value), Math.round(maxSlider.value));
-                            value = Qt.binding(() => root.maxPct);
+                            maxThrottle.release(Math.round(value));
+                            value = Qt.binding(() => root.maxPct >= 0 ? root.maxPct : 100);
                         }
                     }
                     Accessible.name: i18ndc(root.domain, "Day maximum boundary", "Day maximum")

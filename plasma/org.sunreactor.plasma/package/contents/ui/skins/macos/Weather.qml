@@ -22,6 +22,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 
 ColumnLayout {
     id: root
@@ -34,7 +35,7 @@ ColumnLayout {
     readonly property MacStyle style: MacStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
     readonly property bool hasReading: client.hasWeatherReading
     /*! Percent the weather takes off the brightness (positive means dimmer). */
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
@@ -46,8 +47,9 @@ ColumnLayout {
         let high = null;
         let low = null;
         const take = v => {
-            high = high === null ? v : Math.max(high, v);
-            low = low === null ? v : Math.min(low, v);
+            const converted = Format.tempValue(v, client.isFahrenheit);
+            high = high === null ? converted : Math.max(high, converted);
+            low = low === null ? converted : Math.min(low, converted);
         };
         if (client.hasTemperature) {
             take(client.temperatureC);
@@ -67,7 +69,7 @@ ColumnLayout {
         const out = [];
         if (d.feelsLikeC !== undefined) {
             out.push({ k: i18ndc(domain, "Weather tile: apparent temperature", "Feels like"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)),
+                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(d.feelsLikeC, client.isFahrenheit)),
                        warn: false });
         }
         if (d.humidityPercent !== undefined) {
@@ -107,7 +109,7 @@ ColumnLayout {
             Text {
                 Layout.fillWidth: true
                 text: root.client.hasTemperature ? i18ndc(root.domain, "Temperature in degrees, compact",
-                                                          "%1°", Math.round(root.client.temperatureC)) : "—"
+                                                          "%1°", Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit)) : "—"
                 textFormat: Text.PlainText
                 font: root.style.temperature
                 color: root.style.ink

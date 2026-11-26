@@ -41,10 +41,10 @@ FocusScope {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     /*! The master control only from three displays: with two it repeats the two rows. */
     readonly property bool showAll: monitors.length > 2
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     /*! Rows per control: name and value, the bar (two rows), the state line. */
     readonly property int controlRows: 4
     /*! An open range editor: its track and the two boundary fields. */
@@ -65,6 +65,7 @@ FocusScope {
         monitors: root.monitors
         showAll: root.showAll
         jumpKeys: true
+        interactive: root.client.isConnected
     }
 
     /*! The controls, top to bottom: mon -1 is "All displays", else an index. */
@@ -135,13 +136,15 @@ FocusScope {
                     readonly property bool isAll: mon < 0
                     readonly property var m: isAll ? null : root.monitors[mon]
                     readonly property string key: isAll ? "*" : m.logicalId
-                    readonly property bool canWrite: isAll ? root.client.globalPercent >= 0 : Monitors.controllable(m)
+                    readonly property bool canWrite: isAll ? (root.client.isConnected && root.client.globalPercent >= 0)
+                                                             : (root.client.isConnected && Monitors.controllable(m))
                     readonly property int shown: isAll ? ctl.shownPct("*", root.client.globalPercent)
                                                        : ctl.shownPct(m.logicalId, m.percent)
-                    readonly property var limits: isAll ? [0, 100] : ctl.shownLimits(m)
+                    readonly property bool hasLimits: !isAll && Monitors.hasValidLimits(m)
+                    readonly property var limits: isAll || !hasLimits ? [0, 100] : ctl.shownLimits(m)
                     readonly property int target: isAll ? -1 : ctl.targetNow(m.logicalId)
                     readonly property bool manual: isAll ? root.client.isOverrideActive : m.hasOverride === true
-                    readonly property bool open: !isAll && ctl.expanded[m.logicalId] === true
+                    readonly property bool open: hasLimits && ctl.expanded[m.logicalId] === true
                     readonly property bool unavailable: !isAll && Monitors.unavailable(m)
                     readonly property bool focusedHere: root.activeFocus && ctl.isCursor(mon, "value")
                     readonly property color fillColor: !canWrite ? root.theme.textMuted
@@ -181,7 +184,7 @@ FocusScope {
                         TermText {
                             tm: term
                             x: term.cx(2)
-                            value: block.isAll ? i18nd(root.domain, "All displays") : block.m.logicalId
+                            value: block.isAll ? root.settings.allDisplaysLabel : block.m.logicalId
                             cells: Math.max(0, frame.innerCols - 8)
                             strong: true
                             color: block.focusedHere ? root.theme.onColor(root.theme.accent)
@@ -250,6 +253,8 @@ FocusScope {
                                     return Term.shedRuns(out, frame.innerCols);
                                 }
                                 const m = block.m;
+                                const notice = Monitors.monitorNotice(
+                                    m, root.settings.contestedNotice, root.settings.deferredNotice);
                                 if (!m.enabled) {
                                     out.push({ t: "○ " + i18ndc(root.domain, "This display is excluded from automation", "Off"), c: t.textMuted });
                                 } else if (m.unreachable) {
@@ -257,6 +262,8 @@ FocusScope {
                                                                 "Retrying in %1s", m.backoffRemainingS), c: t.warning });
                                 } else if (block.unavailable) {
                                     out.push({ t: "▲ " + i18ndc(root.domain, "This display is not answering", "Unavailable"), c: t.warning });
+                                } else if (notice.length > 0) {
+                                    out.push({ t: "▲ " + notice, c: t.warning, b: true });
                                 } else if (block.manual) {
                                     out.push({ t: "● ", c: t.warning });
                                     out.push({ t: i18ndc(root.domain, "This brightness was set by hand", "Manual"), c: t.warning, b: true });
@@ -269,10 +276,12 @@ FocusScope {
                                     out.push({ t: i18ndc(root.domain, "Brightness follows the automatic curve", "Auto"), c: t.success });
                                 }
                                 if (m.enabled && !block.unavailable) {
-                                    out.push({ t: " · ", c: t.borderInactive });
-                                    out.push({ t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
-                                                         block.limits[0], block.limits[1]),
-                                               c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
+                                    if (block.hasLimits) {
+                                        out.push({ t: " · ", c: t.borderInactive });
+                                        out.push({ t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
+                                                             block.limits[0], block.limits[1]),
+                                                   c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
+                                    }
                                     if (block.target >= 0) {
                                         out.push({ t: " · ", c: t.borderInactive, shed: 2 });
                                         out.push({ t: i18ndc(root.domain, "Placeholder is the brightness the curve targets now",
@@ -293,7 +302,7 @@ FocusScope {
                             id: rangeHit
 
                             readonly property var span: detail.span("range")
-                            visible: !block.isAll && span !== null
+                            visible: block.hasLimits && span !== null
                             x: detail.x + term.cx(span ? span[0] : 0)
                             width: term.cx(span ? span[1] : 0)
                             height: term.ch
@@ -308,7 +317,7 @@ FocusScope {
                             id: autoHit
 
                             readonly property var span: detail.span("auto")
-                            visible: span !== null
+                            visible: root.client.isConnected && span !== null
                             x: detail.x + term.cx(span ? span[0] : 0)
                             width: term.cx(span ? span[1] + 5 : 0)
                             height: term.ch
@@ -321,6 +330,7 @@ FocusScope {
                     // Range editor (displays only).
                     Item {
                         visible: block.open
+                        enabled: root.client.isConnected && block.hasLimits
                         width: parent.width
                         height: term.ch
 

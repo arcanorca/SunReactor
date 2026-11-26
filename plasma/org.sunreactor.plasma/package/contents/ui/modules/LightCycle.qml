@@ -38,7 +38,7 @@ ColumnLayout {
     readonly property string domain: settings.domain
     readonly property var curve: client.dayCurve
     readonly property var curves: curve && curve.monitors ? curve.monitors : []
-    readonly property bool available: client.isConnected && curves.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && curves.length > 0
         && curves[0].samples.length > 1
 
     /*! Index into `curves`, or -1 for "All". */

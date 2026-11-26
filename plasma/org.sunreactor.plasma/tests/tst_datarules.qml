@@ -15,7 +15,9 @@ import org.sunreactor.plasma
 import "../package/contents/ui/modules"
 import "../package/contents/ui/modules/DayCurve.js" as DayCurve
 import "../package/contents/ui/modules/Monitors.js" as Monitors
+import "../package/contents/ui/Format.js" as Format
 import "../package/contents/ui/skins/terminal"
+import "../package/contents/ui/skins/nds/NdsStatusRules.js" as NdsStatus
 import "../package/contents/ui/skins/hackergreen/Hg.js" as Hg
 import "../package/contents/ui/components/weathericons"
 import "../package/contents/ui/engine"
@@ -44,6 +46,9 @@ Item {
 
     SunReactorClient {
         id: client
+
+        socketPath: "/nonexistent/sunreactor-datarules-test.sock"
+        pollingEnabled: false
     }
 
     ModuleSettings {
@@ -101,6 +106,18 @@ Item {
             compare(DayCurve.appliedFor(list, "b"), -1);
             compare(DayCurve.appliedFor(list, "c"), -1, "not listed");
             compare(DayCurve.appliedFor([], "a"), -1);
+        }
+
+        function test_temperatureConversion() {
+            compare(Format.tempValue(0, false), 0);
+            compare(Format.tempValue(0, true), 32);
+            compare(Format.tempRounded(15.2, false), 15);
+            compare(Format.tempRounded(15.2, true), 59);
+            compare(Format.tempUnit(false), "°C");
+            compare(Format.tempUnit(true), "°F");
+            compare(Format.tempText(15.2, false), "15°C");
+            compare(Format.tempText(15.2, true), "59°F");
+            compare(Format.tempText(15.2, true, 1), "59.4°F");
         }
     }
 
@@ -348,6 +365,59 @@ Item {
             compare(Monitors.externalHoldAge(59), "<1m");
             compare(Monitors.externalHoldAge(60), "1m");
             compare(Monitors.externalHoldAge(61), "2m");
+        }
+
+        function test_ndsSignalBarsMeasureProximityToConfiguredMax() {
+            compare(NdsStatus.signalBars(false, [], 50), -1);
+            compare(NdsStatus.signalBars(true, [{ enabled: true, percent: 1, minPct: 1, maxPct: 50 }], 1), 0);
+            compare(NdsStatus.signalBars(true, [{ enabled: true, percent: 11, minPct: 1, maxPct: 50 }], 11), 1);
+            compare(NdsStatus.signalBars(true, [{ enabled: true, percent: 26, minPct: 1, maxPct: 50 }], 26), 2);
+            compare(NdsStatus.signalBars(true, [{ enabled: true, percent: 39, minPct: 1, maxPct: 50 }], 39), 3);
+            compare(NdsStatus.signalBars(true, [{ enabled: true, percent: 50, minPct: 1, maxPct: 50 }], 50), 4);
+            // Disabled displays do not dilute active proximity.
+            compare(NdsStatus.signalBars(true, [
+                { enabled: false, percent: 0, minPct: 0, maxPct: 100 },
+                { enabled: true, percent: 60, minPct: 5, maxPct: 60 }
+            ], 60), 4);
+        }
+
+        function test_ndsSolarBatteryFollowsDayNightCycle() {
+            const rise = 7 * 3600;
+            const set = 19 * 3600;
+            // Disconnected is off.
+            compare(NdsStatus.solarBatteryLevel(false, rise + 3600, rise, set, true), -1);
+            // Right before sunrise: empty (0).
+            compare(NdsStatus.solarBatteryLevel(true, rise - 60, rise, set, false), 0);
+            compare(NdsStatus.solarBatteryLevel(true, rise - 3600, rise, set, false), 0);
+            // Sunrise starts charging: 1 -> 2 -> 3 across daylight.
+            compare(NdsStatus.solarBatteryLevel(true, rise + 60, rise, set, true), 1);
+            compare(NdsStatus.solarBatteryLevel(true, rise + 6 * 3600, rise, set, true), 2);
+            compare(NdsStatus.solarBatteryLevel(true, set - 600, rise, set, true), 3);
+            // After sunset drains downward overnight: 3 -> 2 -> 1 -> 0 before sunrise.
+            compare(NdsStatus.solarBatteryLevel(true, set + 600, rise, set, false), 3);
+            compare(NdsStatus.solarBatteryLevel(true, set + 5 * 3600, rise, set, false), 2);
+            compare(NdsStatus.solarBatteryLevel(true, 3 * 3600, rise, set, false), 1);
+            compare(NdsStatus.solarBatteryLevel(true, rise - 1800, rise, set, false), 0);
+        }
+
+        function test_monitorNoticesTagsAndValidLimits() {
+            verify(!Monitors.hasValidLimits(null));
+            verify(!Monitors.hasValidLimits({ minPct: -1, maxPct: 60 }));
+            verify(!Monitors.hasValidLimits({ minPct: 15, maxPct: -1 }));
+            verify(Monitors.hasValidLimits({ minPct: 15, maxPct: 60 }));
+
+            compare(Monitors.monitorNotice(null, "P", "Q"), "");
+            compare(Monitors.monitorNotice({ contested: false, writesDeferred: false }, "P", "Q"), "");
+            compare(Monitors.monitorNotice({ contested: true, writesDeferred: true }, "P", "Q"), "P");
+            compare(Monitors.monitorNotice({ contested: false, writesDeferred: true }, "P", "Q"), "Q");
+            compare(Monitors.monitorTag({ contested: true, writesDeferred: false }, "Paused", "Queued"), "Paused");
+            compare(Monitors.monitorTag({ contested: false, writesDeferred: true }, "Paused", "Queued"), "Queued");
+
+            verify(!Monitors.hasStatus(null));
+            verify(!Monitors.hasStatus({ isConnected: false, statusStale: false }));
+            verify(Monitors.hasStatus({ isConnected: false, statusStale: true }));
+            verify(!Monitors.hasDisplayData({ isConnected: true, statusStale: false, monitors: [] }));
+            verify(Monitors.hasDisplayData({ isConnected: false, statusStale: true, monitors: [{ logicalId: "DP-1" }] }));
         }
     }
 }

@@ -9,6 +9,8 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
@@ -23,10 +25,10 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
+    readonly property bool available: Monitors.hasDisplayData(client)
     readonly property var rows: Monitors.rowsWithMaster(
-        monitors, client.globalPercent, client.isOverrideActive, i18nd(domain, "All displays"))
+        monitors, client.globalPercent, client.isOverrideActive, settings.allDisplaysLabel)
     property var expandedLimits: ({})
 
     PixelStyle {
@@ -72,10 +74,15 @@ Item {
 
                         readonly property bool master: modelData.master === true
                         readonly property bool unavailable: Monitors.unavailable(modelData)
-                        readonly property bool controllable: modelData.enabled !== false && !unavailable
+                        readonly property bool controllable: root.client.isConnected && modelData.enabled !== false && !unavailable
                         readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
                         readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : -1
                         readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                        readonly property bool hasLimits: !master && Monitors.hasValidLimits(modelData)
+                        readonly property string notice: master ? "" : Monitors.monitorNotice(
+                            modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+                        readonly property string tagNotice: master ? "" : Monitors.monitorTag(
+                            modelData, root.settings.pausedTag, root.settings.queuedTag)
                         readonly property string hint: {
                             if (modelData.enabled === false) {
                                 return i18ndc(root.domain, "This display is excluded from automation", "Off");
@@ -83,11 +90,14 @@ Item {
                             if (unavailable) {
                                 return i18ndc(root.domain, "This display is not answering, compact", "N/A");
                             }
+                            if (tagNotice.length > 0) {
+                                return tagNotice;
+                            }
                             return "";
                         }
 
                         width: panel.contentWidth
-                        height: line + 1 + slider.height + (expanded && !master ? limits.height : 0)
+                        height: line + 1 + slider.height + (expanded && hasLimits ? limits.height : 0)
 
                         PixelLabel {
                             id: name
@@ -109,11 +119,19 @@ Item {
                                 theme: root.theme
                                 style: pstyle
                                 variant: "tag"
-                                tagColor: pstyle.dim
+                                tagColor: row.tagNotice.length > 0 ? pstyle.hot : pstyle.dim
                                 text: row.hint
+
+                                HoverHandler {
+                                    id: pixelHintHover
+                                }
+                                QQC2.ToolTip.visible: pixelHintHover.hovered && row.notice.length > 0
+                                QQC2.ToolTip.text: row.notice
+                                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                             }
                             PixelButton {
                                 visible: row.modelData.hasOverride === true
+                                enabled: root.client.isConnected
                                 theme: root.theme
                                 style: pstyle
                                 text: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
@@ -122,7 +140,7 @@ Item {
                                                       : root.client.clearMonitorOverride(row.modelData.logicalId)
                             }
                             PixelButton {
-                                visible: !row.master && row.maxPct >= 0
+                                visible: row.hasLimits
                                 theme: root.theme
                                 style: pstyle
                                 variant: "tab"
@@ -163,7 +181,7 @@ Item {
                         // Night minimum and day maximum, folded away until asked for.
                         Column {
                             id: limits
-                            visible: row.expanded && !row.master
+                            visible: row.expanded && row.hasLimits
                             y: slider.y + slider.height + 2
                             width: row.width
                             spacing: 2
@@ -203,6 +221,7 @@ Item {
                                         from: limit.modelData.which === 0 ? 0 : row.minPct
                                         to: limit.modelData.which === 0 ? row.maxPct : 100
                                         value: limit.current
+                                        enabled: root.client.isConnected && row.hasLimits
                                         accessibleName: limit.modelData.which === 0
                                             ? i18ndc(root.domain, "Night minimum boundary", "Night minimum")
                                             : i18ndc(root.domain, "Day maximum boundary", "Day maximum")

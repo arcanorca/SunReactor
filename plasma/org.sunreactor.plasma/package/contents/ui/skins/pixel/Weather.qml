@@ -14,6 +14,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 import "Sprites.js" as Sprites
 
 Item {
@@ -24,7 +25,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
     /*! The sky sprite's atlas frame (the unknown one without a reading). */
     readonly property int skyFrame: client.hasWeatherReading
         ? Sprites.conditionFrame(client.weatherCondition, client.weatherIsNight)
@@ -103,7 +104,7 @@ Item {
                 x: 20
                 y: Math.max(0, Math.floor((sprite.height - height) / 2))
                 size: pstyle.kind === "c64" ? 1 : 2
-                text: root.client.hasTemperature ? Math.round(root.client.temperatureC) + "°" : "--"
+                text: root.client.hasTemperature ? Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit) + "°" : "--"
             }
             PixelLabel {
                 id: conditionText

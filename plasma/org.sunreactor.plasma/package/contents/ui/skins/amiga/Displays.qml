@@ -11,6 +11,8 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
@@ -25,10 +27,10 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
+    readonly property bool available: Monitors.hasDisplayData(client)
     readonly property var rows: Monitors.rowsWithMaster(
-        monitors, client.globalPercent, client.isOverrideActive, i18nd(root.domain, "All displays"))
+        monitors, client.globalPercent, client.isOverrideActive, settings.allDisplaysLabel)
     property var expandedLimits: ({})
 
     AmigaStyle {
@@ -75,17 +77,22 @@ Item {
 
                         readonly property bool master: modelData.master === true
                         readonly property bool unavailable: Monitors.unavailable(modelData)
-                        readonly property bool controllable: modelData.enabled !== false && !unavailable
+                        readonly property bool controllable: root.client.isConnected && modelData.enabled !== false && !unavailable
                         readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
                         readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : -1
                         readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                        readonly property bool hasLimits: !master && Monitors.hasValidLimits(modelData)
                         readonly property bool offMark: modelData.enabled === false || unavailable
+                        readonly property string notice: master ? "" : Monitors.monitorNotice(
+                            modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+                        readonly property string noticeTag: master ? "" : Monitors.monitorTag(
+                            modelData, root.settings.pausedTag, root.settings.queuedTag)
 
                         // The name on the top line (rows 0-7); the value and gadgets, and the
                         // slider under them, on the line below from row 8, so the name never
                         // meets a gadget and may use the whole width. A row is 22 art px.
                         width: panel.contentWidth
-                        height: expanded && !master ? limits.y + limits.height + 2 : 22
+                        height: expanded && hasLimits ? limits.y + limits.height + 2 : 22
 
                         AmigaText {
                             id: name
@@ -105,6 +112,21 @@ Item {
                             spacing: 2
 
                             AmigaText {
+                                id: noticeText
+
+                                visible: row.noticeTag.length > 0
+                                y: 2
+                                text: row.noticeTag
+                                color: tokens.hot
+
+                                HoverHandler {
+                                    id: noticeHover
+                                }
+                                QQC2.ToolTip.visible: noticeHover.hovered && row.notice.length > 0
+                                QQC2.ToolTip.text: row.notice
+                                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                            AmigaText {
                                 y: 2
                                 text: row.offMark ? i18ndc(root.domain, "This display is excluded or not answering", "Off")
                                     : (slider.known ? slider.shown + "%" : "--")
@@ -112,6 +134,7 @@ Item {
                             }
                             AmigaGadget {
                                 visible: row.modelData.hasOverride === true
+                                enabled: root.client.isConnected
                                 theme: root.theme
                                 style: tokens
                                 text: i18ndc(root.domain, "Return to automatic solar tracking", "Auto")
@@ -119,7 +142,7 @@ Item {
                                                         : root.client.clearMonitorOverride(row.modelData.logicalId)
                             }
                             AmigaGadget {
-                                visible: !row.master && row.maxPct >= 0
+                                visible: row.hasLimits
                                 theme: root.theme
                                 style: tokens
                                 lit: row.expanded
@@ -149,7 +172,7 @@ Item {
                         Column {
                             id: limits
 
-                            visible: row.expanded && !row.master
+                            visible: row.expanded && row.hasLimits
                             y: 22
                             width: row.width
                             spacing: 2
@@ -187,6 +210,7 @@ Item {
                                         from: limit.modelData.which === 0 ? 0 : row.minPct
                                         to: limit.modelData.which === 0 ? row.maxPct : 100
                                         value: limit.current
+                                        enabled: root.client.isConnected && row.hasLimits
                                         accessibleName: limit.modelData.label
                                         onCommitted: v => limit.modelData.which === 0
                                             ? root.client.setMonitorLimits(row.modelData.logicalId, Math.min(v, row.maxPct), row.maxPct)

@@ -27,6 +27,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 import "Term.js" as Term
 import "TermArt.js" as Art
 
@@ -38,7 +39,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     WeatherText {
         id: weatherText
@@ -68,7 +69,7 @@ Item {
         const d = client.weatherDetails;
         const out = [];
         if (d.feelsLikeC !== undefined) {
-            out.push([i18ndc(domain, "Short label: apparent temperature", "Feels"), Math.round(d.feelsLikeC) + "°"]);
+            out.push([i18ndc(domain, "Short label: apparent temperature", "Feels"), Format.tempRounded(d.feelsLikeC, client.isFahrenheit) + "°"]);
         }
         if (d.humidityPercent !== undefined) {
             out.push([i18ndc(domain, "Short label: relative humidity", "RH"), Math.round(d.humidityPercent) + "%"]);
@@ -104,8 +105,8 @@ Item {
     /*! The status phrase in the longest form that fits the text column. */
     readonly property string effect: Term.firstFit(effectForms, textCols)
 
-    /*! The temperature as the numerals say it, e.g. "15.2°C". */
-    readonly property string temperatureText: client.hasTemperature ? client.temperatureC.toFixed(1) + "°C" : ""
+    /*! The temperature as the numerals say it, e.g. "15.2°C" or "59.4°F". */
+    readonly property string temperatureText: client.hasTemperature ? Format.tempText(client.temperatureC, client.isFahrenheit, 1) : ""
     readonly property var numerals: Art.bigText(temperatureText)
     readonly property var numeralsSmall: Art.smallText(temperatureText)
     readonly property var sky: Art.weatherArt(client.hasWeatherReading ? client.weatherCondition : "", night)

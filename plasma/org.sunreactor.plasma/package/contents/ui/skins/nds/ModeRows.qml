@@ -69,7 +69,7 @@ Item {
         }
     }
 
-    // The speech bubble: cream, with a small tail that points up at the buttons.
+    // The speech bubble: crisp pixel DS message box with stepped pixel pointer.
     Item {
         id: bubble
 
@@ -78,51 +78,64 @@ Item {
         width: root.width
         height: root.bubbleH
 
-        // The tail: a cream point on the bubble's top edge, outlined like the body.
-        Shape {
-            id: tail
-
-            x: Math.round(root.gu * 1.2)
-            y: -height
-            width: Math.round(root.gu * 0.8)
-            height: Math.round(root.gu * 0.4)
-
-            ShapePath {
-                strokeWidth: 1
-                strokeColor: root.style.creamEdge
-                fillColor: root.style.cream
-                startX: 0
-                startY: tail.height
-                PathLine { x: tail.width / 2; y: 0 }
-                PathLine { x: tail.width; y: tail.height }
-            }
-        }
-
-        Rectangle {
+        BorderImage {
             id: body
 
             anchors.fill: parent
-            radius: Math.round(root.gu * 0.6)
-            color: root.style.cream
-            border.width: 1
-            border.color: root.style.creamEdge
+            source: Qt.resolvedUrl("assets/ds_bubble.png")
+            border { left: 4; top: 4; right: 4; bottom: 4 }
+            horizontalTileMode: BorderImage.Stretch
+            verticalTileMode: BorderImage.Stretch
+            smooth: false
         }
 
-        Text {
+        // Crisp 2-step pixel pointer aligned under the Auto button
+        Item {
+            x: Math.round(root.gu * 1.4)
+            y: -4
+            width: 8
+            height: 5
+            Rectangle { x: 2; y: 0; width: 4; height: 2; color: "#7a6430" }
+            Rectangle { x: 0; y: 2; width: 8; height: 2; color: "#7a6430" }
+            Rectangle { x: 3; y: 1; width: 2; height: 1; color: root.style.cream }
+            Rectangle { x: 1; y: 2; width: 6; height: 3; color: root.style.cream }
+        }
+
+        Column {
             id: sentence
 
-            anchors.fill: body
-            anchors.margins: Math.round(root.gu * 0.15)
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.WordWrap
-            maximumLineCount: 2
-            elide: Text.ElideRight
-            text: root.control.statusLine
-            font.family: root.style.family
-            font.pixelSize: Math.round(root.gu * 0.62)
-            color: root.control.hinting ? root.style.blue : root.style.ink
+            readonly property string subLine: root.control.joinParts([root.control.scheduleText, root.control.note])
+
+            anchors.verticalCenter: body.verticalCenter
+            anchors.left: body.left
+            anchors.right: body.right
+            anchors.leftMargin: Math.round(root.gu * 0.45)
+            anchors.rightMargin: Math.round(root.gu * 0.45)
+            spacing: Math.round(root.gu * 0.14)
+
             Accessible.role: Accessible.StaticText
             Accessible.name: root.control.statusLine
+
+            Text {
+                width: parent.width
+                text: root.control.primaryText
+                textFormat: Text.PlainText
+                font.family: root.style.family
+                font.pixelSize: Math.round(root.gu * 0.56)
+                color: root.control.hinting ? root.style.blue : root.style.ink
+                elide: Text.ElideRight
+            }
+
+            Text {
+                width: parent.width
+                visible: text.length > 0
+                text: sentence.subLine
+                textFormat: Text.PlainText
+                font.family: root.style.family
+                font.pixelSize: Math.round(root.gu * 0.50)
+                color: root.style.muted
+                elide: Text.ElideRight
+            }
         }
     }
 
@@ -173,23 +186,14 @@ Item {
             color: cell.lit ? root.style.white : root.style.blue
         }
 
-        // The stylus dot: a white touch point with a soft halo, on the lit button.
+        // Crisp pixel selection indicator on the lit DS button
         Rectangle {
             visible: cell.lit
-            x: cell.width - Math.round(root.gu * 1.25)
-            y: Math.round(root.gu * 0.3)
-            width: Math.round(root.gu * 0.8)
-            height: width
-            radius: width / 2
-            color: Qt.rgba(1, 1, 1, 0.22)
-        }
-        Rectangle {
-            visible: cell.lit
-            x: cell.width - Math.round(root.gu * 1.05)
-            y: Math.round(root.gu * 0.5)
-            width: Math.round(root.gu * 0.36)
-            height: width
-            radius: width / 2
+            x: cell.width - Math.round(root.gu * 0.95)
+            y: Math.round(root.gu * 0.38)
+            width: 4
+            height: 4
+            radius: 0
             color: root.style.white
         }
 

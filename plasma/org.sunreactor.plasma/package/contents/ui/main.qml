@@ -37,7 +37,7 @@ PlasmoidItem {
         interval: 1000
         onTriggered: {
             const w = root.popupWindow;
-            const hovered = root.fullRepresentationItem && root.fullRepresentationItem.popupHovered === true;
+            const hovered = root.fullRepresentationItem && root.fullRepresentationItem.popupHovered === true; // qmllint disable missing-property
             if (root.expanded && !(w && w.active) && !hovered && !root.menuOpen) {
                 root.expanded = false;
             }
@@ -60,7 +60,7 @@ PlasmoidItem {
         ignoreUnknownSignals: true
 
         function onPopupHoveredChanged(): void {
-            if (root.fullRepresentationItem.popupHovered || root.menuOpen) {
+            if (root.fullRepresentationItem.popupHovered || root.menuOpen) { // qmllint disable missing-property
                 deactivateGrace.stop();
             } else if (root.expanded && !(root.popupWindow && root.popupWindow.active)) {
                 deactivateGrace.restart();
@@ -72,7 +72,7 @@ PlasmoidItem {
             deactivateGrace.stop();
         } else if (root.expanded
                    && !(root.popupWindow && root.popupWindow.active)
-                   && !(root.fullRepresentationItem && root.fullRepresentationItem.popupHovered)) {
+                   && !(root.fullRepresentationItem && root.fullRepresentationItem.popupHovered)) { // qmllint disable missing-property
             deactivateGrace.restart();
         }
     }
@@ -232,7 +232,9 @@ PlasmoidItem {
     Component.onCompleted: {
         const overrides = daemon.harnessConfig();
         for (const key of Object.keys(overrides)) {
-            Plasmoid.configuration[key] = overrides[key];
+            if (Plasmoid.configuration[key] !== undefined) {
+                Plasmoid.configuration[key] = overrides[key];
+            }
         }
     }
 

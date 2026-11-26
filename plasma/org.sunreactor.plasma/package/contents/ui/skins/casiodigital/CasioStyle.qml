@@ -65,11 +65,11 @@ QtObject {
     readonly property color keyDownTop: theme.mix(theme.bg, theme.fg, 0.03)
     readonly property color keyDownBottom: theme.mix(theme.bg, theme.fg, 0.09)
 
-    /*! Hex colours for WeatherGlyph: every role is the ink, on the glass. */
+    /*! Hex colours for WeatherGlyph: dark ink and muted ink on the glass. */
     readonly property var glyphPalette: ({
         bg: theme.hexOf(glass),
         fg: theme.hexOf(ink),
-        text_muted: theme.hexOf(ink),
+        text_muted: theme.hexOf(theme.mix(glass, ink, 0.62)),
         accent: theme.hexOf(ink),
         secondary_accent: theme.hexOf(ink),
         warning: theme.hexOf(ink)

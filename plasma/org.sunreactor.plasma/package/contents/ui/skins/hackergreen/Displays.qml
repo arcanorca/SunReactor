@@ -33,9 +33,9 @@ FocusScope {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAll: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
 
     TermMetrics {
         id: term
@@ -55,6 +55,7 @@ FocusScope {
         scope: root
         monitors: root.monitors
         showAll: root.showAll
+        interactive: root.client.isConnected
     }
 
     activeFocusOnTab: true
@@ -101,7 +102,7 @@ FocusScope {
                 HgRow {
                     tm: term
                     theme: root.theme
-                    label: i18nd(root.domain, "All displays")
+                    label: root.settings.allDisplaysLabel
                     current: ctl.isCursor(-1, "value")
                     active: root.activeFocus
                     onClicked: ctl.select(-1, "value")
@@ -112,7 +113,7 @@ FocusScope {
                     x: term.cx(15)
                     cells: root.gaugeCells
                     value: master.shown
-                    interactive: root.client.globalPercent >= 0
+                    interactive: root.client.isConnected && root.client.globalPercent >= 0
                     fillColor: root.client.isOverrideActive ? root.theme.warning : root.theme.accent
                     onMoved: value => {
                         ctl.select(-1, "value");
@@ -142,10 +143,11 @@ FocusScope {
                     required property int index
 
                     readonly property var m: modelData
-                    readonly property bool canWrite: Monitors.controllable(m)
-                    readonly property bool open: ctl.expanded[m.logicalId] === true
+                    readonly property bool canWrite: root.client.isConnected && Monitors.controllable(m)
+                    readonly property bool hasLimits: Monitors.hasValidLimits(m)
+                    readonly property bool open: hasLimits && ctl.expanded[m.logicalId] === true
                     readonly property int shown: ctl.shownPct(m.logicalId, m.percent)
-                    readonly property var limits: ctl.shownLimits(m)
+                    readonly property var limits: hasLimits ? ctl.shownLimits(m) : [0, 100]
                     readonly property int target: ctl.targetNow(m.logicalId)
                     readonly property bool manual: m.hasOverride === true
                     readonly property bool unavailable: Monitors.unavailable(m)
@@ -211,6 +213,8 @@ FocusScope {
                                 const t = root.theme;
                                 const out = [{ t: term.detailGlyph + " ", c: t.textMuted }];
                                 const m = block.m;
+                                const notice = Monitors.monitorNotice(
+                                    m, root.settings.contestedNotice, root.settings.deferredNotice);
                                 if (!m.enabled) {
                                     out.push({ t: i18ndc(root.domain, "This display is excluded from automation", "[ OFF ]"), c: t.textMuted, b: true });
                                 } else if (m.unreachable) {
@@ -218,15 +222,20 @@ FocusScope {
                                                          "[ RETRY %1s ]", m.backoffRemainingS), c: t.warning, b: true });
                                 } else if (block.unavailable) {
                                     out.push({ t: i18ndc(root.domain, "This display is not answering", "[ OFFLINE ]"), c: t.error, b: true });
+                                } else if (notice.length > 0) {
+                                    out.push(Hg.flag(t, "warn", notice));
                                 } else if (block.manual) {
                                     out.push(Hg.flag(t, "warn", i18ndc(root.domain, "This brightness was set by hand", "MANUAL")));
                                 } else {
                                     out.push(Hg.flag(t, "ok", i18ndc(root.domain, "Brightness follows the automatic curve", "AUTO")));
                                 }
-                                const tail = [{ t: " · ", c: t.borderInactive },
-                                              { t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
+                                const tail = [];
+                                if (block.hasLimits) {
+                                    tail.push({ t: " · ", c: t.borderInactive });
+                                    tail.push({ t: i18ndc(root.domain, "Brightness range limits", "range %1–%2%",
                                                           block.limits[0], block.limits[1]),
-                                                c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" }];
+                                                c: block.open || rangeHit.containsMouse ? t.accent : t.textMuted, k: "range" });
+                                }
                                 if (block.manual) {
                                     tail.push({ t: "  " });
                                     tail.push({ t: "a", c: autoHit.containsMouse ? t.accent : t.fg, b: true, k: "auto" });
@@ -248,7 +257,7 @@ FocusScope {
                             id: rangeHit
 
                             readonly property var span: detail.span("range")
-                            visible: span !== null
+                            visible: block.hasLimits && span !== null
                             x: detail.x + term.cx(span ? span[0] : 0)
                             width: term.cx(span ? span[1] : 0)
                             height: term.ch
@@ -263,7 +272,7 @@ FocusScope {
                             id: autoHit
 
                             readonly property var span: detail.span("auto")
-                            visible: span !== null
+                            visible: root.client.isConnected && span !== null
                             x: detail.x + term.cx(span ? span[0] : 0)
                             width: term.cx(span ? span[1] + 5 : 0)
                             height: term.ch
@@ -276,6 +285,7 @@ FocusScope {
                     // The range: the track, then the minimum and maximum rows.
                     Item {
                         visible: block.open
+                        enabled: root.client.isConnected && block.hasLimits
                         width: parent.width
                         height: term.ch
 

@@ -31,7 +31,7 @@ RowLayout {
     readonly property MacStyle style: MacStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     /*! The daemon's state as one word in sentence case. */
     readonly property string stateText: {
@@ -62,7 +62,7 @@ RowLayout {
     spacing: root.style.gap
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: [stateText, readouts, client.hasTemperature ? Math.round(client.temperatureC) + "°C" : "",
+    Accessible.name: [stateText, readouts, client.hasTemperature ? Format.tempText(client.temperatureC, client.isFahrenheit) : "",
                       Format.timeText(client.nowEpochS)].filter(part => part.length > 0).join(", ")
 
     Rectangle {
@@ -96,8 +96,7 @@ RowLayout {
     Text {
         Layout.alignment: Qt.AlignVCenter
         visible: root.client.hasTemperature
-        text: visible ? i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1 °C",
-                               Math.round(root.client.temperatureC)) : ""
+        text: visible ? Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit) + " " + Format.tempUnit(root.client.isFahrenheit) : ""
         textFormat: Text.PlainText
         font: root.style.caption
         color: root.style.ink

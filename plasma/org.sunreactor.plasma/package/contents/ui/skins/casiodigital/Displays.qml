@@ -11,7 +11,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
@@ -31,9 +33,9 @@ Item {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     implicitWidth: bezel.implicitWidth
@@ -53,6 +55,7 @@ Item {
         property bool hasLimits: false
         property bool limitsOpen: false
         property string stateText: ""
+        property string notice: ""
 
         signal requested(int percent)
         signal limitsRequested(int minPct, int maxPct)
@@ -90,10 +93,16 @@ Item {
                 }
                 MouseArea {
                     anchors.fill: parent
-                    enabled: channel.hasOverride
+                    enabled: channel.hasOverride && root.client.isConnected
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: channel.clearRequested()
                 }
+                HoverHandler {
+                    id: stateFlagHover
+                }
+                QQC2.ToolTip.visible: stateFlagHover.hovered && channel.notice.length > 0
+                QQC2.ToolTip.text: channel.notice
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
 
             // Range toggle flag: opens the night-min / day-max bars below.
@@ -108,9 +117,14 @@ Item {
                     style: root.style
                     text: channel.minPct + "-" + channel.maxPct
                     lit: channel.limitsOpen
+                    interactive: root.client.isConnected && channel.hasLimits
+                    hovered: rangeHover.containsMouse
                 }
                 MouseArea {
+                    id: rangeHover
+
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: channel.limitsToggled()
                 }
@@ -167,7 +181,7 @@ Item {
                     from: 0
                     to: Math.max(0, maxBar.shown)
                     value: channel.minPct
-                    interactive: true
+                    interactive: root.client.isConnected && channel.hasLimits
                     accessibleName: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
                     onCommitted: v => channel.limitsRequested(Math.min(v, channel.maxPct), channel.maxPct)
                 }
@@ -200,7 +214,7 @@ Item {
                     from: Math.min(100, minBar.shown)
                     to: 100
                     value: channel.maxPct
-                    interactive: true
+                    interactive: root.client.isConnected && channel.hasLimits
                     accessibleName: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
                     onCommitted: v => channel.limitsRequested(channel.minPct, Math.max(v, channel.minPct))
                 }
@@ -228,11 +242,14 @@ Item {
 
         ChannelRow {
             visible: root.showAllDisplays
-            name: i18nd(root.domain, "All displays")
+            name: root.settings.allDisplaysLabel
             percent: root.client.globalPercent
+            controllable: root.client.isConnected
+            hasOverride: root.client.isOverrideActive
             stateText: root.client.isOverrideActive
                 ? i18ndc(root.domain, "Tag: this brightness was set by hand", "MAN") : ""
             onRequested: value => root.client.setGlobalOverride(value, root.settings.overrideMinutes)
+            onClearRequested: root.client.clearAllOverrides()
         }
 
         Repeater {
@@ -245,22 +262,29 @@ Item {
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
                 readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
+                readonly property string tagNotice: Monitors.monitorTag(
+                    modelData, root.settings.pausedTag, root.settings.queuedTag)
 
                 name: modelData.logicalId
                 percent: modelData.percent !== undefined ? modelData.percent : -1
                 minPct: modelData.minPct !== undefined ? modelData.minPct : -1
                 maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
                 targetPct: Math.round(DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS))
-                controllable: modelData.enabled === true && !unavailable
-                hasLimits: true
+                controllable: root.client.isConnected && modelData.enabled === true && !unavailable
+                hasLimits: Monitors.hasValidLimits(modelData)
                 limitsOpen: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                 hasOverride: modelData.hasOverride === true || hasHold
+                notice: Monitors.monitorNotice(
+                    modelData, root.settings.contestedNotice, root.settings.deferredNotice)
                 stateText: {
                     if (modelData.enabled === false) {
                         return i18ndc(root.domain, "Tag: this display is excluded from automation", "OFF");
                     }
                     if (unavailable) {
                         return i18ndc(root.domain, "Tag: this display is not answering", "NO LINK");
+                    }
+                    if (tagNotice.length > 0) {
+                        return tagNotice;
                     }
                     if (modelData.hasOverride === true) {
                         return i18ndc(root.domain, "Tag: this brightness was set by hand", "MAN");

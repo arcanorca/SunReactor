@@ -13,6 +13,7 @@ import QtQuick.Layouts
 import org.sunreactor.plasma
 
 import "../../engine"
+import "../../Format.js" as Format
 import "../../components/weathericons"
 import "../../modules" as Mod
 import "../../components" as Components
@@ -28,7 +29,7 @@ ColumnLayout {
     readonly property SynthStyle style: SynthStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
     /*! The forecast and the sun times join this card when the theme lists them. */
     readonly property bool forecastShown: root.theme.modules.indexOf("forecast") >= 0 && forecast.available
     readonly property bool sunShown: root.theme.modules.indexOf("suntimes") >= 0 && line.available
@@ -40,7 +41,7 @@ ColumnLayout {
         const out = [];
         if (d.feelsLikeC !== undefined) {
             out.push({ k: i18ndc(domain, "Short legend: apparent temperature", "Feels"),
-                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
+                       v: i18ndc(domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(d.feelsLikeC, client.isFahrenheit)) });
         }
         if (d.humidityPercent !== undefined) {
             out.push({ k: i18ndc(domain, "Short legend: relative humidity", "Humidity"),
@@ -101,7 +102,7 @@ ColumnLayout {
 
                 Text {
                     Layout.alignment: Qt.AlignBaseline
-                    text: root.client.hasTemperature ? String(Math.round(root.client.temperatureC)) : "—"
+                    text: root.client.hasTemperature ? String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit)) : "—"
                     textFormat: Text.PlainText
                     font: root.style.readoutFont
                     color: root.style.ink
@@ -109,7 +110,7 @@ ColumnLayout {
                 Text {
                     Layout.alignment: Qt.AlignBaseline
                     visible: root.client.hasTemperature
-                    text: "°C"
+                    text: Format.tempUnit(root.client.isFahrenheit)
                     textFormat: Text.PlainText
                     font: root.style.labelFont
                     color: root.style.cyan

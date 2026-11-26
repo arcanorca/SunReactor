@@ -76,3 +76,54 @@ function externalHoldAge(seconds) {
     var s = Math.max(0, Number(seconds) || 0);
     return s < 60 ? "<1m" : Math.ceil(s / 60) + "m";
 }
+
+/*! True while live or stale cached daemon status is available to display. */
+function hasStatus(client) {
+    return client !== null && client !== undefined
+        && (client.isConnected === true || client.statusStale === true);
+}
+
+/*! True while live or stale cached monitor rows are available to display. */
+function hasDisplayData(client) {
+    return hasStatus(client) && client.monitors !== undefined
+        && client.monitors !== null && client.monitors.length > 0;
+}
+
+/*! True when both minPct and maxPct are reported (non-negative). */
+function hasValidLimits(monitor) {
+    return monitor !== null && monitor !== undefined
+        && monitor.minPct !== undefined && monitor.maxPct !== undefined
+        && Number(monitor.minPct) >= 0 && Number(monitor.maxPct) >= 0;
+}
+
+/*! Full status notice for contested or write-deferred displays, or "". */
+function monitorNotice(monitor, contestedText, deferredText) {
+    if (!monitor) {
+        return "";
+    }
+    if (monitor.contested === true) {
+        return contestedText !== undefined
+            ? contestedText
+            : qsTr("Paused: another app is changing this display");
+    }
+    if (monitor.writesDeferred === true) {
+        return deferredText !== undefined
+            ? deferredText
+            : qsTr("Queued, applying shortly");
+    }
+    return "";
+}
+
+/*! Short badge tag for compact or slotless skins ("Paused" / "Queued"), or "". */
+function monitorTag(monitor, pausedText, queuedText) {
+    if (!monitor) {
+        return "";
+    }
+    if (monitor.contested === true) {
+        return pausedText !== undefined ? pausedText : qsTr("Paused");
+    }
+    if (monitor.writesDeferred === true) {
+        return queuedText !== undefined ? queuedText : qsTr("Queued");
+    }
+    return "";
+}

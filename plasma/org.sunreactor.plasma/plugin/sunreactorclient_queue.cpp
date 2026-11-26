@@ -55,10 +55,14 @@ void SunReactorClient::pruneStaleMutatingRequests()
 
 void SunReactorClient::scheduleReconnect()
 {
-    const int delay = m_reconnectBackoffMs;
+    const int delay = m_errorKind == ErrorKind::VersionMismatch
+        ? std::max(m_reconnectBackoffMs, kVersionMismatchBackoffMs)
+        : m_reconnectBackoffMs;
     m_lastBackoffWindowMs = delay;
     m_reconnectTimer->start(delay);
-    m_reconnectBackoffMs = std::min(kMaxReconnectBackoffMs, delay * 2);
+    m_reconnectBackoffMs = m_errorKind == ErrorKind::VersionMismatch
+        ? kVersionMismatchBackoffMs
+        : std::min(kMaxReconnectBackoffMs, delay * 2);
 }
 
 void SunReactorClient::enqueueRequest(const QJsonObject &requestObj)
@@ -160,7 +164,8 @@ void SunReactorClient::processNextRequest()
     const QString socketPath = resolvedSocketPath();
     if (socketPath.toUtf8().size() > kMaxUnixSocketPathBytes) {
         transportError(QStringLiteral("Control socket path exceeds %1-byte Unix socket limit")
-                           .arg(kMaxUnixSocketPathBytes));
+                           .arg(kMaxUnixSocketPathBytes),
+                       ErrorKind::Protocol);
         return;
     }
 

@@ -92,6 +92,12 @@ private Q_SLOTS:
     void testExtendedBusyTimeoutReports12000Ms();
     void testOverlongUnixSocketPathRejected();
     void testPreDisconnectMutatingRequestExpiresAfterMaxOfflineAge();
+    void testTemperatureUnitFollowsDaemonStatusAndResetsOnDisconnect();
+    void testForecastDayPhaseDoesNotMaskSolarNight();
+    void testMonitorContestedWriteBudgetAndMissingLimits();
+    void testErrorKindClassificationAndVersionMismatchBackoff();
+    void testUnknownResponseTypeIgnoredWithoutDisconnect();
+    void testDisconnectGracePeriodPreservesAndClearsStaleStatus();
 
 private:
     using Handler = std::function<QJsonObject(const QJsonObject &request)>;
@@ -2414,6 +2420,254 @@ void TestSunReactorClient::testPreDisconnectMutatingRequestExpiresAfterMaxOfflin
     client.pruneStaleMutatingRequests();
     QVERIFY(client.m_requestQueue.isEmpty());
     QVERIFY(client.lastError().contains(QStringLiteral("Dropped 1 queued command while offline")));
+}
+
+void TestSunReactorClient::testTemperatureUnitFollowsDaemonStatusAndResetsOnDisconnect()
+{
+    QString unit = QStringLiteral("fahrenheit");
+    serveWith([&](const QJsonObject &req) {
+        if (req.value(QStringLiteral("request")).toString() == QLatin1String("status")) {
+            QJsonObject st;
+            st.insert(QStringLiteral("temperature_unit"), unit);
+            return statusResponse(st);
+        }
+        return envelope(QStringLiteral("ack"));
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_COMPARE_WITH_TIMEOUT(client.temperatureUnit(), QStringLiteral("fahrenheit"), 2000);
+    QVERIFY(client.isFahrenheit());
+
+    unit = QStringLiteral("celsius");
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.temperatureUnit(), QStringLiteral("celsius"), 2000);
+    QVERIFY(!client.isFahrenheit());
+
+    unit = QStringLiteral("fahrenheit");
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.isFahrenheit(), true, 2000);
+
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected(), 4000);
+    QCOMPARE(client.temperatureUnit(), QStringLiteral("celsius"));
+    QVERIFY(!client.isFahrenheit());
+}
+
+void TestSunReactorClient::testForecastDayPhaseDoesNotMaskSolarNight()
+{
+    QJsonObject weather;
+    weather[QStringLiteral("enabled")] = true;
+    weather[QStringLiteral("condition")] = QStringLiteral("clear");
+    weather[QStringLiteral("source_kind")] = QStringLiteral("forecast");
+    weather[QStringLiteral("day_phase")] = QStringLiteral("day");
+
+    QJsonObject status;
+    status[QStringLiteral("solar_elevation")] = -20.6;
+    status[QStringLiteral("weather")] = weather;
+
+    serveStatus(status);
+
+    SunReactorClient client(m_socketPath);
+    QSignalSpy statusSpy(&client, &SunReactorClient::statusChanged);
+
+    QVERIFY(statusSpy.wait(2000));
+    QVERIFY(!client.isDaylight());
+    QVERIFY(client.weatherIsNight());
+}
+
+void TestSunReactorClient::testMonitorContestedWriteBudgetAndMissingLimits()
+{
+    QJsonObject writes;
+    writes[QStringLiteral("writes_total")] = 42;
+    writes[QStringLiteral("window_used")] = 7;
+    writes[QStringLiteral("window_max")] = 10;
+    writes[QStringLiteral("deferred")] = true;
+
+    QJsonObject fullMon;
+    fullMon[QStringLiteral("logical_id")] = QStringLiteral("DP-1");
+    fullMon[QStringLiteral("backend")] = QStringLiteral("ddc");
+    fullMon[QStringLiteral("enabled")] = true;
+    fullMon[QStringLiteral("last_applied_percent")] = 50;
+    fullMon[QStringLiteral("min_pct")] = 10;
+    fullMon[QStringLiteral("max_pct")] = 90;
+    fullMon[QStringLiteral("contested")] = true;
+    fullMon[QStringLiteral("contested_until_epoch_s")] = 1774000500;
+    fullMon[QStringLiteral("writes")] = writes;
+
+    QJsonObject minimalMon;
+    minimalMon[QStringLiteral("logical_id")] = QStringLiteral("HDMI-1");
+    minimalMon[QStringLiteral("backend")] = QStringLiteral("ddc");
+    minimalMon[QStringLiteral("enabled")] = true;
+    minimalMon[QStringLiteral("last_applied_percent")] = 35;
+
+    QJsonObject status;
+    status[QStringLiteral("monitors")] = QJsonArray{fullMon, minimalMon};
+    serveStatus(status);
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.monitors().size() == 2, 2000);
+    QCOMPARE(client.errorKind(), SunReactorClient::None);
+
+    const QVariantMap first = client.monitors().at(0).toMap();
+    QCOMPARE(first.value(QStringLiteral("contested")).toBool(), true);
+    QCOMPARE(first.value(QStringLiteral("contestedUntilS")).toLongLong(), qint64(1774000500));
+    QCOMPARE(first.value(QStringLiteral("writesDeferred")).toBool(), true);
+    QCOMPARE(first.value(QStringLiteral("writesWindowUsed")).toInt(), 7);
+    QCOMPARE(first.value(QStringLiteral("writesWindowMax")).toInt(), 10);
+    QCOMPARE(first.value(QStringLiteral("writesTotal")).toLongLong(), qint64(42));
+    QCOMPARE(first.value(QStringLiteral("minPct")).toInt(), 10);
+    QCOMPARE(first.value(QStringLiteral("maxPct")).toInt(), 90);
+
+    const QVariantMap second = client.monitors().at(1).toMap();
+    QCOMPARE(second.value(QStringLiteral("contested")).toBool(), false);
+    QCOMPARE(second.value(QStringLiteral("contestedUntilS")).toLongLong(), qint64(0));
+    QCOMPARE(second.value(QStringLiteral("writesDeferred")).toBool(), false);
+    QCOMPARE(second.value(QStringLiteral("writesWindowUsed")).toInt(), 0);
+    QCOMPARE(second.value(QStringLiteral("writesWindowMax")).toInt(), 0);
+    QCOMPARE(second.value(QStringLiteral("writesTotal")).toLongLong(), qint64(0));
+    // Missing bounds remain unknown (-1), never fabricated to 15 / 60.
+    QCOMPARE(second.value(QStringLiteral("minPct")).toInt(), SunReactor::UNKNOWN_PERCENT);
+    QCOMPARE(second.value(QStringLiteral("maxPct")).toInt(), SunReactor::UNKNOWN_PERCENT);
+}
+
+void TestSunReactorClient::testErrorKindClassificationAndVersionMismatchBackoff()
+{
+    // 1. NotRunning when socket path does not exist.
+    {
+        SunReactorClient offlineClient(m_tempDir.filePath(QStringLiteral("does-not-exist.sock")));
+        QTRY_COMPARE_WITH_TIMEOUT(offlineClient.errorKind(), SunReactorClient::NotRunning, 2000);
+        offlineClient.setPollingEnabled(false);
+    }
+
+    // 2. VersionMismatch on mismatched protocol version (with long backoff) and Protocol on empty type.
+    int mode = 0; // 0 = bad version, 1 = unsupported_version error, 2 = empty response type
+    connect(m_server, &QLocalServer::newConnection, this, [this, &mode]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &mode]() {
+            if (!socket->readAll().contains('\n')) {
+                return;
+            }
+            QJsonObject resp;
+            if (mode == 0) {
+                resp[QStringLiteral("version")] = static_cast<int>(SunReactor::PROTOCOL_VERSION + 99);
+                resp[QStringLiteral("response")] = QStringLiteral("status");
+            } else if (mode == 1) {
+                resp = errorResponse(QStringLiteral("unsupported_version"), QStringLiteral("old client"));
+            } else {
+                resp[QStringLiteral("version")] = static_cast<int>(SunReactor::PROTOCOL_VERSION);
+            }
+            socket->write(QJsonDocument(resp).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_COMPARE_WITH_TIMEOUT(client.errorKind(), SunReactorClient::VersionMismatch, 2000);
+    QVERIFY(!client.isConnected());
+    QVERIFY(!client.statusStale());
+    QVERIFY(client.m_reconnectBackoffMs >= 60000);
+    QVERIFY(client.lastError().contains(QStringLiteral("Update")));
+
+    mode = 1;
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.errorKind(), SunReactorClient::VersionMismatch, 2000);
+    client.setPollingEnabled(false);
+
+    // Protocol error on empty response type (tested on a fresh client to avoid the 60s version backoff).
+    mode = 2;
+    SunReactorClient protoClient(m_socketPath);
+    QTRY_COMPARE_WITH_TIMEOUT(protoClient.errorKind(), SunReactorClient::Protocol, 2000);
+    protoClient.setPollingEnabled(false);
+}
+
+void TestSunReactorClient::testUnknownResponseTypeIgnoredWithoutDisconnect()
+{
+    int calls = 0;
+    connect(m_server, &QLocalServer::newConnection, this, [this, &calls]() {
+        QLocalSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket, &calls]() {
+            const QByteArray raw = socket->readAll();
+            if (!raw.contains('\n')) {
+                return;
+            }
+            ++calls;
+            QJsonObject mon;
+            mon[QStringLiteral("logical_id")] = QStringLiteral("DP-1");
+            mon[QStringLiteral("enabled")] = true;
+            mon[QStringLiteral("last_applied_percent")] = 55;
+            QJsonObject resp;
+            if (calls == 2) {
+                resp = envelope(QStringLiteral("future_telemetry_v2"), {{QStringLiteral("extra"), 123}});
+            } else {
+                resp = statusResponse({{QStringLiteral("monitors"), QJsonArray{mon}}});
+            }
+            socket->write(QJsonDocument(resp).toJson(QJsonDocument::Compact) + '\n');
+            socket->flush();
+        });
+    });
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.monitors().size() == 1, 2000);
+
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(calls >= 2 && !client.isBusy(), 2000);
+    QVERIFY(client.isConnected());
+    QCOMPARE(client.errorKind(), SunReactorClient::None);
+    QCOMPARE(client.monitors().size(), 1);
+}
+
+void TestSunReactorClient::testDisconnectGracePeriodPreservesAndClearsStaleStatus()
+{
+    QJsonObject mon;
+    mon[QStringLiteral("logical_id")] = QStringLiteral("eDP-1");
+    mon[QStringLiteral("enabled")] = true;
+    mon[QStringLiteral("last_applied_percent")] = 68;
+    mon[QStringLiteral("min_pct")] = 10;
+    mon[QStringLiteral("max_pct")] = 80;
+
+    QJsonObject st;
+    st[QStringLiteral("global_percent")] = 68;
+    st[QStringLiteral("monitors")] = QJsonArray{mon};
+    st[QStringLiteral("sunrise_epoch_s")] = 1700000000;
+    st[QStringLiteral("sunset_epoch_s")] = 1700040000;
+    serveStatus(st);
+
+    SunReactorClient client(m_socketPath);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.monitors().size() == 1, 2000);
+    QVERIFY(!client.statusStale());
+
+    // Simulate daemon going down for a brief restart: data stays visible while statusStale is true.
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected() && client.statusStale(), 2000);
+    QCOMPARE(client.errorKind(), SunReactorClient::NotRunning);
+    QCOMPARE(client.monitors().size(), 1);
+    QCOMPARE(client.globalPercent(), 68);
+    QCOMPARE(client.sunriseEpochS(), qint64(1700000000));
+
+    // Reconnecting before grace expires restores live status cleanly with no blank flash.
+    delete m_server;
+    m_server = new QLocalServer(this);
+    QVERIFY(m_server->listen(m_socketPath));
+    serveStatus(st);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && !client.statusStale(), 2000);
+    QCOMPARE(client.errorKind(), SunReactorClient::None);
+    QCOMPARE(client.monitors().size(), 1);
+
+    // Dropping again and letting grace expire clears stale monitors and mode.
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+    client.queryStatus();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.isConnected() && client.statusStale(), 2000);
+    client.clearStaleStatus();
+    QVERIFY(!client.statusStale());
+    QVERIFY(client.monitors().isEmpty());
+    QCOMPARE(client.mode(), SunReactorClient::Offline);
+    QCOMPARE(client.globalPercent(), SunReactor::UNKNOWN_PERCENT);
 }
 
 QTEST_MAIN(TestSunReactorClient)

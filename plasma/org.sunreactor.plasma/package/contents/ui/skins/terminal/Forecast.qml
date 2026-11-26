@@ -46,7 +46,7 @@ Item {
     /*! The next five intervals after now (the daemon's forecast order). */
     readonly property int slotCount: 5
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slotCount)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     /*! Column geometry in cells: `start` and `width` of each, one cell between columns. */
     readonly property var slots: {
@@ -166,7 +166,7 @@ Item {
                     y: term.cy(4)
                     x: term.cx(Math.max(0, Math.floor((slot.geometry.width - usedCells) / 2)))
                     value: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
-                                  Math.round(slot.modelData.temperatureC))
+                                  Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
                     cells: slot.geometry.width
                     strong: true
                     color: root.theme.fg

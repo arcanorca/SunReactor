@@ -1,16 +1,13 @@
 /*
- * Nothing (dot matrix): the twelve-by-twelve pictogram of lit dots, a whole device
- * pixel per dot pitch, centred on the device pixel grid. Each dot pitch must be at
- * least two device px, so below 24 device px across it draws the generic line
- * glyph instead: the dots would merge at panel size.
+ * Nothing OS Weather icons: crisp halftone-dot & red-accent geometric weather
+ * assets (skins/nothing/assets/weather/), falling back to WeatherGlyph below
+ * 16 logical px.
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import org.sunreactor.plasma
 import "../../engine"
-import "../../panel/PanelData.js" as PanelData
 
 Item {
     id: root
@@ -27,28 +24,36 @@ Item {
     implicitWidth: size
     implicitHeight: size
 
-    readonly property real dpr: theme.grid.devicePixelRatio
-    /*! Device px per dot pitch: twelve pitches fill the icon's side. */
-    readonly property int pitchPx: Math.floor(size * dpr / 12 + 0.001)
-    readonly property bool dotted: pitchPx >= 2
+    readonly property bool iconMode: size >= 16
+    readonly property string assetName: {
+        switch (condition) {
+        case "clear": return night ? "clear_night" : "clear_day";
+        case "partly_cloudy": return night ? "partly_cloudy_night" : "partly_cloudy_day";
+        case "cloudy": return "cloudy";
+        case "drizzle": return "drizzle";
+        case "rain": return "rain";
+        case "heavy_rain": return "heavy_rain";
+        case "thunderstorm": return "thunderstorm";
+        case "snow": return "snow";
+        case "mist": return "mist";
+        case "atmospheric": return "atmospheric";
+        case "fog": return "fog";
+        default: return "unknown";
+        }
+    }
 
-    DotIcon {
-        id: dots
-
-        visible: root.dotted
-        x: Math.round((root.width * root.dpr - 12 * root.pitchPx) / 2) / root.dpr
-        y: Math.round((root.height * root.dpr - 12 * root.pitchPx) / 2) / root.dpr
-        pitch: root.pitchPx / root.dpr
-        condition: root.condition
-        night: root.night
-        litColor: root.ink
-        accentColor: PanelData.ink(root.theme.accent, root.surface, root.ink, 3)
-        dimColor: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+    Image {
+        visible: root.iconMode
+        anchors.fill: parent
+        source: Qt.resolvedUrl("../../skins/nothing/assets/weather/" + root.assetName + ".png")
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        mipmap: true
     }
 
     WeatherGlyph {
         anchors.centerIn: parent
-        visible: !root.dotted
+        visible: !root.iconMode
         condition: root.condition
         night: root.night
         glyphStyle: "line"

@@ -69,6 +69,10 @@
         <entry name="hiddenModules" type="StringList">
             <default>telemetry</default>
         </entry>
+        <!-- Toggle dark Carbon Blades variant inside the Xbox 360 skin. -->
+        <entry name="xboxDarkMode" type="Bool">
+            <default>false</default>
+        </entry>
     </group>
     <group name="Panel">
         <!-- What the panel item draws: "sky" (weather sprite), "readout"

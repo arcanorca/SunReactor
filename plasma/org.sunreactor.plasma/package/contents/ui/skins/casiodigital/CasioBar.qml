@@ -13,6 +13,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../../components"
+
 Item {
     id: root
 
@@ -59,32 +61,33 @@ Item {
     Accessible.onIncreaseAction: nudge(1)
     Accessible.onDecreaseAction: nudge(-1)
 
-    function setLocal(v) {
+    function setLocal(v, fromKey) {
         const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
             localValue = Math.max(0, value);
         }
-        if (clamped === localValue) {
+        if (clamped === localValue && (editing || throttle.pending)) {
             return;
         }
         localValue = clamped;
-        throttle.restart();
+        if (fromKey) {
+            throttle.nudge(clamped);
+            settle.restart();
+        } else {
+            throttle.schedule(clamped);
+        }
     }
 
     function nudge(delta) {
         if (!live) {
             return;
         }
-        setLocal((editing ? localValue : value) + delta);
-        settle.restart();
+        setLocal((editing ? localValue : value) + delta, true);
     }
 
     function finish() {
-        throttle.stop();
-        if (editing) {
-            root.committed(localValue);
-        }
+        throttle.release(editing ? localValue : undefined);
         settle.restart();
     }
 
@@ -97,11 +100,11 @@ Item {
     }
 
     // While the daemon catches up, keep showing what the user picked.
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 250
-        onTriggered: root.committed(root.localValue)
+        reportedValue: root.value
+        onCommitted: val => root.committed(val)
     }
 
     Timer {
@@ -109,11 +112,7 @@ Item {
 
         interval: 1500
         onTriggered: {
-            if (!pointer.pressed) {
-                if (throttle.running) {
-                    throttle.stop();
-                    root.committed(root.localValue);
-                }
+            if (!pointer.pressed && !throttle.pending) {
                 root.editing = false;
             }
         }

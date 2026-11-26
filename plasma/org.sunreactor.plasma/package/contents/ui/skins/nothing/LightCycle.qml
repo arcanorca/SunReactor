@@ -41,7 +41,7 @@ Rectangle {
 
     readonly property var curve: client.dayCurve
     readonly property var curves: curve && curve.monitors ? curve.monitors : []
-    readonly property bool available: client.isConnected && curves.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && curves.length > 0
         && curves[0].samples.length > 1
 
     /*! Index into `curves`, or -1 for "All". */
@@ -59,8 +59,8 @@ Rectangle {
     readonly property bool nowInDay: available && now >= t0 && now <= t1
 
     /*! Dot rows of the day plot; the ring is `ringDiameter` dots across. */
-    readonly property int plotRows: 12
-    readonly property int ringDiameter: 21
+    readonly property int plotRows: 9
+    readonly property int ringDiameter: 19
 
     readonly property bool scrubbing: hover.containsMouse && available && !showAll
     readonly property real readTime: scrubbing ? hover.time : now
@@ -144,7 +144,7 @@ Rectangle {
         x: root.style.pad
         y: root.style.pad
         width: root.width - 2 * root.style.pad
-        spacing: root.style.gap
+        spacing: Math.round(root.style.gap * 0.75)
 
         // --- the caption and the display pills ------------------------------------------
         RowLayout {
@@ -157,8 +157,8 @@ Rectangle {
                 Layout.fillWidth: true
                 text: root.caption
                 textFormat: Text.PlainText
-                font: root.style.label
-                color: root.style.muted
+                font: root.style.heading
+                color: root.style.ink
                 elide: Text.ElideRight
             }
 
@@ -195,13 +195,23 @@ Rectangle {
                 id: dial
 
                 Layout.alignment: Qt.AlignVCenter
-                implicitWidth: ring.implicitWidth
-                implicitHeight: ring.implicitHeight
+                implicitWidth: ring.implicitWidth + root.style.snap(root.style.unit * 0.72)
+                implicitHeight: ring.implicitHeight + root.style.snap(root.style.unit * 0.72)
+
+                // Nothing Phone Glyph Interface segmented LED outer halo
+                Image {
+                    anchors.fill: parent
+                    source: Qt.resolvedUrl("assets/nothing_glyph_ring.png")
+                    smooth: true
+                    mipmap: true
+                    opacity: 0.92
+                }
 
                 // The dotted gauge: the lit arc is the target, the red head is the one signal.
                 DotRing {
                     id: ring
 
+                    anchors.centerIn: parent
                     diameter: root.ringDiameter
                     // Two dots per cell of circumference: an even dotted circle.
                     dots: 32
@@ -213,19 +223,13 @@ Rectangle {
                     dimColor: root.style.dotGhost
                 }
 
-                // The target numeral, centred in the ring's hollow.
-                DotText {
-                    x: root.style.snap((dial.width - width) / 2)
-                    y: root.style.snap((dial.height - height) / 2)
+                // The target numeral in Doto dot-matrix, centred in the ring.
+                Text {
+                    anchors.centerIn: parent
                     text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
-                    face: "small"
-                    size: 1
-                    letterSpacing: 1
-                    pitch: root.style.pitch
-                    dotScale: root.style.digitScale
-                    litColor: root.style.ink
-                    accentColor: root.style.accent
-                    dimColor: root.style.textGhost
+                    textFormat: Text.PlainText
+                    font: root.style.dotHero
+                    color: root.style.ink
                 }
             }
 

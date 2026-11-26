@@ -29,7 +29,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     readonly property InstrumentStyle style: InstrumentStyle {
         theme: root.theme
     }
@@ -55,7 +55,7 @@ Item {
                        + (monitor.appliedPercent >= 0 ? monitor.appliedPercent + "%" : "—"));
         }
         if (client.hasTemperature) {
-            parts.push(Math.round(client.temperatureC) + "°C");
+            parts.push(Format.tempText(client.temperatureC, client.isFahrenheit));
         }
         parts.push(Format.timeText(client.nowEpochS));
         return parts.join(", ");
@@ -173,8 +173,7 @@ Item {
                     Text {
                         visible: root.client.hasTemperature
                         anchors.verticalCenter: parent.verticalCenter
-                        text: i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1°C",
-                                     Math.round(root.client.temperatureC))
+                        text: Format.tempText(root.client.temperatureC, root.client.isFahrenheit)
                         textFormat: Text.PlainText
                         font: root.style.dataFont
                         color: root.style.inkMuted

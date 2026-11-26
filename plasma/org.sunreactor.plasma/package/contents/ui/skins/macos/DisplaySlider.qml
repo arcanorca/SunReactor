@@ -12,6 +12,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
 
+import "../../components"
+
 T.Slider {
     id: control
 
@@ -42,20 +44,24 @@ T.Slider {
     implicitWidth: 200
     implicitHeight: trackHeight
 
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 250
-        onTriggered: control.requested(Math.round(control.value))
+        reportedValue: control.hasValue ? control.percent : -1
+        onCommitted: val => {
+            control.requested(val);
+            if (!control.pressed) {
+                control.value = Qt.binding(() => control.hasValue ? control.percent : 0);
+            }
+        }
     }
 
-    onMoved: throttle.restart()
+    onMoved: pressed ? throttle.schedule(Math.round(value)) : throttle.nudge(Math.round(value))
     onPressedChanged: {
         if (pressed) {
             return;
         }
-        throttle.stop();
-        control.requested(Math.round(control.value));
+        throttle.release(Math.round(value));
         // The user's drag is over: show the daemon's value again.
         control.value = Qt.binding(() => control.hasValue ? control.percent : 0);
     }

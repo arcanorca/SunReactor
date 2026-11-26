@@ -28,8 +28,8 @@ QQC2.AbstractButton {
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
     padding: 0
-    implicitWidth: root.style.snap(24)
-    implicitHeight: root.style.snap(24)
+    implicitWidth: root.style.snap(root.style.unit * 1.45)
+    implicitHeight: implicitWidth
 
     Accessible.role: Accessible.Button
     Accessible.name: root.text
@@ -41,12 +41,23 @@ QQC2.AbstractButton {
 
     onClicked: root.footer.client.runOnce(true)
 
-    background: Rectangle {
-        radius: width / 2
-        antialiasing: true
-        color: root.down ? root.style.theme.alpha(root.style.ink, 0.12) : "transparent"
-        border.width: root.style.hairline
-        border.color: root.visualFocus || root.hovered ? root.style.ink : root.style.outline
+    background: Item {
+        Image {
+            anchors.fill: parent
+            source: Qt.resolvedUrl("assets/nothing_orb_btn.png")
+            smooth: true
+            mipmap: true
+        }
+        Rectangle {
+            visible: root.visualFocus || root.hovered || root.down
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: width / 2
+            antialiasing: true
+            color: root.down ? root.style.theme.alpha(root.style.ink, 0.14) : "transparent"
+            border.width: root.style.hairline
+            border.color: root.visualFocus ? root.style.ink : root.style.accent
+        }
     }
 
     contentItem: Item {

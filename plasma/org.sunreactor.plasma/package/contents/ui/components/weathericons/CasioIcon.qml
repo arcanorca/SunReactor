@@ -1,6 +1,7 @@
 /*
- * Casio digital (LCD): the solid glyph in the LCD ink on a glass tile, as on the
- * calculator's display. The glass and the ink are the skin's own tokens.
+ * Casio digital (LCD): the monoline glyph in the LCD ink on a glass tile, as on
+ * the watch display. Overlapping sun, moon and cloud shapes trim cleanly instead
+ * of fusing into one silhouette. The glass and ink come from CasioStyle.
  */
 
 pragma ComponentBehavior: Bound
@@ -34,7 +35,7 @@ Item {
         anchors.fill: parent
         radius: Math.round(root.size * 0.12)
         color: style.glass
-        border.width: 1
+        border.width: style.hairline
         border.color: style.caseEdge
         antialiasing: true
     }
@@ -43,8 +44,8 @@ Item {
         anchors.centerIn: parent
         condition: root.condition
         night: root.night
-        glyphStyle: "solid"
+        glyphStyle: "line"
         palette: style.glyphPalette
-        size: Math.round(root.size * 0.7)
+        size: Math.round(root.size * 0.78)
     }
 }

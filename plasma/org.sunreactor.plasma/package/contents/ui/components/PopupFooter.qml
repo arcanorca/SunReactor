@@ -27,9 +27,10 @@ Item {
     required property Theme theme
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+    readonly property bool hasParts: Parts.ORDER.length > 0
 
-    implicitHeight: row.implicitHeight + 2 * Kirigami.Units.smallSpacing
-    implicitWidth: row.implicitWidth + 2 * Kirigami.Units.smallSpacing
+    implicitHeight: visible && hasParts ? row.implicitHeight + 2 * Kirigami.Units.smallSpacing : 0
+    implicitWidth: hasParts ? row.implicitWidth + 2 * Kirigami.Units.smallSpacing : 0
 
     PlasmaExtras.PlasmoidHeading {
         anchors.fill: parent
@@ -40,6 +41,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         visible: root.theme.available
+            && root.theme.themeId !== "wii"
+            && root.theme.themeId !== "ps3"
+            && root.theme.themeId !== "xbox360"
         color: root.theme.isPixel ? root.theme.bg : root.theme.raised
 
         Rectangle {

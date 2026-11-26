@@ -31,10 +31,10 @@ Item {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
     readonly property var clock: Casio.clockParts(Format.timeText(client.nowEpochS))
     readonly property string temperature: client.hasTemperature
-        ? Casio.numberText(client.temperatureC, 3) : "---"
+        ? Casio.numberText(Format.tempValue(client.temperatureC, client.isFahrenheit), 3) : "---"
 
     implicitWidth: bezel.implicitWidth
     implicitHeight: bezel.implicitHeight
@@ -98,7 +98,7 @@ Item {
             }
             Text {
                 Layout.alignment: Qt.AlignBottom
-                text: "°C"
+                text: Format.tempUnit(root.client.isFahrenheit)
                 textFormat: Text.PlainText
                 font: root.style.cap(root.style.sizeCap)
                 color: root.style.inkMuted

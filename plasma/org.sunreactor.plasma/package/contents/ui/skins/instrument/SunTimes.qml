@@ -28,7 +28,7 @@ ColumnLayout {
     readonly property InstrumentStyle style: InstrumentStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
 
     readonly property var sun: client.dayCurve && client.dayCurve.sun ? client.dayCurve.sun : ({})
     /*! Local midnight of the day the sun times belong to, and its length. */

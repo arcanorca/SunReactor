@@ -43,7 +43,7 @@ Item {
 
     readonly property var badge: {
         const t = root.theme;
-        if (!client.isConnected || client.mode === SunReactorClient.Offline) {
+        if (!(client.isConnected || client.statusStale) || client.mode === SunReactorClient.Offline) {
             return Hg.flag(t, "err", i18ndc(domain, "Daemon state in the status line", "OFFLINE"));
         }
         switch (client.mode) {
@@ -60,15 +60,14 @@ Item {
 
     readonly property var segments: {
         const out = [];
-        if (client.isConnected) {
+        if (client.isConnected || client.statusStale) {
             client.monitors.forEach(m => {
                 out.push([{ t: Term.shortName(m.logicalId).toLowerCase() + " ", c: root.theme.textMuted },
                           { t: m.appliedPercent >= 0 ? i18ndc(domain, "Brightness percentage", "%1%", m.appliedPercent) : "—",
                             c: root.theme.fg, b: true }]);
             });
             if (client.hasTemperature) {
-                out.push([{ t: i18ndc(domain, "Temperature in degrees Celsius, one decimal", "%1°C",
-                                      client.temperatureC.toFixed(1)), c: root.theme.fg }]);
+                out.push([{ t: Format.tempText(client.temperatureC, client.isFahrenheit, 1), c: root.theme.fg }]);
             }
         }
         if (client.nowEpochS > 0) {

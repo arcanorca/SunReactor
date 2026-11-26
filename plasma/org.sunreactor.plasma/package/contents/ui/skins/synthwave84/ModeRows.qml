@@ -106,24 +106,41 @@ ColumnLayout {
         }
     }
 
-    Text {
+    ColumnLayout {
         Layout.fillWidth: true
-        text: root.control.displayText
-        textFormat: Text.PlainText
-        font: root.style.bodyFont
-        color: root.control.hinting ? root.style.yellow : root.style.ink
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
-        elide: Text.ElideRight
-    }
+        spacing: root.style.gap * 0.6
 
-    Text {
-        Layout.fillWidth: true
-        visible: text.length > 0
-        text: root.control.note
-        textFormat: Text.PlainText
-        font: root.style.labelFont
-        color: root.style.cyan
+        Text {
+            Layout.fillWidth: true
+            text: root.control.primaryText
+            textFormat: Text.PlainText
+            font: root.style.labelFont
+            color: root.control.hinting ? root.style.yellow : root.style.ink
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.scheduleText
+            textFormat: Text.PlainText
+            font: root.style.dataSmallFont
+            color: root.style.cyan
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.control.note
+            textFormat: Text.PlainText
+            font: root.style.labelFont
+            color: root.style.pink
+        }
     }
 
     Components.ModeDurationMenu {

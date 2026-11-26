@@ -16,6 +16,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../modules"
+import "../../Format.js" as Format
 import "PixelFormat.js" as PixelFormat
 import "Sprites.js" as Sprites
 import "../../components"
@@ -28,7 +29,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     PixelStyle {
         id: pstyle
@@ -42,7 +43,7 @@ Item {
     }
     readonly property var clock: PixelFormat.timeParts(client.nowEpochS)
     readonly property string tempText: client.hasTemperature
-        ? i18ndc(domain, "Temperature in degrees Celsius, compact", "%1°C", Math.round(client.temperatureC)) : ""
+        ? Format.tempText(client.temperatureC, client.isFahrenheit) : ""
     readonly property string rightText: [clock.hm + clock.meridiem, tempText].filter(s => s.length > 0).join(" ")
     readonly property bool big: pstyle.kind === "casio"
     readonly property color barText: pstyle.kind === "amiga" ? theme.bg : (pstyle.kind === "mac" ? pstyle.ink : theme.fg)
@@ -207,7 +208,7 @@ Item {
                 x: bigClock.width + 3 + meridiem.artWidth + 4
                 y: 3 + bigClock.height - height
                 size: 1
-                text: Math.round(root.client.temperatureC) + "°"
+                text: Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit) + "°"
             }
         }
 

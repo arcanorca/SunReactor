@@ -31,7 +31,7 @@ ColumnLayout {
     /*! Hours that fit: 3 to 5, one column per 72 logical px. */
     readonly property int slots: Math.max(3, Math.min(5, Math.floor(width / root.style.snap(72))))
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     spacing: style.gap
 
@@ -99,7 +99,7 @@ ColumnLayout {
                                 Layout.alignment: Qt.AlignVCenter
                                 text: typeof hour.modelData.temperatureC === "number"
                                     ? i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                             Math.round(hour.modelData.temperatureC))
+                                             Format.tempRounded(hour.modelData.temperatureC, root.client.isFahrenheit))
                                     : "—"
                                 textFormat: Text.PlainText
                                 font: root.style.bodyMedium

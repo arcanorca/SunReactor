@@ -23,6 +23,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 
 ColumnLayout {
     id: root
@@ -35,7 +36,7 @@ ColumnLayout {
     readonly property CyberStyle style: CyberStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
     /*! The forecast and the sun times close this panel when the theme lists them. */
     readonly property bool forecastShown: root.theme.modules.indexOf("forecast") >= 0 && forecast.available
     readonly property bool sunShown: root.theme.modules.indexOf("suntimes") >= 0 && line.available
@@ -44,7 +45,7 @@ ColumnLayout {
     /*! Line glyph: the sky in cyan, the sun and moon in yellow. */
     readonly property var glyphColours: theme.glyphColours(theme.bg, theme.secondaryAccent)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: weatherText.detailsList(client.weatherDetails, "caps")
+    readonly property var extras: weatherText.detailsListInUnit(client.weatherDetails, "caps", client.isFahrenheit)
 
     spacing: 0
 
@@ -88,7 +89,7 @@ ColumnLayout {
                     id: temperature
 
                     visible: root.client.hasTemperature
-                    text: String(Math.round(root.client.temperatureC))
+                    text: String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit))
                     textFormat: Text.PlainText
                     font: root.style.midFont
                     color: root.style.yellow
@@ -96,7 +97,7 @@ ColumnLayout {
                 Text {
                     visible: root.client.hasTemperature
                     anchors.baseline: temperature.baseline
-                    text: "°C"
+                    text: Format.tempUnit(root.client.isFahrenheit)
                     textFormat: Text.PlainText
                     font: root.style.bodyFont
                     color: root.style.muted

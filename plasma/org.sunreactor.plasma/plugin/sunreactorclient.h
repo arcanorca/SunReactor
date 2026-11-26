@@ -50,10 +50,23 @@ public:
     };
     Q_ENUM(Capability)
 
+    /*! Typed transport/protocol failure classification for UI notices. */
+    enum ErrorKind {
+        None,
+        NotRunning,
+        PermissionDenied,
+        VersionMismatch,
+        Timeout,
+        Protocol,
+    };
+    Q_ENUM(ErrorKind)
+
 private:
     Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectionChanged)
+    Q_PROPERTY(bool statusStale READ statusStale NOTIFY statusStaleChanged)
     Q_PROPERTY(bool isBusy READ isBusy NOTIFY busyChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorOccurred)
+    Q_PROPERTY(ErrorKind errorKind READ errorKind NOTIFY errorKindChanged)
     Q_PROPERTY(QString socketPath READ socketPath WRITE setSocketPath NOTIFY socketPathChanged)
     Q_PROPERTY(bool popupOpen READ popupOpen WRITE setPopupOpen NOTIFY popupOpenChanged)
     Q_PROPERTY(bool pollingEnabled READ pollingEnabled WRITE setPollingEnabled NOTIFY pollingEnabledChanged)
@@ -91,6 +104,8 @@ private:
     Q_PROPERTY(int cloudDimmingPercent READ cloudDimmingPercent NOTIFY statusChanged)
     Q_PROPERTY(bool hasTemperature READ hasTemperature NOTIFY statusChanged)
     Q_PROPERTY(double temperatureC READ temperatureC NOTIFY statusChanged)
+    Q_PROPERTY(QString temperatureUnit READ temperatureUnit NOTIFY statusChanged)
+    Q_PROPERTY(bool isFahrenheit READ isFahrenheit NOTIFY statusChanged)
     /*! Bounded weather modifier; 1.0 means "no effect on the target". */
     Q_PROPERTY(double weatherMultiplier READ weatherMultiplier NOTIFY statusChanged)
     /*! Upcoming forecast intervals, oldest first, as maps for QML. */
@@ -137,8 +152,10 @@ public:
     ~SunReactorClient() override;
 
     [[nodiscard]] bool isConnected() const { return m_isConnected; }
+    [[nodiscard]] bool statusStale() const { return m_statusStale; }
     [[nodiscard]] bool isBusy() const { return m_isBusy; }
     [[nodiscard]] QString lastError() const { return m_lastError; }
+    [[nodiscard]] ErrorKind errorKind() const { return m_errorKind; }
     [[nodiscard]] QString socketPath() const { return m_customSocketPath; }
     [[nodiscard]] bool popupOpen() const { return m_popupOpen; }
     [[nodiscard]] bool pollingEnabled() const { return m_pollingEnabled; }
@@ -170,6 +187,8 @@ public:
     [[nodiscard]] int cloudDimmingPercent() const { return m_cloudDimmingPercent; }
     [[nodiscard]] bool hasTemperature() const { return m_hasTemperature; }
     [[nodiscard]] double temperatureC() const { return m_temperatureC; }
+    [[nodiscard]] QString temperatureUnit() const { return m_temperatureUnit; }
+    [[nodiscard]] bool isFahrenheit() const { return m_temperatureUnit == QLatin1String("fahrenheit"); }
     [[nodiscard]] double weatherMultiplier() const { return m_weatherMultiplier; }
     [[nodiscard]] QVariantList forecast() const { return m_forecast; }
     [[nodiscard]] QVariantMap weatherDetails() const { return m_weatherDetails; }
@@ -251,7 +270,9 @@ Q_SIGNALS:
     void detailsChanged();
     void nowChanged();
     void connectionChanged(bool connected);
+    void statusStaleChanged();
     void errorOccurred(const QString &errorMessage);
+    void errorKindChanged();
     void socketPathChanged();
     void busyChanged();
     void popupOpenChanged();
@@ -275,6 +296,7 @@ private Q_SLOTS:
     void onPollTimerTriggered();
     void onSlowTimerTriggered();
     void onThemeListRetryTriggered();
+    void onGraceTimerTriggered();
 
 private:
     [[nodiscard]] QJsonObject request(const QString &name) const;
@@ -285,7 +307,7 @@ private:
     [[nodiscard]] bool handleResponse(const QJsonObject &responseObj);
     [[nodiscard]] bool dispatchResponse(const QJsonObject &responseObj);
     void completeResponse();
-    void transportError(const QString &message = QString());
+    void transportError(const QString &message = QString(), ErrorKind kind = ErrorKind::None);
     /*! After an answer to list_themes: the list is no longer stale, and a failed or
         empty answer schedules the retry while connected. */
     void themeListAnswered(bool gotList);
@@ -305,9 +327,13 @@ private:
     void setPinned(const QVariantMap &theme, const QString &error);
     [[nodiscard]] bool isQueued(const QString &name, const QString &id = QString()) const;
     void clearStatus();
+    void clearStaleStatus();
     void setConnected(bool connected);
+    void setConnected(bool connected, bool allowGrace);
     void setBusy(bool busy);
-    void fail(const QString &message);
+    void setErrorKind(ErrorKind kind);
+    void fail(const QString &message, ErrorKind kind = ErrorKind::Protocol);
+    [[nodiscard]] static ErrorKind socketErrorKind(QLocalSocket::LocalSocketError socketError);
     void scheduleReconnect();
     void pruneStaleMutatingRequests();
     [[nodiscard]] static bool isMutatingRequest(const QJsonObject &request);
@@ -321,6 +347,7 @@ private:
     QTimer *m_slowTimer = nullptr;
     QTimer *m_themeListRetryTimer = nullptr;
     QTimer *m_reconnectTimer = nullptr;
+    QTimer *m_graceTimer = nullptr;
 
     struct QueuedRequest {
         QJsonObject object;
@@ -342,8 +369,10 @@ private:
 
     QString m_customSocketPath;
     QString m_lastError;
+    ErrorKind m_errorKind = ErrorKind::None;
 
     bool m_isConnected = false;
+    bool m_statusStale = false;
     bool m_isBusy = false;
     bool m_popupOpen = false;
     bool m_pollingEnabled = true;
@@ -371,10 +400,12 @@ private:
     QString m_weatherCondition;
     QString m_weatherDescription;
     QString m_weatherDayPhase;
+    QString m_weatherSourceKind;
     int m_cloudCoverPercent = SunReactor::UNKNOWN_PERCENT;
     int m_cloudDimmingPercent = SunReactor::UNKNOWN_PERCENT;
     bool m_hasTemperature = false;
     double m_temperatureC = 0.0;
+    QString m_temperatureUnit = QStringLiteral("celsius");
     double m_weatherMultiplier = 1.0;
     QVariantList m_forecast;
     QVariantMap m_weatherDetails;

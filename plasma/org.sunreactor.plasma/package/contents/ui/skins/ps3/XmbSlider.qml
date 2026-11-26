@@ -108,24 +108,24 @@ T.Slider {
     handle: Item {
         x: control.valueX - width / 2
         y: control.style.snap(control.centreY - height / 2)
-        width: control.thumbDiameter
+        width: control.thumbDiameter * 1.45
         height: width
         visible: control.known && control.enabled
 
-        // The halo: a soft white disc behind the thumb.
         Rectangle {
+            visible: control.visualFocus || control.pressed
             anchors.centerIn: parent
-            width: parent.width * (control.visualFocus || control.pressed ? 2.5 : 1.8)
+            width: parent.width * 1.45
             height: width
             radius: width / 2
-            color: control.style.alpha(control.style.ink,
-                                       control.visualFocus || control.pressed ? 0.3 : 0.14)
+            color: control.style.alpha(control.style.accentSoft, 0.25)
         }
 
-        Rectangle {
+        Image {
             anchors.fill: parent
-            radius: width / 2
-            color: control.style.ink
+            source: Qt.resolvedUrl("assets/ps3_slider_orb.png")
+            smooth: true
+            mipmap: true
         }
     }
 }

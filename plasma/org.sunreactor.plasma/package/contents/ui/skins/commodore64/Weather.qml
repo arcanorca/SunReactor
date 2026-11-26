@@ -14,6 +14,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 import "Petscii.js" as Petscii
 
 Item {
@@ -24,7 +25,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     WeatherText {
         id: weatherText
@@ -115,7 +116,8 @@ Item {
                     C64Text {
                         ink: style.hot
                         text: "TEMP " + (root.client.hasTemperature
-                            ? Math.round(root.client.temperatureC) + "°C" : "--°C")
+                            ? Format.tempText(root.client.temperatureC, root.client.isFahrenheit)
+                            : "--" + Format.tempUnit(root.client.isFahrenheit))
                         maximumArtWidth: surface.infoCols * style.cw
                     }
                     C64Text {

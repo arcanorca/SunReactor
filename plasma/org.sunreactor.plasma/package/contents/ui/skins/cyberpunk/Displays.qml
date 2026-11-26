@@ -29,11 +29,11 @@ ColumnLayout {
     readonly property CyberStyle style: CyberStyle {
         theme: root.theme
     }
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAll: monitors.length > 1
     /*! The automation controls close this panel when the theme lists them; Automation.qml then stays away. */
     readonly property bool hostsModes: root.theme.modules.indexOf("automation") >= 0
-    readonly property bool available: client.isConnected && (monitors.length > 0 || hostsModes)
+    readonly property bool available: Monitors.hasStatus(client) && (monitors.length > 0 || hostsModes)
     property var expandedLimits: ({})
 
     spacing: style.rowGap
@@ -51,8 +51,9 @@ ColumnLayout {
             style: root.style
             domain: root.domain
             channel: ""
-            name: i18nd(root.domain, "All displays")
+            name: root.settings.allDisplaysLabel
             percent: root.client.globalPercent
+            controllable: root.client.isConnected
             onRequested: v => root.client.setGlobalOverride(v, root.settings.overrideMinutes)
         }
 
@@ -67,6 +68,10 @@ ColumnLayout {
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
                 readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
+                readonly property string fullNotice: Monitors.monitorNotice(
+                    modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+                readonly property string tagNotice: Monitors.monitorTag(
+                    modelData, root.settings.pausedTag, root.settings.queuedTag)
 
                 Layout.fillWidth: true
                 style: root.style
@@ -77,19 +82,23 @@ ColumnLayout {
                 percent: modelData.percent
                 applied: modelData.appliedPercent
                 target: DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
-                minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-                hasLimits: true
+                minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                hasLimits: Monitors.hasValidLimits(modelData)
                 limitsOpen: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                 hasOverride: modelData.hasOverride === true
                 canClear: modelData.hasOverride === true || hasHold
-                controllable: modelData.enabled && !unavailable
+                controllable: root.client.isConnected && modelData.enabled && !unavailable
+                notice: fullNotice
                 stateText: {
                     if (!modelData.enabled) {
                         return i18ndc(root.domain, "Tag: this display is excluded from automation", "OFF");
                     }
                     if (unavailable) {
                         return i18ndc(root.domain, "Tag: this display is not answering", "NO LINK");
+                    }
+                    if (tagNotice.length > 0) {
+                        return tagNotice;
                     }
                     if (modelData.hasOverride) {
                         return i18ndc(root.domain, "Tag: this brightness was set by hand", "MAN");
@@ -101,7 +110,7 @@ ColumnLayout {
                     return "";
                 }
                 stateTone: !modelData.enabled ? root.style.faint
-                    : (hasHold ? root.style.yellow : root.style.red)
+                    : ((hasHold || tagNotice.length > 0) ? root.style.yellow : root.style.red)
 
                 onRequested: v => root.client.setMonitorOverride(modelData.logicalId, v, root.settings.overrideMinutes)
                 onLimitsToggled: root.expandedLimits = Monitors.toggleExpanded(root.expandedLimits, modelData.logicalId)

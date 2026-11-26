@@ -39,7 +39,7 @@ Item {
         client: root.client
         settings: root.settings
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     implicitWidth: bezel.implicitWidth
     implicitHeight: bezel.implicitHeight
@@ -62,15 +62,39 @@ Item {
         trailing: root.control.note
         footerShown: true
 
-        Text {
+        ColumnLayout {
             Layout.fillWidth: true
-            text: root.control.displayText
-            textFormat: Text.PlainText
-            font: root.style.body(root.style.sizeBody)
-            color: root.style.ink
-            wrapMode: Text.WordWrap
-            maximumLineCount: 2
-            elide: Text.ElideRight
+            spacing: root.style.gap
+
+            Text {
+                Layout.fillWidth: true
+                text: root.control.primaryText
+                textFormat: Text.PlainText
+                font: root.style.cap(Math.max(10, Math.round(root.style.unit * 0.62)))
+                color: root.control.hinting ? root.style.backlight : root.style.ink
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                visible: root.control.scheduleText.length > 0
+                Layout.preferredHeight: root.style.hairline
+                color: root.style.ghost
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.control.scheduleText
+                textFormat: Text.PlainText
+                font: root.style.data(Math.max(10, Math.round(root.style.unit * 0.64)))
+                color: root.style.inkMuted
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
         }
 
         footer: Repeater {

@@ -120,8 +120,8 @@ QtObject {
     readonly property real radius: theme.radius
     readonly property real gap: snap(Kirigami.Units.smallSpacing)
     readonly property real gap2: snap(Kirigami.Units.smallSpacing * 2)
-    readonly property real tilePad: snap(theme.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.smallSpacing * 1.5)
-    readonly property real rowGap: snap(Kirigami.Units.smallSpacing)
+    readonly property real tilePad: snap(theme.compact ? Kirigami.Units.smallSpacing : Kirigami.Units.smallSpacing * 1.1)
+    readonly property real rowGap: snap(Kirigami.Units.smallSpacing * 0.85)
     /*! The room a tile's shadow needs below it (see WiiTile). A column of tiles
         takes it out of its own spacing, so the gaps between tiles stay rowGap. */
     readonly property real shadowRoom: snap(3)

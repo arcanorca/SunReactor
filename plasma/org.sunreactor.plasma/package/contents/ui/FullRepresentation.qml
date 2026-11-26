@@ -28,6 +28,7 @@ import org.sunreactor.plasma
 
 import "components"
 import "engine"
+import "Format.js" as Format
 import "modules"
 import "modules/Modules.js" as Modules
 
@@ -43,6 +44,12 @@ PlasmaExtras.Representation {
         id: engine
 
         client: root.client
+        xboxDarkModeOverride: Plasmoid.configuration.xboxDarkMode || root.harnessXboxDark // qmllint disable missing-property
+    }
+
+    readonly property bool harnessXboxDark: {
+        const cfg = client.harnessConfig();
+        return cfg && (cfg.xboxDark === true || cfg.xboxDark === "true");
     }
 
     ModuleSettings {
@@ -185,7 +192,10 @@ PlasmaExtras.Representation {
 
         function load(): void {
             if (wanted.length > 0) {
-                setSource(Qt.resolvedUrl(wanted), { theme: root.theme });
+                const props = wanted.indexOf("ps3/Waves.qml") >= 0
+                    ? { theme: root.theme, harness: root.harness }
+                    : { theme: root.theme };
+                setSource(Qt.resolvedUrl(wanted), props);
             } else {
                 source = "";
             }
@@ -278,7 +288,7 @@ PlasmaExtras.Representation {
 
     /*! Live hint on the weather tab: the temperature, as the status line shows it. */
     readonly property string weatherHint: root.client.hasTemperature
-        ? i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1°C", Math.round(root.client.temperatureC))
+        ? Format.tempText(root.client.temperatureC, root.client.isFahrenheit)
         : ""
     readonly property var tabEntries: Modules.PAGES.map(page => ({
         id: page,
@@ -331,6 +341,60 @@ PlasmaExtras.Representation {
         }
     }
 
+    /*! True while live or 5 s reconnect-grace cached daemon status is available. */
+    readonly property bool hasLiveOrStale: root.client.isConnected || root.client.statusStale
+    readonly property string offlineIcon: {
+        switch (root.client.errorKind) {
+        case SunReactorClient.PermissionDenied:
+            return "dialog-password";
+        case SunReactorClient.VersionMismatch:
+            return "dialog-warning";
+        case SunReactorClient.Timeout:
+            return "chronometer";
+        case SunReactorClient.Protocol:
+            return "dialog-error";
+        default:
+            return "network-disconnect";
+        }
+    }
+    readonly property string offlineTitle: {
+        switch (root.client.errorKind) {
+        case SunReactorClient.PermissionDenied:
+            return i18nd(root.domain, "Permission denied");
+        case SunReactorClient.VersionMismatch:
+            return i18nd(root.domain, "Version mismatch");
+        case SunReactorClient.Timeout:
+            return i18nd(root.domain, "Connection timed out");
+        case SunReactorClient.Protocol:
+            return i18nd(root.domain, "Protocol error");
+        default:
+            return i18nd(root.domain, "Not connected");
+        }
+    }
+    readonly property string offlineExplanation: {
+        switch (root.client.errorKind) {
+        case SunReactorClient.PermissionDenied:
+            return i18nd(root.domain,
+                "Cannot access the sunreactord control socket. Check socket permissions and your user session.");
+        case SunReactorClient.VersionMismatch:
+            return i18nd(root.domain,
+                "The plasmoid and sunreactord use incompatible protocol versions. Update the plasmoid and daemon.");
+        case SunReactorClient.Timeout:
+            return i18nd(root.domain,
+                "sunreactord did not answer in time. Check its status or restart it with:");
+        case SunReactorClient.Protocol:
+            return root.client.lastError.length > 0
+                ? root.client.lastError
+                : i18nd(root.domain, "Received an unexpected or malformed response from sunreactord.");
+        default:
+            return i18nd(root.domain,
+                "The background service is not answering. Start it with:");
+        }
+    }
+    readonly property bool showStartCommand: root.client.errorKind === SunReactorClient.None
+        || root.client.errorKind === SunReactorClient.NotRunning
+        || root.client.errorKind === SunReactorClient.Timeout
+
     contentItem: ColumnLayout {
         spacing: 0
 
@@ -358,15 +422,15 @@ PlasmaExtras.Representation {
                 Layout.fillWidth: true
                 Layout.topMargin: root.theme.gridUnit
                 Layout.bottomMargin: root.theme.gridUnit
-                visible: !root.client.isConnected
-                iconName: "network-disconnect"
-                text: i18nd(root.domain, "Not connected")
-                explanation: i18nd(root.domain,
-                    "The background service is not answering. Start it with:")
+                visible: !root.hasLiveOrStale
+                iconName: root.offlineIcon
+                text: root.offlineTitle
+                explanation: root.offlineExplanation
 
                 CopyCommand {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignHCenter
+                    visible: root.showStartCommand
                     domain: root.domain
                     command: "systemctl --user start sunreactord"
                 }
@@ -377,7 +441,10 @@ PlasmaExtras.Representation {
 
                 model: root.topModules
 
-                delegate: ModuleSlot {}
+                delegate: ModuleSlot {
+                    enabled: root.client.isConnected
+                    opacity: root.client.statusStale ? 0.45 : 1.0
+                }
             }
 
             // The tab row: the tab bar (when the theme has both pages) and, at its
@@ -387,7 +454,9 @@ PlasmaExtras.Representation {
 
                 Layout.fillWidth: true
                 Layout.topMargin: Kirigami.Units.smallSpacing
-                visible: root.client.isConnected
+                visible: root.hasLiveOrStale
+                enabled: root.client.isConnected
+                opacity: root.client.statusStale ? 0.45 : 1.0
                 spacing: 0
 
                 Loader {
@@ -420,6 +489,9 @@ PlasmaExtras.Representation {
                         function onPicked(id: string): void {
                             root.showPage(id);
                         }
+                        function onDarkModeToggled(dark: bool): void {
+                            Plasmoid.configuration.xboxDarkMode = dark; // qmllint disable missing-property
+                        }
                     }
                 }
 
@@ -443,7 +515,7 @@ PlasmaExtras.Representation {
 
                     theme: root.theme
                     client: root.client
-                    visible: root.client.isConnected
+                    visible: root.hasLiveOrStale
                     // Plasma adds the main.xml configuration keys dynamically.
                     themeMode: Plasmoid.configuration.themeMode // qmllint disable missing-property
                     pinnedId: Plasmoid.configuration.pinnedTheme // qmllint disable missing-property
@@ -463,8 +535,10 @@ PlasmaExtras.Representation {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.topMargin: root.client.isConnected ? root.theme.sectionSpacing : 0
-            visible: root.client.isConnected
+            Layout.topMargin: root.hasLiveOrStale ? root.theme.sectionSpacing : 0
+            visible: root.hasLiveOrStale
+            enabled: root.client.isConnected
+            opacity: root.client.statusStale ? 0.45 : 1.0
             implicitHeight: {
                 for (let i = 0; i < pageRepeater.count; ++i) {
                     // The delegates are PagePanels; the Repeater types them as items.
@@ -583,6 +657,8 @@ PlasmaExtras.Representation {
 
         client: root.client
         theme: root.theme
-        visible: root.client.isConnected
+        visible: root.hasLiveOrStale && popupFooter.hasParts
+        enabled: root.client.isConnected
+        opacity: root.client.statusStale ? 0.45 : 1.0
     }
 }

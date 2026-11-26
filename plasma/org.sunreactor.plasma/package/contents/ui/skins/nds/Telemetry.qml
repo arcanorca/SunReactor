@@ -23,24 +23,22 @@ Item {
     readonly property NdsStyle style: NdsStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     implicitHeight: bar.height
 
-    Rectangle {
+    NdsPanel {
         id: bar
 
+        style: root.style
+        kind: "panel"
         width: root.width
         height: Math.round(root.style.gu * 1.9)
-        radius: height / 2
-        color: root.style.white
-        border.width: 1
-        border.color: root.style.line
 
         NdsStatusBar {
             anchors.fill: parent
-            anchors.leftMargin: Math.round(root.style.gu * 0.9)
-            anchors.rightMargin: Math.round(root.style.gu * 0.9)
+            anchors.leftMargin: Math.round(root.style.gu * 0.7)
+            anchors.rightMargin: Math.round(root.style.gu * 0.7)
             theme: root.theme
             style: root.style
             client: root.client

@@ -20,6 +20,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 
 ColumnLayout {
     id: root
@@ -32,11 +33,11 @@ ColumnLayout {
     readonly property InstrumentStyle style: InstrumentStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: weatherText.detailsList(client.weatherDetails, "compact")
+    readonly property var extras: weatherText.detailsListInUnit(client.weatherDetails, "compact", client.isFahrenheit)
 
     spacing: style.rowGap
 
@@ -75,11 +76,11 @@ ColumnLayout {
                 glowing: false
                 size: Math.round(root.style.sizeMid * 0.74)
                 font: root.style.midFont
-                text: String(Math.round(root.client.temperatureC))
+                text: String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit))
             }
             Text {
                 anchors.baseline: temperature.baseline
-                text: "°C"
+                text: Format.tempUnit(root.client.isFahrenheit)
                 textFormat: Text.PlainText
                 font: root.style.legendFont
                 color: root.style.inkMuted

@@ -30,7 +30,7 @@ Item {
     readonly property string domain: settings.domain
     readonly property int maxSlots: 5
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, maxSlots)
-    readonly property bool available: client.isConnected && client.weatherEnabled && client.forecast.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && client.forecast.length > 0
 
     WeatherText {
         id: weatherText
@@ -80,17 +80,15 @@ Item {
             }
         }
 
-        Rectangle {
+        NdsPanel {
             id: detailsCard
 
             x: root.inset
             y: root.detailsTop
             width: screen.glassWidth - 2 * root.inset
             height: root.detailsH
-            radius: Math.round(root.style.radius * 0.85)
-            color: root.style.white
-            border.width: 1
-            border.color: root.style.line
+            style: root.style
+            kind: "panel"
         }
 
         Repeater {
@@ -159,7 +157,7 @@ Item {
         y: root.pad
 
         Accessible.role: Accessible.ListItem
-        Accessible.name: Format.timeText(modelData.epochS) + " " + Math.round(modelData.temperatureC) + "°"
+        Accessible.name: Format.timeText(modelData.epochS) + " " + Format.tempRounded(modelData.temperatureC, root.client.isFahrenheit) + "°"
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -173,14 +171,14 @@ Item {
         }
         ThemedWeatherIcon {
             theme: root.theme
-            size: Math.round(Math.min(tile.width * 0.7, root.gu * 1.4))
+            size: Math.max(18, Math.round(Math.min(tile.width * 0.7, root.gu * 1.4)))
             condition: tile.modelData.condition || ""
             night: tile.modelData.isNight === true
             anchors.horizontalCenter: parent.horizontalCenter
             y: Math.round(root.gu * 0.8)
             NdsWeatherIcon {
                 anchors.centerIn: parent
-                size: Math.round(Math.min(tile.width * 0.7, root.gu * 1.4))
+                size: Math.max(18, Math.round(Math.min(tile.width * 0.7, root.gu * 1.4)))
                 theme: root.theme
                 condition: tile.modelData.condition || ""
                 night: tile.modelData.isNight === true
@@ -190,7 +188,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             y: tile.height - Math.round(root.gu * 1.1)
             text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
-                         Math.round(tile.modelData.temperatureC))
+                         Format.tempRounded(tile.modelData.temperatureC, root.client.isFahrenheit))
             textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold

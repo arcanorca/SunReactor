@@ -18,6 +18,7 @@ import "../modules/Modules.js" as Modules
 import "../components"
 import "../components/weathericons"
 import "../engine"
+import "../Format.js" as Format
 
 KCM.SimpleKCM {
     id: root
@@ -39,6 +40,7 @@ KCM.SimpleKCM {
     property string cfg_weatherIconStyle: "auto"
     property var cfg_moduleOrder: []
     property var cfg_hiddenModules: []
+    property bool cfg_xboxDarkMode: false
     property string cfg_panelMode: "sky"
     property string cfg_panelDisplay: ""
 
@@ -59,6 +61,7 @@ KCM.SimpleKCM {
     property string cfg_weatherIconStyleDefault: "auto"
     property var cfg_moduleOrderDefault: []
     property var cfg_hiddenModulesDefault: ["telemetry"]
+    property bool cfg_xboxDarkModeDefault: false
     property string cfg_panelModeDefault: "sky"
     property string cfg_panelDisplayDefault: ""
 
@@ -285,7 +288,7 @@ KCM.SimpleKCM {
                             visible: temperatureCheckBox.checked
                             text: preview.hasTemperature
                                 ? i18ndc(root.domain, "Temperature in degrees, panel-sized", "%1°",
-                                         Math.round(preview.temperatureC))
+                                         Format.tempRounded(preview.temperatureC, preview.isFahrenheit))
                                 : i18ndc(root.domain, "No value is known yet", "—")
                             font.features: ({ "tnum": 1 })
                             font.pixelSize: elevationCheckBox.checked
@@ -410,6 +413,17 @@ KCM.SimpleKCM {
                 Kirigami.FormData.label: i18nd(root.domain, "Maximum cloud dimming:")
                 spacing: Kirigami.Units.smallSpacing
 
+                CommitThrottle {
+                    id: cloudDimmingThrottle
+                    debounceMs: -1
+                    reportedValue: preview.cloudDimmingPercent
+                    onCommitted: percent => {
+                        if (cloudDimmingSlider.enabled) {
+                            preview.setCloudDimming(percent);
+                        }
+                    }
+                }
+
                 QQC2.Slider {
                     id: cloudDimmingSlider
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 10
@@ -419,9 +433,12 @@ KCM.SimpleKCM {
                     snapMode: QQC2.Slider.SnapAlways
                     enabled: preview.cloudDimmingPercent >= 0
                     value: enabled ? preview.cloudDimmingPercent : 0
+                    onMoved: pressed
+                        ? cloudDimmingThrottle.schedule(Math.round(value))
+                        : cloudDimmingThrottle.nudge(Math.round(value))
                     onPressedChanged: {
                         if (!pressed && enabled) {
-                            preview.setCloudDimming(Math.round(value))
+                            cloudDimmingThrottle.release(Math.round(value));
                         }
                     }
                 }

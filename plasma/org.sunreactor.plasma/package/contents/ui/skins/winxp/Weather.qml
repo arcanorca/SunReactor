@@ -17,6 +17,7 @@ import "../../engine"
 import "../../modules"
 import "../../components"
 import "../../components/weathericons"
+import "../../Format.js" as Format
 
 WinWindow {
     id: root
@@ -32,7 +33,7 @@ WinWindow {
     width: parent ? parent.width : 0
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
     title: i18ndc(domain, "Window title of the weather reading", "Weather")
 
     /*! The forecast and the sun status bar live in this card when they are listed. */
@@ -45,7 +46,7 @@ WinWindow {
 
     readonly property int change: Math.round((1.0 - client.weatherMultiplier) * 100)
     readonly property string stateNote: client.hasWeatherReading ? "" : weatherText.stateNote(client.weatherState)
-    readonly property var extras: weatherText.detailsList(client.weatherDetails, "full")
+    readonly property var extras: weatherText.detailsListInUnit(client.weatherDetails, "full", client.isFahrenheit)
 
     // The welcome pane: the sky icon at its left, the reading and what it does to the
     // targets, in the "Current conditions" group box as the XP welcome pane does.
@@ -84,7 +85,7 @@ WinWindow {
                     Text {
                         visible: root.client.hasTemperature
                         Layout.alignment: Qt.AlignVCenter
-                        text: String(Math.round(root.client.temperatureC))
+                        text: String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit))
                         textFormat: Text.PlainText
                         font: root.ui.heroFont
                         color: root.ui.ink
@@ -95,7 +96,7 @@ WinWindow {
                         visible: root.client.hasTemperature
                         Layout.alignment: Qt.AlignTop
                         Layout.topMargin: root.ui.snap(root.ui.sizeHero * 0.14)
-                        text: "°C"
+                        text: Format.tempUnit(root.client.isFahrenheit)
                         textFormat: Text.PlainText
                         font: root.ui.boldFont
                         color: root.ui.inkMuted

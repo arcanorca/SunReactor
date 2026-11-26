@@ -8,6 +8,8 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
@@ -23,8 +25,8 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected && client.monitors ? client.monitors : []
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property var monitors: Monitors.hasStatus(client) && client.monitors ? client.monitors : []
+    readonly property bool available: Monitors.hasDisplayData(client)
 
     C64Style {
         id: style
@@ -34,7 +36,7 @@ Item {
 
     /*! The rows: an ALL DISPLAYS line when there are several, then one per display. */
     readonly property var rowsModel: Monitors.rowsWithMaster(
-        monitors, client.globalPercent, client.isOverrideActive, i18nd(root.domain, "All displays"))
+        monitors, client.globalPercent, client.isOverrideActive, settings.allDisplaysLabel)
     property var expandedLimits: ({})
 
     implicitHeight: surface.implicitHeight
@@ -78,14 +80,20 @@ Item {
 
                     readonly property bool master: modelData.master === true
                     readonly property bool unavailable: Monitors.unavailable(modelData)
-                    readonly property bool controllable: modelData.enabled !== false && !unavailable
+                    readonly property bool offMark: modelData.enabled === false || unavailable
+                    readonly property bool controllable: root.client.isConnected && !offMark
                     readonly property int percent: modelData.percent !== undefined ? modelData.percent : -1
                     readonly property int minPct: modelData.minPct !== undefined ? modelData.minPct : -1
                     readonly property int maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
-                    readonly property bool hasLimits: !master && minPct >= 0 && maxPct >= 0
+                    readonly property bool hasLimits: !master && Monitors.hasValidLimits(modelData)
                     readonly property bool overridden: modelData.hasOverride === true
-                    /*! Name, then the 4-cell percent, a gap, CLR key (3 cells) when held, RNG key (3 cells) for limits. */
-                    readonly property int nameCols: Math.max(4, surface.cols - 5 - (overridden ? 4 : 0) - (hasLimits ? 4 : 0))
+                    readonly property string notice: master ? "" : Monitors.monitorNotice(
+                        modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+                    readonly property string noticeTag: master ? "" : Monitors.monitorTag(
+                        modelData, root.settings.pausedTag, root.settings.queuedTag)
+                    readonly property int tagCols: noticeTag.length > 0 ? Petscii.cells(noticeTag) + 1 : 0
+                    /*! Name, optional notice tag, then the 4-cell percent, a gap, CLR key (3 cells) when held, RNG key (3 cells) for limits. */
+                    readonly property int nameCols: Math.max(4, surface.cols - 5 - tagCols - (overridden ? 4 : 0) - (hasLimits ? 4 : 0))
 
                     width: body.width
 
@@ -102,6 +110,22 @@ Item {
                             }
                         }
                         Item {
+                            visible: monitorRow.noticeTag.length > 0
+                            width: monitorRow.tagCols * style.cw
+                            height: style.ch
+
+                            C64Text {
+                                ink: style.hot
+                                text: monitorRow.noticeTag
+                            }
+                            HoverHandler {
+                                id: c64TagHover
+                            }
+                            QQC2.ToolTip.visible: c64TagHover.hovered && monitorRow.notice.length > 0
+                            QQC2.ToolTip.text: monitorRow.notice
+                            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                        Item {
                             width: 4 * style.cw
                             height: style.ch
 
@@ -116,6 +140,7 @@ Item {
                         }
                         C64Keycap {
                             visible: monitorRow.overridden
+                            enabled: root.client.isConnected
                             text: "CLR"
                             fill: style.ink
                             ink: style.screen
@@ -146,7 +171,7 @@ Item {
                         height: style.ch
 
                         C64Gauge {
-                            visible: monitorRow.controllable
+                            visible: !monitorRow.offMark
                             cells: surface.cols - 2
                             cw: style.cw
                             value: monitorRow.percent < 0 ? 0 : monitorRow.percent
@@ -161,7 +186,7 @@ Item {
                                                                  root.settings.overrideMinutes)
                         }
                         C64Text {
-                            visible: !monitorRow.controllable
+                            visible: monitorRow.offMark
                             ink: style.quiet
                             text: monitorRow.unavailable ? "NO SIGNAL" : "OFF"
                         }
@@ -196,7 +221,7 @@ Item {
                                     from: limitRow.modelData.which === 0 ? 0 : monitorRow.minPct
                                     to: limitRow.modelData.which === 0 ? monitorRow.maxPct : 100
                                     value: limitRow.current
-                                    active: true
+                                    active: root.client.isConnected && monitorRow.hasLimits
                                     ink: style.ink
                                     quiet: style.quiet
                                     accessibleName: limitRow.modelData.which === 0

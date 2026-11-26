@@ -10,7 +10,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
 import "../../engine"
@@ -31,9 +33,9 @@ WinWindow {
     width: parent ? parent.width : 0
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
     title: i18ndc(domain, "Window title of the display brightness", "Displays")
 
@@ -44,12 +46,13 @@ WinWindow {
         required property WinStyle style
         property string name: ""
         property int percent: -1
-        property int minPct: 15
-        property int maxPct: 60
+        property int minPct: -1
+        property int maxPct: -1
         property bool hasLimits: false
         property bool hasOverride: false
         property bool controllable: true
         property string hint: ""
+        property string notice: ""
         property bool limitsOpen: false
 
         /*! The name column, shared by the row and its range trackbars so the
@@ -98,21 +101,23 @@ WinWindow {
                 font: row.style.figureFont
                 color: row.style.ink
             }
-            Text {
-                Layout.preferredWidth: row.style.snap(row.style.unit * 2.6)
-                horizontalAlignment: Text.AlignRight
+            WinButton {
+                visible: row.hasOverride || row.hasLimits || row.hint.length > 0
+                enabled: row.hasOverride ? root.client.isConnected : row.hasLimits
+                Layout.preferredWidth: Math.max(row.style.snap(row.style.unit * 2.9), implicitWidth)
+                Layout.preferredHeight: row.style.snap(row.style.sizeBody * 1.45)
+                style: row.style
+                current: !row.hasOverride && row.limitsOpen
                 text: row.hint.length > 0 ? row.hint
                     : (row.hasLimits ? row.minPct + "–" + row.maxPct : "")
-                textFormat: Text.PlainText
-                font: row.style.smallBoldFont
-                color: row.hasOverride ? row.style.frame : row.style.inkMuted
+                onClicked: row.hasOverride ? row.clearOverrideRequested() : row.limitsToggled()
 
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: row.hasOverride
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: row.clearOverrideRequested()
+                HoverHandler {
+                    id: hintHover
                 }
+                QQC2.ToolTip.visible: hintHover.hovered && row.notice.length > 0
+                QQC2.ToolTip.text: row.notice
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
         }
 
@@ -139,7 +144,7 @@ WinWindow {
                     from: 0
                     to: Math.max(0, row.maxPct)
                     value: row.minPct
-                    controllable: row.controllable
+                    controllable: row.controllable && row.hasLimits
                     onRequested: v => row.limitsRequested(Math.min(v, row.maxPct), row.maxPct)
                 }
                 Text {
@@ -169,7 +174,7 @@ WinWindow {
                     from: Math.min(100, row.minPct)
                     to: 100
                     value: row.maxPct
-                    controllable: row.controllable
+                    controllable: row.controllable && row.hasLimits
                     onRequested: v => row.limitsRequested(row.minPct, Math.max(v, row.minPct))
                 }
                 Text {
@@ -193,11 +198,14 @@ WinWindow {
             Layout.fillWidth: true
             visible: root.showAllDisplays
             style: root.ui
-            name: i18nd(root.domain, "All displays")
+            name: root.settings.allDisplaysLabel
             percent: root.client.globalPercent
+            controllable: root.client.isConnected
+            hasOverride: root.client.isOverrideActive
             hint: root.client.isOverrideActive
                 ? i18ndc(root.domain, "This brightness was set by hand", "Manual") : ""
             onRequested: v => root.client.setGlobalOverride(v, root.settings.overrideMinutes)
+            onClearOverrideRequested: root.client.clearAllOverrides()
         }
 
         Repeater {
@@ -210,23 +218,30 @@ WinWindow {
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
                 readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
+                readonly property string tagNotice: Monitors.monitorTag(
+                    modelData, root.settings.pausedTag, root.settings.queuedTag)
 
                 Layout.fillWidth: true
                 style: root.ui
                 name: modelData.logicalId
                 percent: modelData.percent
-                minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-                hasLimits: true
+                minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                hasLimits: Monitors.hasValidLimits(modelData)
                 limitsOpen: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                 hasOverride: modelData.hasOverride === true || hasHold
-                controllable: modelData.enabled && !unavailable
+                controllable: root.client.isConnected && modelData.enabled && !unavailable
+                notice: Monitors.monitorNotice(
+                    modelData, root.settings.contestedNotice, root.settings.deferredNotice)
                 hint: {
                     if (!modelData.enabled) {
                         return i18ndc(root.domain, "Display tag: excluded from automation", "Off");
                     }
                     if (unavailable) {
                         return i18ndc(root.domain, "Display tag: not answering", "No link");
+                    }
+                    if (tagNotice.length > 0) {
+                        return tagNotice;
                     }
                     if (modelData.hasOverride) {
                         return i18ndc(root.domain, "This brightness was set by hand", "Manual");

@@ -34,7 +34,7 @@ ColumnLayout {
 
     /*! The first five intervals after now. */
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 5)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     /*! Whether an instant falls outside the daylight hours of the sun times. */
     function isNight(epochS) {
@@ -63,14 +63,14 @@ ColumnLayout {
                 style: root.style
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
-                pad: root.style.gap
+                pad: root.style.snap(root.style.tilePad * 0.9)
                 implicitHeight: column.implicitHeight + 2 * slot.pad
 
                 ColumnLayout {
                     id: column
 
                     anchors.fill: parent
-                    spacing: 0
+                    spacing: root.style.gap * 0.25
 
                     Text {
                         Layout.alignment: Qt.AlignHCenter
@@ -81,14 +81,14 @@ ColumnLayout {
                     }
                     ThemedWeatherIcon {
                         theme: root.theme
-                        size: root.style.snap(root.style.unit * 1.1)
+                        size: root.style.snap(root.style.unit * 1.55)
                         condition: slot.modelData.condition
                         night: root.isNight(slot.modelData.epochS)
                         Layout.alignment: Qt.AlignHCenter
                         WiiWeatherIcon {
                             anchors.centerIn: parent
                             theme: root.theme
-                            size: root.style.snap(root.style.unit * 1.1)
+                            size: root.style.snap(root.style.unit * 1.55)
                             condition: slot.modelData.condition
                             night: root.isNight(slot.modelData.epochS)
                         }
@@ -96,7 +96,7 @@ ColumnLayout {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                     Math.round(slot.modelData.temperatureC))
+                                     Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
                         textFormat: Text.PlainText
                         font: root.style.bodyBoldFont
                         color: root.style.ink

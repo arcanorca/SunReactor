@@ -24,7 +24,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property var curves: client.dayCurve && client.dayCurve.monitors ? client.dayCurve.monitors : []
-    readonly property bool available: client.isConnected && curves.length > 0 && curves[0].samples.length > 1
+    readonly property bool available: (client.isConnected || client.statusStale) && curves.length > 0 && curves[0].samples.length > 1
     readonly property var samples: available ? curves[0].samples : []
     readonly property real t0: available ? samples[0].t : 0
     readonly property real t1: available ? samples[samples.length - 1].t : 1

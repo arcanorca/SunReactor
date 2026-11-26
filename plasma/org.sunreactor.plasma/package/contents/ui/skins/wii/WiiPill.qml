@@ -1,14 +1,6 @@
 /*
- * A rounded pill button, the Wii menu's bottom-corner buttons and OK / Back
- * pills. Two variants:
- *
- *   "fill"     the mode buttons: the chosen one is filled deep Wii blue with
- *              white text; the others are light, outlined in grey. `called`
- *              gives an unchosen one the blue outline (the way back).
- *   "outline"  the page tabs: a white pill, outlined in blue when chosen.
- *
- * `hint` is a second, smaller text after the label; `arrow` adds a chevron.
- * The owner sets the accessible role and handles `clicked`.
+ * Wii Menu glossy capsule button backed by 9-slice BorderImage assets
+ * (wii_pill_idle.png, wii_pill_outline.png, wii_pill_fill.png).
  */
 
 pragma ComponentBehavior: Bound
@@ -23,16 +15,13 @@ Item {
     property string label: ""
     property string hint: ""
     property bool current: false
-    /*! The way back: an unchosen "fill" pill gets the blue outline. */
     property bool called: false
     property string variant: "fill"
     property bool arrow: false
-    /*! Keyboard focus: a thin blue ring outside the pill. */
     property bool focused: false
     readonly property bool hovered: mouse.containsMouse
 
     signal clicked()
-    /*! The chevron was pressed: a separate target, for the pause durations. */
     signal arrowClicked()
 
     readonly property bool filled: variant === "fill" && current
@@ -44,41 +33,19 @@ Item {
     implicitHeight: style.pillHeight
     opacity: enabled ? 1 : 0.5
 
-    // A faint shadow under the pill, then the face.
-    Rectangle {
-        x: 0
-        y: root.style.snap(1.5)
-        width: root.width
-        height: root.height
-        radius: root.radius
-        antialiasing: true
-        color: root.style.alpha(root.style.ink, 0.06)
-        visible: !root.filled
+    BorderImage {
+        anchors.fill: parent
+        source: Qt.resolvedUrl(root.filled ? "assets/wii_pill_fill.png"
+            : (root.current || root.called ? "assets/wii_pill_outline.png" : "assets/wii_pill_idle.png"))
+        border { left: 14; top: 12; right: 14; bottom: 12 }
+        horizontalTileMode: BorderImage.Stretch
+        verticalTileMode: BorderImage.Stretch
+        smooth: true
     }
-    Rectangle {
-        id: face
 
-        anchors.fill: parent
-        radius: root.radius
-        antialiasing: true
-        color: root.filled ? root.style.accentInk
-            : (root.variant === "outline" && root.current ? root.style.paper : root.style.face)
-        border.width: root.style.line
-        border.color: root.filled ? root.style.accentInk
-            : (root.current || root.called ? root.style.accentLine : root.style.outline)
-    }
-    // The chosen outline or the way back: a 2 px blue edge.
-    Rectangle {
-        visible: !root.filled && (root.current || root.called)
-        anchors.fill: parent
-        radius: root.radius
-        antialiasing: true
-        color: "transparent"
-        border.width: root.style.line2
-        border.color: root.style.accentLine
-    }
     Rectangle {
         visible: root.focused
+        property bool auditIgnore: true
         x: -root.style.line2 * 2
         y: -root.style.line2 * 2
         width: root.width + root.style.line2 * 4
@@ -89,13 +56,13 @@ Item {
         border.width: root.style.line2
         border.color: root.style.accent
     }
-    // Hover: a light blue wash over the face.
+
     Rectangle {
         visible: root.hovered && !root.filled
         anchors.fill: parent
         radius: root.radius
         antialiasing: true
-        color: root.style.alpha(root.style.accent, 0.1)
+        color: root.style.alpha(root.style.accent, 0.08)
     }
 
     Row {
@@ -140,7 +107,6 @@ Item {
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.clicked()
     }
-    // The chevron's own target, drawn over the pill so it takes its clicks first.
     MouseArea {
         visible: root.arrow
         x: chevron.x - root.style.gap

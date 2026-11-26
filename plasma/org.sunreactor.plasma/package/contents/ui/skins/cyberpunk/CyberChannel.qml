@@ -13,7 +13,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 
 ColumnLayout {
     id: root
@@ -25,13 +27,14 @@ ColumnLayout {
     property int percent: -1
     property int applied: -1
     property real target: -1
-    property int minPct: 15
-    property int maxPct: 60
+    property int minPct: -1
+    property int maxPct: -1
     property bool hasLimits: false
     property bool hasOverride: false
     property bool controllable: true
     property string stateText: ""
     property color stateTone: style.red
+    property string notice: ""
     property bool canClear: false
     /*! A hairline above the row: the row follows another one in the panel. */
     property bool ruled: false
@@ -39,7 +42,7 @@ ColumnLayout {
 
     readonly property bool master: channel.length === 0
     readonly property bool showTarget: !master && target >= 0 && Math.round(target) !== applied
-    readonly property bool showRange: !master && hasLimits
+    readonly property bool showRange: !master && hasLimits && minPct >= 0 && maxPct >= 0
 
     signal requested(int percent)
     signal limitsRequested(int minPct, int maxPct)
@@ -84,6 +87,14 @@ ColumnLayout {
             textFormat: Text.PlainText
             font: root.style.labelFont
             color: root.stateTone
+
+            HoverHandler {
+                id: stateHover
+            }
+
+            QQC2.ToolTip.visible: stateHover.hovered && root.notice.length > 0
+            QQC2.ToolTip.text: root.notice
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
 
             MouseArea {
                 anchors.fill: parent
@@ -201,7 +212,7 @@ ColumnLayout {
                 from: 0
                 to: Math.max(0, maxBar.shown)
                 value: root.minPct
-                interactive: true
+                interactive: root.controllable && root.showRange
                 litColor: root.style.cyan
                 accessibleName: root.domain.length > 0
                     ? i18ndc(root.domain, "Night minimum boundary", "Night minimum") : "Night minimum"
@@ -236,7 +247,7 @@ ColumnLayout {
                 from: Math.min(100, minBar.shown)
                 to: 100
                 value: root.maxPct
-                interactive: true
+                interactive: root.controllable && root.showRange
                 litColor: root.style.cyan
                 accessibleName: root.domain.length > 0
                     ? i18ndc(root.domain, "Day maximum boundary", "Day maximum") : "Day maximum"

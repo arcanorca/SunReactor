@@ -22,10 +22,10 @@ ColumnLayout {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     /*! A master slider only earns its place once there is more than one display. */
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     spacing: root.theme.spacing
@@ -33,9 +33,10 @@ ColumnLayout {
     DisplayItem {
         visible: root.showAllDisplays
         theme: root.theme
-        text: i18nd(root.domain, "All displays")
+        text: root.settings.allDisplaysLabel
         iconName: "brightness-high"
         percent: root.client.globalPercent
+        controllable: root.client.isConnected
         hint: root.client.isOverrideActive ? i18ndc(root.domain, "This brightness was set by hand", "Manual") : ""
         onRequested: percent => root.client.setGlobalOverride(percent, root.settings.overrideMinutes)
     }
@@ -58,24 +59,32 @@ ColumnLayout {
             required property var modelData
 
             readonly property bool unavailable: Monitors.unavailable(modelData)
+            readonly property string fullNotice: Monitors.monitorNotice(
+                modelData, root.settings.contestedNotice, root.settings.deferredNotice)
+            readonly property string tagNotice: Monitors.monitorTag(
+                modelData, root.settings.pausedTag, root.settings.queuedTag)
 
             theme: root.theme
             text: modelData.logicalId
             iconName: "video-display-brightness"
             percent: modelData.percent
-            minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-            maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-            hasLimits: true
+            minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+            maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+            hasLimits: Monitors.hasValidLimits(modelData)
             limitsExpanded: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
             externalHold: modelData.externalHold !== undefined ? modelData.externalHold : null
             hasOverride: modelData.hasOverride === true
-            controllable: modelData.enabled && !unavailable
+            controllable: root.client.isConnected && modelData.enabled && !unavailable
+            notice: fullNotice
             hint: {
                 if (!modelData.enabled) {
                     return i18ndc(root.domain, "This display is excluded from automation", "Off");
                 }
                 if (unavailable) {
                     return i18ndc(root.domain, "This display is not answering", "Unavailable");
+                }
+                if (tagNotice.length > 0) {
+                    return tagNotice;
                 }
                 if (modelData.hasOverride) {
                     return i18ndc(root.domain, "This brightness was set by hand", "Manual");

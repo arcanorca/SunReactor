@@ -28,7 +28,7 @@ PlasmaComponents3.ItemDelegate {
 
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, slots)
 
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     Layout.fillWidth: true
 
@@ -77,7 +77,7 @@ PlasmaComponents3.ItemDelegate {
                     horizontalAlignment: Text.AlignHCenter
                     text: i18ndc(root.settings.domain,
                                  "Temperature in degrees, compact", "%1°",
-                                 Math.round(slot.modelData.temperatureC))
+                                 Format.tempRounded(slot.modelData.temperatureC, root.client.isFahrenheit))
                     textFormat: Text.PlainText
                     font.features: ({ "tnum": 1 })
                     font.family: root.theme.digitsFont

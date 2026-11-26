@@ -34,8 +34,17 @@ QtObject {
 
     /*! "automatic", "manual", "paused", or "" while the daemon does not answer. */
     readonly property string choice: {
-        if (!client.isConnected) {
+        if (!client.isConnected && !client.statusStale) {
             return "";
+        }
+        if (client.isSuspended) {
+            return "paused";
+        }
+        if (client.isOverrideActive) {
+            return "manual";
+        }
+        if (!client.isConnected) {
+            return "automatic";
         }
         switch (client.mode) {
         case SunReactorClient.Paused:
@@ -67,7 +76,7 @@ QtObject {
         }
     ]
 
-    readonly property bool idleDimmed: choice !== "" && client.mode === SunReactorClient.IdleDimmed
+    readonly property bool idleDimmed: choice !== "" && (client.isConnected || client.statusStale) && client.mode === SunReactorClient.IdleDimmed
     readonly property string note: idleDimmed ? i18nd(domain, "Dimmed while idle") : ""
 
     // --- the day curve of the first display ----------------------------------
@@ -119,7 +128,7 @@ QtObject {
         return i18ndc(domain, "Time left, minutes", "%1 min left", minutes);
     }
 
-    readonly property string statusText: {
+    readonly property string policyText: {
         switch (choice) {
         case "paused":
             return client.suspendUntilEpochS > client.nowEpochS
@@ -134,20 +143,26 @@ QtObject {
                     : i18nd(domain, "Set by hand · until you switch back"),
                 remaining(client.overrideUntilEpochS)
             ]);
-        case "automatic": {
-            const title = client.hasWeatherReading
+        case "automatic":
+            return client.hasWeatherReading
                 ? i18nd(domain, "Following the sun and the weather")
                 : i18nd(domain, "Following the sun");
-            let next = nextText;
-            if (next.length === 0 && milestones.length > 0) {
-                next = i18nd(domain, "Nothing more today");
-            }
-            return joinParts([title, next]);
-        }
         default:
             return "";
         }
     }
+
+    readonly property string automaticScheduleText: {
+        if (choice !== "automatic") {
+            return "";
+        }
+        if (nextText.length > 0) {
+            return nextText;
+        }
+        return milestones.length > 0 ? i18nd(domain, "Nothing more today") : "";
+    }
+
+    readonly property string statusText: joinParts([policyText, automaticScheduleText])
 
     /*! Shown in place of the sentence for a few seconds after Manual moved focus. */
     property bool hinting: false
@@ -156,6 +171,8 @@ QtObject {
     readonly property string hintText: sliderFocused
         ? i18nd(domain, "Drag a slider to take over")
         : i18nd(domain, "Change a display to take over")
+    readonly property string primaryText: hinting ? hintText : policyText
+    readonly property string scheduleText: hinting ? "" : automaticScheduleText
     readonly property string displayText: hinting ? hintText : statusText
     /*! The status sentence and the idle note, joined for one line; the hint replaces both. */
     readonly property string statusLine: hinting || note.length === 0 ? displayText : displayText + " · " + note

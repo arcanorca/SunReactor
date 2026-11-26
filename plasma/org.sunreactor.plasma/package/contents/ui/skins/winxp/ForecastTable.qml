@@ -31,7 +31,7 @@ ColumnLayout {
     readonly property string domain: settings.domain
     /*! Upcoming intervals, at most three. */
     readonly property var points: ForecastRules.upcoming(client.forecast, client.nowEpochS, 3)
-    readonly property bool available: client.isConnected && client.weatherEnabled && points.length > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
     WeatherText {
         id: weatherText
@@ -51,7 +51,7 @@ ColumnLayout {
         case 1:
             return weatherText.conditionLabel(point.condition) || "—";
         case 2:
-            return i18ndc(domain, "Temperature in degrees, compact", "%1°", Math.round(point.temperatureC));
+            return i18ndc(domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(point.temperatureC, root.client.isFahrenheit));
         default:
             return i18ndc(domain, "Percentage", "%1%", Math.round(point.cloudCoverPercent));
         }

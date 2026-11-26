@@ -24,6 +24,7 @@ import "../../engine"
 import "../../components/weathericons"
 import "../../modules"
 import "../../components"
+import "../../Format.js" as Format
 
 Rectangle {
     id: root
@@ -36,7 +37,7 @@ Rectangle {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.weatherEnabled
+    readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled
 
     /*! A reading the daemon holds, and whether it is fresh enough to show its effect. */
     readonly property bool reading: client.hasWeatherReading
@@ -81,7 +82,7 @@ Rectangle {
         return [
             { k: i18ndc(root.domain, "Short legend: apparent temperature", "FEELS"),
               v: d.feelsLikeC !== undefined
-                  ? i18ndc(root.domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) : none },
+                  ? i18ndc(root.domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(d.feelsLikeC, root.client.isFahrenheit)) : none },
             { k: i18ndc(root.domain, "Short legend: relative humidity", "RH"),
               v: d.humidityPercent !== undefined
                   ? i18ndc(root.domain, "Percentage", "%1%", Math.round(d.humidityPercent)) : none },
@@ -122,21 +123,18 @@ Rectangle {
             spacing: root.style.pad
 
             ThemedWeatherIcon {
-                // The 12 x 12 pictogram, drawn bare: its lit dots only, no unlit grid.
                 Layout.alignment: Qt.AlignTop
                 theme: root.theme
-                size: root.style.pitchIcon * 12
+                size: root.style.snap(root.style.unit * 2.8)
                 condition: root.reading ? root.client.weatherCondition : ""
                 night: root.reading && root.client.weatherIsNight
 
-                DotIcon {
+                NothingIcon {
                     anchors.centerIn: parent
-                    pitch: root.style.pitchIcon
+                    theme: root.theme
+                    size: root.style.snap(root.style.unit * 2.8)
                     condition: root.reading ? root.client.weatherCondition : ""
                     night: root.reading && root.client.weatherIsNight
-                    litColor: root.style.ink
-                    accentColor: root.style.accent
-                    dimColor: root.style.textGhost
                 }
             }
 
@@ -145,18 +143,13 @@ Rectangle {
                 Layout.alignment: Qt.AlignVCenter
                 spacing: root.style.gap * 0.5
 
-                DotText {
+                Text {
                     visible: root.reading && root.client.hasTemperature
                     text: i18ndc(root.domain, "Temperature in degrees, compact", "%1°",
-                                 Math.round(root.client.temperatureC))
-                    face: "small"
-                    size: 1
-                    letterSpacing: 1
-                    pitch: root.style.pitch
-                    dotScale: root.style.digitScale
-                    litColor: root.style.ink
-                    accentColor: root.style.accent
-                    dimColor: root.style.textGhost
+                                 Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit))
+                    textFormat: Text.PlainText
+                    font: root.style.dotHero
+                    color: root.style.ink
                 }
 
                 Text {

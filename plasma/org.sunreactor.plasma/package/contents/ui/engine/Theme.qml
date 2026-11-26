@@ -64,7 +64,26 @@ Item {
 
     // --- palette ---------------------------------------------------------------
 
+    property bool xboxDarkModeLocal: false
+    readonly property bool xboxDarkMode: themeId === "xbox360"
+        && ((overrides && overrides.xboxDarkMode === true) || xboxDarkModeLocal)
+    readonly property var xboxDarkPalette: ({
+        bg: "#14181c",
+        fg: "#eef3f7",
+        accent: "#80c342",
+        secondaryAccent: "#a3d977",
+        borderActive: "#80c342",
+        borderInactive: "#46525e",
+        textMuted: "#94a2b0",
+        success: "#74d438",
+        warning: "#f5a623",
+        error: "#e5483b",
+    })
+
     function pick(key, fallback) {
+        if (xboxDarkMode && xboxDarkPalette[key]) {
+            return xboxDarkPalette[key];
+        }
         return available && paletteMap[key] ? paletteMap[key] : fallback;
     }
 

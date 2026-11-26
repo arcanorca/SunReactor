@@ -25,7 +25,7 @@ ColumnLayout {
     }
     /*! Drawn inside the Displays column instead, when the theme lists both. */
     readonly property bool hosted: root.theme.modules.indexOf("displays") >= 0
-    readonly property bool available: client.isConnected && !hosted
+    readonly property bool available: (client.isConnected || client.statusStale) && !hosted
 
     spacing: 0
 

@@ -34,9 +34,9 @@ ColumnLayout {
     readonly property XmbStyle style: XmbStyle {
         theme: root.theme
     }
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     spacing: 0
@@ -51,8 +51,9 @@ ColumnLayout {
     DisplayRow {
         visible: root.showAllDisplays
         style: root.style
-        name: i18nd(root.domain, "All displays")
+        name: root.settings.allDisplaysLabel
         percent: root.client.globalPercent
+        controllable: root.client.isConnected
         stateText: root.client.isOverrideActive
             ? i18ndc(root.domain, "This brightness was set by hand", "Manual") : ""
         onRequested: percent => root.client.setGlobalOverride(percent, root.settings.overrideMinutes)
@@ -68,23 +69,28 @@ ColumnLayout {
 
             readonly property bool unavailable: Monitors.unavailable(modelData)
             readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
+            readonly property string notice: Monitors.monitorNotice(
+                modelData, root.settings.contestedNotice, root.settings.deferredNotice)
 
             style: root.style
             name: modelData.logicalId
             percent: modelData.percent
             target: DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
-            minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-            maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-            hasLimits: true
+            minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+            maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+            hasLimits: Monitors.hasValidLimits(modelData)
             limitsExpanded: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
             hasOverride: modelData.hasOverride === true || hasHold
-            controllable: modelData.enabled && !unavailable
+            controllable: root.client.isConnected && modelData.enabled && !unavailable
             stateText: {
                 if (!modelData.enabled) {
                     return i18ndc(root.domain, "This display is excluded from automation", "Off");
                 }
                 if (unavailable) {
                     return i18ndc(root.domain, "This display is not answering", "Unavailable");
+                }
+                if (notice.length > 0) {
+                    return notice;
                 }
                 if (modelData.hasOverride) {
                     return i18ndc(root.domain, "This brightness was set by hand", "Manual");

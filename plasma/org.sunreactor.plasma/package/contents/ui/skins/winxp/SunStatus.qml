@@ -26,7 +26,7 @@ RowLayout {
         theme: root.theme
     }
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var allEntries: [
         { label: i18ndc(domain, "Sun times: sunrise", "Rise"), epoch: client.sunriseEpochS },
         { label: i18ndc(domain, "Sun times: solar noon", "Noon"), epoch: client.solarNoonEpochS },

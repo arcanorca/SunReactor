@@ -1,7 +1,8 @@
 /*
- * The console's status bar: wifi bars (lit while the daemon answers), the
- * daemon's state word (telemetry only), the battery (lit by the state) and the
- * clock on the right. Drawn with shapes; the words are Nunito Bold.
+ * The Nintendo DS console's status bar: ascending pixel signal bars (proximity
+ * to configured max brightness), optional state word (telemetry only), solar-
+ * synced pixel battery (charges sunrise->sunset, drains to 0 before sunrise)
+ * and clock on the right, sitting cleanly inside the sky screen.
  */
 
 pragma ComponentBehavior: Bound
@@ -12,6 +13,7 @@ import org.sunreactor.plasma
 
 import "../../engine"
 import "../../Format.js" as Format
+import "NdsStatusRules.js" as StatusRules
 
 RowLayout {
     id: root
@@ -19,26 +21,16 @@ RowLayout {
     required property Theme theme
     required property NdsStyle style
     required property SunReactorClient client
-    /*! Ink for the words and the battery outline. */
+    /*! Ink for the clock and status text. */
     property color ink: style.ink
-    /*! Show the daemon's state word between the wifi bars and the battery. */
+    /*! Show the daemon's state word between the signal bars and the battery. */
     property bool showState: false
 
     readonly property string clock: Format.timeText(client.nowEpochS)
-    /*! Battery cells: from none (offline) to all three (live). */
-    readonly property int lamp: {
-        switch (client.mode) {
-        case SunReactorClient.Offline:
-            return 0;
-        case SunReactorClient.Paused:
-        case SunReactorClient.Manual:
-            return 2;
-        case SunReactorClient.IdleDimmed:
-            return 1;
-        default:
-            return 3;
-        }
-    }
+    readonly property int signalLevel: StatusRules.signalBars(
+        client.isConnected || client.statusStale, client.monitors, client.globalPercent)
+    readonly property int batteryLevel: StatusRules.solarBatteryLevel(
+        client.isConnected || client.statusStale, client.nowEpochS, client.sunriseEpochS, client.sunsetEpochS, client.isDaylight)
     readonly property string stateWord: {
         switch (client.mode) {
         case SunReactorClient.Offline:
@@ -60,26 +52,15 @@ RowLayout {
     Accessible.role: Accessible.StaticText
     Accessible.name: (showState ? stateWord + " " : "") + clock
 
-    // Wifi: three rising bars on a common baseline.
-    Item {
+    Image {
         Layout.alignment: Qt.AlignVCenter
-        implicitWidth: Math.round(root.style.gu * 0.9)
-        implicitHeight: Math.round(root.style.gu * 0.9)
-
-        Repeater {
-            model: 3
-
-            delegate: Rectangle {
-                required property int index
-
-                x: index * 4
-                y: parent.height - height
-                width: 3
-                height: Math.round(parent.height * (0.4 + 0.3 * index))
-                radius: 1
-                color: root.client.isConnected ? root.ink : root.style.line
-            }
-        }
+        Layout.preferredWidth: 16
+        Layout.preferredHeight: 12
+        source: Qt.resolvedUrl(root.signalLevel < 0
+            ? "assets/ds_signal_off.png"
+            : ("assets/ds_signal_" + root.signalLevel + ".png"))
+        fillMode: Image.PreserveAspectFit
+        smooth: false
     }
 
     Text {
@@ -94,43 +75,15 @@ RowLayout {
 
     Item { Layout.fillWidth: true }
 
-    // Battery: a rounded outline, a nub, and three cells lit by the state.
-    Item {
+    Image {
         Layout.alignment: Qt.AlignVCenter
-        implicitWidth: Math.round(root.style.gu * 1.5)
-        implicitHeight: Math.round(root.style.gu * 0.72)
-
-        Rectangle {
-            x: 0
-            y: 0
-            width: parent.width - 3
-            height: parent.height
-            radius: 3
-            color: "transparent"
-            border.width: 1.5
-            border.color: root.ink
-        }
-        Rectangle {
-            x: parent.width - 3
-            y: Math.round(parent.height / 3)
-            width: 2
-            height: Math.round(parent.height / 3)
-            color: root.ink
-        }
-        Repeater {
-            model: 3
-
-            delegate: Rectangle {
-                required property int index
-
-                x: 3 + index * Math.round((parent.width - 9 - 2) / 3)
-                y: 3
-                width: Math.round((parent.width - 9 - 2) / 3) - 2
-                height: parent.height - 6
-                radius: 1
-                color: index < root.lamp ? root.theme.stateColor(root.client.mode) : root.style.line
-            }
-        }
+        Layout.preferredWidth: 20
+        Layout.preferredHeight: 10
+        source: Qt.resolvedUrl(root.batteryLevel < 0
+            ? "assets/ds_battery_off.png"
+            : ("assets/ds_battery_" + root.batteryLevel + ".png"))
+        fillMode: Image.PreserveAspectFit
+        smooth: false
     }
 
     Text {

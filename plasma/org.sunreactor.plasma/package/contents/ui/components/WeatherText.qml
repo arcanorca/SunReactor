@@ -7,6 +7,8 @@
 
 import QtQuick
 
+import "../Format.js" as Format
+
 QtObject {
     id: root
 
@@ -173,6 +175,11 @@ QtObject {
 
     /*! Secondary weather readings formatted as [{ k, v }] pairs in "full", "compact", or "caps" label mode. */
     function detailsList(details, mode) {
+        return detailsListInUnit(details, mode, false);
+    }
+
+    /*! Secondary weather readings in Celsius (`isFahrenheit = false`) or Fahrenheit (`true`). */
+    function detailsListInUnit(details, mode, isFahrenheit) {
         const d = details || ({});
         const out = [];
         const isCaps = mode === "caps";
@@ -181,7 +188,7 @@ QtObject {
             const k = isCaps ? i18ndc(root.domain, "Short legend: apparent temperature", "FEELS")
                 : (isCompact ? i18ndc(root.domain, "Short legend: apparent temperature", "Feels")
                              : i18ndc(root.domain, "Weather details: apparent temperature", "Feels like"));
-            out.push({ k: k, v: i18ndc(root.domain, "Temperature in degrees, compact", "%1°", Math.round(d.feelsLikeC)) });
+            out.push({ k: k, v: i18ndc(root.domain, "Temperature in degrees, compact", "%1°", Format.tempRounded(d.feelsLikeC, isFahrenheit)) });
         }
         if (d.humidityPercent !== undefined) {
             const k = isCaps ? i18ndc(root.domain, "Short legend: relative humidity", "RH")
@@ -204,8 +211,11 @@ QtObject {
         return out;
     }
 
-    function temperatureLabel(celsius) {
-        return i18ndc(root.domain, "Temperature in degrees Celsius", "%1 °C", Math.round(celsius));
+    function temperatureLabel(celsius, isFahrenheit) {
+        const value = Format.tempRounded(celsius, isFahrenheit);
+        return isFahrenheit
+            ? i18ndc(root.domain, "Temperature in degrees Fahrenheit", "%1 °F", value)
+            : i18ndc(root.domain, "Temperature in degrees Celsius", "%1 °C", value);
     }
 
     /*! "21 °C · Partly cloudy", or whichever half of it is known. */
@@ -214,7 +224,7 @@ QtObject {
         if (!client.hasTemperature) {
             return condition;
         }
-        const temperature = temperatureLabel(client.temperatureC);
+        const temperature = temperatureLabel(client.temperatureC, client.isFahrenheit === true);
         return condition.length > 0
             ? i18ndc(root.domain, "Temperature, then sky condition", "%1 · %2", temperature, condition)
             : temperature;

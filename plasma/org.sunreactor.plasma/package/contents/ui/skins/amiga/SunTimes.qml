@@ -23,7 +23,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
         { label: i18ndc(root.domain, "Sunrise, compact", "Rise"), epoch: root.client.sunriseEpochS },
         { label: i18ndc(root.domain, "Solar noon, compact", "Noon"), epoch: root.client.solarNoonEpochS },

@@ -33,6 +33,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     const int previousCloudCover = m_cloudCoverPercent;
     const bool previousHasTemperature = m_hasTemperature;
     const double previousTemperature = m_temperatureC;
+    const QString previousTemperatureUnit = m_temperatureUnit;
     const double previousWeatherMultiplier = m_weatherMultiplier;
     const QString previousThemeName = m_themeName;
     const QString previousThemeAccent = m_themeAccent;
@@ -68,6 +69,10 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     // Optional and omitted when there is nothing to say; a non-string is
     // treated as nothing too.
     m_themeWarning = statusObj.value(QStringLiteral("theme_warning")).toString().trimmed().left(kMaxThemeWarningLength);
+    const QString rawTempUnit = statusObj.value(QStringLiteral("temperature_unit")).toString().trimmed().toLower();
+    m_temperatureUnit = (rawTempUnit == QLatin1String("fahrenheit"))
+        ? QStringLiteral("fahrenheit")
+        : QStringLiteral("celsius");
 
     parseWeather(statusObj);
     parseMonitors(statusObj);
@@ -87,6 +92,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
         || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
         || previousCloudDimming != m_cloudDimmingPercent
         || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
+        || previousTemperatureUnit != m_temperatureUnit
         || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
         || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
@@ -265,6 +271,7 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
         m_weatherCondition.clear();
         m_weatherDescription.clear();
         m_weatherDayPhase.clear();
+        m_weatherSourceKind.clear();
         m_cloudCoverPercent = UNKNOWN_PERCENT;
         m_cloudDimmingPercent = UNKNOWN_PERCENT;
         m_hasTemperature = false;
@@ -284,6 +291,7 @@ void SunReactorClient::parseWeather(const QJsonObject &statusObj)
     m_weatherCondition = displayString(weather.value(QStringLiteral("condition")));
     m_weatherDescription = displayString(weather.value(QStringLiteral("condition_description")));
     m_weatherDayPhase = displayString(weather.value(QStringLiteral("day_phase")));
+    m_weatherSourceKind = displayString(weather.value(QStringLiteral("source_kind")));
     m_cloudCoverPercent = optionalPercent(weather, "cloud_cover_percent");
     const QJsonValue cloudDimming = weather.value(QStringLiteral("cloud_dimming_percent"));
     m_cloudDimmingPercent = cloudDimming.isDouble() ? qBound(0, cloudDimming.toInt(), 50)
@@ -338,8 +346,8 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         map[QStringLiteral("topology")] = displayString(monitor.value(QStringLiteral("topology")));
         map[QStringLiteral("enabled")] = enabled;
         map[QStringLiteral("appliedPercent")] = applied;
-        map[QStringLiteral("minPct")] = minPct != UNKNOWN_PERCENT ? minPct : 15;
-        map[QStringLiteral("maxPct")] = maxPct != UNKNOWN_PERCENT ? maxPct : 60;
+        map[QStringLiteral("minPct")] = minPct;
+        map[QStringLiteral("maxPct")] = maxPct;
         map[QStringLiteral("hasOverride")] = overridePercent != UNKNOWN_PERCENT;
         map[QStringLiteral("overridePercent")] = overridePercent;
         // What a slider should show: the override the user set, otherwise the
@@ -347,6 +355,23 @@ void SunReactorClient::parseMonitors(const QJsonObject &statusObj)
         map[QStringLiteral("percent")] = overridePercent != UNKNOWN_PERCENT ? overridePercent : applied;
         map[QStringLiteral("unreachable")] = unreachable;
         map[QStringLiteral("backoffRemainingS")] = unreachable ? backoffUntil - m_nowEpochS : 0;
+
+        map[QStringLiteral("contested")] = monitor.value(QStringLiteral("contested")).toBool(false);
+        map[QStringLiteral("contestedUntilS")] = optionalEpoch(monitor, "contested_until_epoch_s");
+
+        const QJsonValue writesValue = monitor.value(QStringLiteral("writes"));
+        if (writesValue.isObject()) {
+            const QJsonObject writes = writesValue.toObject();
+            map[QStringLiteral("writesDeferred")] = writes.value(QStringLiteral("deferred")).toBool(false);
+            map[QStringLiteral("writesWindowUsed")] = qMax(0, writes.value(QStringLiteral("window_used")).toInt(0));
+            map[QStringLiteral("writesWindowMax")] = qMax(0, writes.value(QStringLiteral("window_max")).toInt(0));
+            map[QStringLiteral("writesTotal")] = qMax<qint64>(0, writes.value(QStringLiteral("writes_total")).toInteger(0));
+        } else {
+            map[QStringLiteral("writesDeferred")] = false;
+            map[QStringLiteral("writesWindowUsed")] = 0;
+            map[QStringLiteral("writesWindowMax")] = 0;
+            map[QStringLiteral("writesTotal")] = static_cast<qint64>(0);
+        }
 
         const QJsonValue externalHoldValue = monitor.value(QStringLiteral("external_hold"));
         if (externalHoldValue.isObject()) {
@@ -481,6 +506,7 @@ void SunReactorClient::clearStatus()
     const int previousCloudCover = m_cloudCoverPercent;
     const bool previousHasTemperature = m_hasTemperature;
     const double previousTemperature = m_temperatureC;
+    const QString previousTemperatureUnit = m_temperatureUnit;
     const double previousWeatherMultiplier = m_weatherMultiplier;
     const QVariantList previousForecast = m_forecast;
     const QVariantMap previousDetails = m_weatherDetails;
@@ -515,9 +541,11 @@ void SunReactorClient::clearStatus()
     m_weatherCondition.clear();
     m_weatherDescription.clear();
     m_weatherDayPhase.clear();
+    m_weatherSourceKind.clear();
     m_cloudCoverPercent = UNKNOWN_PERCENT;
     m_hasTemperature = false;
     m_temperatureC = 0.0;
+    m_temperatureUnit = QStringLiteral("celsius");
     m_weatherMultiplier = 1.0;
     m_forecast.clear();
     m_weatherDetails.clear();
@@ -553,6 +581,7 @@ void SunReactorClient::clearStatus()
         || previousWeatherDescription != m_weatherDescription
         || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
         || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
+        || previousTemperatureUnit != m_temperatureUnit
         || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
         || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg

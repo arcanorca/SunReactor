@@ -29,7 +29,7 @@ Item {
     required property ModuleSettings settings
 
     readonly property string domain: settings.domain
-    readonly property bool available: client.isConnected && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
         { icon: "↑", label: i18nd(domain, "Sunrise"), epoch: client.sunriseEpochS },
         { icon: "✶", label: i18nd(domain, "Solar noon"), epoch: client.solarNoonEpochS },

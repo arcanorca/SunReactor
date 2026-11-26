@@ -180,6 +180,15 @@ var SKINS = {
         weather: "skins/nds/Weather.qml",
         forecast: "skins/nds/Forecast.qml",
         suntimes: "skins/nds/SunTimes.qml"
+    },
+    "id:xbox360": {
+        telemetry: "skins/xbox360/Telemetry.qml",
+        curve: "skins/xbox360/LightCycle.qml",
+        displays: "skins/xbox360/Displays.qml",
+        automation: "skins/xbox360/Automation.qml",
+        weather: "skins/xbox360/Weather.qml",
+        forecast: "skins/xbox360/Forecast.qml",
+        suntimes: "skins/xbox360/SunTimes.qml"
     }
 };
 
@@ -259,7 +268,8 @@ var TABBAR = {
     "id:amiga": "skins/amiga/Tabs.qml",
     "id:wii": "skins/wii/Tabs.qml",
     "id:nds": "skins/nds/Tabs.qml",
-    "id:commodore64": "skins/commodore64/Tabs.qml"
+    "id:commodore64": "skins/commodore64/Tabs.qml",
+    "id:xbox360": "skins/xbox360/Tabs.qml"
 };
 
 /*
@@ -285,7 +295,9 @@ function backdropSource(themeId) {
  */
 var OVERLAY = {
     "id:ps3": "skins/ps3/Waves.qml",
-    "id:commodore64": "skins/commodore64/C64Frame.qml"
+    "id:commodore64": "skins/commodore64/C64Frame.qml",
+    "id:xbox360": "skins/xbox360/Overlay.qml",
+    "id:wii": "skins/wii/Overlay.qml"
 };
 
 /*! Path (relative to ui/) of a theme's popup overlay, or "" for none. */
@@ -335,6 +347,7 @@ var WEATHERICON = {
     "id:synthwave84": WEATHERICON_DIR + "SynthwaveIcon.qml",
     "id:hackergreen": WEATHERICON_DIR + "HackergreenIcon.qml",
     "id:nds": WEATHERICON_DIR + "NdsWeatherIcon.qml",
+    "id:xbox360": WEATHERICON_DIR + "Xbox360Icon.qml",
     "pixel": WEATHERICON_DIR + "PixelIcon.qml",
     "terminal": WEATHERICON_DIR + "TerminalIcon.qml",
     "vector": WEATHERICON_DIR + "InstrumentIcon.qml"

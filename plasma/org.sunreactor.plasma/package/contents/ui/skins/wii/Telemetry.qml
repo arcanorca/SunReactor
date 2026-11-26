@@ -29,7 +29,7 @@ Item {
     readonly property WiiStyle style: WiiStyle {
         theme: root.theme
     }
-    readonly property bool available: client.isConnected
+    readonly property bool available: client.isConnected || client.statusStale
 
     readonly property string stateText: {
         switch (client.mode) {
@@ -132,8 +132,7 @@ Item {
             Text {
                 Layout.alignment: Qt.AlignVCenter
                 visible: root.client.hasTemperature
-                text: i18ndc(root.domain, "Temperature in degrees Celsius, compact", "%1 °C",
-                             Math.round(root.client.temperatureC))
+                text: Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit) + " " + Format.tempUnit(root.client.isFahrenheit)
                 textFormat: Text.PlainText
                 font: root.style.bodyFont
                 color: root.style.ink

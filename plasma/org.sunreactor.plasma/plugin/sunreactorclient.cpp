@@ -17,6 +17,7 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     , m_slowTimer(new QTimer(this))
     , m_themeListRetryTimer(new QTimer(this))
     , m_reconnectTimer(new QTimer(this))
+    , m_graceTimer(new QTimer(this))
     , m_customSocketPath(customSocketPath)
 {
     m_elapsed.start();
@@ -45,6 +46,10 @@ SunReactorClient::SunReactorClient(const QString &customSocketPath, QObject *par
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &SunReactorClient::onReconnectTimerTriggered);
 
+    m_graceTimer->setSingleShot(true);
+    m_graceTimer->setInterval(kStatusGraceMs);
+    connect(m_graceTimer, &QTimer::timeout, this, &SunReactorClient::onGraceTimerTriggered);
+
     // Defer the first query so QML can still assign socketPath this tick.
     QTimer::singleShot(0, this, &SunReactorClient::queryStatus);
 }
@@ -57,6 +62,7 @@ SunReactorClient::~SunReactorClient()
     m_slowTimer->stop();
     m_themeListRetryTimer->stop();
     m_reconnectTimer->stop();
+    m_graceTimer->stop();
     disconnect(m_socket, nullptr, this, nullptr);
     if (m_socket->isOpen() || m_socket->state() != QLocalSocket::UnconnectedState) {
         m_socket->abort();
@@ -109,6 +115,17 @@ bool SunReactorClient::isDaylight() const
 
 bool SunReactorClient::weatherIsNight() const
 {
+    // A future forecast bucket carries that bucket's own day_phase (for example
+    // 09:00 AM tagged "day" while it is still 06:12 AM before sunrise), so
+    // live night/day must come from the current solar state when known.
+    const bool hasSolarPhase = m_hasSolarElevation
+        || (m_sunriseEpochS > 0 && m_sunsetEpochS > 0 && m_nowEpochS > 0);
+    if (m_weatherSourceKind == QLatin1String("forecast") && hasSolarPhase) {
+        return !isDaylight();
+    }
+    if (m_hasSolarElevation && m_solarElevation < -6.0) {
+        return true;
+    }
     if (m_weatherDayPhase == QLatin1String("night")) {
         return true;
     }
@@ -141,7 +158,8 @@ void SunReactorClient::setSocketPath(const QString &path)
     if (m_socket->isOpen() || m_socket->state() != QLocalSocket::UnconnectedState) {
         m_socket->abort();
     }
-    setConnected(false);
+    setErrorKind(ErrorKind::None);
+    setConnected(false, false);
     setBusy(false);
     Q_EMIT socketPathChanged();
     queryStatus();
@@ -255,36 +273,122 @@ void SunReactorClient::setBusy(bool busy)
     }
 }
 
+void SunReactorClient::setErrorKind(ErrorKind kind)
+{
+    if (m_errorKind != kind) {
+        m_errorKind = kind;
+        Q_EMIT errorKindChanged();
+    }
+}
+
+SunReactorClient::ErrorKind SunReactorClient::socketErrorKind(QLocalSocket::LocalSocketError socketError)
+{
+    switch (socketError) {
+    case QLocalSocket::SocketAccessError:
+        return ErrorKind::PermissionDenied;
+    case QLocalSocket::SocketTimeoutError:
+        return ErrorKind::Timeout;
+    case QLocalSocket::DatagramTooLargeError:
+        return ErrorKind::Protocol;
+    case QLocalSocket::ServerNotFoundError:
+    case QLocalSocket::ConnectionRefusedError:
+    case QLocalSocket::PeerClosedError:
+    default:
+        return ErrorKind::NotRunning;
+    }
+}
+
+void SunReactorClient::clearStaleStatus()
+{
+    m_graceTimer->stop();
+    if (m_statusStale) {
+        m_statusStale = false;
+        Q_EMIT statusStaleChanged();
+    }
+    if (!m_dayCurve.isEmpty()) {
+        m_dayCurve.clear();
+        Q_EMIT dayCurveChanged();
+    }
+    clearStatus();
+}
+
+void SunReactorClient::onGraceTimerTriggered()
+{
+    if (!m_isConnected && m_statusStale) {
+        clearStaleStatus();
+    }
+}
+
 void SunReactorClient::setConnected(bool connected)
+{
+    setConnected(connected, true);
+}
+
+void SunReactorClient::setConnected(bool connected, bool allowGrace)
 {
     if (!connected && (m_isConnected || m_disconnectedAtMs < 0)) {
         m_disconnectedAtMs = m_elapsed.elapsed();
     }
-    if (m_isConnected == connected) {
-        return;
-    }
-    m_isConnected = connected;
-    Q_EMIT connectionChanged(connected);
     if (connected) {
+        m_graceTimer->stop();
+        setErrorKind(ErrorKind::None);
+        if (m_statusStale) {
+            m_statusStale = false;
+            Q_EMIT statusStaleChanged();
+        }
+        if (m_isConnected) {
+            return;
+        }
+        m_isConnected = true;
+        Q_EMIT connectionChanged(true);
         m_disconnectedAtMs = -1;
         // Whatever answers next may be a different (newer or older) daemon: its theme list is read again.
         m_themeListStale = true;
-    } else {
+        return;
+    }
+
+    const bool wasConnected = m_isConnected;
+    if (wasConnected) {
+        m_isConnected = false;
+        Q_EMIT connectionChanged(false);
         m_themeListRetryTimer->stop();
         // Whatever answers next may be a different (newer or older) daemon.
         setThemeRegistry(CapabilityUnknown);
         setDayCurveSupport(CapabilityUnknown);
         m_dayCurveDate.clear();
-        if (!m_dayCurve.isEmpty()) {
-            m_dayCurve.clear();
-            Q_EMIT dayCurveChanged();
+    }
+
+    if (allowGrace && wasConnected && m_errorKind != ErrorKind::VersionMismatch) {
+        // Keep the last monitors and curve visible (dimmed) across brief daemon
+        // restarts, while resetting themeWarning/temperatureUnit immediately.
+        bool scalarReset = false;
+        if (!m_themeWarning.isEmpty()) {
+            m_themeWarning.clear();
+            scalarReset = true;
         }
-        clearStatus();
+        if (m_temperatureUnit != QLatin1String("celsius")) {
+            m_temperatureUnit = QStringLiteral("celsius");
+            scalarReset = true;
+        }
+        if (scalarReset) {
+            Q_EMIT statusChanged();
+        }
+        if (!m_statusStale) {
+            m_statusStale = true;
+            Q_EMIT statusStaleChanged();
+        }
+        m_graceTimer->start(kStatusGraceMs);
+        return;
+    }
+
+    if (!allowGrace || (!wasConnected && (!m_statusStale || m_errorKind == ErrorKind::VersionMismatch))) {
+        clearStaleStatus();
     }
 }
 
-void SunReactorClient::fail(const QString &message)
+void SunReactorClient::fail(const QString &message, ErrorKind kind)
 {
+    setErrorKind(kind);
     m_lastError = message;
     Q_EMIT errorOccurred(m_lastError);
 }

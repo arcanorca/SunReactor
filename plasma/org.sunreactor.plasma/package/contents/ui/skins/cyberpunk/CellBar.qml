@@ -15,6 +15,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
 
+import "../../components"
 import "Geometry.js" as G
 
 Item {
@@ -86,7 +87,7 @@ Item {
     Accessible.onIncreaseAction: root.step(1)
     Accessible.onDecreaseAction: root.step(-1)
 
-    function setLocal(v) {
+    function setLocal(v, fromKey) {
         const clamped = Math.max(from, Math.min(to, Math.round(v)));
         if (!editing) {
             editing = true;
@@ -96,22 +97,23 @@ Item {
             return;
         }
         localValue = clamped;
-        throttle.restart();
+        if (fromKey) {
+            throttle.nudge(clamped);
+        } else {
+            throttle.schedule(clamped);
+        }
     }
 
     function step(delta) {
         if (!live) {
             return;
         }
-        setLocal((editing ? localValue : value) + delta);
+        setLocal((editing ? localValue : value) + delta, true);
         settle.restart();
     }
 
     function finish() {
-        throttle.stop();
-        if (editing) {
-            root.committed(localValue);
-        }
+        throttle.release(localValue);
         settle.restart();
     }
 
@@ -124,11 +126,11 @@ Item {
     }
 
     // While the daemon catches up, keep showing what the user picked.
-    Timer {
+    CommitThrottle {
         id: throttle
 
-        interval: 250
-        onTriggered: root.committed(root.localValue)
+        reportedValue: root.value
+        onCommitted: val => root.committed(val)
     }
 
     Timer {
@@ -137,9 +139,8 @@ Item {
         interval: 1500
         onTriggered: {
             if (!mouse.pressed) {
-                if (throttle.running) {
-                    throttle.stop();
-                    root.committed(root.localValue);
+                if (throttle.pending) {
+                    throttle.release(root.localValue);
                 }
                 root.editing = false;
             }
@@ -239,11 +240,11 @@ Item {
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onPressed: event => {
             root.forceActiveFocus(Qt.MouseFocusReason);
-            root.setLocal(root.valueAt(event.x));
+            root.setLocal(root.valueAt(event.x), false);
         }
         onPositionChanged: event => {
             if (pressed) {
-                root.setLocal(root.valueAt(event.x));
+                root.setLocal(root.valueAt(event.x), false);
             }
         }
         onReleased: root.finish()

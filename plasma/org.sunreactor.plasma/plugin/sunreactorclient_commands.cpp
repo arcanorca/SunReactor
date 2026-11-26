@@ -292,6 +292,7 @@ QString SunReactorClient::ensureThemesFolder() const
 
 QVariantMap SunReactorClient::harnessConfig() const
 {
+#ifdef SUNREACTOR_ENABLE_HARNESS
     QVariantMap out;
     if (qEnvironmentVariableIsEmpty("SUNREACTOR_HARNESS")) {
         return out;
@@ -311,6 +312,9 @@ QVariantMap SunReactorClient::harnessConfig() const
                             : QVariant(raw));
     }
     return out;
+#else
+    return {};
+#endif
 }
 
 bool SunReactorClient::openThemesFolder() const
@@ -350,7 +354,7 @@ void SunReactorClient::openTerminal()
         }
     }
 
-    fail(QStringLiteral("No terminal emulator found to run sunreactorctl tui"));
+    fail(QStringLiteral("No terminal emulator found to run sunreactorctl tui"), m_errorKind);
 }
 
 

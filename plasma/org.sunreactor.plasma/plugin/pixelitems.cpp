@@ -27,7 +27,11 @@ int PixelGrid::deviceScale() const
 
 bool PixelGrid::harness() const
 {
+#ifdef SUNREACTOR_ENABLE_HARNESS
     return qEnvironmentVariableIsSet("SUNREACTOR_HARNESS");
+#else
+    return false;
+#endif
 }
 
 void PixelGrid::setPreferredScale(int scale)

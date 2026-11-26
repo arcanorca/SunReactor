@@ -16,7 +16,7 @@
         "Id": "org.sunreactor.plasma",
         "License": "GPL-3.0-or-later",
         "Name": "SunReactor",
-        "Version": "0.13.0",
+        "Version": "0.14.0",
         "Website": "https://github.com/arcanorca/SunReactor"
     },
     "KPackageStructure": "Plasma/Applet",

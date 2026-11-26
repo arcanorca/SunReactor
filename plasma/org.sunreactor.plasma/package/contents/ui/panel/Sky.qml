@@ -23,9 +23,9 @@ Item {
 
     readonly property SunReactorClient client: view.client
     /*! Paused: the sky is not driving anything, so the pause symbol stands in. */
-    readonly property bool paused: client.isConnected && client.isSuspended
+    readonly property bool paused: (client.isConnected || client.statusStale) && client.isSuspended
     /*! No reading yet means the sun or moon of the moment; not connected, unknown. */
-    readonly property string condition: !client.isConnected ? ""
+    readonly property string condition: !(client.isConnected || client.statusStale) ? ""
                                         : (client.hasWeatherReading ? client.weatherCondition : "clear")
     readonly property bool night: client.hasWeatherReading ? client.weatherIsNight : !client.isDaylight
 

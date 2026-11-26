@@ -41,9 +41,9 @@ Rectangle {
     readonly property NothingStyle style: NothingStyle {
         theme: root.theme
     }
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     implicitHeight: content.implicitHeight + 2 * style.pad
@@ -66,6 +66,7 @@ Rectangle {
         required property string detail
         property bool hasOverride: false
         property string overrideBadge: ""
+        property string notice: ""
         property string accessibleValue: ""
         property int minPct: -1
         property int maxPct: -1
@@ -80,7 +81,7 @@ Rectangle {
         signal clearRequested()
 
         Layout.fillWidth: true
-        spacing: root.style.gap * 0.5
+        spacing: root.style.gap * 0.35
 
         Rectangle {
             visible: channel.ruled
@@ -103,18 +104,12 @@ Rectangle {
                 elide: Text.ElideMiddle
             }
 
-            DotText {
+            Text {
                 Layout.alignment: Qt.AlignVCenter
-                Layout.minimumWidth: implicitWidth
                 text: channel.percent >= 0 ? channel.percent + "%" : "--%"
-                face: "small"
-                size: 1
-                letterSpacing: 1
-                pitch: root.style.pitchDigit
-                dotScale: root.style.digitScale
-                litColor: channel.percent >= 0 ? root.style.ink : root.style.muted
-                accentColor: root.style.accent
-                dimColor: root.style.textGhost
+                textFormat: Text.PlainText
+                font: root.style.dotValue
+                color: channel.percent >= 0 ? root.style.ink : root.style.muted
             }
         }
 
@@ -132,15 +127,18 @@ Rectangle {
         // manual override replaces the target line with its badge and the way back.
         RowLayout {
             Layout.fillWidth: true
-            visible: channel.detail.length > 0 || channel.hasOverride
+            visible: channel.detail.length > 0 || channel.notice.length > 0 || channel.hasOverride
+                || (channel.hasLimits && channel.minPct >= 0 && channel.maxPct >= 0)
             spacing: root.style.gap * 0.5
 
             Text {
                 Layout.fillWidth: true
-                text: channel.hasOverride ? channel.overrideBadge : channel.detail
+                text: channel.notice.length > 0 ? channel.notice
+                    : (channel.hasOverride ? channel.overrideBadge : channel.detail)
                 textFormat: Text.PlainText
                 font: root.style.label
-                color: channel.hasOverride ? root.style.ink : root.style.muted
+                color: channel.notice.length > 0 ? root.style.accent
+                    : (channel.hasOverride ? root.style.ink : root.style.muted)
                 elide: Text.ElideRight
             }
 
@@ -188,6 +186,7 @@ Rectangle {
                     from: 0
                     to: Math.max(0, maxDotSlider.shown)
                     value: channel.minPct
+                    enabled: channel.controllable && channel.hasLimits && channel.minPct >= 0 && channel.maxPct >= 0
                     accessibleName: i18ndc(root.domain, "Night minimum boundary", "Night minimum")
                     onRequested: p => channel.limitsRequested(Math.min(p, channel.maxPct), channel.maxPct)
                 }
@@ -220,6 +219,7 @@ Rectangle {
                     from: Math.min(100, minDotSlider.shown)
                     to: 100
                     value: channel.maxPct
+                    enabled: channel.controllable && channel.hasLimits && channel.minPct >= 0 && channel.maxPct >= 0
                     accessibleName: i18ndc(root.domain, "Day maximum boundary", "Day maximum")
                     onRequested: p => channel.limitsRequested(channel.minPct, Math.max(p, channel.minPct))
                 }
@@ -247,14 +247,14 @@ Rectangle {
             Layout.fillWidth: true
             text: i18nd(root.domain, "Displays")
             textFormat: Text.PlainText
-            font: root.style.label
-            color: root.style.muted
+            font: root.style.heading
+            color: root.style.ink
         }
 
         // --- the master row: every display at once -------------------------------------
         Channel {
             visible: root.showAllDisplays
-            name: i18nd(root.domain, "All displays")
+            name: root.settings.allDisplaysLabel
             percent: root.client.globalPercent
             controllable: root.client.isConnected
             detail: ""
@@ -284,12 +284,14 @@ Rectangle {
                 ruled: root.showAllDisplays || index > 0
                 name: monitorId
                 percent: strip.level
-                minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-                hasLimits: true
+                minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                hasLimits: Monitors.hasValidLimits(modelData)
                 limitsOpen: Monitors.isExpanded(root.expandedLimits, monitorId)
-                controllable: modelData.enabled === true && !unavailable
+                controllable: root.client.isConnected && modelData.enabled === true && !unavailable
                 hasOverride: modelData.hasOverride === true || hasHold
+                notice: Monitors.monitorNotice(
+                    modelData, root.settings.contestedNotice, root.settings.deferredNotice)
                 overrideBadge: hasHold
                     ? i18ndc(root.domain, "External brightness hold badge, compact", "EXT · %1",
                              Monitors.externalHoldAge(Monitors.externalHoldSeconds(modelData)))
@@ -305,8 +307,7 @@ Rectangle {
                         return i18ndc(root.domain, "Tag: this display is not answering", "NO LINK");
                     }
                     const aim = aimAt >= 0 ? String(Math.round(aimAt)) : "—";
-                    return i18ndc(root.domain, "Target and automatic range of a display, in small caps",
-                                  "TARGET %1 · RANGE %2–%3", aim, minPct, maxPct);
+                    return i18ndc(root.domain, "Target of a display, in small caps", "TARGET %1", aim);
                 }
                 accessibleValue: level >= 0 ? i18ndc(root.domain, "Brightness percentage", "%1%", level)
                                             : i18ndc(root.domain, "No value is known yet", "—")

@@ -28,9 +28,9 @@ ColumnLayout {
     readonly property InstrumentStyle style: InstrumentStyle {
         theme: root.theme
     }
-    readonly property var monitors: client.isConnected ? client.monitors : []
+    readonly property var monitors: Monitors.hasStatus(client) ? client.monitors : []
     readonly property bool showAllDisplays: monitors.length > 1
-    readonly property bool available: client.isConnected && monitors.length > 0
+    readonly property bool available: Monitors.hasDisplayData(client)
     property var expandedLimits: ({})
 
     spacing: style.rowGap
@@ -52,9 +52,10 @@ ColumnLayout {
             visible: root.showAllDisplays
             style: root.style
             channel: i18ndc(root.domain, "Channel label of the master fader for every display", "All")
-            name: i18nd(root.domain, "All displays")
+            name: root.settings.allDisplaysLabel
             percent: root.client.globalPercent
             applied: -1
+            controllable: root.client.isConnected
             // The way back from a global override is the Automation module's.
             hasOverride: false
             stateText: ""
@@ -79,6 +80,8 @@ ColumnLayout {
 
                 readonly property bool unavailable: Monitors.unavailable(modelData)
                 readonly property bool hasHold: modelData.hasOverride !== true && Monitors.hasExternalHold(modelData)
+                readonly property string notice: Monitors.monitorNotice(
+                    modelData, root.settings.contestedNotice, root.settings.deferredNotice)
 
                 style: root.style
                 channel: String(index + 1).padStart(2, "0")
@@ -86,13 +89,14 @@ ColumnLayout {
                 percent: modelData.percent
                 applied: modelData.appliedPercent
                 target: DayCurve.targetAt(root.client.dayCurve, modelData.logicalId, root.client.nowEpochS)
-                minPct: modelData.minPct !== undefined ? modelData.minPct : 15
-                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : 60
-                hasLimits: true
+                minPct: modelData.minPct !== undefined ? modelData.minPct : -1
+                maxPct: modelData.maxPct !== undefined ? modelData.maxPct : -1
+                hasLimits: Monitors.hasValidLimits(modelData)
                 limitsExpanded: Monitors.isExpanded(root.expandedLimits, modelData.logicalId)
                 hasOverride: modelData.hasOverride === true || hasHold
                 overrideUntil: modelData.hasOverride === true ? root.client.overrideUntilEpochS : 0
-                controllable: modelData.enabled && !unavailable
+                controllable: root.client.isConnected && modelData.enabled && !unavailable
+                noticeText: notice
                 stateText: {
                     if (!modelData.enabled) {
                         return i18ndc(root.domain, "Tag: this display is excluded from automation", "Off");

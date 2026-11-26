@@ -13,4 +13,13 @@ QtObject {
     property int defaultSuspendMinutes: 60
     /*! Spell out the sun's height (opt-in). */
     property bool showSolarElevation: false
+
+    /*! Shared display labels/notices so every skin shares one translation call. */
+    readonly property string allDisplaysLabel: i18nd(domain, "All displays")
+    readonly property string contestedNotice: i18ndc(domain, "Display notice when another app owns DDC",
+                                                     "Paused: another app is changing this display")
+    readonly property string deferredNotice: i18ndc(domain, "Display notice when a write is queued",
+                                                    "Queued, applying shortly")
+    readonly property string pausedTag: i18ndc(domain, "Compact tag when another app is changing this display", "Paused")
+    readonly property string queuedTag: i18ndc(domain, "Compact tag when a write is queued", "Queued")
 }
