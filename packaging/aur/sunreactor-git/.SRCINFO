@@ -1,6 +1,6 @@
 pkgbase = sunreactor-git
 	pkgdesc = Adaptive screen brightness daemon that follows the sun (DDC/CI and backlight), with CLI/TUI
-	pkgver = 0.13.0.r0.g0000000
+	pkgver = 0.14.0.r0.g0000000
 	pkgrel = 1
 	url = https://github.com/arcanorca/SunReactor
 	arch = x86_64

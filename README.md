@@ -15,7 +15,7 @@
 
 ## // PREVIEW (TUI WORKSPACES & THEMES)
 
-SunReactor features an immediate-style, terminal UI built with `ratatui` with 40 built-in themes (and your own TOML themes), a daylight globe and live device status:
+SunReactor features an immediate-style, terminal UI built with `ratatui` with 41 built-in themes (and your own TOML themes), a daylight globe and live device status:
 
 <div align="center">
   <img src="docs/images/SunReactor_1.png" alt="Monitors Workspace (Amber Theme)" width="48%" style="margin: 0.5%; border-radius: 8px;" />
@@ -66,6 +66,11 @@ Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASM
 ## // RECENT CHANGES
 
 Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
+
+**0.14.0**
+- Daemon write-admission policy (`admit_write`), per-monitor rolling write budgets and contested-controller back-off, `flock` single-instance socket locking, `CLOCK_BOOTTIME` jump compensation, and readback-trust hardening (reset-readback detection, wake probe hold release, `±1%` quantization tolerance, VCP max scaling, 15-minute `ddcutil detect` cadence, and ignoring legacy sysfs `dpms`).
+- External-hold cancellation (`sunreactorctl hold clear [MONITOR]` and Plasma badge), configurable `weather.min_multiplier` cloud dimming (`0..=50%`), `sunreactorctl doctor --report [PATH]`, and XDG autostart / OpenRC / runit / AUR packaging.
+- Plasma widget: new Xbox 360 flagship theme and skin (41 built-in themes, 13 flagship skins), `Chakra Petch` and `Doto` bundled OFL fonts, shared `CommitThrottle` slider debounce, per-display range controls and polish across all 15 skins, and release builds without `Qt6::Test`.
 
 **0.13.0**
 - Themes are TOML data shared by the terminal UI and the Plasma widget. 40 are built in; you can add your own in `~/.config/sunreactor/themes/` ([docs/THEMES.md](docs/THEMES.md)).
@@ -175,7 +180,7 @@ SunReactor computes target brightness deterministically without requiring consta
 - Full keyboard-driven navigation with browser-style shortcuts (`1`-`5` tabs, `Tab`/`Shift+Tab`).
 - Real-time ASCII light cycle and 24-hour solar trajectory visualizer.
 - Interactive orthographic globe with real-time solar terminator rendering.
-- 40 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
+- 41 built-in themes including Amber, Terminal, Commodore 64, Cyberpunk, Synthwave '84, Xbox 360, Gruvbox, Nord, Tokyo Night, and Catppuccin Mocha; themes are shared with the Plasma widget and can be extended with user TOML files (see [Themes](#themes)).
 
 ### 2. Native KDE Plasma 6 Desktop Integration
 A KDE Plasma 6 panel widget lives in [`plasma/`](plasma/). It shows the current brightness, the day curve and the weather, and lets you pause automation or set a manual brightness per display.
@@ -308,7 +313,7 @@ show_logo = true
 
 ### Themes
 
-Themes are TOML files shared by the TUI and the Plasma widget. 40 are built in. To add your own, put a file in `~/.config/sunreactor/themes/` (the file name must match `id`) and set `tui.theme`. The format is explained in [docs/THEMES.md](docs/THEMES.md).
+Themes are TOML files shared by the TUI and the Plasma widget. 41 are built in. To add your own, put a file in `~/.config/sunreactor/themes/` (the file name must match `id`) and set `tui.theme`. The format is explained in [docs/THEMES.md](docs/THEMES.md).
 
 ```toml
 # ~/.config/sunreactor/themes/pocket_night.toml

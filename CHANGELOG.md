@@ -7,41 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.13.0] - 2026-11-17
-
-### Changed
-- Redesigned hackergreen 4x9 ASCII weather art (`Hg.js`, `Weather.qml`, `Forecast.qml`,
-  `HackergreenIcon.qml`) with a shared cloud silhouette, aligned precipitation rows, and
-  `night_partly_cloudy` support, and upgraded `TerminalIcon.qml` from 6x6 to 16x16
-  pixel-snapped weather sprites.
-- The not-connected notice shows the start command in a selectable field with a
-  Copy button.
-- External brightness changes are respected for the configured cooldown before
-  SunReactor resumes automatic control; wake and topology recovery still correct
-  immediately, and status/TUI expose active holds.
-- **TUI**: palettes come from the registry (`src/tui/theme.rs`). The theme picker
-  lists built-in and user themes. The light-cycle preview uses the day-curve
-  sampler that the daemon also uses (`policy::preview`). The large digits of the
-  Automation tab follow `[tui] glyph_style`.
-- **Families**: `casiodigital`, `cyberpunk` and `synthwave84` are now instrument
-  themes, and `hackergreen` is a terminal theme. Nothing became an instrument
-  theme and draws its dot-matrix primitives in the widget.
-- **Plasma widget**: the popup and the panel render from the daemon's theme and
-  day curve. The 0.12.x Wardrobe directory (`contents/ui/wardrobe/`, with
-  `ThemeCatalog.js`, `ThemeTokens.qml` and `WardrobeCard.qml`) is removed.
-- **Weather icons**: redrawn for Nintendo Wii, Nintendo DS, Windows XP (Luna)
-  and the handheld theme, which uses the four DMG shades only.
-- **Documentation**: README gains a Plasma widget section and links to the theme
-  guide; the 0.12.2 Wardrobe notes stay as history.
+## [0.14.0] - 2026-11-27
 
 ### Added
-- External-hold controls: `sunreactorctl hold clear [MONITOR]` and a Plasma
-  badge with one-click cancellation now let users return a display to automatic
-  brightness before its external-change cooldown expires.
-- **Maximum cloud dimming**: configure the 0..=50% daylight reduction through
-  `weather.min_multiplier`, `sunreactorctl weather cloud-dimming`, the TUI Settings
-  row, or the Plasma plasmoid. The daemon persists the canonical multiplier and
-  applies changes on the next tick.
+- **Xbox 360 flagship theme and skin**: `src/theme/builtin/xbox360.toml` and `plasma/org.sunreactor.plasma/package/contents/ui/skins/xbox360/` (with `Xbox360Icon.qml` and light/dark mode toggle), bringing the built-in registry to 41 themes and 13 flagship skins.
+- **Bundled fonts**: added `ChakraPetch` (`Regular`, `SemiBold`, `Bold`) and `Doto` (`SemiBold`, `Bold`) with SIL OFL 1.1 license files (`OFL-ChakraPetch.txt`, `OFL-Doto.txt`) documented in `FONTS-LICENSES.txt`.
+- **External-hold controls**: `sunreactorctl hold clear [MONITOR]` and a Plasma badge with one-click cancellation return a display to automatic brightness before its external-change cooldown expires.
+- **Maximum cloud dimming**: configure `0..=50%` daylight reduction through `weather.min_multiplier`, `sunreactorctl weather cloud-dimming`, the TUI Settings row, or the Plasma widget settings.
+- **Redacted bug-report bundle**: `sunreactorctl doctor --report [PATH]` prints or writes a redacted Markdown diagnostics document.
+- **Shared slider commit policy**: `CommitThrottle.qml` across sliders and trackbars enforces 250 ms trailing drag debounce, release flush, keyboard nudge coalescing, and no-op commit suppression.
+- **Write-admission and health modules**: `src/apply/decision.rs` (`admit_write`) and `src/apply/health.rs` centralize topology, enablement, contested back-off, external hold, failure back-off, minimum interval, probe correction interval, rolling automatic write budget (`12 / 600s`), and manual rate cap (`60 / 600s`, `1s` gap) with `writes`, `contested`, and `manual_deferred_until_epoch_s` fields in IPC and `sunreactorctl status`.
+- **Wall-clock step watcher**: `src/runtime/clock.rs` compares wall clock progress against `CLOCK_BOOTTIME` and shifts or clamps in-memory holds, back-offs, and write-budget windows across suspend/resume and clock jumps.
+- **Linux distribution portability and AUR packaging**: XDG autostart fallback (`~/.config/autostart/sunreactord.desktop`) when no systemd user manager is present, OpenRC and runit examples under `contrib/`, distro package-manager and privilege-helper hints, host `lib`/`lib64` Qt QML layout detection with `sunreactor.sh`, and AUR split packaging under `packaging/aur/sunreactor/` and `packaging/aur/sunreactor-git/`.
+- **QA and linting tooling**: `scripts/qmllint.sh` / `scripts/qmllint.baseline`, `tools/pixel_diff.py`, `tools/popup_timeline.py`, `tools/generate_skin_assets.py`, `tests/tst_datarules.qml`, and `tests/tst_commit_throttle.qml`.
+
+### Changed
+- **Readback-trust and DDC/CI hardening**:
+  - Reset-readback detection treats `0%` readbacks and post-recovery `0`/`50`/`100%` values as panel resets rather than user choices, and confirmation reads verify external changes before starting holds.
+  - Wake probes clear stale external holds when the monitor returns near the policy target, and `±1%` quantization tolerance (plus learned quantization up to `3%`) prevents repeated rewrites on step-rounding panels.
+  - DDC backend learns each monitor's VCP maximum before the first write and scales raw values accordingly, queues in-process DDC writers around `flock`, enforces a `900s` blind-reassert interval, spaces `ddcutil detect` safety-net scans to at least 15 minutes, and ignores legacy sysfs `dpms` / `enabled` attributes on atomic-KMS compositors.
+- **Control socket and IPC resilience**: `flock` single-instance locking with `(dev, ino)` ownership checks before unlinking on drop, IPC accept-error classification (`DropConnection`, `BackOff`, `ListenerDead`) with rate-limited logging, capped error-frame lengths, and `status.temperature_unit` propagation.
+- **External change hold policy**: external brightness changes are respected for the configured cooldown before automatic control resumes; wake and topology recovery still correct immediately.
+- **Weather art**: redesigned hackergreen 4x9 (and compact 3x7 forecast) ASCII weather art with shared cloud silhouettes, aligned precipitation rows, and `night_partly_cloudy` support, and upgraded `TerminalIcon.qml` from 6x6 to 16x16 pixel-snapped sprites.
+- **Plasma widget**:
+  - Split `SunReactorClient` by responsibility (`commands`, `queue`, `transport`, `status`) with bounded request queues and read retries, 5 s stale-status grace on reconnect, typed offline/error notices with a copyable start command, and `BUILD_TESTING=OFF` release builds without `Qt6::Test` or harness code.
+  - Deduplicated skin helpers (`Modules.js`, `DayCurve.js`, `ForecastRules.js`, `Monitors.js`), added per-display `min_pct`/`max_pct` range drawers across all 15 skins, fixed non-interactive cursor shapes, and polished all 15 skins.
+
+### Fixed
+- **Installer**: clears `${XDG_CACHE_HOME:-~/.cache}/plasmashell/qmlcache`, moves stale `org/sunreactor/plasma` plugin copies out of other user QML import roots, warns when `plasmashell` is running, compares glibc versions portably across `awk` implementations, and handles `--help`/`-h` and unknown options before side effects.
+- **Daemon & IPC**: wakes idle-dimmed screens on returning Wayland input, keeps the Wayland wake-hint watcher active when `desktop_idle_sync = false`, applies limit and cloud-dimming IPC edits in memory without reloading disk config, reports `queued` on `sunreactorctl run-once` instead of zero counters, clamps legacy out-of-range config values, handles DST skipped/repeated midnights in solar day boundaries, and rejects or clamps future-dated weather snapshots.
+- **Plasma widget**: fixed `casiodigital` forecast horizontal slot fitting, sun-times layout, and icon sizing; eliminated `LightCycle` hover-scrub layout oscillation and enforced `popupWidth`; snapped size hints to the device pixel grid and settled automatic UI scale on screen changes; kept the popup open briefly on focus loss; kept the control socket open while the daemon is busy; bound `ThemedWeatherIcon` slot loaders to `children`; guarded null `ModuleSlot` items and empty `Glow` sources; and restored per-monitor limit slider bindings.
+
+## [0.13.0] - 2026-10-16
+
+### Added
 - **Theme registry (`src/theme/`)**: a theme is one TOML file with `id`, `name`,
   `aliases`, `family` (`pixel` | `instrument` | `terminal`), `extends`, a ten-colour
   `[palette]`, `[tui]` and `[widget]` tokens. Validation reports every problem in a
@@ -115,18 +114,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Installer**: an optional Plasma widget step. `--with-plasma` and `--no-plasma`
   choose it explicitly and `--dry-run` prints the plan. It builds the plugin with
   CMake, copies the plugin and QML module under `~/.local`, replaces the widget
-  package, keeps the previous widget in `~/.local/share/sunreactor-backups/`,
-  clears `${XDG_CACHE_HOME:-~/.cache}/plasmashell/qmlcache` to prevent stale QML
-  bytecode mismatches, and warns when `plasmashell` is running so you know to
-  restart it (`systemctl --user restart plasma-plasmashell.service` or
-  `plasmashell --replace`). It never restarts plasmashell and never fails the
-  installation.
-- **Linux distribution portability**: installations without a usable systemd user
-  manager now get an XDG autostart entry, and `--uninstall` removes it. OpenRC
-  and runit user-level examples ship under `contrib/`; package hints select the
-  distro's package manager and privilege helper. Plasma QML installation follows
-  the host's `lib` or `lib64` Qt layout and writes an idempotent `sunreactor.sh`
-  environment file.
+  package, and keeps the previous widget in `~/.local/share/sunreactor-backups/`.
+  It never restarts plasmashell and never fails the installation.
+
+### Changed
+- **TUI**: palettes come from the registry (`src/tui/theme.rs`). The theme picker
+  lists built-in and user themes. The light-cycle preview uses the day-curve
+  sampler that the daemon also uses (`policy::preview`). The large digits of the
+  Automation tab follow `[tui] glyph_style`.
+- **Families**: `casiodigital`, `cyberpunk` and `synthwave84` are now instrument
+  themes, and `hackergreen` is a terminal theme. Nothing became an instrument
+  theme and draws its dot-matrix primitives in the widget.
+- **Plasma widget**: the popup and the panel render from the daemon's theme and
+  day curve. The 0.12.x Wardrobe directory (`contents/ui/wardrobe/`, with
+  `ThemeCatalog.js`, `ThemeTokens.qml` and `WardrobeCard.qml`) is removed.
+- **Weather icons**: redrawn for Nintendo Wii, Nintendo DS, Windows XP (Luna)
+  and the handheld theme, which uses the four DMG shades only.
+- **Documentation**: README gains a Plasma widget section and links to the theme
+  guide; the 0.12.2 Wardrobe notes stay as history.
 
 ### Removed
 - The Wardrobe texture set, 12 SVG files under
@@ -136,16 +141,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directories are gone too.
 
 ### Fixed
-- The installer moves stale `org/sunreactor/plasma` plugin copies out of the other user QML import roots (into `stale-plugin-<timestamp>` under the widget backup root), so plasmashell can no longer load an old plugin.
-- On Wayland with `desktop_idle_timeout_minutes > 0`, returning input now wakes
-  idle-dimmed screens instead of leaving them dimmed until the next IPC wake.
-- With `desktop_idle_sync = false`, the Wayland wake-hint watcher still runs, so
-  monitors waking from DPMS get their brightness re-asserted.
-- Setting monitor limits or maximum cloud dimming over IPC changes only that
-  setting in the running daemon; other edits in `config.toml` wait for `reload`
-  instead of being adopted silently without reload handling.
-- `sunreactorctl run-once` reports `queued — apply runs in background` instead of
-  zero counters; the response carries a wire-compatible `queued` flag.
 - A broken user theme never stops automatic brightness. The daemon falls back to
   the built-in with the same id (or `amber`) and reports `theme_warning`.
 - The widget's theme picker fills in as the daemon's theme list arrives.
@@ -153,9 +148,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   light cycle percent rows use the fill scale.
 - Popup content no longer overflows the popup's right edge. Layout overflows and
   collisions in the NDS, Synthwave '84, pixel and Amiga skins are fixed.
-- The installer compares glibc versions correctly across common `awk`
-  implementations and handles `--help`/`-h` and unknown options before any
-  download or installation side effects.
 
 ## [0.12.2] - 2026-09-28
 

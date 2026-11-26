@@ -1,6 +1,6 @@
 pkgbase = sunreactor
 	pkgdesc = Adaptive screen brightness daemon that follows the sun (DDC/CI and backlight), with CLI/TUI
-	pkgver = 0.13.0
+	pkgver = 0.14.0
 	pkgrel = 1
 	url = https://github.com/arcanorca/SunReactor
 	arch = x86_64
@@ -13,7 +13,7 @@ pkgbase = sunreactor
 	makedepends = qt6-declarative
 	makedepends = libplasma
 	options = !lto
-	source = sunreactor-0.13.0.tar.gz::https://github.com/arcanorca/SunReactor/archive/refs/tags/v0.13.0.tar.gz
+	source = sunreactor-0.14.0.tar.gz::https://github.com/arcanorca/SunReactor/archive/refs/tags/v0.14.0.tar.gz
 	sha256sums = SKIP
 
 pkgname = sunreactor
