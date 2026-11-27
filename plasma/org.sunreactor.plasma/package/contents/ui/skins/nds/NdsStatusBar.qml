@@ -66,25 +66,14 @@ RowLayout {
         }
     }
 
-    spacing: Math.round(style.gu * 0.45)
+    spacing: Math.round(style.gu * 0.42)
     implicitHeight: Math.round(style.gu * 1.2)
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: (showState ? stateWord + " " : "") + clock
-
-    Image {
-        Layout.alignment: Qt.AlignVCenter
-        Layout.preferredWidth: 16
-        Layout.preferredHeight: 12
-        source: Qt.resolvedUrl(root.signalLevel < 0
-            ? (root.onAccentBar ? "assets/ds_bar_signal_off.png" : "assets/ds_signal_off.png")
-            : ((root.onAccentBar ? "assets/ds_bar_signal_" : "assets/ds_signal_") + root.signalLevel + ".png"))
-        fillMode: Image.PreserveAspectFit
-        smooth: false
-    }
+    Accessible.name: (showState || onAccentBar ? stateWord + " " : "") + clock
 
     Text {
-        visible: root.showState
+        visible: root.showState || root.onAccentBar
         Layout.alignment: Qt.AlignVCenter
         text: root.stateWord
         font.family: root.style.family
@@ -97,8 +86,19 @@ RowLayout {
 
     Image {
         Layout.alignment: Qt.AlignVCenter
-        Layout.preferredWidth: 20
-        Layout.preferredHeight: 10
+        Layout.preferredWidth: 16
+        Layout.preferredHeight: 12
+        source: Qt.resolvedUrl(root.signalLevel < 0
+            ? (root.useDarkBarSprites && !root.onAccentBar ? "assets/ds_signal_off.png" : "assets/ds_bar_signal_off.png")
+            : ((root.useDarkBarSprites && !root.onAccentBar ? "assets/ds_signal_" : "assets/ds_bar_signal_") + root.signalLevel + ".png"))
+        fillMode: Image.PreserveAspectFit
+        smooth: false
+    }
+
+    Image {
+        Layout.alignment: Qt.AlignVCenter
+        Layout.preferredWidth: 25
+        Layout.preferredHeight: 12
         source: Qt.resolvedUrl(root.batteryLevel < 0
             ? (root.onAccentBar && !root.lightAccentBar ? "assets/ds_bar_battery_off.png" : "assets/ds_battery_off.png")
             : ((root.onAccentBar && !root.lightAccentBar ? "assets/ds_bar_battery_" : "assets/ds_battery_") + root.batteryLevel + ".png"))

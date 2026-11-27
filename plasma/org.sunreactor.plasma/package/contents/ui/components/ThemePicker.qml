@@ -133,15 +133,17 @@ QQC2.Popup {
             return;
         }
         const origin = anchorItem.mapToItem(null, 0, 0);
+        const br = anchorItem.mapToItem(null, anchorItem.width, anchorItem.height);
+        const sx = Math.max(0.1, (br.x - origin.x) / Math.max(1, anchorItem.width));
+        const sy = Math.max(0.1, (br.y - origin.y) / Math.max(1, anchorItem.height));
         const edge = root.theme.spacing;
-        const wide = Math.max(0, Math.min(root.widthCap, win.width - 2 * edge));
-        const left = Math.max(edge, Math.min(origin.x + anchorItem.width - wide, win.width - edge - wide));
-        const top = origin.y + anchorItem.height + edge;
+        const wide = Math.max(0, Math.min(root.widthCap, (win.width - 2 * edge * sx) / sx));
+        const leftScene = Math.max(edge * sx, Math.min(br.x - wide * sx, win.width - edge * sx - wide * sx));
         root.width = wide;
-        root.x = left - origin.x;
+        root.x = (leftScene - origin.x) / sx;
         root.y = anchorItem.height + edge;
         root.maxHeight = Math.max(root.theme.gridUnit * 4,
-                                  Math.min(win.height * 0.6, win.height - top - edge));
+                                  Math.min((win.height * 0.6) / sy, (win.height - br.y - edge * sy) / sy));
     }
 
     function relayoutIfOpen() {

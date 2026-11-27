@@ -53,7 +53,7 @@ Item {
                 anchors.fill: parent
                 anchors.margins: 2
                 radius: width / 2
-                color: btn.pressed ? root.style.alpha(root.style.accent, 0.18) : "transparent"
+                color: btn.pressed ? root.style.alpha(root.style.accent, 0.16) : "transparent"
                 border.width: root.style.line2
                 border.color: root.style.accent
                 antialiasing: true

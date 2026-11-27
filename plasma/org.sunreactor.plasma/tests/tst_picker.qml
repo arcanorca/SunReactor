@@ -327,5 +327,12 @@ Item {
             fuzzyCompare(popup.x + popup.width, button.width, 1.0, "right-aligned under the button");
             verify(popup.height <= stage.height * 0.6 + 1, "at most 60% of the window");
         }
+
+        function test_closePickerClosesOpenPopover() {
+            mouseClick(button);
+            verify(button.pickerOpen, "picker opens on click");
+            button.closePicker();
+            verify(!button.pickerOpen, "closePicker dismisses an open picker");
+        }
     }
 }

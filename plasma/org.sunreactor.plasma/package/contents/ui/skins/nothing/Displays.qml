@@ -104,12 +104,24 @@ Rectangle {
                 elide: Text.ElideMiddle
             }
 
-            Text {
+            RowLayout {
                 Layout.alignment: Qt.AlignVCenter
-                text: channel.percent >= 0 ? channel.percent + "%" : "--%"
-                textFormat: Text.PlainText
-                font: root.style.dotValue
-                color: channel.percent >= 0 ? root.style.ink : root.style.muted
+                spacing: 2
+
+                Text {
+                    Layout.alignment: Qt.AlignBaseline
+                    text: channel.percent >= 0 ? String(channel.percent) : "--"
+                    textFormat: Text.PlainText
+                    font: root.style.dotValue
+                    color: channel.percent >= 0 ? root.style.ink : root.style.muted
+                }
+                Text {
+                    Layout.alignment: Qt.AlignBaseline
+                    text: "%"
+                    textFormat: Text.PlainText
+                    font: root.style.label
+                    color: root.style.muted
+                }
             }
         }
 

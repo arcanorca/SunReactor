@@ -20,6 +20,14 @@ PlasmoidItem {
     id: root
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+    readonly property bool isDesktop: (Plasmoid.formFactor === PlasmaCore.Types.Planar
+                                       || Plasmoid.location === PlasmaCore.Types.Floating)
+        && (!daemon.harnessMode || root.harness.desktopMode === true || root.harness.desktopMode === "true")
+
+    preferredRepresentation: root.isDesktop ? fullRepresentation : null
+    Plasmoid.backgroundHints: root.isDesktop
+        ? (PlasmaCore.Types.NoBackground | PlasmaCore.Types.ConfigurableBackground)
+        : PlasmaCore.Types.DefaultBackground
 
     // Plasma closes a popup the moment its window loses focus. With KWin's
     // focus-follows-mouse that is the moment the pointer leaves it, so a pointer
@@ -38,7 +46,7 @@ PlasmoidItem {
         onTriggered: {
             const w = root.popupWindow;
             const hovered = root.fullRepresentationItem && root.fullRepresentationItem.popupHovered === true; // qmllint disable missing-property
-            if (root.expanded && !(w && w.active) && !hovered && !root.menuOpen) {
+            if (!root.isDesktop && root.expanded && !(w && w.active) && !hovered && !root.menuOpen) {
                 root.expanded = false;
             }
         }
@@ -48,6 +56,9 @@ PlasmoidItem {
         ignoreUnknownSignals: true
 
         function onActiveChanged(): void {
+            if (root.isDesktop) {
+                return;
+            }
             if (root.popupWindow.active || root.menuOpen) {
                 deactivateGrace.stop();
             } else if (root.expanded) {
@@ -60,6 +71,9 @@ PlasmoidItem {
         ignoreUnknownSignals: true
 
         function onPopupHoveredChanged(): void {
+            if (root.isDesktop) {
+                return;
+            }
             if (root.fullRepresentationItem.popupHovered || root.menuOpen) { // qmllint disable missing-property
                 deactivateGrace.stop();
             } else if (root.expanded && !(root.popupWindow && root.popupWindow.active)) {
@@ -68,6 +82,9 @@ PlasmoidItem {
         }
     }
     onMenuOpenChanged: {
+        if (root.isDesktop) {
+            return;
+        }
         if (root.menuOpen) {
             deactivateGrace.stop();
         } else if (root.expanded
@@ -79,6 +96,10 @@ PlasmoidItem {
     onExpandedChanged: {
         if (!root.expanded) {
             deactivateGrace.stop();
+            const item = root.fullRepresentationItem;
+            if (item && typeof item.closePopups === "function") { // qmllint disable missing-property
+                item.closePopups(); // qmllint disable missing-property
+            }
         }
     }
 
@@ -87,8 +108,8 @@ PlasmoidItem {
 
         // Plasma adds the main.xml configuration key dynamically.
         socketPath: Plasmoid.configuration.socketPath // qmllint disable missing-property
-        // Poll faster only while the popup is on screen.
-        popupOpen: root.expanded
+        // Poll faster while the popup is on screen, or continuously when live on desktop.
+        popupOpen: root.expanded || root.isDesktop
     }
 
     WeatherText {
@@ -116,8 +137,8 @@ PlasmoidItem {
     // emergency worth pulling the icon out of the system tray for.
     Plasmoid.status: daemon.isConnected ? PlasmaCore.Types.ActiveStatus : PlasmaCore.Types.PassiveStatus
 
-    switchWidth: Kirigami.Units.gridUnit * 12
-    switchHeight: Kirigami.Units.gridUnit * 12
+    switchWidth: root.isDesktop ? 0 : Kirigami.Units.gridUnit * 12
+    switchHeight: root.isDesktop ? 0 : Kirigami.Units.gridUnit * 12
     toolTipTextFormat: Text.PlainText
 
     toolTipMainText: {
@@ -312,7 +333,21 @@ PlasmoidItem {
         client: daemon
     }
 
-    fullRepresentation: FullRepresentation {
-        client: daemon
+    Component {
+        id: popupRep
+
+        FullRepresentation {
+            client: daemon
+        }
     }
+
+    Component {
+        id: desktopRep
+
+        DesktopRepresentation {
+            client: daemon
+        }
+    }
+
+    fullRepresentation: root.isDesktop ? desktopRep : popupRep
 }

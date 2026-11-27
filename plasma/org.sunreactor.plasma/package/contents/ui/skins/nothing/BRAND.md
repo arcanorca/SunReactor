@@ -29,13 +29,8 @@ Phone widgets: dot matrix, black, white, grey, one red signal.
   displays add rows); Weather about 340.
 
 ## Signature elements
-- Light cycle: the target is a dotted ring (lit arc clockwise from the top, red
-  head), the 5x7 percentage centred in it, the readings (APPLIED, WEATHER, RANGE)
-  beside it.
-- The day is a SPARSE dot plot: one lit dot per column at the curve height, a
-  faint dotted baseline, the "now" column a thin dotted line with one red dot.
-  For a single display the weather cost is a second row of tiny dim dots at the
-  clear-sky height, above the curve. Never a filled block.
+- Light cycle: the target is a true circular 36-LED polar OLED dial (`NothingDial`: matte dark well, cardinal micro-indices, white lit arc clockwise from 12 o'clock, larger red head dot) with `Doto` integer + clean monochrome `%` centred inside, and the readings (`APPLIED`, `WEATHER`, `RANGE`) beside it.
+- The day is a SPARSE dot plot (`plotRows: 12`): one lit dot per column at the curve height, a faint dotted baseline, the "now" column a thin dotted line with one red dot. For a single display the weather cost is a second row of tiny dim dots at the clear-sky height, above the curve. Never a filled block.
 - Sliders are rows of round dots: lit white up to the value, one red head dot.
 - Weather icons: official Nothing OS circular dot-matrix weather pictograms on the
   389×389 grid (`tools/vendor/nothing/` + exact-grid companions in

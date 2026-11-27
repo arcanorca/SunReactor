@@ -61,6 +61,13 @@ PlasmaExtras.Representation {
         showSolarElevation: Plasmoid.configuration.showSolarElevation // qmllint disable missing-property
     }
 
+    /*! True when hosted directly inside DesktopRepresentation on the Plasma desktop. */
+    property bool desktopEmbedded: false
+
+    function closePopups(): void {
+        themeButton.closePicker();
+    }
+
     /*! The pointer is over the popup (main.qml keeps the popup open while it is). */
     readonly property bool popupHovered: popupHover.hovered
     /*! Active floating menus or sub-popups inside the popup. main.qml checks this
@@ -122,6 +129,9 @@ PlasmaExtras.Representation {
         Only a shown, laid-out window whose height differs is set, so nothing is
         set twice. */
     function fitWindow(): void {
+        if (root.desktopEmbedded) {
+            return;
+        }
         const w = root.Window.window;
         if (!w || !w.visible || root.height <= 0 || w.height < root.height) {
             return;
@@ -141,8 +151,16 @@ PlasmaExtras.Representation {
         }
         w.height = wanted;
     }
-    onPopupWidthChanged: Qt.callLater(root.fitWindow)
-    onPopupHeightChanged: Qt.callLater(root.fitWindow)
+    onPopupWidthChanged: {
+        if (!root.desktopEmbedded) {
+            Qt.callLater(root.fitWindow);
+        }
+    }
+    onPopupHeightChanged: {
+        if (!root.desktopEmbedded) {
+            Qt.callLater(root.fitWindow);
+        }
+    }
     /*! After the window shows, the first layout of a page can settle a little later (a
         curve that arrives late): fit again a few times, 120 ms apart, then stop. */
     Timer {
@@ -166,10 +184,16 @@ PlasmaExtras.Representation {
 
         function onVisibleChanged(): void {
             if (root.Window.window && root.Window.window.visible) {
-                showFit.tries = 0;
-                showFit.restart();
+                if (!root.desktopEmbedded) {
+                    showFit.tries = 0;
+                    showFit.restart();
+                }
+            } else {
+                root.closePopups();
             }
-            Qt.callLater(root.fitWindow);
+            if (!root.desktopEmbedded) {
+                Qt.callLater(root.fitWindow);
+            }
         }
     }
 
@@ -404,6 +428,8 @@ PlasmaExtras.Representation {
             function onPopupOpenChanged(): void {
                 if (root.client.popupOpen) {
                     root.currentPage = root.startPage;
+                } else {
+                    root.closePopups();
                 }
             }
         }

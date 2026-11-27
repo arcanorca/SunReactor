@@ -7,7 +7,7 @@
 
 pkgbase=sunreactor
 pkgname=(sunreactor plasma6-applets-sunreactor)
-pkgver=0.14.1
+pkgver=0.14.2
 pkgrel=1
 pkgdesc='Adaptive screen brightness daemon that follows the sun (DDC/CI and backlight), with CLI/TUI'
 arch=(x86_64 aarch64)

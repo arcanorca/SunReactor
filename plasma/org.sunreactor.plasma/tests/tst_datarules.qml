@@ -384,20 +384,27 @@ Item {
         function test_ndsSolarBatteryFollowsDayNightCycle() {
             const rise = 7 * 3600;
             const set = 19 * 3600;
+            const noon = (rise + set) / 2;
             // Disconnected is off.
             compare(NdsStatus.solarBatteryLevel(false, rise + 3600, rise, set, true), -1);
             // Right before sunrise: empty (0).
             compare(NdsStatus.solarBatteryLevel(true, rise - 60, rise, set, false), 0);
-            compare(NdsStatus.solarBatteryLevel(true, rise - 3600, rise, set, false), 0);
-            // Sunrise starts charging: 1 -> 2 -> 3 across daylight.
-            compare(NdsStatus.solarBatteryLevel(true, rise + 60, rise, set, true), 1);
-            compare(NdsStatus.solarBatteryLevel(true, rise + 6 * 3600, rise, set, true), 2);
-            compare(NdsStatus.solarBatteryLevel(true, set - 600, rise, set, true), 3);
-            // After sunset drains downward overnight: 3 -> 2 -> 1 -> 0 before sunrise.
-            compare(NdsStatus.solarBatteryLevel(true, set + 600, rise, set, false), 3);
-            compare(NdsStatus.solarBatteryLevel(true, set + 5 * 3600, rise, set, false), 2);
-            compare(NdsStatus.solarBatteryLevel(true, 3 * 3600, rise, set, false), 1);
             compare(NdsStatus.solarBatteryLevel(true, rise - 1800, rise, set, false), 0);
+            // Sunrise -> solar noon charges upward to full peak (8).
+            compare(NdsStatus.solarBatteryLevel(true, rise + 60, rise, set, true), 1);
+            compare(NdsStatus.solarBatteryLevel(true, rise + 3 * 3600, rise, set, true), 4);
+            compare(NdsStatus.solarBatteryLevel(true, noon - 60, rise, set, true), 8);
+            verify(NdsStatus.isSolarCharging(noon - 60, rise, set));
+            // Solar noon -> sunset gradually drains downward (8 -> 7 -> 6 -> 5 -> 4).
+            verify(!NdsStatus.isSolarCharging(noon + 60, rise, set));
+            compare(NdsStatus.solarBatteryLevel(true, noon + 1.5 * 3600, rise, set, true), 7);
+            compare(NdsStatus.solarBatteryLevel(true, noon + 3 * 3600, rise, set, true), 6);
+            compare(NdsStatus.solarBatteryLevel(true, set - 600, rise, set, true), 4);
+            // After sunset drains down to 0 before next sunrise.
+            compare(NdsStatus.solarBatteryLevel(true, set + 600, rise, set, false), 4);
+            compare(NdsStatus.solarBatteryLevel(true, set + 3 * 3600, rise, set, false), 3);
+            compare(NdsStatus.solarBatteryLevel(true, 3 * 3600, rise, set, false), 1);
+            compare(NdsStatus.solarBatteryLevel(true, rise - 900, rise, set, false), 0);
         }
 
         function test_monitorNoticesTagsAndValidLimits() {

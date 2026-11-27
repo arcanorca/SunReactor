@@ -54,6 +54,10 @@ QQC2.AbstractButton {
     function openPicker() {
         picker.open();
     }
+    /*! Closes any open picker (called when the host popup collapses). */
+    function closePicker() {
+        picker.close();
+    }
     /*! Re-anchors an open picker after the layout above it changed. */
     function relayout() {
         picker.place();

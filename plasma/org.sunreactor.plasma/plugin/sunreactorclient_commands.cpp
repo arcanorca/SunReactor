@@ -317,6 +317,15 @@ QVariantMap SunReactorClient::harnessConfig() const
 #endif
 }
 
+bool SunReactorClient::harnessMode() const
+{
+#ifdef SUNREACTOR_ENABLE_HARNESS
+    return qEnvironmentVariableIsSet("SUNREACTOR_HARNESS");
+#else
+    return false;
+#endif
+}
+
 bool SunReactorClient::openThemesFolder() const
 {
     const QString path = ensureThemesFolder();

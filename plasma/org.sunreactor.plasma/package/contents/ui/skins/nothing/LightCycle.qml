@@ -58,8 +58,8 @@ Rectangle {
     readonly property real now: client.nowEpochS
     readonly property bool nowInDay: available && now >= t0 && now <= t1
 
-    /*! Dot rows of the day plot; the ring is `ringDiameter` dots across. */
-    readonly property int plotRows: 8
+    /*! Dot rows of the day plot. */
+    readonly property int plotRows: 12
     readonly property int ringDiameter: 19
 
     readonly property bool scrubbing: hover.containsMouse && available && !showAll
@@ -191,46 +191,14 @@ Rectangle {
             Layout.preferredWidth: 0
             spacing: root.style.gap * 2
 
-            Item {
+            NothingDial {
                 id: dial
 
                 Layout.alignment: Qt.AlignVCenter
-                implicitWidth: ring.implicitWidth + root.style.snap(root.style.unit * 0.72)
-                implicitHeight: ring.implicitHeight + root.style.snap(root.style.unit * 0.72)
-
-                // Nothing Phone Glyph Interface segmented LED outer halo
-                Image {
-                    anchors.fill: parent
-                    source: Qt.resolvedUrl("assets/nothing_glyph_ring.png")
-                    smooth: true
-                    mipmap: true
-                    opacity: 0.92
-                }
-
-                // The dotted gauge: the lit arc is the target, the red head is the one signal.
-                DotRing {
-                    id: ring
-
-                    anchors.centerIn: parent
-                    diameter: root.ringDiameter
-                    // Two dots per cell of circumference: an even dotted circle.
-                    dots: 32
-                    pitch: root.style.pitch
-                    value: root.readTarget >= 0 && !root.showAll ? root.readTarget / 100 : 0
-                    headAccent: true
-                    litColor: root.style.ink
-                    accentColor: root.style.accent
-                    dimColor: root.style.dotGhost
-                }
-
-                // The target numeral in Doto dot-matrix, centred in the ring.
-                Text {
-                    anchors.centerIn: parent
-                    text: root.readTarget >= 0 && !root.showAll ? Math.round(root.readTarget) + "%" : "--%"
-                    textFormat: Text.PlainText
-                    font: root.style.dotHero
-                    color: root.style.ink
-                }
+                style: root.style
+                known: root.readTarget >= 0 && !root.showAll
+                value: known ? root.readTarget / 100 : 0
+                digits: known ? String(Math.round(root.readTarget)) : "--"
             }
 
             ColumnLayout {

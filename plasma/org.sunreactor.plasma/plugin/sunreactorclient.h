@@ -70,6 +70,7 @@ private:
     Q_PROPERTY(QString socketPath READ socketPath WRITE setSocketPath NOTIFY socketPathChanged)
     Q_PROPERTY(bool popupOpen READ popupOpen WRITE setPopupOpen NOTIFY popupOpenChanged)
     Q_PROPERTY(bool pollingEnabled READ pollingEnabled WRITE setPollingEnabled NOTIFY pollingEnabledChanged)
+    Q_PROPERTY(bool harnessMode READ harnessMode CONSTANT)
 
     Q_PROPERTY(Mode mode READ mode NOTIFY statusChanged)
     Q_PROPERTY(bool isSuspended READ isSuspended NOTIFY statusChanged)
@@ -246,6 +247,8 @@ public Q_SLOTS:
         SUNREACTOR_HARNESS_CONFIG ("key=value key=value", values JSON when they
         parse, else strings). Always empty unless SUNREACTOR_HARNESS is set. */
     QVariantMap harnessConfig() const;
+    /*! True when running inside the headless screenshot/audit harness. */
+    [[nodiscard]] bool harnessMode() const;
 
     /*! Asks for `list_themes`; result in themeList. No-op on an older daemon, and
         never a second request while one is queued or in flight. The client asks by

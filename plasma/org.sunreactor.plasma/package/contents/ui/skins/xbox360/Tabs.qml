@@ -6,7 +6,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
 
 import "../../engine"
 import "../../modules/Modules.js" as Modules
@@ -123,17 +125,19 @@ FocusScope {
             Layout.fillWidth: true
         }
 
-        // In-theme Blades Light / Carbon Dark switcher (stays inside xbox360)
-        Item {
+        // In-theme Blades Light / Carbon Dark switcher (icon-only metallic orb, stays inside xbox360)
+        QQC2.AbstractButton {
             id: modeSwitch
 
             Layout.alignment: Qt.AlignVCenter
-            Layout.rightMargin: root.style.gap
-            implicitWidth: switchContent.implicitWidth + root.style.gap2 * 1.1
-            implicitHeight: Math.round(root.style.unit * 1.38)
-            activeFocusOnTab: true
-
-            readonly property bool hovered: switchMouse.containsMouse
+            Layout.rightMargin: Math.round(root.style.gap * 0.5)
+            implicitWidth: Math.round(root.style.unit * 1.55)
+            implicitHeight: implicitWidth
+            padding: 0
+            hoverEnabled: true
+            focusPolicy: Qt.StrongFocus
+            checkable: true
+            checked: root.style.isDark
 
             Accessible.role: Accessible.Button
             Accessible.name: root.style.isDark
@@ -143,57 +147,53 @@ FocusScope {
             Accessible.checked: root.style.isDark
             Accessible.onPressAction: toggleMode()
 
-            function toggleMode() {
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.text: root.style.isDark
+                ? i18nd(root.domain, "Switch to Light Blades")
+                : i18nd(root.domain, "Switch to Carbon Dark Blades")
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+
+            function toggleMode(): void {
                 const next = !root.style.isDark;
                 root.theme.xboxDarkModeLocal = next;
                 root.darkModeToggled(next);
             }
 
-            Keys.onSpacePressed: toggleMode()
-            Keys.onReturnPressed: toggleMode()
+            onClicked: toggleMode()
 
-            BorderImage {
-                anchors.fill: parent
-                source: Qt.resolvedUrl(root.style.asset(modeSwitch.hovered ? "xbox_pill_called.png" : "xbox_pill_idle.png"))
-                border { left: 14; top: 10; right: 14; bottom: 10 }
-                horizontalTileMode: BorderImage.Stretch
-                verticalTileMode: BorderImage.Stretch
-                smooth: true
+            HoverHandler {
+                cursorShape: Qt.PointingHandCursor
             }
 
-            Row {
-                id: switchContent
-
-                anchors.centerIn: parent
-                spacing: Math.max(3, root.style.gap * 0.5)
+            background: Item {
+                Image {
+                    anchors.fill: parent
+                    source: Qt.resolvedUrl(root.style.asset(
+                        modeSwitch.pressed || modeSwitch.hovered ? "xbox_orb_btn_active.png" : "xbox_orb_btn.png"))
+                    smooth: true
+                    mipmap: true
+                }
 
                 Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.max(6, Math.round(root.style.unit * 0.36))
-                    height: width
+                    visible: modeSwitch.visualFocus
+                    anchors.fill: parent
                     radius: width / 2
-                    color: root.style.isDark ? "#f5d442" : root.style.green
-                    border.width: 1
-                    border.color: root.style.isDark ? "#b88a12" : root.style.steel
-                }
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.style.isDark
-                        ? i18ndc(root.domain, "Xbox 360 light/dark mode switch label", "Light")
-                        : i18ndc(root.domain, "Xbox 360 light/dark mode switch label", "Dark")
-                    textFormat: Text.PlainText
-                    font: root.style.captionBoldFont
-                    color: root.style.ink
+                    color: "transparent"
+                    border.width: root.style.line2
+                    border.color: root.style.greenBright
                 }
             }
 
-            MouseArea {
-                id: switchMouse
-
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: modeSwitch.toggleMode()
+            contentItem: Item {
+                Image {
+                    anchors.centerIn: parent
+                    width: Math.round(modeSwitch.implicitWidth * 0.60)
+                    height: width
+                    source: Qt.resolvedUrl(root.style.asset(
+                        modeSwitch.pressed || modeSwitch.hovered ? "xbox_mode_icon_active.png" : "xbox_mode_icon.png"))
+                    smooth: true
+                    mipmap: true
+                }
             }
         }
     }

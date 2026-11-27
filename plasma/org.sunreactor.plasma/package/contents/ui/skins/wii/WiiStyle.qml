@@ -46,13 +46,13 @@ QtObject {
     }
 
     readonly property color paper: theme.bg
-    readonly property color face: theme.mix(theme.bg, theme.borderInactive, 0.18)
+    readonly property color face: theme.mix(theme.bg, theme.borderInactive, 0.14)
     readonly property color ink: theme.fg
     readonly property color inkSoft: theme.mix(theme.fg, theme.textMuted, 0.5)
     readonly property color inkFaint: theme.textMuted
     readonly property color accent: theme.accent
-    readonly property color accentLine: theme.mix(theme.accent, theme.fg, 0.25)
-    readonly property color accentInk: theme.mix(theme.accent, theme.fg, 0.6)
+    readonly property color accentLine: theme.mix(theme.accent, theme.fg, 0.20)
+    readonly property color accentInk: theme.mix(theme.accent, theme.fg, 0.50)
     readonly property color sky: theme.secondaryAccent
     readonly property color outline: theme.borderInactive
     readonly property color track: theme.borderInactive

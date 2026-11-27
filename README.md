@@ -31,7 +31,7 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` with 41
 
 ## // KDE PLASMA WIDGET (OPTIONAL)
 
-A KDE Plasma 6 panel widget with a popup: day curve, a slider per display, automation mode and weather. It follows the terminal UI's theme or a pinned one. It is a QML package with a small C++ plugin that talks to the daemon's socket, and it does no brightness logic of its own.
+A KDE Plasma 6 panel and desktop widget (both as a panel popup and a freely resizable live desktop widget): day curve, a slider per display, automation mode and weather. It follows the terminal UI's theme or a pinned one. It is a QML package with a small C++ plugin that talks to the daemon's socket, and it does no brightness logic of its own.
 
 <div align="center">
   <img src="docs/images/widget-themes.png" alt="KDE Plasma widget, brightness page: Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
@@ -67,30 +67,22 @@ Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASM
 
 Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
 
+**0.14.2**
+- Scalable live KDE Plasma desktop widget mode and auto-closing theme picker when the panel popup collapses.
+- Skin upgrades: Nothing circular 36-LED OLED dial, Nintendo DS solar-curve 4-cell battery and balanced status bar, Nintendo Wii rebuilt from upstream assets, and Xbox 360 icon-only light/dark orb toggle.
+- Redesigned angled-split SunReactor Plasma widget icon.
+
 **0.14.1**
-- Plasma widget skins: removed the `NDS` top-bar badge from `nds`, rebuilt `xbox360` light/dark skins from authentic 2005 Xbox 360 Blades assets, and upgraded `nothing` with official dot-matrix weather/solar glyphs, `Geist` typography, and cohesive squircle cards.
-- Fixed laptop `eDP`/`LVDS`/`DSI` `Invalid display` DDC discovery (and missing `ddcutil` handling) so internal backlights can be added directly during TUI monitor setup.
-- Fixed piped/standalone `install.sh` (`curl | bash`) to download and install the Plasma widget from the matching GitHub release tag archive instead of skipping or reading `$PWD/plasma`.
+- Updated `nds`, `xbox360`, and `nothing` Plasma skins; fixed laptop `eDP`/`LVDS`/`DSI` backlight setup and remote `curl | bash` Plasma widget installation.
 
 **0.14.0**
-- Daemon write-admission policy (`admit_write`), per-monitor rolling write budgets and contested-controller back-off, `flock` single-instance socket locking, `CLOCK_BOOTTIME` jump compensation, and readback-trust hardening (reset-readback detection, wake probe hold release, `±1%` quantization tolerance, VCP max scaling, 15-minute `ddcutil detect` cadence, and ignoring legacy sysfs `dpms`).
-- External-hold cancellation (`sunreactorctl hold clear [MONITOR]` and Plasma badge), configurable `weather.min_multiplier` cloud dimming (`0..=50%`), `sunreactorctl doctor --report [PATH]`, and XDG autostart / OpenRC / runit / AUR packaging.
-- Plasma widget: new Xbox 360 flagship theme and skin (41 built-in themes, 13 flagship skins), `Chakra Petch` and `Doto` bundled OFL fonts, shared `CommitThrottle` slider debounce, per-display range controls and polish across all 15 skins, and release builds without `Qt6::Test`.
+- Added the `xbox360` flagship skin, external-hold clear controls, configurable cloud dimming, `sunreactorctl doctor --report`, AUR packaging, and readback-trust/DDC hardening.
 
 **0.13.0**
-- Themes are TOML data shared by the terminal UI and the Plasma widget. 40 are built in; you can add your own in `~/.config/sunreactor/themes/` ([docs/THEMES.md](docs/THEMES.md)).
-- New `sunreactorctl theme` commands, and new IPC requests (`list_themes`, `get_theme`, `day_curve`) used by the widget.
-- The Plasma widget was rewritten around that theme data: see [KDE Plasma widget](#-kde-plasma-widget).
+- Shared TOML theme registry (40+ themes and user TOMLs), `sunreactorctl theme` commands, and redesigned Plasma widget skins.
 
 **0.12.0**
-- Monitor power state is read from DRM sysfs before DDC commands are sent, so sleeping or disconnected displays are skipped.
-- A periodic hardware probe and a short fast-retry window after wake re-apply the target brightness when the compositor resets it.
-- Failures are tracked per display with exponential backoff (5 s up to 300 s), so one slow monitor does not delay the others.
-- Each daemon tick serves a limited number of IPC requests (16, or 8 ms), so a busy client cannot disturb fades.
-- IPC frames are newline-delimited with a 64 KiB limit and read/write deadlines.
-- Config reloads are validated before they are applied, and a bad edit is rolled back.
-- Terminal UI split into Monitors, Automation, Location, Weather and Settings workspaces.
-- First version of the Plasma widget.
+- Per-monitor backoff and DRM power gating, bounded IPC frames, validated config reloads, modular TUI workspaces, and initial Plasma 6 widget.
 
 ---
 

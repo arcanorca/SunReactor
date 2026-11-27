@@ -21,16 +21,16 @@ Item {
         anchors.fill: parent
         source: Qt.resolvedUrl("assets/wii_pinstripes.png")
         fillMode: Image.Tile
-        opacity: 0.72
+        opacity: 0.85
     }
 
     BorderImage {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: Math.round(root.theme.gridUnit * 2.15)
+        height: Math.round(root.theme.gridUnit * 2.45)
         source: Qt.resolvedUrl("assets/wii_dock.png")
-        border { left: 32; right: 32; top: 12; bottom: 0 }
+        border { left: 42; right: 42; top: 18; bottom: 0 }
         horizontalTileMode: BorderImage.Stretch
         verticalTileMode: BorderImage.Stretch
         smooth: true

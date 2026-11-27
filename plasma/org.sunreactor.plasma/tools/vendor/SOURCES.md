@@ -24,3 +24,21 @@ These files are kept outside `package/` solely so `tools/generate_skin_assets.py
 
 2. **`Avadhkumar-geek/nothing_weather_clone`** (`master` branch, [github.com/Avadhkumar-geek/nothing_weather_clone](https://github.com/Avadhkumar-geek/nothing_weather_clone))
    - `sunrise.svg`, `sunset.svg` — visual reference for Nothing Weather's parabolic solar horizon glyphs
+
+## `wii/`
+
+1. **`andrewplus/Wii.JS`** (`gh-pages` branch, GPL-3.0, [github.com/andrewplus/Wii.JS](https://github.com/andrewplus/Wii.JS))
+   - `bg-pattern.png` — Wii System Menu horizontal scanline texture
+   - `channel-border.png`, `channel-hover.png` — authentic rounded Wii Channel chrome frame & Wii blue hover bezel
+   - `bottom-bg.png`, `mini-bottom-bg.png`, `btn-texture.png` — glossy chrome dock & cyan capsule button gradients
+   - `left-button.png`, `right-button.png`, `wii-button.png` — sculpted chrome Wii dock wing frames & 3D circular Wii button
+
+2. **`danintosh/Wii-Menu-HTML`** (`main` branch, MIT, [github.com/danintosh/Wii-Menu-HTML](https://github.com/danintosh/Wii-Menu-HTML))
+   - `dock-arch.png` (`bottom.png`), `menu-bg.png` (`bg.png`) — curved Wii Menu bottom dock arch with cyan trim & paper gradient
+
+3. **`Alan-bur/WM4K`** (`main` branch, [github.com/Alan-bur/WM4K](https://github.com/Alan-bur/WM4K))
+   - `forecast/sun.png` (`tex1_150x150_c8af517e57c75491_5.png`) — official Wii Forecast Channel radial sun
+   - `forecast/moon.png` (`tex1_38x38_4b31bb76a87d2869_5.png`) — official Wii Forecast Channel moon
+   - `forecast/cloud_day.png` (`tex1_192x75_d0f8f2086af1a04f_5.png`) — official Wii Forecast Channel cumulus cloud
+   - `forecast/cloud_storm.png` (`tex1_140x44_b2486c42e161d39b_5.png`) — official Wii Forecast Channel storm cloud
+   - `forecast/rain_streaks.png` (`tex1_170x70_d0942efddc47d4ed_5.png`) — official Wii Forecast Channel slanted rain layer

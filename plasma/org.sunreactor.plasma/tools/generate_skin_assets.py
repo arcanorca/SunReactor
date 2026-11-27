@@ -23,6 +23,7 @@ SKINS = HERE.parent / "package" / "contents" / "ui" / "skins"
 VENDOR = HERE / "vendor"
 VENDOR_NOTHING = VENDOR / "nothing"
 VENDOR_XBOX = VENDOR / "xbox360"
+VENDOR_WII = VENDOR / "wii"
 
 
 def render_svg_bytes(svg: str, w: int, h: int) -> Image.Image:
@@ -300,87 +301,94 @@ def build_nds() -> None:
             px[bx + 1, 10] = c_base
         save_pixel_png(sig_img, out / f"ds_signal_{lvl}")
 
-    bat_rows = [
-        ".KKKKKKKKKKKKKKKK...",
-        "KWWWWWWWWWWWWWWWWK..",
-        "KW1111W2222W3333WKK.",
-        "KW1111W2222W3333WKK.",
-        "KW1111W2222W3333WKK.",
-        "KW1111W2222W3333WKK.",
-        "KW1111W2222W3333WKK.",
-        "KW1111W2222W3333WKK.",
-        "KWWWWWWWWWWWWWWWWK..",
-        ".KKKKKKKKKKKKKKKK...",
-    ]
-    empty_slot = (218, 226, 236, 255)
-    for lvl in (0, 1, 2, 3):
-        fill_col = (56, 214, 78, 255) if lvl >= 2 else ((242, 172, 28, 255) if lvl == 1 else (228, 62, 62, 255))
-        frame_col = (188, 38, 44, 255) if lvl == 0 else (26, 30, 36, 255)
-        inner_col = (255, 232, 232, 255) if lvl == 0 else (244, 248, 252, 255)
-        slot_empty = (242, 198, 198, 255) if lvl == 0 else empty_slot
-        bat_pal = {
-            "K": frame_col,
-            "W": inner_col,
-            "1": fill_col if lvl >= 1 else slot_empty,
-            "2": fill_col if lvl >= 2 else slot_empty,
-            "3": fill_col if lvl >= 3 else slot_empty,
-        }
-        save_pixel_png(draw_bitmap(bat_rows, bat_pal), out / f"ds_battery_{lvl}")
+    # Detailed 25x12 pixel-art 4-cell Nintendo DS solar battery (off + 0..8 half-cell levels)
+    # 4 distinct cells x 4px wide (each cell has 2px left half + 2px right half) separated by
+    # 1px dark internal ribs, top specular highlight row, bottom bevel shadow, and 2px cap nub.
+    def make_ds_battery_sprite(lvl: int, accent_bar: bool) -> Image.Image:
+        w, h = 25, 12
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        px = img.load()
 
-    save_pixel_png(
-        draw_bitmap(
-            bat_rows,
-            {
-                "K": (124, 132, 144, 255),
-                "W": (236, 240, 246, 255),
-                "1": empty_slot,
-                "2": empty_slot,
-                "3": empty_slot,
-            },
-        ),
-        out / "ds_battery_off",
-    )
+        if lvl < 0:
+            outer = (226, 232, 240, 175) if accent_bar else (122, 130, 142, 255)
+            rim = (190, 200, 214, 70) if accent_bar else (228, 234, 242, 255)
+            divider = (140, 150, 166, 95) if accent_bar else (164, 174, 188, 255)
+            nub_col = outer
+            nub_hi = rim
+        elif lvl == 0:
+            outer = (255, 210, 210, 255) if accent_bar else (178, 34, 42, 255)
+            rim = (92, 22, 28, 220) if accent_bar else (255, 226, 226, 255)
+            divider = (132, 36, 42, 230) if accent_bar else (218, 122, 128, 255)
+            nub_col = outer
+            nub_hi = (232, 72, 76, 255)
+        else:
+            outer = (255, 255, 255, 255) if accent_bar else (26, 32, 40, 255)
+            rim = (18, 24, 34, 185) if accent_bar else (238, 244, 250, 255)
+            divider = (20, 26, 34, 210) if accent_bar else (76, 86, 98, 255)
+            nub_col = outer
+            nub_hi = (210, 222, 236, 255) if accent_bar else (188, 198, 212, 255)
 
-    # 1g. Authentic NTR Top-Bar icons (from NDS-Clock-SVG-Kit top_status_bar_colon_on.svg)
-    #     battery_ok_hex=#38B848, battery_low_hex=#D84848, white=#FFFFFF frame;
-    #     signal bars carry a 1px dark frame so green bars stay legible on any IPL accent (including Green/Yellow).
-    bar_bat_rows = [
-        "WWWWWWWWWWWWWWWWWW..",
-        "W................W..",
-        "W.11112222333344.WW.",
-        "W.11112222333344.WW.",
-        "W.11112222333344.WW.",
-        "W.11112222333344.WW.",
-        "W.11112222333344.WW.",
-        "W.11112222333344.WW.",
-        "W................W..",
-        "WWWWWWWWWWWWWWWWWW..",
-    ]
-    for lvl in (0, 1, 2, 3):
-        fill_col = (56, 184, 72, 255) if lvl >= 2 else ((242, 172, 28, 255) if lvl == 1 else (216, 72, 72, 255))
-        empty_bar_slot = (0, 0, 0, 64)
-        bar_pal = {
-            "W": (255, 255, 255, 255),
-            "1": fill_col if lvl >= 1 else (216, 72, 72, 255),
-            "2": fill_col if lvl >= 2 else empty_bar_slot,
-            "3": fill_col if lvl >= 3 else empty_bar_slot,
-            "4": fill_col if lvl >= 3 else empty_bar_slot,
-        }
-        save_pixel_png(draw_bitmap(bar_bat_rows, bar_pal), out / f"ds_bar_battery_{lvl}")
+        if lvl >= 6:
+            c_hi, c_mid, c_lo = (128, 246, 126, 255), (48, 204, 72, 255), (28, 144, 48, 255)
+        elif lvl == 5:
+            c_hi, c_mid, c_lo = (164, 240, 102, 255), (96, 204, 52, 255), (60, 148, 34, 255)
+        elif lvl in (3, 4):
+            c_hi, c_mid, c_lo = (255, 224, 102, 255), (242, 182, 28, 255), (186, 128, 14, 255)
+        elif lvl == 2:
+            c_hi, c_mid, c_lo = (255, 174, 86, 255), (242, 118, 26, 255), (186, 76, 12, 255)
+        else:
+            c_hi, c_mid, c_lo = (255, 118, 118, 255), (224, 54, 54, 255), (158, 28, 32, 255)
 
-    save_pixel_png(
-        draw_bitmap(
-            bar_bat_rows,
-            {
-                "W": (255, 255, 255, 160),
-                "1": (255, 255, 255, 45),
-                "2": (255, 255, 255, 45),
-                "3": (255, 255, 255, 45),
-                "4": (255, 255, 255, 45),
-            },
-        ),
-        out / "ds_bar_battery_off",
-    )
+        empty_hi = (42, 48, 58, 130) if accent_bar else (196, 206, 218, 255)
+        empty_mid = (32, 38, 48, 125) if accent_bar else (210, 218, 228, 255)
+        empty_lo = (24, 28, 36, 140) if accent_bar else (182, 192, 206, 255)
+        if lvl == 0:
+            empty_hi = (165, 42, 48, 210) if accent_bar else (246, 186, 186, 255)
+            empty_mid = (122, 28, 34, 210) if accent_bar else (238, 148, 148, 255)
+            empty_lo = (88, 18, 24, 220) if accent_bar else (216, 108, 112, 255)
+
+        # Outer 1px frame (x = 0..22, y = 0..11; 1px chamfered corners)
+        for y in range(h):
+            for x in range(23):
+                if (x in (0, 22)) and (y in (0, h - 1)):
+                    continue
+                if x == 0 or x == 22 or y == 0 or y == h - 1 or (x in (1, 21) and y in (1, h - 2)):
+                    px[x, y] = outer
+                else:
+                    px[x, y] = rim
+
+        # Positive terminal cap (x = 23..24, y = 3..8)
+        for y in range(3, 9):
+            px[23, y] = outer if y in (3, 8) else nub_hi
+            if 4 <= y <= 7:
+                px[24, y] = nub_col
+
+        # Interior ribs & 4 cells (cell halves: x=2..3,4..5 | 7..8,9..10 | 12..13,14..15 | 17..18,19..20)
+        for div_x in (6, 11, 16):
+            for y in range(2, 10):
+                px[div_x, y] = divider
+
+        half_ranges = [
+            (2, 4), (4, 6),
+            (7, 9), (9, 11),
+            (12, 14), (14, 16),
+            (17, 19), (19, 21),
+        ]
+        for half_idx, (hx0, hx1) in enumerate(half_ranges):
+            lit = lvl > half_idx
+            for x in range(hx0, hx1):
+                px[x, 2] = c_hi if lit else empty_hi
+                for y in range(3, 8):
+                    px[x, y] = c_mid if lit else empty_mid
+                for y in range(8, 10):
+                    px[x, y] = c_lo if lit else empty_lo
+        return img
+
+    save_pixel_png(make_ds_battery_sprite(-1, False), out / "ds_battery_off")
+    save_pixel_png(make_ds_battery_sprite(-1, True), out / "ds_bar_battery_off")
+    for lvl in range(9):
+        save_pixel_png(make_ds_battery_sprite(lvl, False), out / f"ds_battery_{lvl}")
+        save_pixel_png(make_ds_battery_sprite(lvl, True), out / f"ds_bar_battery_{lvl}")
 
     def make_bar_signal(lvl: int) -> Image.Image:
         sig_img = Image.new("RGBA", (16, 12), (0, 0, 0, 0))
@@ -477,101 +485,154 @@ def build_wii() -> None:
     out.mkdir(parents=True, exist_ok=True)
     w_out.mkdir(parents=True, exist_ok=True)
 
-    # 2a. Wii Menu horizontal pinstripe tile (tileable 8x4 logical -> 8x4, 16x8, 24x12)
+    # 2a. Authentic Wii Menu horizontal pinstripe tile from Wii.JS bg-pattern.png (15x8 -> 1x/2x/3x)
+    bg_pat = Image.open(VENDOR_WII / "bg-pattern.png").convert("RGBA")
+    bg_strip = bg_pat.resize((16, 6), Image.Resampling.BICUBIC)
+    bg_arr = np.array(bg_strip, dtype=np.float32)
+    # Lift slightly toward crisp porcelain white so channel tiles pop cleanly
+    bg_arr[..., :3] = np.clip(bg_arr[..., :3] * 0.45 + 250.0 * 0.55, 0, 255)
+    bg_clean = Image.fromarray(bg_arr.astype(np.uint8), "RGBA")
     for s in (1, 2, 3):
-        w, h = 8 * s, 4 * s
-        arr = np.zeros((h, w, 4), dtype=np.uint8)
-        arr[: h // 2, :] = [242, 246, 250, 255]
-        arr[h // 2 :, :] = [233, 239, 245, 255]
-        Image.fromarray(arr, "RGBA").save(out / (f"wii_pinstripes{'@' + str(s) + 'x' if s > 1 else ''}.png"))
+        suffix = "" if s == 1 else f"@{s}x"
+        bg_clean.resize((16 * s, 6 * s), Image.Resampling.NEAREST).save(out / f"wii_pinstripes{suffix}.png", optimize=True)
 
-    # 2b. Wii Channel Tile (idle & lit) - 9-slice: border=15, logical 88x64
-    for name, glow in [("wii_channel_idle", False), ("wii_channel_lit", True)]:
-        rim_col = "#00a9e0" if glow else "#b8c4d1"
-        rim_w = "2.0" if glow else "1.2"
-        aura = '<rect x="1.5" y="1.5" width="85" height="60" rx="15" fill="none" stroke="#00a9e0" stroke-opacity="0.34" stroke-width="3.0"/>' if glow else ""
-        tile_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="88" height="64" viewBox="0 0 88 64">
+    # 2b. Authentic Wii Channel Tile (idle & lit) using real Wii.JS channel-border / channel-hover (9-slice: border=16,15)
+    ch_idle = Image.open(VENDOR_WII / "channel-border.png").convert("RGBA")
+    ch_hover = Image.open(VENDOR_WII / "channel-hover.png").convert("RGBA")
+    for name, frame_src, glow in [
+        ("wii_channel_idle", ch_idle, False),
+        ("wii_channel_lit", ch_hover, True),
+    ]:
+        w3, h3 = 264, 192  # 88x64 @3x
+        # Soft drop shadow + translucent porcelain glass plate strictly inside frame bounds
+        plate_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="88" height="64" viewBox="0 0 88 64">
           <defs>
             <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="#ffffff"/>
-              <stop offset="0.55" stop-color="#f7fafd"/>
-              <stop offset="1" stop-color="#e7eff6"/>
+              <stop offset="0.58" stop-color="#f6f9fd"/>
+              <stop offset="1" stop-color="#e3ecf5"/>
             </linearGradient>
             <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
               <stop offset="1" stop-color="#ffffff" stop-opacity="0.0"/>
             </linearGradient>
-            <linearGradient id="bevel" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#c6d0db"/>
-              <stop offset="1" stop-color="#edf2f7"/>
-            </linearGradient>
           </defs>
-          <rect x="2.5" y="4" width="83" height="58" rx="14" fill="#2b3a4a" fill-opacity="0.13"/>
-          {aura}
-          <rect x="2" y="2" width="84" height="59" rx="14" fill="url(#bevel)" stroke="{rim_col}" stroke-width="{rim_w}"/>
-          <rect x="3.5" y="3.5" width="81" height="56" rx="12.5" fill="url(#face)" stroke="#ffffff" stroke-width="0.9"/>
-          <rect x="5" y="4.5" width="78" height="20" rx="10" fill="url(#gloss)"/>
+          <rect x="2.5" y="3.5" width="83" height="58.5" rx="14" fill="#233242" fill-opacity="0.14"/>
+          {'<rect x="1.5" y="1.5" width="85" height="60" rx="15" fill="none" stroke="#00a9e0" stroke-opacity="0.32" stroke-width="3.2"/>' if glow else ''}
+          <rect x="3" y="2.5" width="82" height="58" rx="13.5" fill="url(#face)"/>
+          <rect x="5" y="4" width="78" height="20" rx="10" fill="url(#gloss)"/>
         </svg>'''
-        render_svg(tile_svg, out / name, 88, 64)
+        canvas = render_svg_bytes(plate_svg, w3, h3)
+        frame_resized = frame_src.resize((w3 - 6, h3 - 6), Image.Resampling.LANCZOS)
+        # Enhance cyan glow vibrancy on hover while keeping chrome highlight crisp
+        if glow:
+            farr = np.array(frame_resized, dtype=np.float32)
+            # Push midtone blue toward iconic Wii #00A9E0 cyan
+            blue_mask = farr[..., 2] > farr[..., 0]
+            farr[blue_mask, 1] = np.clip(farr[blue_mask, 1] * 0.95 + 12, 0, 255)
+            farr[blue_mask, 2] = np.clip(farr[blue_mask, 2] * 1.05 + 10, 0, 255)
+            frame_resized = Image.fromarray(farr.astype(np.uint8), "RGBA")
+        canvas.alpha_composite(frame_resized, (3, 2))
+        save_scaled_png(canvas, out / name, 88, 64)
 
-    # 2c. Wii Glossy Capsule Pills (idle, outline/active, fill) - 9-slice border=14, logical 72x32
-    for name, c0, c1, rim, rw, shadow in [
-        ("wii_pill_idle", "#ffffff", "#e1e8f0", "#b3c0cd", "1.3", "0.14"),
-        ("wii_pill_outline", "#ffffff", "#edf6fc", "#00a9e0", "2.2", "0.16"),
-        ("wii_pill_fill", "#34c6f4", "#007bb8", "#0069a3", "1.5", "0.18"),
+    # 2c. Authentic Wii Glossy Capsule Pills using real Wii.JS btn-texture.png (9-slice border=14,12; logical 72x32)
+    btn_tex = Image.open(VENDOR_WII / "btn-texture.png").convert("RGBA")
+    w3, h3 = 216, 96  # 72x32 @3x
+    tex_3x = btn_tex.resize((200, 76), Image.Resampling.BICUBIC)
+    for name, mode in [
+        ("wii_pill_idle", "idle"),
+        ("wii_pill_outline", "outline"),
+        ("wii_pill_fill", "fill"),
     ]:
         pill_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="72" height="32" viewBox="0 0 72 32">
           <defs>
-            <linearGradient id="pbg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="{c0}"/>
-              <stop offset="1" stop-color="{c1}"/>
-            </linearGradient>
             <linearGradient id="pgl" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="#ffffff" stop-opacity="0.72"/>
               <stop offset="1" stop-color="#ffffff" stop-opacity="0.0"/>
             </linearGradient>
           </defs>
-          <rect x="2" y="3" width="68" height="28" rx="14" fill="#1e2d3d" fill-opacity="{shadow}"/>
-          <rect x="2" y="1.5" width="68" height="27" rx="13.5" fill="url(#pbg)" stroke="{rim}" stroke-width="{rw}"/>
-          <rect x="4" y="3" width="64" height="12" rx="6" fill="url(#pgl)"/>
+          <rect x="2" y="3" width="68" height="27.5" rx="13.75" fill="#1c2a38" fill-opacity="0.16"/>
+          <rect x="2" y="1.5" width="68" height="27" rx="13.5" fill="#eaf2fa"/>
+          <rect x="4" y="3" width="64" height="11" rx="5.5" fill="url(#pgl)"/>
         </svg>'''
-        render_svg(pill_svg, out / name, 72, 32)
+        base = render_svg_bytes(pill_svg, w3, h3)
+        # Pill interior mask
+        mask = Image.new("L", (w3, h3), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((8, 6, w3 - 9, h3 - 12), radius=39, fill=255)
 
-    # 2d. Wii Circular Glossy Orb Button (36x36) & Curved Bottom Dock (180x40, 9-slice left=32 right=32 top=12 bottom=0)
-    orb_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+        t_layer = Image.new("RGBA", (w3, h3), (0, 0, 0, 0))
+        t_layer.paste(tex_3x, (8, 6))
+        t_arr = np.array(t_layer, dtype=np.float32)
+        if mode == "fill":
+            # Rich aqua Wii active cyan across the glossy texture
+            t_arr[..., 0] = t_arr[..., 0] * 0.25 + 12
+            t_arr[..., 1] = np.clip(t_arr[..., 1] * 0.55 + 95, 0, 255)
+            t_arr[..., 2] = np.clip(t_arr[..., 2] * 0.45 + 165, 0, 255)
+        elif mode == "outline":
+            t_arr[..., 0] = np.clip(t_arr[..., 0] * 0.35 + 170, 0, 255)
+            t_arr[..., 1] = np.clip(t_arr[..., 1] * 0.30 + 180, 0, 255)
+            t_arr[..., 2] = np.clip(t_arr[..., 2] * 0.25 + 195, 0, 255)
+        else:
+            # Neutral silver pearl texture
+            lum = 0.299 * t_arr[..., 0] + 0.587 * t_arr[..., 1] + 0.114 * t_arr[..., 2]
+            t_arr[..., 0] = np.clip(lum * 0.40 + 150, 0, 255)
+            t_arr[..., 1] = np.clip(lum * 0.40 + 152, 0, 255)
+            t_arr[..., 2] = np.clip(lum * 0.40 + 156, 0, 255)
+        t_layer = Image.fromarray(t_arr.astype(np.uint8), "RGBA")
+        t_layer.putalpha(ImageChops.multiply(t_layer.getchannel("A"), mask))
+        base.alpha_composite(t_layer)
+
+        # Top glass shine + crisp rim stroke
+        rim_col = "#006fa8" if mode == "fill" else ("#00a9e0" if mode == "outline" else "#a8b6c6")
+        rim_w = "1.6" if mode == "fill" else ("2.1" if mode == "outline" else "1.2")
+        rim_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="72" height="32" viewBox="0 0 72 32">
+          <defs>
+            <linearGradient id="gloss2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="{'0.65' if mode == 'fill' else '0.82'}"/>
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <rect x="4" y="2.8" width="64" height="11" rx="5.5" fill="url(#gloss2)"/>
+          <rect x="2" y="1.5" width="68" height="27" rx="13.5" fill="none" stroke="{rim_col}" stroke-width="{rim_w}"/>
+        </svg>'''
+        base.alpha_composite(render_svg_bytes(rim_svg, w3, h3))
+        save_scaled_png(base, out / name, 72, 32)
+
+    # 2d. Authentic Wii Circular Orb Button from Wii.JS wii-button.png (36x36 logical)
+    wii_raw = Image.open(VENDOR_WII / "wii-button.png").convert("RGBA").resize((108, 108), Image.Resampling.LANCZOS)
+    # Keep real outer shadow, cyan rim, and chrome bezel, then place clean glossy dome inside center so
+    # the refresh glyph overlays cleanly without colliding with the baked "Wii" wordmark.
+    dome_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
       <defs>
-        <radialGradient id="orbFace" cx="0.5" cy="0.32" r="0.65">
+        <radialGradient id="orbInner" cx="0.5" cy="0.34" r="0.62">
           <stop offset="0" stop-color="#ffffff"/>
-          <stop offset="0.6" stop-color="#ebf2f8"/>
-          <stop offset="1" stop-color="#cbd7e4"/>
+          <stop offset="0.68" stop-color="#eef4fa"/>
+          <stop offset="1" stop-color="#cdd8e5"/>
         </radialGradient>
-        <linearGradient id="orbGloss" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+        <linearGradient id="orbHi" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
           <stop offset="1" stop-color="#ffffff" stop-opacity="0.0"/>
         </linearGradient>
       </defs>
-      <circle cx="18" cy="18.6" r="15.2" fill="#1c2a38" fill-opacity="0.20"/>
-      <circle cx="18" cy="17.5" r="15.2" fill="url(#orbFace)" stroke="#8fa1b4" stroke-width="1.3"/>
-      <circle cx="18" cy="17.5" r="13.4" fill="none" stroke="#00a9e0" stroke-opacity="0.52" stroke-width="1.1"/>
-      <ellipse cx="18" cy="11.2" rx="9.5" ry="5.0" fill="url(#orbGloss)"/>
+      <circle cx="18" cy="17.2" r="12.2" fill="url(#orbInner)"/>
+      <ellipse cx="18" cy="11.8" rx="8.6" ry="4.4" fill="url(#orbHi)"/>
     </svg>'''
-    render_svg(orb_svg, out / "wii_orb", 36, 36)
+    wii_raw.alpha_composite(render_svg_bytes(dome_svg, 108, 108))
+    save_scaled_png(wii_raw, out / "wii_orb", 36, 36)
 
-    dock_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="180" height="40" viewBox="0 0 180 40">
-      <defs>
-        <linearGradient id="dockFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#e3e9f0"/>
-          <stop offset="0.35" stop-color="#d2dbe5"/>
-          <stop offset="1" stop-color="#becad6"/>
-        </linearGradient>
-      </defs>
-      <path d="M0 10 Q28 10 42 3 L138 3 Q152 10 180 10 L180 40 L0 40 Z" fill="url(#dockFill)"/>
-      <path d="M0 10 Q28 10 42 3 L138 3 Q152 10 180 10" fill="none" stroke="#9aa9b9" stroke-width="1.3"/>
-      <path d="M0 11.2 Q28 11.2 42 4.2 L138 4.2 Q152 11.2 180 11.2" fill="none" stroke="#ffffff" stroke-opacity="0.88" stroke-width="1.0"/>
-    </svg>'''
-    render_svg(dock_svg, out / "wii_dock", 180, 40)
+    # Curved Wii System Menu Bottom Dock from real dock-arch.png + mini-bottom-bg.png (180x40 logical; 9-slice left=42, right=42, top=18, bottom=0)
+    dock_raw = Image.open(VENDOR_WII / "dock-arch.png").convert("RGBA")
+    # Crop upper curved shoulder & dipped center arch (full width 1278 x top 260px)
+    dock_crop = dock_raw.crop((0, 0, dock_raw.width, 250))
+    dock_3x = dock_crop.resize((540, 120), Image.Resampling.LANCZOS)
+    # Subtle silver highlight + bottom fade toward Wii pearl chrome
+    d_arr = np.array(dock_3x, dtype=np.float32)
+    a = d_arr[..., 3] > 10
+    d_arr[a, :3] = np.clip(d_arr[a, :3] * 0.72 + 232.0 * 0.28, 0, 255)
+    # Restore vibrant #00a9e0 cyan edge along top contour pixels (alpha transition)
+    save_scaled_png(Image.fromarray(d_arr.astype(np.uint8), "RGBA"), out / "wii_dock", 180, 40)
 
-    # 2e. Wii Slider Thumb (24x24)
+    # 2e. Wii Slider Thumb (24x24) matching wii_orb chrome aesthetic
     thumb_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
       <defs>
         <radialGradient id="puck" cx="0.45" cy="0.3" r="0.68">
@@ -586,118 +647,159 @@ def build_wii() -> None:
     </svg>'''
     render_svg(thumb_svg, out / "wii_slider_thumb", 24, 24)
 
-    # 2f. Wii Forecast Channel 3D Glossy Weather Art (64x64 -> 1x/2x/3x)
-    def wii_sun_svg(cx: float, cy: float, r: float, faint: bool = False) -> str:
-        op = 'opacity="0.55"' if faint else ""
-        rays = []
-        for k in range(8):
-            ang = math.radians(k * 45 - 90)
-            ux, uy = math.cos(ang), math.sin(ang)
-            nx, ny = -uy, ux
-            rb, rt, hb, ht = r * 1.32, r * 1.92, r * 0.22, r * 0.06
-            pts = (
-                f"{cx + rb * ux + hb * nx:.2f},{cy + rb * uy + hb * ny:.2f} "
-                f"{cx + rt * ux + ht * nx:.2f},{cy + rt * uy + ht * ny:.2f} "
-                f"{cx + rt * ux - ht * nx:.2f},{cy + rt * uy - ht * ny:.2f} "
-                f"{cx + rb * ux - hb * nx:.2f},{cy + rb * uy - hb * ny:.2f}"
-            )
-            rays.append(f'<polygon points="{pts}" fill="url(#wSunRay)" stroke="#ee9900" stroke-width="0.4"/>')
-        return f'''<g {op}>
-          <circle cx="{cx}" cy="{cy}" r="{r * 2.15}" fill="url(#wSunHalo)"/>
-          {''.join(rays)}
-          <circle cx="{cx}" cy="{cy}" r="{r}" fill="url(#wSunCore)" stroke="#ea8c00" stroke-width="0.8"/>
-          <ellipse cx="{cx - r * 0.25}" cy="{cy - r * 0.35}" rx="{r * 0.48}" ry="{r * 0.26}" fill="#ffffff" fill-opacity="0.55" transform="rotate(-25 {cx - r * 0.25} {cy - r * 0.35})"/>
-        </g>'''
+    # 2f. Real Nintendo Wii Forecast Channel Weather Art (64x64 -> 1x/2x/3x)
+    # Composited from authentic WM4K Forecast Channel textures (sun, moon, cloud_day, cloud_puff, cloud_storm, rain_streaks)
+    fc_dir = VENDOR_WII / "forecast"
+    fc_sun = Image.open(fc_dir / "sun.png").convert("RGBA")
+    fc_sun = fc_sun.crop(fc_sun.getbbox())
+    fc_moon = Image.open(fc_dir / "moon.png").convert("RGBA")
+    fc_moon = fc_moon.crop(fc_moon.getbbox())
+    fc_cloud = Image.open(fc_dir / "cloud_puff.png").convert("RGBA")
+    fc_cloud = fc_cloud.crop(fc_cloud.getbbox())
+    fc_cloud_wide = Image.open(fc_dir / "cloud_day.png").convert("RGBA")
+    fc_cloud_wide = fc_cloud_wide.crop(fc_cloud_wide.getbbox())
+    fc_storm = Image.open(fc_dir / "cloud_storm.png").convert("RGBA")
+    fc_storm = fc_storm.crop(fc_storm.getbbox())
+    fc_rain = Image.open(fc_dir / "rain_streaks.png").convert("RGBA")
+    fc_rain = fc_rain.crop(fc_rain.getbbox())
 
-    def wii_moon_svg(cx: float, cy: float, r: float) -> str:
-        return f'''<g>
-          <circle cx="{cx}" cy="{cy}" r="{r * 1.9}" fill="url(#wMoonHalo)"/>
-          <mask id="mMask_{int(cx)}_{int(cy)}">
-            <rect width="64" height="64" fill="black"/>
-            <circle cx="{cx}" cy="{cy}" r="{r}" fill="white"/>
-            <circle cx="{cx + r * 0.42}" cy="{cy - r * 0.35}" r="{r * 0.88}" fill="black"/>
-          </mask>
-          <circle cx="{cx}" cy="{cy}" r="{r}" fill="url(#wMoonGrad)" stroke="#5589bd" stroke-width="0.9" mask="url(#mMask_{int(cx)}_{int(cy)})"/>
-          <circle cx="{cx - r * 0.4}" cy="{cy + r * 0.32}" r="{r * 0.16}" fill="#4d7fb2" fill-opacity="0.45" mask="url(#mMask_{int(cx)}_{int(cy)})"/>
-        </g>'''
+    def fit_layer(im: Image.Image, target_w: int, target_h: int) -> Image.Image:
+        c = im.copy()
+        c.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
+        return c
 
-    def wii_star_svg(cx: float, cy: float, r: float) -> str:
-        k = r * 0.22
-        return f'''<g>
-          <circle cx="{cx}" cy="{cy}" r="{r * 2.1}" fill="url(#wStarHalo)"/>
-          <path d="M{cx},{cy - r} Q{cx + k},{cy - k} {cx + r},{cy} Q{cx + k},{cy + k} {cx},{cy + r} Q{cx - k},{cy + k} {cx - r},{cy} Q{cx - k},{cy - k} {cx},{cy - r} Z" fill="#fff2a6" stroke="#7fb3dc" stroke-width="0.6"/>
-        </g>'''
+    def make_fc_icon() -> Image.Image:
+        return Image.new("RGBA", (192, 192), (0, 0, 0, 0))
 
-    def wii_cloud_svg(cx: float, cy: float, s: float, storm: bool = False) -> str:
-        grad = "wCloudStorm" if storm else "wCloudBody"
-        edge = "#7d9ab5" if storm else "#a7c3dc"
-        return f'''<g transform="translate({cx},{cy}) scale({s})">
-          <ellipse cx="0" cy="11" rx="18" ry="3.2" fill="#2a6ea0" fill-opacity="0.18"/>
-          <g stroke="{edge}" stroke-width="1.3" fill="url(#{grad})">
-            <circle cx="-10" cy="3" r="8.5"/>
-            <circle cx="0" cy="-3.5" r="10.5"/>
-            <circle cx="11" cy="2" r="8.5"/>
-            <rect x="-12" y="1" width="24" height="10.5" rx="5.2"/>
-          </g>
-          <g fill="url(#{grad})">
-            <circle cx="-10" cy="3" r="8.5"/>
-            <circle cx="0" cy="-3.5" r="10.5"/>
-            <circle cx="11" cy="2" r="8.5"/>
-            <rect x="-12" y="1" width="24" height="10.5" rx="5.2"/>
-          </g>
-          <path d="M-8,-6 A9.5,9.5 0 0,1 8,-7" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.9"/>
-        </g>'''
+    def fc_rain_band(w: int, h: int, alpha_mul: float = 1.0) -> Image.Image:
+        band = fc_rain.resize((w, h), Image.Resampling.LANCZOS)
+        arr = np.array(band, dtype=np.float32)
+        # Deepen contrast so rain streaks read clearly against pearl white tiles
+        arr[..., 0] = np.clip(arr[..., 0] * 0.55, 0, 255)
+        arr[..., 1] = np.clip(arr[..., 1] * 0.78 + 18, 0, 255)
+        arr[..., 2] = np.clip(arr[..., 2] * 1.05 + 38, 0, 255)
+        arr[..., 3] = np.clip(arr[..., 3] * alpha_mul, 0, 255)
+        return Image.fromarray(arr.astype(np.uint8), "RGBA")
 
-    def wii_drop_svg(x: float, top: float, w: float, h: float) -> str:
-        r = w / 2
-        yc = top + h - r
-        return f'''<g>
-          <path d="M{x},{top} C{x + 0.6 * r},{top + 0.42 * h} {x + r},{yc - 0.5 * r} {x + r},{yc} A{r},{r} 0 1,1 {x - r},{yc} C{x - r},{yc - 0.5 * r} {x - 0.6 * r},{top + 0.42 * h} {x},{top} Z"
-                fill="url(#wDropGrad)" stroke="#066ca1" stroke-width="0.6"/>
-          <line x1="{x - 0.42 * r}" y1="{yc - 0.1 * r}" x2="{x - 0.38 * r}" y2="{yc - 0.72 * r}" stroke="#ffffff" stroke-opacity="0.85" stroke-width="{0.36 * r:.2f}" stroke-linecap="round"/>
-        </g>'''
+    # clear_day
+    ic = make_fc_icon()
+    sun_big = fit_layer(fc_sun, 164, 164)
+    ic.alpha_composite(sun_big, ((192 - sun_big.width) // 2, (192 - sun_big.height) // 2))
+    save_scaled_png(ic, w_out / "clear_day", 64, 64)
 
-    def wii_flake_svg(cx: float, cy: float, r: float) -> str:
-        lines = []
-        for k in range(6):
-            a = math.radians(k * 60 - 90)
-            ux, uy = math.cos(a), math.sin(a)
-            lines.append(f'<line x1="{cx}" y1="{cy}" x2="{cx + r * ux:.2f}" y2="{cy + r * uy:.2f}"/>')
-        s = ''.join(lines)
-        return f'<g stroke="#7bc3ea" stroke-width="{r * 0.42:.2f}" stroke-linecap="round">{s}</g><g stroke="#ffffff" stroke-width="{r * 0.22:.2f}" stroke-linecap="round">{s}</g>'
+    # clear_night
+    ic = make_fc_icon()
+    stars_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+      <circle cx="15" cy="14" r="2.2" fill="#ffe878"/>
+      <circle cx="51" cy="18" r="1.8" fill="#ffe878"/>
+      <circle cx="48" cy="50" r="2.0" fill="#d8ecff"/>
+    </svg>'''
+    ic.alpha_composite(render_svg_bytes(stars_svg, 192, 192))
+    moon_big = fit_layer(fc_moon, 128, 128)
+    ic.alpha_composite(moon_big, (28, 32))
+    save_scaled_png(ic, w_out / "clear_night", 64, 64)
 
-    wii_defs = '''<defs>
-      <radialGradient id="wSunHalo"><stop offset="0.35" stop-color="#ffe066" stop-opacity="0.55"/><stop offset="1" stop-color="#ffc82e" stop-opacity="0"/></radialGradient>
-      <radialGradient id="wSunCore" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#fff9b8"/><stop offset="0.5" stop-color="#ffcf33"/><stop offset="1" stop-color="#ff8c1a"/></radialGradient>
-      <linearGradient id="wSunRay" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe566"/><stop offset="1" stop-color="#ffa31a"/></linearGradient>
-      <radialGradient id="wMoonHalo"><stop offset="0.4" stop-color="#87c8f7" stop-opacity="0.45"/><stop offset="1" stop-color="#87c8f7" stop-opacity="0"/></radialGradient>
-      <radialGradient id="wMoonGrad" cx="0.3" cy="0.3" r="0.8"><stop offset="0" stop-color="#eff7ff"/><stop offset="1" stop-color="#7eb1e0"/></radialGradient>
-      <radialGradient id="wStarHalo"><stop offset="0" stop-color="#ffffff" stop-opacity="0.7"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
-      <linearGradient id="wCloudBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="0.55" stop-color="#f2f8fd"/><stop offset="1" stop-color="#c4def4"/></linearGradient>
-      <linearGradient id="wCloudStorm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ebf2f8"/><stop offset="0.55" stop-color="#cddfeb"/><stop offset="1" stop-color="#8eb0cc"/></linearGradient>
-      <linearGradient id="wDropGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#33c4f5"/><stop offset="1" stop-color="#0075b5"/></linearGradient>
-      <linearGradient id="wBoltGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff078"/><stop offset="1" stop-color="#ffa600"/></linearGradient>
-    </defs>'''
+    # partly_cloudy_day
+    ic = make_fc_icon()
+    sun_sm = fit_layer(fc_sun, 114, 114)
+    cl = fit_layer(fc_cloud, 148, 92)
+    ic.alpha_composite(sun_sm, (14, 16))
+    ic.alpha_composite(cl, (34, 84))
+    save_scaled_png(ic, w_out / "partly_cloudy_day", 64, 64)
 
-    wii_cases = {
-        "clear_day": wii_sun_svg(32, 32, 13.5),
-        "clear_night": wii_moon_svg(31, 33, 13.5) + wii_star_svg(14, 15, 4.2) + wii_star_svg(50, 17, 3.0) + wii_star_svg(48, 49, 3.6),
-        "partly_cloudy_day": wii_sun_svg(22, 22, 10.5) + wii_cloud_svg(34, 37, 0.96),
-        "partly_cloudy_night": wii_moon_svg(21, 22, 10.5) + wii_star_svg(49, 13, 3.4) + wii_cloud_svg(34, 37, 0.96),
-        "cloudy": wii_cloud_svg(39, 25, 0.72) + wii_cloud_svg(29, 38, 1.0),
-        "drizzle": wii_cloud_svg(32, 26, 0.96) + wii_drop_svg(20, 41, 4.8, 10) + wii_drop_svg(32, 46, 4.8, 10) + wii_drop_svg(44, 41, 4.8, 10),
-        "rain": wii_cloud_svg(32, 24, 0.98) + wii_drop_svg(18, 40, 5.4, 12.5) + wii_drop_svg(32, 46, 5.4, 12.5) + wii_drop_svg(46, 40, 5.4, 12.5),
-        "heavy_rain": wii_cloud_svg(32, 23, 1.0, storm=True) + wii_drop_svg(14, 40, 5.0, 12) + wii_drop_svg(26, 46, 5.0, 12) + wii_drop_svg(38, 40, 5.0, 12) + wii_drop_svg(50, 46, 5.0, 12),
-        "thunderstorm": wii_cloud_svg(32, 22, 1.0, storm=True) + '<polygon points="36,29 46,29 37,41 44,41 29,59 33,46 26,46" fill="url(#wBoltGrad)" stroke="#d98700" stroke-width="0.9" stroke-linejoin="round"/>' + wii_drop_svg(15, 43, 4.5, 10) + wii_drop_svg(50, 42, 4.5, 10),
-        "snow": wii_cloud_svg(32, 24, 0.96) + wii_flake_svg(18, 48, 5.5) + wii_flake_svg(33, 54, 4.8) + wii_flake_svg(47, 47, 5.2),
-        "mist": '<g stroke-linecap="round"><g stroke="#96b9d4" stroke-width="5.6"><line x1="8" y1="24" x2="56" y2="24"/><line x1="16" y1="34" x2="48" y2="34"/><line x1="7" y1="44" x2="44" y2="44"/><line x1="19" y1="53" x2="56" y2="53"/></g><g stroke="#ffffff" stroke-width="3.6"><line x1="8" y1="24" x2="56" y2="24"/><line x1="16" y1="34" x2="48" y2="34"/><line x1="7" y1="44" x2="44" y2="44"/><line x1="19" y1="53" x2="56" y2="53"/></g></g>',
-        "atmospheric": wii_sun_svg(32, 25, 11.5, faint=True) + '<g stroke-linecap="round"><g stroke="#96b9d4" stroke-width="6"><line x1="10" y1="42" x2="54" y2="42"/><line x1="18" y1="52" x2="46" y2="52"/></g><g stroke="#ffffff" stroke-width="4"><line x1="10" y1="42" x2="54" y2="42"/><line x1="18" y1="52" x2="46" y2="52"/></g></g>',
-        "fog": wii_cloud_svg(32, 22, 0.92) + '<g stroke-linecap="round"><g stroke="#96b9d4" stroke-width="6.2"><line x1="7" y1="38" x2="51" y2="38"/><line x1="15" y1="47" x2="57" y2="47"/><line x1="9" y1="55" x2="46" y2="55"/></g><g stroke="#ffffff" stroke-width="4.2"><line x1="7" y1="38" x2="51" y2="38"/><line x1="15" y1="47" x2="57" y2="47"/><line x1="9" y1="55" x2="46" y2="55"/></g></g>',
-        "unknown": wii_cloud_svg(32, 28, 1.0) + '<text x="32" y="34" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="18" fill="#0078b5">?</text>',
-    }
-    for cond, body in wii_cases.items():
-        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">{wii_defs}{body}</svg>'
-        render_svg(svg, w_out / cond, 64, 64)
+    # partly_cloudy_night
+    ic = make_fc_icon()
+    moon_sm = fit_layer(fc_moon, 94, 94)
+    ic.alpha_composite(moon_sm, (20, 24))
+    ic.alpha_composite(render_svg_bytes('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="49" cy="14" r="2.0" fill="#ffe878"/></svg>', 192, 192))
+    ic.alpha_composite(cl, (34, 84))
+    save_scaled_png(ic, w_out / "partly_cloudy_night", 64, 64)
+
+    # cloudy
+    ic = make_fc_icon()
+    cl_back = ImageEnhance.Brightness(fit_layer(fc_cloud, 118, 72)).enhance(0.92)
+    cl_front = fit_layer(fc_cloud_wide, 166, 94)
+    ic.alpha_composite(cl_back, (58, 44))
+    ic.alpha_composite(cl_front, (14, 80))
+    save_scaled_png(ic, w_out / "cloudy", 64, 64)
+
+    # drizzle & rain & heavy_rain
+    ic = make_fc_icon()
+    cl_r = fit_layer(fc_cloud, 152, 88)
+    ic.alpha_composite(fc_rain_band(120, 74, 0.72), (36, 102))
+    ic.alpha_composite(cl_r, (20, 32))
+    save_scaled_png(ic, w_out / "drizzle", 64, 64)
+
+    ic = make_fc_icon()
+    ic.alpha_composite(fc_rain_band(138, 86, 0.96), (26, 94))
+    ic.alpha_composite(cl_r, (20, 26))
+    save_scaled_png(ic, w_out / "rain", 64, 64)
+
+    ic = make_fc_icon()
+    cl_st = fit_layer(fc_storm, 166, 84)
+    ic.alpha_composite(fc_rain_band(152, 92, 1.0), (20, 88))
+    ic.alpha_composite(cl_st, (13, 28))
+    save_scaled_png(ic, w_out / "heavy_rain", 64, 64)
+
+    # thunderstorm
+    ic = make_fc_icon()
+    bolt_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+      <defs>
+        <linearGradient id="wBoltGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff484"/><stop offset="1" stop-color="#ff9900"/></linearGradient>
+      </defs>
+      <polygon points="34,27 45,27 36,40 43,40 27,59 31,45 24,45" fill="url(#wBoltGrad)" stroke="#d47d00" stroke-width="1.0" stroke-linejoin="round"/>
+    </svg>'''
+    ic.alpha_composite(fc_rain_band(140, 78, 0.75), (26, 96))
+    ic.alpha_composite(render_svg_bytes(bolt_svg, 192, 192))
+    ic.alpha_composite(cl_st, (13, 24))
+    save_scaled_png(ic, w_out / "thunderstorm", 64, 64)
+
+    # snow
+    ic = make_fc_icon()
+    flake_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+      <g stroke="#5ea8da" stroke-width="2.4" stroke-linecap="round">
+        <line x1="20" y1="43" x2="20" y2="55"/><line x1="14.8" y1="46" x2="25.2" y2="52"/><line x1="14.8" y1="52" x2="25.2" y2="46"/>
+        <line x1="34" y1="47" x2="34" y2="59"/><line x1="28.8" y1="50" x2="39.2" y2="56"/><line x1="28.8" y1="56" x2="39.2" y2="50"/>
+        <line x1="47" y1="42" x2="47" y2="54"/><line x1="41.8" y1="45" x2="52.2" y2="51"/><line x1="41.8" y1="51" x2="52.2" y2="45"/>
+      </g>
+      <g stroke="#ffffff" stroke-width="1.2" stroke-linecap="round">
+        <line x1="20" y1="43" x2="20" y2="55"/><line x1="14.8" y1="46" x2="25.2" y2="52"/><line x1="14.8" y1="52" x2="25.2" y2="46"/>
+        <line x1="34" y1="47" x2="34" y2="59"/><line x1="28.8" y1="50" x2="39.2" y2="56"/><line x1="28.8" y1="56" x2="39.2" y2="50"/>
+        <line x1="47" y1="42" x2="47" y2="54"/><line x1="41.8" y1="45" x2="52.2" y2="51"/><line x1="41.8" y1="51" x2="52.2" y2="45"/>
+      </g>
+    </svg>'''
+    ic.alpha_composite(render_svg_bytes(flake_svg, 192, 192))
+    ic.alpha_composite(cl_r, (20, 26))
+    save_scaled_png(ic, w_out / "snow", 64, 64)
+
+    # mist / fog / atmospheric / unknown
+    haze_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+      <g stroke-linecap="round">
+        <g stroke="#8fb6d4" stroke-width="5.2"><line x1="8" y1="36" x2="52" y2="36"/><line x1="15" y1="46" x2="57" y2="46"/><line x1="10" y1="55" x2="46" y2="55"/></g>
+        <g stroke="#ffffff" stroke-width="3.2"><line x1="8" y1="36" x2="52" y2="36"/><line x1="15" y1="46" x2="57" y2="46"/><line x1="10" y1="55" x2="46" y2="55"/></g>
+      </g>
+    </svg>'''
+    ic = make_fc_icon()
+    ic.alpha_composite(render_svg_bytes(haze_svg, 192, 192))
+    save_scaled_png(ic, w_out / "mist", 64, 64)
+
+    ic = make_fc_icon()
+    ic.alpha_composite(render_svg_bytes(haze_svg, 192, 192))
+    ic.alpha_composite(fit_layer(fc_cloud, 146, 82), (23, 20))
+    save_scaled_png(ic, w_out / "fog", 64, 64)
+
+    ic = make_fc_icon()
+    sun_faint = fit_layer(fc_sun, 114, 114)
+    sf_arr = np.array(sun_faint, dtype=np.float32)
+    sf_arr[..., 3] *= 0.62
+    ic.alpha_composite(Image.fromarray(sf_arr.astype(np.uint8), "RGBA"), (39, 14))
+    ic.alpha_composite(render_svg_bytes(haze_svg, 192, 192))
+    save_scaled_png(ic, w_out / "atmospheric", 64, 64)
+
+    ic = make_fc_icon()
+    ic.alpha_composite(fit_layer(fc_cloud, 152, 88), (20, 48))
+    ic.alpha_composite(render_svg_bytes('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><text x="32" y="39" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="18" fill="#0078b5">?</text></svg>', 192, 192))
+    save_scaled_png(ic, w_out / "unknown", 64, 64)
 
 
 # ==============================================================================
@@ -709,21 +811,6 @@ def build_nothing() -> None:
     w_out = out / "weather"
     out.mkdir(parents=True, exist_ok=True)
     w_out.mkdir(parents=True, exist_ok=True)
-
-    # 3a. Nothing Phone Glyph Interface Segmented Outer Bezel (120x120)
-    # Razor-sharp unblurred Glyph LED arcs framing DotRing with matte OLED dial recess.
-    glyph_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-      <circle cx="60" cy="60" r="51.5" fill="#101012" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.9"/>
-      <path d="M 32 13 A 55 55 0 0 1 92 16" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="1.8" stroke-linecap="round"/>
-      <path d="M 103 26 A 55 55 0 0 1 113 72" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1.8" stroke-linecap="round"/>
-      <path d="M 106 89 A 55 55 0 0 1 40 111" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="1.8" stroke-linecap="round"/>
-      <path d="M 22 100 A 55 55 0 0 1 14 29" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="1.8" stroke-linecap="round"/>
-      <circle cx="60" cy="4.8" r="1.05" fill="#ffffff" fill-opacity="0.40"/>
-      <circle cx="115.2" cy="60" r="1.05" fill="#ffffff" fill-opacity="0.22"/>
-      <circle cx="60" cy="115.2" r="1.05" fill="#ffffff" fill-opacity="0.22"/>
-      <circle cx="4.8" cy="60" r="1.05" fill="#ffffff" fill-opacity="0.22"/>
-    </svg>'''
-    render_svg(glyph_svg, out / "nothing_glyph_ring", 120, 120)
 
     # 3a2. Nothing OS Circular Dot-Matrix Refresh Button (40x40)
     dots_ring = []
@@ -1395,6 +1482,61 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
           <ellipse cx="20" cy="12" rx="10" ry="4.5" fill="#ffffff" fill-opacity="{hi}"/>
         </svg>'''
         render_svg(xorb_svg, out / name, 40, 40)
+
+    # 5f3. Light/Dark Mode Toggle Icon (24x24 -> 1x/2x/3x)
+    # In Light mode, shows crescent moon + star (switch to Carbon Dark).
+    # In Carbon Dark mode, shows 8-ray sun (switch to Light Blades).
+    for name, active in [("xbox_mode_icon", False), ("xbox_mode_icon_active", True)]:
+        if not dark:
+            moon_d = "M13.2,4.4 A7.6,7.6 0 1,0 19.6,14.8 A5.8,5.8 0 1,1 13.2,4.4 Z"
+            star_d = "M17.6,5.0 L18.35,6.85 L20.2,7.6 L18.35,8.35 L17.6,10.2 L16.85,8.35 L15.0,7.6 L16.85,6.85 Z"
+            if active:
+                mode_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                  <g transform="translate(0, 0.7)" fill="#0d2604" fill-opacity="0.30">
+                    <path d="{moon_d}"/>
+                    <path d="{star_d}"/>
+                  </g>
+                  <path d="{moon_d}" fill="#ffffff"/>
+                  <path d="{star_d}" fill="#ffffff"/>
+                </svg>'''
+            else:
+                mode_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                  <defs>
+                    <linearGradient id="xm" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#283442"/>
+                      <stop offset="1" stop-color="#141b24"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="{moon_d}" fill="url(#xm)" stroke="#0c1118" stroke-width="0.7" stroke-linejoin="round"/>
+                  <path d="{star_d}" fill="#5a9612" stroke="#2f6409" stroke-width="0.5" stroke-linejoin="round"/>
+                </svg>'''
+        else:
+            rays = "".join(
+                f'<line x1="{12 + 6.1 * math.cos(k * math.pi / 4):.2f}" y1="{12 + 6.1 * math.sin(k * math.pi / 4):.2f}" '
+                f'x2="{12 + 8.6 * math.cos(k * math.pi / 4):.2f}" y2="{12 + 8.6 * math.sin(k * math.pi / 4):.2f}"/>'
+                for k in range(8)
+            )
+            if active:
+                mode_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                  <g transform="translate(0, 0.7)" opacity="0.30">
+                    <g stroke="#0d2604" stroke-width="1.8" stroke-linecap="round">{rays}</g>
+                    <circle cx="12" cy="12" r="4.2" fill="#0d2604"/>
+                  </g>
+                  <g stroke="#ffffff" stroke-width="1.8" stroke-linecap="round">{rays}</g>
+                  <circle cx="12" cy="12" r="4.2" fill="#ffffff"/>
+                </svg>'''
+            else:
+                mode_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                  <defs>
+                    <linearGradient id="xs" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#fff099"/>
+                      <stop offset="1" stop-color="#f0b418"/>
+                    </linearGradient>
+                  </defs>
+                  <g stroke="#f5d442" stroke-width="1.8" stroke-linecap="round">{rays}</g>
+                  <circle cx="12" cy="12" r="4.2" fill="url(#xs)" stroke="#a67408" stroke-width="0.65"/>
+                </svg>'''
+        render_svg(mode_svg, out / name, 24, 24)
 
     # 5g. Chrome vs Dark-Gunmetal & Emerald Slider Thumb (24x24 -> 1x/2x/3x)
     if dark:

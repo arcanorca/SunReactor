@@ -25,14 +25,16 @@ QtObject {
 
     // --- colour -------------------------------------------------------------------
 
-    /*! Card fill: matte Nothing charcoal (#18181A on OLED black), authentic Nothing OS 2.5/3.0 squircle. */
-    readonly property color surface: theme.mix(theme.bg, theme.fg, 0.095)
+    /*! Card fill: matte Nothing charcoal (#161618 on OLED black), authentic Nothing OS 2.5/3.0 squircle. */
+    readonly property color surface: theme.mix(theme.bg, theme.fg, 0.085)
+    /*! Recessed OLED dial well on OLED black. */
+    readonly property color dialSurface: theme.mix(theme.bg, theme.fg, 0.04)
     /*! Recessed track / elevated matte charcoal (#252528 on OLED black). */
     readonly property color surfaceElevated: theme.mix(theme.bg, theme.fg, 0.145)
     readonly property color ink: theme.fg
     readonly property color muted: theme.textMuted
     /*! Subtle hairline outlines of cards and pills. */
-    readonly property color outline: theme.alpha(theme.fg, 0.10)
+    readonly property color outline: theme.alpha(theme.fg, 0.12)
     /*! The one signal colour: live lamp, now dot, ring head, slider thumb, call to action. */
     readonly property color accent: theme.accent
     /*! Unlit cells of dot numerals: none drawn, so only the glyphs show. */
@@ -99,7 +101,7 @@ QtObject {
     readonly property int sentencePx: Math.max(10, Math.round(unit * 0.60))
     readonly property int figurePx: Math.max(12, Math.round(unit * 0.78))
     readonly property int dotoHeadingPx: Math.max(11, Math.round(unit * 0.70))
-    readonly property int dotoHeroPx: Math.round(unit * 1.42)
+    readonly property int dotoHeroPx: Math.round(unit * 1.48)
     readonly property int dotoValuePx: Math.max(13, Math.round(unit * 0.98))
 
     readonly property font heading: Qt.font({

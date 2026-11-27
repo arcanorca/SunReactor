@@ -1,26 +1,71 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-  <title>Adaptive brightness</title>
+  <title>SunReactor</title>
   <!--
-    The sun on the horizon: the lit half above the line is the part of the day
-    the daemon reacts to, the muted half below it is night. Flat Breeze
-    geometry, no gradients or filters, so it stays legible down to 22px.
+    KDE gear as the sun, diagonally half in night shade: the sunlit side wears
+    cool pixel shades, the night side rests peacefully beneath the stars.
   -->
-  <g stroke-linecap="round" fill="none">
-    <!-- Horizon, drawn only beside the disc so the split edge stays crisp -->
-    <g stroke="#2980b9" stroke-width="3">
-      <path d="M5 29h6.5"/>
-      <path d="M36.5 29H43"/>
+  <defs>
+    <clipPath id="l"><polygon points="0,0 27.6,0 20.4,48 0,48"/></clipPath>
+    <clipPath id="lOverlap"><polygon points="0,0 27.8,0 20.6,48 0,48"/></clipPath>
+    <clipPath id="r"><polygon points="27.6,0 48,0 48,48 20.4,48"/></clipPath>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#323842"/>
+      <stop offset="1" stop-color="#22272f"/>
+    </linearGradient>
+    <linearGradient id="sunGrad" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#ffd842"/>
+      <stop offset="0.55" stop-color="#ffbf1a"/>
+      <stop offset="1" stop-color="#ff990a"/>
+    </linearGradient>
+    <linearGradient id="nightGrad" x1="0.3" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6b7cf2"/>
+      <stop offset="0.55" stop-color="#5564d8"/>
+      <stop offset="1" stop-color="#3e49ad"/>
+    </linearGradient>
+    <g id="gearShape" transform="rotate(8.53 24 24)">
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(18 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(54 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(90 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(126 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(162 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(198 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(234 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(270 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(306 24 24)"/>
+      <rect x="21.2" y="3.8" width="5.6" height="7.5" rx="1.6" transform="rotate(342 24 24)"/>
+      <circle cx="24" cy="24" r="14.8"/>
     </g>
-    <!-- Rays -->
-    <g stroke="#f67400" stroke-width="3">
-      <path d="M24 15v-4.5"/>
-      <path d="M33.9 19.1 37.1 15.9"/>
-      <path d="M14.1 19.1 10.9 15.9"/>
-    </g>
+  </defs>
+
+  <!-- Dark Breeze-slate rounded badge with subtle top-edge inset bevel -->
+  <rect width="48" height="48" rx="10" fill="url(#bgGrad)"/>
+  <rect x="0.6" y="0.6" width="46.8" height="46.8" rx="9.4" fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="0.9"/>
+
+  <!-- Left angled half: Sun / Day -->
+  <g clip-path="url(#lOverlap)">
+    <use href="#gearShape" fill="url(#sunGrad)"/>
   </g>
-  <!-- Below the horizon -->
-  <path d="M13.5 29a10.5 10.5 0 0 0 21 0z" fill="#2980b9"/>
-  <!-- Above the horizon -->
-  <path d="M13.5 29a10.5 10.5 0 0 1 21 0z" fill="#f67400"/>
+
+  <!-- Right angled half: Night / Twilight -->
+  <g clip-path="url(#r)">
+    <use href="#gearShape" fill="url(#nightGrad)"/>
+  </g>
+
+  <!-- Pixel sunglasses + diagonal specular glint (clipped neatly at the angled seam) -->
+  <g clip-path="url(#l)" shape-rendering="crispEdges">
+    <path d="M10 18H26V21H22.2V26H20V28H14V26H12V21H10Z" fill="#14161e"/>
+    <path d="M14 21H16V23H14ZM16 23H18V25H16Z" fill="#ffffff"/>
+  </g>
+
+  <!-- Calm closed eye on Night side -->
+  <path d="M27.6 23Q30.8 25.8 34 23" fill="none" stroke="#ffffff" stroke-width="2.1" stroke-linecap="round"/>
+
+  <!-- Continuous smile split cleanly along the diagonal -->
+  <path d="M18.2 31.2Q24 34.8 29.8 31.2" fill="none" stroke="#14161e" stroke-width="2.4" stroke-linecap="round" clip-path="url(#l)"/>
+  <path d="M18.2 31.2Q24 34.8 29.8 31.2" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" clip-path="url(#r)"/>
+
+  <!-- Starlight night accents (no ZZZ, no stray dot) -->
+  <path d="M39.8 5.0Q39.8 8.4 43.2 8.4Q39.8 8.4 39.8 11.8Q39.8 8.4 36.4 8.4Q39.8 8.4 39.8 5.0Z" fill="#fff4b8"/>
+  <path d="M42.2 32.4Q42.2 34.4 44.2 34.4Q42.2 34.4 42.2 36.4Q42.2 34.4 40.2 34.4Q42.2 34.4 42.2 32.4Z" fill="#b9ccff" opacity="0.9"/>
 </svg>
