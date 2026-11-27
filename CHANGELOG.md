@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.1] - 2026-11-27
+
+### Added
+- **Nothing solar horizon glyphs**: added `nothing_sunrise*` and `nothing_sunset*` glyph assets for the Nothing skin's sun-times card.
+
+### Changed
+- **Plasma flagship skins**:
+  - **Nintendo DS (`nds`)**: removed the `NDS` badge from the NTR top bar (`NdsStatusBar.qml`) and deleted the obsolete `ds_ntr_badge*` PNG assets.
+  - **Xbox 360 (`xbox360`)**: rebuilt light (`Blades`) and dark (`Carbon`) backdrop, tab blades, Xenon Guide sphere, Ring of Light, focus frames, and glossy weather assets from authentic upstream Xbox 360 dashboard assets vendored in `tools/vendor/xbox360/`.
+  - **Nothing (`nothing`)**: replaced synthetic dot blobs and blurred dial assets with crisp official Nothing OS dot-matrix weather/solar assets (`tools/vendor/nothing/`), unblurred OLED dial rings, loaded bundled `Geist` alongside `Doto` and `JetBrains Mono`, and added cohesive squircle cards across forecast and sun-times panels.
+
+### Fixed
+- **Laptop eDP discovery & TUI setup**: `has_invalid_display_record` now ignores expected `Invalid display` records belonging to internal laptop panels (`eDP`, `LVDS`, `DSI`) while still flagging external (`DP`/`HDMI`/`DVI`/`VGA`) or unidentified invalid DDC records, and `has_incomplete_ddc_probe` no longer blocks importing internal backlight devices when `ddcutil` is missing.
+- **Installer (`install.sh`) remote Plasma widget builds**: piped (`curl ... | bash`) and standalone runs no longer read `$PWD/plasma` or skip the Plasma widget; when `cmake`, `plasmashell`, and `kpackagetool6` (or `--with-plasma`) are available outside a local checkout, `install.sh` fetches and extracts `plasma/org.sunreactor.plasma` from the matching GitHub release tag archive.
+
 ## [0.14.0] - 2026-11-27
 
 ### Added

@@ -47,19 +47,21 @@ QtObject {
     readonly property color warning: theme.warning
     readonly property color danger: theme.error
 
-    readonly property color grooveFill: isDark ? "#0d1115" : "#c0cad4"
-    readonly property color grooveEdge: isDark ? "#3c4752" : "#7b8794"
-    readonly property color grooveGlowTop: isDark ? "#86ee46" : "#76de3a"
-    readonly property color grooveGlowBottom: isDark ? "#3d9b18" : "#388f16"
-    readonly property color allBadgeFill: isDark ? "#46a620" : "#3a9416"
-    readonly property color allBadgeEdge: isDark ? "#78d948" : "#2b7010"
-    readonly property color indexBg: isDark ? "#1c2d17" : "#e6f4dc"
+    readonly property color grooveFill: isDark ? "#0b0f13" : "#b8c4cf"
+    readonly property color grooveEdge: isDark ? "#3c4752" : "#778592"
+    readonly property color grooveGlowTop: isDark ? "#b6e84a" : "#a9d43c"
+    readonly property color grooveGlowBottom: isDark ? "#4e8b10" : "#5a9612"
+    readonly property color allBadgeFill: isDark ? "#4f9a16" : "#448a12"
+    readonly property color allBadgeEdge: isDark ? "#83c52b" : "#2f6409"
+    readonly property color indexBg: isDark ? "#1c2d17" : "#e8f5dd"
     readonly property color indexBgOff: isDark ? "#20272f" : "#dce2e8"
+    readonly property color weatherBlue: isDark ? "#7cc4ff" : "#1c5ca0"
+    readonly property color cardFocusTop: "#83c52b"
     readonly property color gridRule: isDark ? alpha("#ffffff", 0.11) : alpha("#5b6774", 0.22)
-    readonly property color curveStroke: isDark ? "#7ce842" : "#44a61a"
-    readonly property color curveGlow: isDark ? Qt.rgba(0.54, 0.94, 0.30, 0.38) : Qt.rgba(0.42, 0.84, 0.22, 0.28)
-    readonly property color curveAreaTop: isDark ? Qt.rgba(0.45, 0.88, 0.25, 0.42) : Qt.rgba(0.45, 0.86, 0.25, 0.32)
-    readonly property color curveAreaBottom: isDark ? Qt.rgba(0.32, 0.70, 0.14, 0.06) : Qt.rgba(0.32, 0.70, 0.14, 0.04)
+    readonly property color curveStroke: isDark ? "#a9d43c" : "#4ba81c"
+    readonly property color curveGlow: isDark ? Qt.rgba(0.66, 0.88, 0.26, 0.36) : Qt.rgba(0.42, 0.84, 0.22, 0.28)
+    readonly property color curveAreaTop: isDark ? Qt.rgba(0.55, 0.85, 0.24, 0.40) : Qt.rgba(0.45, 0.86, 0.25, 0.32)
+    readonly property color curveAreaBottom: isDark ? Qt.rgba(0.32, 0.70, 0.14, 0.05) : Qt.rgba(0.32, 0.70, 0.14, 0.04)
     readonly property color hoverMarkerEdge: isDark ? "#ffffff" : "#182028"
     readonly property color sunMarkerEdge: isDark ? "#1a2026" : "#f4f7fa"
     function shadeFill(s) {

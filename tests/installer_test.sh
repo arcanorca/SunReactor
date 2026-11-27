@@ -1081,6 +1081,86 @@ PY
     rm -rf "$home"
 }
 
+test_plasma_remote_source_fallback_when_piped_or_standalone() {
+    local home fakebin work out archive
+    home=$(mktemp -d)
+    fakebin=$(mktemp -d)
+    work=$(mktemp -d)
+    plasma_shims "$fakebin"
+
+    # Put a stale checkout in $PWD to prove standalone/piped execution ignores $PWD/plasma.
+    mkdir -p "$work/cwd/plasma/org.sunreactor.plasma/package"
+    printf 'cmake_minimum_required(VERSION 3.16)\n' >"$work/cwd/plasma/org.sunreactor.plasma/CMakeLists.txt"
+    printf '{"KPlugin":{"Id":"org.sunreactor.plasma","Version":"0.0.0-stale"}}\n' \
+        >"$work/cwd/plasma/org.sunreactor.plasma/package/metadata.json"
+
+    # Standalone copy outside the repo should decide to fetch from GitHub on --dry-run.
+    cp "$ROOT_DIR/install.sh" "$work/standalone-install.sh"
+    out=$(cd "$work/cwd" && HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" PATH="$fakebin:/usr/bin:/bin" \
+        bash "$work/standalone-install.sh" --dry-run --with-plasma)
+    assert_contains "$out" "decision: install"
+    assert_contains "$out" "GitHub release archive"
+
+    # Piped execution must also ignore $PWD/plasma and download_plasma_source must
+    # unpack the tagged archive cleanly while rejecting unsafe tar members.
+    mkdir -p "$work/src/SunReactor-0.14.1/plasma/org.sunreactor.plasma/package"
+    cp "$ROOT_DIR/plasma/org.sunreactor.plasma/CMakeLists.txt" \
+        "$work/src/SunReactor-0.14.1/plasma/org.sunreactor.plasma/"
+    cp -a "$ROOT_DIR/plasma/org.sunreactor.plasma/package/." \
+        "$work/src/SunReactor-0.14.1/plasma/org.sunreactor.plasma/package/"
+    archive="$work/v0.14.1.tar.gz"
+    tar czf "$archive" -C "$work/src" SunReactor-0.14.1
+
+    printf '#!/usr/bin/env bash\ncp %q "$4"\n' "$archive" >"$fakebin/curl"
+    chmod +x "$fakebin/curl"
+
+    out=$(cd "$work/cwd" && HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" PATH="$fakebin:/usr/bin:/bin" \
+        bash -s -- --dry-run --with-plasma <"$ROOT_DIR/install.sh")
+    assert_contains "$out" "decision: install"
+    assert_contains "$out" "GitHub release archive"
+
+    HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_STATE_HOME="$home/state" \
+        XDG_CACHE_HOME="$home/cache" XDG_DATA_HOME="$home/data" CMAKE_STUB_LOG="$home/cmake-calls" \
+        PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            source "$SCRIPT_DIR/tests/installer_test_support.sh"
+            has_local_plasma_source() { return 1; }
+            fetch_latest_version() { printf "%s\n" test; }
+            download_release() { printf "%s/archive.tar.gz\n" "$TMP_DIR"; }
+            extract_archive() { prepare_installer_test_artifacts; }
+            launch_dashboard() { :; }
+            main --no-service --with-plasma >/dev/null 2>"$HOME/installer.log"
+        ' _ "$ROOT_DIR/install.sh"
+    [[ "$(cksum <"$ROOT_DIR/plasma/org.sunreactor.plasma/package/metadata.json")" \
+        == "$(cksum <"$home/data/plasma/plasmoids/org.sunreactor.plasma/metadata.json")" ]] || {
+        printf 'piped install used stale CWD plasma package instead of fetched archive\n' >&2
+        exit 1
+    }
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$work/unsafe-src.tar.gz" <<'PY'
+import io, sys, tarfile
+with tarfile.open(sys.argv[1], 'w:gz') as tar:
+    info = tarfile.TarInfo('SunReactor-0.14.1/../escape')
+    info.size = 3
+    tar.addfile(info, io.BytesIO(b'bad'))
+PY
+        printf '#!/usr/bin/env bash\ncp %q "$4"\n' "$work/unsafe-src.tar.gz" >"$fakebin/curl"
+        chmod +x "$fakebin/curl"
+        if HOME="$home" PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
+            source "$1"
+            download_plasma_source v0.14.1 "$TMP_DIR" >/dev/null 2>&1
+        ' _ "$ROOT_DIR/install.sh"; then
+            printf 'download_plasma_source accepted an archive with path traversal\n' >&2
+            exit 1
+        fi
+    fi
+
+    rm -rf "$home" "$fakebin" "$work"
+}
+
 test_plasma_flags_and_decision
 test_plasma_dry_run_changes_nothing
 test_plasma_auto_skips_without_plasmashell
@@ -1091,6 +1171,7 @@ test_plasma_widget_success_is_atomic_and_keeps_backup
 test_plasma_failure_never_fails_install
 test_plasma_qmlcache_cleared_and_running_warning
 test_plasma_stale_copies_are_moved
+test_plasma_remote_source_fallback_when_piped_or_standalone
 
 test_checksum_helpers
 test_archive_member_rejection

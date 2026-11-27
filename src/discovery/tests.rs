@@ -151,6 +151,8 @@ fn ddcutil_122_uses_brief_without_noconfig_or_terse() {
         Some("card1-DP-1")
     );
     assert_eq!(report.ddc_monitors[0].brightness_vcp_supported, Some(true));
+    assert!(report.ddc_observation_complete);
+    assert!(!report.has_incomplete_ddc_probe());
 }
 
 #[test]
@@ -464,6 +466,70 @@ fn invalid_ddc_display_record_marks_observation_incomplete() {
     assert!(!report.ddc_observation_complete);
     assert!(report.has_incomplete_ddc_probe());
     assert_eq!(report.importable_monitor_configs().len(), 1);
+}
+
+#[test]
+fn laptop_edp_invalid_display_does_not_block_backlight_setup() {
+    let runner = FakeRunner::new()
+        .with_success(
+            "ddcutil",
+            &["--brief", "detect"],
+            "Invalid display\n   I2C bus:          /dev/i2c-10\n   DRM connector:    card1-eDP-1\n   drm_connector_id: 513\n   Monitor:          AUO::\n",
+        )
+        .with_success(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+            "intel_backlight,backlight,4712,50%,9375\n",
+        )
+        .with_ddcutil_help("--brief");
+
+    let sysfs_root = TempSysfs::new(true);
+    write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert!(report.ddc_observation_complete);
+    assert!(!report.has_incomplete_ddc_probe());
+    assert_eq!(report.summary.viable_targets, 1);
+    assert_eq!(report.importable_monitor_configs().len(), 1);
+}
+
+#[test]
+fn missing_ddcutil_does_not_block_backlight_setup() {
+    let runner = FakeRunner::new().with_missing_ddcutil().with_success(
+        "brightnessctl",
+        &["--list", "--machine-readable", "--class", "backlight"],
+        "intel_backlight,backlight,4712,50%,9375\n",
+    );
+
+    let sysfs_root = TempSysfs::new(true);
+    write_backlight_device(sysfs_root.path(), "intel_backlight", Some(9375), true);
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert_eq!(report.backends.ddcutil.status, BackendStatusKind::Missing);
+    assert!(!report.has_incomplete_ddc_probe());
+    assert_eq!(report.summary.viable_targets, 1);
+    assert_eq!(report.importable_monitor_configs().len(), 1);
+}
+
+#[test]
+fn mixed_internal_edp_and_external_invalid_display_remains_incomplete() {
+    let runner = FakeRunner::new()
+        .with_success(
+            "ddcutil",
+            &["--noconfig", "--terse", "detect"],
+            "Invalid display\n   I2C bus: /dev/i2c-10\n   DRM connector: card1-eDP-1\n   Monitor: AUO::\n\nInvalid display\n   I2C bus: /dev/i2c-7\n   DRM connector: card1-DP-2\n   Monitor: DEL:Dell U2720Q:12345\n",
+        )
+        .with_missing(
+            "brightnessctl",
+            &["--list", "--machine-readable", "--class", "backlight"],
+        )
+        .with_modern_ddcutil_profile();
+
+    let sysfs_root = TempSysfs::new(true);
+    let report = discover_with_runner(&runner, sysfs_root.path());
+
+    assert!(!report.ddc_observation_complete);
+    assert!(report.has_incomplete_ddc_probe());
 }
 
 #[test]

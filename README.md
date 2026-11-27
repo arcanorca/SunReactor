@@ -67,6 +67,11 @@ Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASM
 
 Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
 
+**0.14.1**
+- Plasma widget skins: removed the `NDS` top-bar badge from `nds`, rebuilt `xbox360` light/dark skins from authentic 2005 Xbox 360 Blades assets, and upgraded `nothing` with official dot-matrix weather/solar glyphs, `Geist` typography, and cohesive squircle cards.
+- Fixed laptop `eDP`/`LVDS`/`DSI` `Invalid display` DDC discovery (and missing `ddcutil` handling) so internal backlights can be added directly during TUI monitor setup.
+- Fixed piped/standalone `install.sh` (`curl | bash`) to download and install the Plasma widget from the matching GitHub release tag archive instead of skipping or reading `$PWD/plasma`.
+
 **0.14.0**
 - Daemon write-admission policy (`admit_write`), per-monitor rolling write budgets and contested-controller back-off, `flock` single-instance socket locking, `CLOCK_BOOTTIME` jump compensation, and readback-trust hardening (reset-readback detection, wake probe hold release, `±1%` quantization tolerance, VCP max scaling, 15-minute `ddcutil detect` cadence, and ignoring legacy sysfs `dpms`).
 - External-hold cancellation (`sunreactorctl hold clear [MONITOR]` and Plasma badge), configurable `weather.min_multiplier` cloud dimming (`0..=50%`), `sunreactorctl doctor --report [PATH]`, and XDG autostart / OpenRC / runit / AUR packaging.
@@ -225,7 +230,7 @@ curl -sL https://raw.githubusercontent.com/arcanorca/SunReactor/main/install.sh 
 
 *The script requires Bash and can be invoked as `sh install.sh` when Bash is present; on musl and other minimal systems install Bash first. It never assumes `sudo`: dependency hints use `sudo`, `doas`, or `run0` when available and otherwise print the command for you to run. OpenRC and runit examples are in [`contrib/openrc/`](contrib/openrc/) and [`contrib/runit/`](contrib/runit/).*
 
-*From a clone, the installer also builds the Plasma widget when `plasmashell` and `kpackagetool6` are installed. `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [KDE Plasma widget](#-kde-plasma-widget).*
+*When `plasmashell` and `kpackagetool6` are installed, the installer also builds and updates the Plasma widget automatically (from the local checkout inside a clone, or by fetching the matching release tag archive when piped via `curl | bash`). `--no-plasma` skips it, `--with-plasma` tries anyway, and `--dry-run` prints the widget plan and changes nothing. See [KDE Plasma widget](#-kde-plasma-widget).*
 
 Run `./install.sh --help` (or `-h`) to list every installer option without
 downloading or changing files. Unknown options fail with a usage message before

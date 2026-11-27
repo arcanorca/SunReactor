@@ -91,7 +91,7 @@ ColumnLayout {
                 // Xbox 360 Guide Sphere + Ring of Light
                 Item {
                     Layout.alignment: Qt.AlignVCenter
-                    implicitWidth: root.style.snap(root.style.unit * 2.0)
+                    implicitWidth: root.style.snap(root.style.unit * 2.25)
                     implicitHeight: implicitWidth
 
                     Image {
@@ -211,9 +211,9 @@ ColumnLayout {
                 Rectangle {
                     anchors.fill: parent
                     radius: 6
-                    color: "#182028"
+                    color: "#0e1419"
                     border.width: 1
-                    border.color: "#7e8a98"
+                    border.color: root.style.isDark ? "#465462" : "#6b7885"
                 }
 
                 Repeater {

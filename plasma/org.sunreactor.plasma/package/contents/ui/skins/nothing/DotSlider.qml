@@ -151,7 +151,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: height / 2
-            color: root.style.theme.mix(root.style.theme.bg, root.style.theme.fg, 0.13)
+            color: root.style.surfaceElevated
             border.width: root.style.hairline
             border.color: root.activeFocus ? root.style.ink : root.style.outline
             antialiasing: true

@@ -266,10 +266,107 @@ fn probe_monitor_getvcp<R: ProcessRunner>(
     }
 }
 
+/// Returns `true` when `ddcutil detect` reported at least one `Invalid display`
+/// record whose connector is not an internal laptop panel (`eDP`/`LVDS`/`DSI`).
+///
+/// # Complexity
+/// O(N) time and O(1) auxiliary space over the bytes of `output`.
+///
+/// # Safety
+/// Safe Rust only; no `unsafe` blocks.
+///
+/// # Allocations
+/// 0 heap allocations.
 fn has_invalid_display_record(output: &str) -> bool {
-    output
-        .lines()
-        .any(|line| line.trim().eq_ignore_ascii_case("Invalid display"))
+    let mut in_invalid_block = false;
+    let mut is_internal_panel = false;
+
+    for raw_line in output.lines() {
+        let trimmed = raw_line.trim();
+        let is_indented = raw_line.starts_with(char::is_whitespace);
+
+        if in_invalid_block {
+            if trimmed.is_empty() || !is_indented {
+                if !is_internal_panel {
+                    return true;
+                }
+                in_invalid_block = false;
+                is_internal_panel = false;
+            } else {
+                if let Some((key, value)) = trimmed.split_once(':') {
+                    if key.trim().eq_ignore_ascii_case("DRM connector")
+                        && is_internal_panel_connector(value.trim())
+                    {
+                        is_internal_panel = true;
+                    }
+                }
+                if contains_ascii_case_insensitive(trimmed, "laptop display") {
+                    is_internal_panel = true;
+                }
+                continue;
+            }
+        }
+
+        if !is_indented && trimmed.eq_ignore_ascii_case("Invalid display") {
+            in_invalid_block = true;
+            is_internal_panel = false;
+        }
+    }
+
+    in_invalid_block && !is_internal_panel
+}
+
+/// Returns `true` for internal panel DRM connectors (`eDP`, `LVDS`, `DSI`),
+/// optionally prefixed by `card<digits>-`.
+///
+/// # Complexity
+/// O(N) time and O(1) space in the length of `connector`.
+///
+/// # Safety
+/// Safe Rust only.
+///
+/// # Allocations
+/// 0 heap allocations.
+fn is_internal_panel_connector(connector: &str) -> bool {
+    let name = strip_drm_card_prefix(connector.trim());
+    starts_with_connector_type(name, "edp")
+        || starts_with_connector_type(name, "lvds")
+        || starts_with_connector_type(name, "dsi")
+}
+
+fn strip_drm_card_prefix(connector: &str) -> &str {
+    let Some(rest) = connector
+        .get(..4)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("card"))
+        .and_then(|_| connector.get(4..))
+    else {
+        return connector;
+    };
+    let digits_len = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if digits_len > 0 && rest.as_bytes().get(digits_len) == Some(&b'-') {
+        &rest[digits_len + 1..]
+    } else {
+        connector
+    }
+}
+
+fn starts_with_connector_type(connector: &str, kind: &str) -> bool {
+    let len = kind.len();
+    let Some(prefix) = connector.get(..len) else {
+        return false;
+    };
+    prefix.eq_ignore_ascii_case(kind)
+        && (connector.len() == len || connector.as_bytes().get(len) == Some(&b'-'))
+}
+
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn discover_brightnessctl_backlights<R: ProcessRunner>(

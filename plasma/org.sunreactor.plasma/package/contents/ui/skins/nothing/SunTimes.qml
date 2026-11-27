@@ -21,7 +21,7 @@ import "../../engine"
 import "../../modules"
 import "../../Format.js" as Format
 
-ColumnLayout {
+Rectangle {
     id: root
 
     required property Theme theme
@@ -34,9 +34,9 @@ ColumnLayout {
     readonly property string domain: settings.domain
     readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
     readonly property var entries: [
-        { label: i18ndc(root.domain, "Short legend: sunrise", "RISE"), epoch: client.sunriseEpochS },
-        { label: i18ndc(root.domain, "Short legend: solar noon", "NOON"), epoch: client.solarNoonEpochS },
-        { label: i18ndc(root.domain, "Short legend: sunset", "SET"), epoch: client.sunsetEpochS },
+        { label: i18ndc(root.domain, "Short legend: sunrise", "RISE"), epoch: client.sunriseEpochS, icon: "assets/nothing_sunrise.png" },
+        { label: i18ndc(root.domain, "Short legend: solar noon", "NOON"), epoch: client.solarNoonEpochS, icon: "" },
+        { label: i18ndc(root.domain, "Short legend: sunset", "SET"), epoch: client.sunsetEpochS, icon: "assets/nothing_sunset.png" },
     ]
     /*! Epoch of the next event still ahead today, or 0 once the day is done. */
     readonly property real nextEpoch: {
@@ -60,90 +60,128 @@ ColumnLayout {
         && client.nowEpochS < client.sunsetEpochS
     readonly property bool showElevation: settings.showSolarElevation && client.hasSolarElevation
 
-    Layout.fillWidth: true
-    spacing: style.gap
+    implicitHeight: content.implicitHeight + 2 * style.pad
+    radius: style.radius
+    antialiasing: true
+    color: style.surface
+    border.width: style.hairline
+    border.color: style.outline
 
     Accessible.role: Accessible.Grouping
     Accessible.name: i18nd(root.domain, "Sun times")
 
-    // --- the three times ------------------------------------------------------------
-    RowLayout {
-        Layout.fillWidth: true
+    ColumnLayout {
+        id: content
+
+        x: root.style.pad
+        y: root.style.pad
+        width: root.width - 2 * root.style.pad
         spacing: root.style.gap
 
-        Repeater {
-            model: root.entries
+        // --- the three times ------------------------------------------------------------
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: root.style.gap
 
-            delegate: ColumnLayout {
-                id: column
+            Repeater {
+                model: root.entries
 
-                required property var modelData
-                required property int index
-                readonly property bool isNext: modelData.epoch === root.nextEpoch
-                /*! Rise flush left, noon centred, set flush right: the times never run together. */
-                readonly property int align: index === 0 ? Text.AlignLeft
-                    : (index === 1 ? Text.AlignHCenter : Text.AlignRight)
+                delegate: ColumnLayout {
+                    id: column
 
-                Layout.fillWidth: true
-                Layout.preferredWidth: 1
-                spacing: root.style.gap * 0.5
+                    required property var modelData
+                    required property int index
+                    readonly property bool isNext: modelData.epoch === root.nextEpoch
+                    /*! Rise flush left, noon centred, set flush right: the times never run together. */
+                    readonly property int align: index === 0 ? Text.AlignLeft
+                        : (index === 1 ? Text.AlignHCenter : Text.AlignRight)
 
-                Text {
                     Layout.fillWidth: true
-                    horizontalAlignment: column.align
-                    text: column.modelData.label
-                    textFormat: Text.PlainText
-                    font: root.style.label
-                    color: root.style.muted
-                }
+                    Layout.preferredWidth: 1
+                    spacing: root.style.gap * 0.45
 
-                Text {
-                    Layout.fillWidth: true
-                    horizontalAlignment: column.align
-                    text: Format.timeText(column.modelData.epoch)
-                    textFormat: Text.PlainText
-                    font: root.style.figure
-                    color: column.isNext ? root.style.ink : root.style.muted
+                    Row {
+                        Layout.alignment: column.index === 0 ? Qt.AlignLeft
+                            : (column.index === 1 ? Qt.AlignHCenter : Qt.AlignRight)
+                        spacing: root.style.gap * 0.5
+
+                        Image {
+                            visible: column.modelData.icon.length > 0 && column.index === 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: root.style.snap(root.style.unit * 1.15)
+                            height: root.style.snap(root.style.unit * 0.64)
+                            source: column.modelData.icon.length > 0 ? Qt.resolvedUrl(column.modelData.icon) : ""
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: column.modelData.label
+                            textFormat: Text.PlainText
+                            font: root.style.label
+                            color: root.style.muted
+                        }
+                        Image {
+                            visible: column.modelData.icon.length > 0 && column.index === 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: root.style.snap(root.style.unit * 1.15)
+                            height: root.style.snap(root.style.unit * 0.64)
+                            source: column.modelData.icon.length > 0 ? Qt.resolvedUrl(column.modelData.icon) : ""
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: column.align
+                        text: Format.timeText(column.modelData.epoch)
+                        textFormat: Text.PlainText
+                        font: root.style.figure
+                        color: column.isNext ? root.style.ink : root.style.muted
+                    }
                 }
             }
         }
-    }
 
-    // --- the day as a dotted track ---------------------------------------------------
-    Item {
-        id: track
+        // --- the day as a dotted track ---------------------------------------------------
+        Item {
+            id: track
 
-        Layout.fillWidth: true
-        Layout.topMargin: root.style.gap * 0.5
-        implicitHeight: bar.implicitHeight
+            Layout.fillWidth: true
+            Layout.topMargin: root.style.gap * 0.35
+            implicitHeight: bar.implicitHeight
 
-        DotBar {
-            id: bar
+            DotBar {
+                id: bar
 
-            anchors.left: parent.left
-            anchors.right: parent.right
-            cols: Math.max(12, Math.floor(track.width / root.style.pitch))
-            rows: 1
-            pitch: root.style.pitch
-            value: root.dayProgress
-            thumbAccent: root.daylight
-            litColor: root.style.ink
-            accentColor: root.style.accent
-            dimColor: root.style.dotGhost
+                anchors.left: parent.left
+                anchors.right: parent.right
+                cols: Math.max(12, Math.floor(track.width / root.style.pitch))
+                rows: 1
+                pitch: root.style.pitch
+                value: root.dayProgress
+                thumbAccent: root.daylight
+                litColor: root.style.ink
+                accentColor: root.style.accent
+                dimColor: root.style.dotGhost
+            }
         }
-    }
 
-    Text {
-        Layout.fillWidth: true
-        visible: root.showElevation
-        text: (root.client.solarElevation >= 0
-            ? i18ndc(root.domain, "Placeholder is an angle in degrees",
-                     "Sun %1° above the horizon", root.client.solarElevation.toFixed(1))
-            : i18ndc(root.domain, "Placeholder is an angle in degrees",
-                     "Sun %1° below the horizon", (-root.client.solarElevation).toFixed(1))).toLowerCase()
-        textFormat: Text.PlainText
-        font: root.style.sentence
-        color: root.style.muted
-        elide: Text.ElideRight
+        Text {
+            Layout.fillWidth: true
+            visible: root.showElevation
+            text: (root.client.solarElevation >= 0
+                ? i18ndc(root.domain, "Placeholder is an angle in degrees",
+                         "Sun %1° above the horizon", root.client.solarElevation.toFixed(1))
+                : i18ndc(root.domain, "Placeholder is an angle in degrees",
+                         "Sun %1° below the horizon", (-root.client.solarElevation).toFixed(1))).toLowerCase()
+            textFormat: Text.PlainText
+            font: root.style.sentence
+            color: root.style.muted
+            elide: Text.ElideRight
+        }
     }
 }

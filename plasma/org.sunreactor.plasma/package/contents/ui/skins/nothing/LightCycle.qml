@@ -59,7 +59,7 @@ Rectangle {
     readonly property bool nowInDay: available && now >= t0 && now <= t1
 
     /*! Dot rows of the day plot; the ring is `ringDiameter` dots across. */
-    readonly property int plotRows: 9
+    readonly property int plotRows: 8
     readonly property int ringDiameter: 19
 
     readonly property bool scrubbing: hover.containsMouse && available && !showAll

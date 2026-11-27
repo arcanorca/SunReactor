@@ -11,21 +11,14 @@ Phone widgets: dot matrix, black, white, grey, one red signal.
 - Palette: black surface (OLED), white ink, #8a8a8a grey for secondary text, one
   red accent (#d71921). Red is the live lamp, the "now" dot, the ring head, the
   slider head and the one call to action. No gradients, shadows, glow or blur.
-- Type: ONE label size. Captions, tags, pills and status sentences are small
-  UPPERCASE mono (JetBrains Mono, +10 % tracking) or the same size in lower case.
-  Values are mono figures. Numerals are the dot-matrix 5x7 face (DotText, size 1,
-  letter spacing 1 dot column); never the 3x5 face for numbers. Times are text,
-  never dot text (AM and PM would collide). Nothing's Ndot/Lettera fonts are
-  proprietary; they are not bundled.
-- Dot numerals: 5x7 face, one dot column between glyphs, lit white (ink). Every
-  lit dot is 0.75 of its pitch
-  (`digitScale`), so the numerals read as bold dots, not a speckle. Hero (target
-  in the ring) at pitch 4 device px or more; per-display, forecast and telemetry
-  numerals at exactly 4 device px (`pitchDigit`), 7 dots = 28 device px tall.
-- Cards: radius 24, 1 device px hairline (#3a3a3a), filled #0a0a0a, padding 10 on
-  every side, 8 between rows. Every section of the brightness page is a card;
-  the weather reading is a card, forecast and sun times sit on the black as bare
-  columns with hairline rules.
+- Type: three bundled OFL faces — `Doto` Bold for uppercase section headings and
+  dot-matrix numerals, `Geist` Medium/Regular for crisp primary names, sentences
+  and tabular figures, and `JetBrains Mono` (+10% tracking) for uppercase
+  technical tags (`APPLIED`, `WEATHER`, `RANGE`, `FEELS`, `RH`, `WIND`, `AQI`,
+  `RISE`, `NOON`, `SET`) and pills.
+- Cards: radius 22 squircles, 1 device px hairline (`#3a3a3a` / 10% ink), matte
+  charcoal fill (`#18181A` on OLED black), padding ~8–10 on every side. Every
+  section on both the Brightness and Weather pages is a cohesive squircle card.
 - Pills: one height (28 px at scale 1). Active = white fill with black text;
   inactive = hairline outline with grey text; hover lifts the outline to white.
 - Section labels: grey, the label style. Only live state and "now" are red.
@@ -44,8 +37,10 @@ Phone widgets: dot matrix, black, white, grey, one red signal.
   For a single display the weather cost is a second row of tiny dim dots at the
   clear-sky height, above the curve. Never a filled block.
 - Sliders are rows of round dots: lit white up to the value, one red head dot.
-- Weather icons: 12 x 12 dot pictograms (sun = ring of dots, cloud = dotted
-  silhouette, rain = falling dot columns, snow = scattered dots), drawn bare.
+- Weather icons: official Nothing OS circular dot-matrix weather pictograms on the
+  389×389 grid (`tools/vendor/nothing/` + exact-grid companions in
+  `assets/weather/`), plus crisp parabolic solar horizon glyphs (`nothing_sunrise.png`,
+  `nothing_sunset.png`).
 - Motion: none (idle CPU stays zero).
 - Voice: lower-case or UPPERCASE sparse text, no emoji, plain facts
   ("automatic", "manual", "paused", "next 16:20 · 23%").

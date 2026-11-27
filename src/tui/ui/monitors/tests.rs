@@ -423,6 +423,69 @@
     }
 
     #[test]
+    fn monitor_workspace_allows_adding_internal_backlight_when_ddc_observation_is_complete() {
+        let mut model = Model::new();
+        reset_to_empty_monitor_config(&mut model);
+        model.status = Some(dummy_status(0));
+        model.daemon_connection = DaemonConnection::Connected;
+
+        let ok_backend = BackendStatus {
+            backend: String::from("fixture"),
+            status: BackendStatusKind::Ok,
+            available: true,
+            message: String::new(),
+            guidance: None,
+        };
+        let report = DiscoveryReport {
+            summary: DiscoverySummary {
+                ddc_monitors: 0,
+                backlight_devices: 1,
+                viable_targets: 1,
+            },
+            backends: DiscoveryBackends {
+                ddcutil: ok_backend.clone(),
+                brightnessctl: ok_backend.clone(),
+                sysfs: ok_backend,
+            },
+            ddc_observation_complete: true,
+            ddc_monitors: Vec::new(),
+            backlight_devices: vec![crate::discovery::BacklightDeviceDiscovery {
+                stable_id: String::from("backlight:intel_backlight"),
+                device_name: String::from("intel_backlight"),
+                class: String::from("backlight"),
+                max_brightness: Some(9375),
+                backlight_type: Some(String::from("raw")),
+                probe_source: String::from("brightnessctl"),
+                sysfs_path: String::from("/sys/class/backlight/intel_backlight"),
+                ddcci_connector: None,
+                backend_viable: true,
+                note: None,
+            }],
+            windows_displays: Vec::new(),
+            notes: Vec::new(),
+            config_snippet: String::new(),
+        };
+
+        model.monitor_discovery = MonitorDiscoveryState::Complete(Box::new(report));
+        assert_eq!(
+            model.monitor_workspace_state(),
+            MonitorWorkspaceState::DiscoveredButUnconfigured {
+                compatible_count: 1,
+                importable_count: 1,
+                incomplete_ddc_probe: false,
+            }
+        );
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|f| ui::ui(f, &mut model)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        assert!(find_in_buffer(&buffer, "1 compatible monitor(s) found").is_some());
+        assert!(find_in_buffer(&buffer, "intel_backlight").is_some());
+        assert!(find_in_buffer(&buffer, "Add 1 monitor(s)").is_some());
+        assert!(find_in_buffer(&buffer, "A DDC capability check was incomplete").is_none());
+    }
+
+    #[test]
     fn monitor_workspace_distinguishes_daemon_and_configured_unavailable_states() {
         let mut model = Model::new();
         reset_to_empty_monitor_config(&mut model);

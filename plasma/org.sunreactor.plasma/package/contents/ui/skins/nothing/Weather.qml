@@ -125,14 +125,14 @@ Rectangle {
             ThemedWeatherIcon {
                 Layout.alignment: Qt.AlignTop
                 theme: root.theme
-                size: root.style.snap(root.style.unit * 2.8)
+                size: root.style.snap(root.style.unit * 3.0)
                 condition: root.reading ? root.client.weatherCondition : ""
                 night: root.reading && root.client.weatherIsNight
 
                 NothingIcon {
                     anchors.centerIn: parent
                     theme: root.theme
-                    size: root.style.snap(root.style.unit * 2.8)
+                    size: root.style.snap(root.style.unit * 3.0)
                     condition: root.reading ? root.client.weatherCondition : ""
                     night: root.reading && root.client.weatherIsNight
                 }
@@ -163,6 +163,13 @@ Rectangle {
                     elide: Text.ElideRight
                 }
             }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.reading
+            implicitHeight: root.style.hairline
+            color: root.style.outline
         }
 
         // --- the secondary readings: a 2 x 2 grid, each a label and its value --------------

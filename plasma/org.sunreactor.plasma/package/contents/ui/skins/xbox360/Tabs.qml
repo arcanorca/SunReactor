@@ -71,7 +71,10 @@ FocusScope {
 
                     BorderImage {
                         anchors.fill: parent
-                        source: Qt.resolvedUrl(root.style.asset(tab.selected ? "xbox_blade_active.png" : "xbox_blade_idle.png"))
+                        source: Qt.resolvedUrl(root.style.asset(
+                            tab.selected
+                                ? (tab.modelData.id === "weather" ? "xbox_blade_weather_active.png" : "xbox_blade_active.png")
+                                : "xbox_blade_idle.png"))
                         border { left: 22; top: 10; right: 22; bottom: 10 }
                         horizontalTileMode: BorderImage.Stretch
                         verticalTileMode: BorderImage.Stretch
@@ -90,7 +93,9 @@ FocusScope {
                             text: tab.modelData.text
                             textFormat: Text.PlainText
                             font: root.style.bodyBoldFont
-                            color: tab.selected ? root.style.greenBright : (tab.hovered ? root.style.ink : root.style.inkSoft)
+                            color: tab.selected
+                                ? (tab.modelData.id === "weather" ? root.style.weatherBlue : root.style.greenBright)
+                                : (tab.hovered ? root.style.ink : root.style.inkSoft)
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -123,6 +128,7 @@ FocusScope {
             id: modeSwitch
 
             Layout.alignment: Qt.AlignVCenter
+            Layout.rightMargin: root.style.gap
             implicitWidth: switchContent.implicitWidth + root.style.gap2 * 1.1
             implicitHeight: Math.round(root.style.unit * 1.38)
             activeFocusOnTab: true

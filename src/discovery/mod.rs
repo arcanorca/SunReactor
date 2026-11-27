@@ -101,7 +101,9 @@ impl DiscoveryReport {
     #[cfg(any(feature = "tui", test))]
     #[must_use]
     pub(crate) fn has_incomplete_ddc_probe(&self) -> bool {
-        !self.ddc_observation_complete
+        let ddc_probe_incomplete = !self.ddc_observation_complete
+            && self.backends.ddcutil.status != BackendStatusKind::Missing;
+        ddc_probe_incomplete
             || self
                 .ddc_monitors
                 .iter()

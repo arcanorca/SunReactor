@@ -10,14 +10,30 @@ package/contents/ui/skins/<id>/assets/.
 
 from __future__ import annotations
 
+import colorsys
+import io
 import math
 import subprocess
 from pathlib import Path
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 SKINS = HERE.parent / "package" / "contents" / "ui" / "skins"
+VENDOR = HERE / "vendor"
+VENDOR_NOTHING = VENDOR / "nothing"
+VENDOR_XBOX = VENDOR / "xbox360"
+
+
+def render_svg_bytes(svg: str, w: int, h: int) -> Image.Image:
+    """Render SVG text via rsvg-convert into an RGBA PIL Image."""
+    res = subprocess.run(
+        ["rsvg-convert", "-w", str(w), "-h", str(h)],
+        input=svg.encode("utf-8"),
+        capture_output=True,
+        check=True,
+    )
+    return Image.open(io.BytesIO(res.stdout)).convert("RGBA")
 
 
 def render_svg(svg: str, out_base: Path, w: int, h: int, scales: tuple[int, ...] = (1, 2, 3)) -> None:
@@ -392,23 +408,8 @@ def build_nds() -> None:
     for lvl in (0, 1, 2, 3, 4):
         save_pixel_png(make_bar_signal(lvl), out / f"ds_bar_signal_{lvl}")
 
-    # 1h. Authentic NTR Top-Bar [nDS] badge (28x10 native grid) & Home Calendar/Clock digits (8x10)
+    # 1h. Authentic NTR Home Calendar/Clock digits (8x10)
     # Extracted verbatim from NDS-Clock-SVG-Kit/output/nds_home_calendar/png/.
-    ntr_badge_rows = [
-        "########..######....########",
-        "########..######....########",
-        "##....##..##..####..##......",
-        "##....##..##..####..##......",
-        "##....##..##....##..########",
-        "##....##..##....##..########",
-        "##....##..##..####........##",
-        "##....##..##..####........##",
-        "##....##..######....########",
-        "##....##..######....########",
-    ]
-    save_pixel_png(draw_bitmap(ntr_badge_rows, {"#": (255, 255, 255, 255)}), out / "ds_ntr_badge")
-    save_pixel_png(draw_bitmap(ntr_badge_rows, {"#": (20, 26, 34, 255)}), out / "ds_ntr_badge_dark")
-
     ntr_digits = {
         "0": ["########", "########", "##....##", "##....##", "##....##", "##....##", "##....##", "##....##", "########", "########"],
         "1": ["..####..", "..####..", "....##..", "....##..", "....##..", "....##..", "....##..", "....##..", "..######", "..######"],
@@ -710,123 +711,164 @@ def build_nothing() -> None:
     w_out.mkdir(parents=True, exist_ok=True)
 
     # 3a. Nothing Phone Glyph Interface Segmented Outer Bezel (120x120)
-    # Clean outer Glyph LED segments framing DotRing without overlapping dots or adding a conflicting red dot
+    # Razor-sharp unblurred Glyph LED arcs framing DotRing with matte OLED dial recess.
     glyph_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-      <defs>
-        <filter id="glow"><feGaussianBlur stdDeviation="1.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-      </defs>
-      <path d="M 32 13 A 55 55 0 0 1 92 16" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="2.6" stroke-linecap="round" filter="url(#glow)"/>
-      <path d="M 103 26 A 55 55 0 0 1 113 72" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2.6" stroke-linecap="round"/>
-      <path d="M 106 89 A 55 55 0 0 1 40 111" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="2.6" stroke-linecap="round"/>
-      <path d="M 22 100 A 55 55 0 0 1 14 29" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="2.6" stroke-linecap="round"/>
+      <circle cx="60" cy="60" r="51.5" fill="#101012" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.9"/>
+      <path d="M 32 13 A 55 55 0 0 1 92 16" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 103 26 A 55 55 0 0 1 113 72" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 106 89 A 55 55 0 0 1 40 111" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 22 100 A 55 55 0 0 1 14 29" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="60" cy="4.8" r="1.05" fill="#ffffff" fill-opacity="0.40"/>
+      <circle cx="115.2" cy="60" r="1.05" fill="#ffffff" fill-opacity="0.22"/>
+      <circle cx="60" cy="115.2" r="1.05" fill="#ffffff" fill-opacity="0.22"/>
+      <circle cx="4.8" cy="60" r="1.05" fill="#ffffff" fill-opacity="0.22"/>
     </svg>'''
     render_svg(glyph_svg, out / "nothing_glyph_ring", 120, 120)
 
     # 3a2. Nothing OS Circular Dot-Matrix Refresh Button (40x40)
     dots_ring = []
-    for k in range(16):
-        a = k * (2 * math.pi / 16) - math.pi / 2
-        px = 20 + 16.2 * math.cos(a)
-        py = 20 + 16.2 * math.sin(a)
-        col = "#d71921" if k == 2 else "#ffffff"
-        op = "0.95" if k == 2 else "0.24"
-        r = "1.45" if k == 2 else "1.05"
-        dots_ring.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{r}" fill="{col}" fill-opacity="{op}"/>')
+    for k in range(24):
+        a = k * (2 * math.pi / 24) - math.pi / 2
+        px = 20 + 16.0 * math.cos(a)
+        py = 20 + 16.0 * math.sin(a)
+        dots_ring.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="0.82" fill="#ffffff" fill-opacity="0.22"/>')
     nothing_btn_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-      <circle cx="20" cy="20" r="18.5" fill="#18181b" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1"/>
+      <circle cx="20" cy="20" r="18.6" fill="#18181a" stroke="#ffffff" stroke-opacity="0.14" stroke-width="0.9"/>
       {''.join(dots_ring)}
     </svg>'''
     render_svg(nothing_btn_svg, out / "nothing_orb_btn", 40, 40)
 
-    # 3b. Nothing OS Weather Icons (64x64 -> 1x/2x/3x):
-    # Authentic Nothing Weather Widget look: geometric dot-halftone circles & clean rounded clouds + red dot signal
-    def dot_circle_grid(cx: float, cy: float, r: float, step: float = 4.6, dot_r: float = 1.65, color: str = "#ffffff") -> str:
-        dots = []
-        n = int(math.ceil(r / step))
-        for iy in range(-n, n + 1):
-            for ix in range(-n, n + 1):
-                px = cx + ix * step
-                py = cy + iy * step
-                if math.hypot(px - cx, py - cy) <= r - dot_r * 0.4:
-                    dots.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{dot_r}" fill="{color}"/>')
-        return "".join(dots)
-
-    def n_sun(cx: float, cy: float, r: float, red_core: bool = True) -> str:
-        inner = dot_circle_grid(cx, cy, r * 0.72, step=4.0, dot_r=1.45, color="#d71921" if red_core else "#ffffff")
-        ring = []
-        for k in range(12):
-            a = k * math.pi / 6
-            px = cx + math.cos(a) * r
-            py = cy + math.sin(a) * r
-            ring.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="1.5" fill="#ffffff"/>')
-        return inner + "".join(ring)
-
-    def n_moon(cx: float, cy: float, r: float) -> str:
-        dots = []
-        step = 4.0
-        n = int(math.ceil(r / step))
-        for iy in range(-n, n + 1):
-            for ix in range(-n, n + 1):
-                px, py = cx + ix * step, cy + iy * step
-                if math.hypot(px - cx, py - cy) <= r and math.hypot(px - (cx + r * 0.45), py - (cy - r * 0.3)) > r * 0.78:
-                    dots.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="1.45" fill="#ffffff"/>')
-        return "".join(dots)
-
-    def n_cloud(cx: float, cy: float, s: float, dotted_outline: bool = False) -> str:
-        # Clean rounded geometric Nothing cloud (solid matte light grey or dot-filled silhouette)
-        d = (
-            f"M{cx - 12 * s:.2f},{cy + 10 * s:.2f} "
-            f"A8.5,8.5 0 1,1 {cx - 10 * s:.2f},{cy - 5 * s:.2f} "
-            f"A10.5,10.5 0 1,1 {cx + 10 * s:.2f},{cy - 3 * s:.2f} "
-            f"A8,8 0 1,1 {cx + 12 * s:.2f},{cy + 10 * s:.2f} Z"
+    # 3a3. Nothing OS Solar Horizon Icons (36x20 -> 1x/2x/3x), modeled on Nothing Weather sunrise/sunset SVGs
+    for name, arrow_up in [("nothing_sunrise", True), ("nothing_sunset", False)]:
+        arrow = (
+            '<line x1="18" y1="12.5" x2="18" y2="7.5" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>'
+            '<polyline points="15.5,9.6 18,7.1 20.5,9.6" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
+            if arrow_up
+            else '<line x1="18" y1="7.3" x2="18" y2="12.3" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>'
+            '<polyline points="15.5,10.2 18,12.7 20.5,10.2" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
         )
-        if dotted_outline:
-            return f'<path d="{d}" fill="#262629" stroke="#ffffff" stroke-width="2.4" stroke-dasharray="0.1 4.2" stroke-linecap="round"/>'
-        return f'<path d="{d}" fill="#f2f2f4"/>'
+        solar_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="36" height="20" viewBox="0 0 36 20">
+          <path d="M 5.5 14.5 A 12.5 11.2 0 0 1 30.5 14.5" fill="none" stroke="#ffffff" stroke-opacity="0.26" stroke-width="1.0"/>
+          <path d="M 8.8 14.5 A 9.2 8.2 0 0 1 27.2 14.5" fill="none" stroke="#ffffff" stroke-opacity="0.88" stroke-width="1.15"/>
+          <circle cx="18" cy="3.3" r="1.3" fill="#d71921"/>
+          {arrow}
+          <line x1="2.5" y1="14.5" x2="33.5" y2="14.5" stroke="#ffffff" stroke-opacity="0.72" stroke-width="1.1" stroke-linecap="round"/>
+          <line x1="7.5" y1="17.0" x2="28.5" y2="17.0" stroke="#ffffff" stroke-opacity="0.34" stroke-width="1.0" stroke-linecap="round"/>
+          <line x1="13.0" y1="19.1" x2="23.0" y2="19.1" stroke="#ffffff" stroke-opacity="0.18" stroke-width="0.9" stroke-linecap="round"/>
+        </svg>'''
+        render_svg(solar_svg, out / name, 36, 20)
 
-    def n_cloud_dots(cx: float, cy: float, s: float) -> str:
-        # True Nothing OS halftone cloud: grid of crisp dots masked to a smooth rounded cloud silhouette!
-        dots = []
-        step = 4.2 * s
-        for iy in range(-5, 5):
-            for ix in range(-6, 7):
-                px = cx + ix * step
-                py = cy + iy * step
-                in_left = math.hypot(px - (cx - 9.5 * s), py - (cy + 2 * s)) <= 8.5 * s
-                in_top = math.hypot(px - (cx - 0.5 * s), py - (cy - 4 * s)) <= 10.5 * s
-                in_right = math.hypot(px - (cx + 10 * s), py - (cy + 2.5 * s)) <= 7.8 * s
-                in_base = (cx - 10 * s <= px <= cx + 10 * s) and (cy <= py <= cy + 10.5 * s)
-                if in_left or in_top or in_right or in_base:
-                    dots.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{1.55 * s:.2f}" fill="#ffffff"/>')
-        return "".join(dots)
-
-    def n_drop(x: float, y: float, red: bool = False) -> str:
-        col = "#d71921" if red else "#ffffff"
-        return (
-            f'<circle cx="{x}" cy="{y}" r="1.5" fill="{col}"/>'
-            f'<circle cx="{x - 1.5}" cy="{y + 4.5}" r="1.5" fill="{col}"/>'
-            f'<circle cx="{x - 3.0}" cy="{y + 9.0}" r="1.6" fill="{col}"/>'
-        )
-
-    n_cases = {
-        "clear_day": n_sun(32, 32, 20),
-        "clear_night": n_moon(29, 34, 17) + '<circle cx="48" cy="16" r="2.2" fill="#d71921"/><circle cx="15" cy="17" r="1.5" fill="#ffffff"/><circle cx="49" cy="46" r="1.5" fill="#ffffff"/>',
-        "partly_cloudy_day": n_sun(22, 22, 13.5, red_core=True) + n_cloud_dots(35, 39, 0.92),
-        "partly_cloudy_night": n_moon(21, 22, 12.5) + '<circle cx="49" cy="14" r="2" fill="#d71921"/>' + n_cloud_dots(35, 39, 0.92),
-        "cloudy": n_cloud_dots(39, 25, 0.68) + n_cloud_dots(29, 38, 0.96),
-        "drizzle": n_cloud_dots(32, 25, 0.92) + n_drop(22, 43) + n_drop(34, 46, red=True) + n_drop(45, 43),
-        "rain": n_cloud_dots(32, 23, 0.95) + n_drop(19, 41) + n_drop(30, 44, red=True) + n_drop(41, 41) + n_drop(50, 45),
-        "heavy_rain": n_cloud_dots(32, 22, 0.96) + n_drop(16, 40) + n_drop(26, 43, red=True) + n_drop(36, 40) + n_drop(46, 43, red=True) + n_drop(54, 40),
-        "thunderstorm": n_cloud_dots(32, 22, 0.96) + '<polygon points="34,37 42,37 36,46 42,46 28,59 32,49 27,49" fill="#d71921"/>' + n_drop(18, 43) + n_drop(50, 43),
-        "snow": n_cloud_dots(32, 23, 0.92) + '<circle cx="20" cy="47" r="2" fill="#ffffff"/><circle cx="32" cy="52" r="2.2" fill="#d71921"/><circle cx="44" cy="47" r="2" fill="#ffffff"/><circle cx="25" cy="55" r="1.5" fill="#ffffff"/><circle cx="40" cy="55" r="1.5" fill="#ffffff"/>',
-        "mist": '<g fill="#ffffff">' + "".join(f'<circle cx="{12 + i * 5}" cy="{y}" r="1.5"/>' for y in (22, 32, 42) for i in range(9) if (y != 32 or i > 0)) + '</g><circle cx="52" cy="32" r="1.8" fill="#d71921"/>',
-        "atmospheric": n_sun(32, 24, 12, red_core=True) + '<g fill="#ffffff">' + "".join(f'<circle cx="{12 + i * 5}" cy="{y}" r="1.5"/>' for y in (42, 50) for i in range(9)) + '</g>',
-        "fog": n_cloud_dots(32, 22, 0.88) + '<g fill="#ffffff">' + "".join(f'<circle cx="{12 + i * 5}" cy="{y}" r="1.6"/>' for y in (41, 49) for i in range(9)) + '</g><circle cx="52" cy="49" r="1.8" fill="#d71921"/>',
-        "unknown": n_cloud_dots(32, 27, 0.92) + '<circle cx="32" cy="48" r="2.4" fill="#d71921"/>',
+    # 3b. Official Nothing OS Weather Icons (64x64 -> 1x/2x/3x):
+    # Direct upstream SVGs from jaxparrow07/nothing-kde-widgets (GPL-3.0) on the 389x389 grid
+    # (center 194.5, pitch 34.2, dot r=17.1) + exact-grid companions for all 14 conditions.
+    vendor_map = {
+        "clear_day": "sunny.svg",
+        "cloudy": "cloudy.svg",
+        "partly_cloudy_day": "partly_cloudy_day.svg",
+        "partly_cloudy_night": "partly_cloudy_night.svg",
+        "rain": "rain_or_mist.svg",
+        "snow": "snow_fall.svg",
+        "thunderstorm": "thunder.svg",
     }
-    for cond, body in n_cases.items():
-        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">{body}</svg>'
-        render_svg(svg, w_out / cond, 64, 64)
+    for cond, filename in vendor_map.items():
+        raw_svg = (VENDOR_NOTHING / filename).read_text(encoding="utf-8")
+        # Normalize Android dip units so rsvg-convert scales the 389x389 viewBox cleanly to 64/128/192px
+        norm_svg = raw_svg.replace('width="73.0dip"', 'width="389.0px"').replace('height="73.0dip"', 'height="389.0px"')
+        norm_svg = norm_svg.replace("dip", "px")
+        render_svg(norm_svg, w_out / cond, 64, 64)
+
+    def nothing_grid_svg(dots: list[tuple[int, int, str]]) -> str:
+        """Render dots on the exact official Nothing 389x389 grid (center 194.5, pitch 34.2, r 16.9)."""
+        circles = []
+        for gx, gy, col in dots:
+            cx = 194.5 + gx * 34.2
+            cy = 194.5 + gy * 34.2
+            circles.append(f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="16.9" fill="{col}"/>')
+        return f'<svg xmlns="http://www.w3.org/2000/svg" width="389" height="389" viewBox="0 0 389 389">{"".join(circles)}</svg>'
+
+    cloud_top = [
+        (1, -4, "#ffffff"), (2, -4, "#ffffff"), (3, -4, "#ffffff"),
+        (-3, -3, "#ffffff"), (-2, -3, "#ffffff"), (0, -3, "#ffffff"), (1, -3, "#ffffff"),
+        (2, -3, "#ffffff"), (3, -3, "#ffffff"), (4, -3, "#ffffff"),
+        (-4, -2, "#ffffff"), (-3, -2, "#ffffff"), (-2, -2, "#ffffff"), (-1, -2, "#ffffff"),
+        (0, -2, "#ffffff"), (1, -2, "#ffffff"), (2, -2, "#ffffff"), (3, -2, "#ffffff"),
+        (4, -2, "#ffffff"), (5, -2, "#ffffff"),
+        (-5, -1, "#ffffff"), (-4, -1, "#ffffff"), (-3, -1, "#ffffff"), (-2, -1, "#ffffff"),
+        (-1, -1, "#ffffff"), (0, -1, "#ffffff"), (1, -1, "#ffffff"), (2, -1, "#ffffff"),
+        (3, -1, "#ffffff"), (4, -1, "#ffffff"), (5, -1, "#ffffff"),
+        (-5, 0, "#ffffff"), (-4, 0, "#ffffff"), (-3, 0, "#ffffff"), (-2, 0, "#ffffff"),
+        (-1, 0, "#ffffff"), (0, 0, "#ffffff"), (1, 0, "#ffffff"), (2, 0, "#ffffff"),
+        (3, 0, "#ffffff"), (4, 0, "#ffffff"), (5, 0, "#ffffff"),
+        (-4, 1, "#ffffff"), (-3, 1, "#ffffff"), (-2, 1, "#ffffff"), (-1, 1, "#ffffff"),
+        (0, 1, "#ffffff"), (1, 1, "#ffffff"), (2, 1, "#ffffff"), (3, 1, "#ffffff"),
+        (4, 1, "#ffffff"),
+    ]
+    clear_night_dots = [
+        (-2, -4, "#ffffff"), (-1, -4, "#ffffff"), (0, -4, "#ffffff"),
+        (-3, -3, "#ffffff"), (-2, -3, "#ffffff"), (-1, -3, "#ffffff"),
+        (-4, -2, "#ffffff"), (-3, -2, "#ffffff"), (-2, -2, "#ffffff"),
+        (-4, -1, "#ffffff"), (-3, -1, "#ffffff"), (-2, -1, "#ffffff"),
+        (-4, 0, "#ffffff"), (-3, 0, "#ffffff"), (-2, 0, "#ffffff"),
+        (-3, 1, "#ffffff"), (-2, 1, "#ffffff"), (-1, 1, "#ffffff"),
+        (-2, 2, "#ffffff"), (-1, 2, "#ffffff"), (0, 2, "#ffffff"), (1, 2, "#ffffff"), (2, 2, "#ffffff"),
+        (-1, 3, "#ffffff"), (0, 3, "#ffffff"), (1, 3, "#ffffff"),
+        # 4-dot star
+        (3, -4, "#ffffff"), (2, -3, "#ffffff"), (4, -3, "#ffffff"), (3, -2, "#ffffff"),
+    ]
+    drizzle_dots = cloud_top + [
+        (-2, 3, "#ffffff"), (1, 3, "#ffffff"), (4, 3, "#ffffff"),
+        (-3, 4, "#ffffff"), (0, 4, "#ffffff"), (3, 4, "#ffffff"),
+    ]
+    heavy_rain_dots = cloud_top + [
+        (-3, 3, "#ffffff"), (-1, 3, "#ffffff"), (1, 3, "#ffffff"), (3, 3, "#ffffff"),
+        (-4, 4, "#ffffff"), (-2, 4, "#ffffff"), (0, 4, "#ffffff"), (2, 4, "#ffffff"),
+        (4, 4, "#ffffff"),
+    ]
+    fog_dots = [
+        (x, y, "#ffffff")
+        for y, xs in [(-3, (-4, -2, 0, 2, 4)), (-1, (-3, -1, 1, 3)), (1, (-4, -2, 0, 2, 4)), (3, (-3, -1, 1, 3))]
+        for x in xs
+    ]
+    mist_dots = [
+        (x, y, "#ffffff")
+        for y, xs in [(-2, (-4, -2, 0, 2, 4)), (0, (-3, -1, 1, 3)), (2, (-4, -2, 0, 2, 4))]
+        for x in xs
+    ]
+    # Hazy sunshine: official Nothing hazy sun + staggered mist dots
+    atmo_dots = [
+        (-2, -4, "#ffffff"),
+        (-4, -3, "#ffffff"), (-2, -3, "#ffffff"), (0, -3, "#ffffff"),
+        (-3, -2, "#ffffff"), (-2, -2, "#ffffff"), (-1, -2, "#ffffff"),
+        (-4, -1, "#ffffff"), (-3, -1, "#ffffff"), (-2, -1, "#ffffff"), (-1, -1, "#ffffff"), (0, -1, "#ffffff"),
+        (-3, 0, "#ffffff"), (-2, 0, "#ffffff"), (-1, 0, "#ffffff"),
+        (1, 1, "#ffffff"), (3, 1, "#ffffff"),
+        (-3, 2, "#ffffff"), (-1, 2, "#ffffff"), (2, 2, "#ffffff"), (4, 2, "#ffffff"),
+        (-2, 3, "#ffffff"), (0, 3, "#ffffff"), (3, 3, "#ffffff"),
+    ]
+    # Hollow dot diamond (error.svg geometry) with signature red signal core
+    unknown_dots = [
+        (-1, -4, "#ffffff"), (0, -4, "#ffffff"), (1, -4, "#ffffff"),
+        (-2, -3, "#ffffff"), (-1, -3, "#ffffff"), (1, -3, "#ffffff"), (2, -3, "#ffffff"),
+        (-3, -2, "#ffffff"), (-2, -2, "#ffffff"), (2, -2, "#ffffff"), (3, -2, "#ffffff"),
+        (-4, -1, "#ffffff"), (-3, -1, "#ffffff"), (3, -1, "#ffffff"), (4, -1, "#ffffff"),
+        (-4, 0, "#ffffff"), (-3, 0, "#ffffff"), (0, 0, "#d71921"), (3, 0, "#ffffff"), (4, 0, "#ffffff"),
+        (-4, 1, "#ffffff"), (-3, 1, "#ffffff"), (3, 1, "#ffffff"), (4, 1, "#ffffff"),
+        (-3, 2, "#ffffff"), (-2, 2, "#ffffff"), (2, 2, "#ffffff"), (3, 2, "#ffffff"),
+        (-2, 3, "#ffffff"), (-1, 3, "#ffffff"), (1, 3, "#ffffff"), (2, 3, "#ffffff"),
+        (-1, 4, "#ffffff"), (0, 4, "#ffffff"), (1, 4, "#ffffff"),
+    ]
+
+    extra_nothing = {
+        "clear_night": clear_night_dots,
+        "drizzle": drizzle_dots,
+        "heavy_rain": heavy_rain_dots,
+        "fog": fog_dots,
+        "mist": mist_dots,
+        "atmospheric": atmo_dots,
+        "unknown": unknown_dots,
+    }
+    for cond, dots in extra_nothing.items():
+        render_svg(nothing_grid_svg(dots), w_out / cond, 64, 64)
 
 
 # ==============================================================================
@@ -991,220 +1033,281 @@ def build_ps3() -> None:
 
 
 # ==============================================================================
-# 5. XBOX 360 (2005 Launch "Blades" Pearl-Silver Dashboard + Ring of Light)
+# 5. XBOX 360 (2005 Launch "Blades" Dashboard + Real Xenon / Guide Assets)
 # ==============================================================================
+
+def _tile_texture(tex: Image.Image, w: int, h: int) -> Image.Image:
+    """Mirror-tile an RGBA texture cleanly to (w, h) so there are zero tile seams."""
+    out = Image.new("RGBA", (w, h))
+    tw, th = tex.size
+    tex_x = tex.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    tex_y = tex.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    tex_xy = tex_x.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    for row, y in enumerate(range(0, h, th)):
+        for col, x in enumerate(range(0, w, tw)):
+            tile = (tex if row % 2 == 0 else tex_y) if col % 2 == 0 else (tex_x if row % 2 == 0 else tex_xy)
+            out.paste(tile, (x, y))
+    return out
+
+
+def _hue_shift_rgba(img: Image.Image, target_deg: float, sat_scale: float = 1.0) -> Image.Image:
+    """Recolour an RGBA image to target hue (degrees) while preserving luminance & specular highlights."""
+    arr = np.array(img).astype(np.float32) / 255.0
+    r, g, b, a = arr[..., 0], arr[..., 1], arr[..., 2], arr[..., 3]
+    out = np.zeros_like(arr)
+    target_h = (target_deg % 360.0) / 360.0
+    for y in range(arr.shape[0]):
+        for x in range(arr.shape[1]):
+            if a[y, x] <= 0.0:
+                continue
+            _, s, v = colorsys.rgb_to_hsv(float(r[y, x]), float(g[y, x]), float(b[y, x]))
+            nr, ng, nb = colorsys.hsv_to_rgb(target_h, min(1.0, s * sat_scale), v)
+            out[y, x] = (nr, ng, nb, a[y, x])
+    return Image.fromarray(np.clip(out * 255.0, 0, 255).astype(np.uint8), "RGBA")
+
 
 def _render_xbox_variant(out: Path, dark: bool) -> None:
     w_out = out / "weather"
     out.mkdir(parents=True, exist_ok=True)
     w_out.mkdir(parents=True, exist_ok=True)
 
-    # 5a. 2005 Blades Frost Backdrop (Pearl-Silver Light vs Smoked-Carbon Dark) (380x700 -> 1x/2x)
+    glass_tile = Image.open(VENDOR_XBOX / "guide" / "glass.png").convert("RGBA")
+    glass_overlay = Image.open(VENDOR_XBOX / "glass-overlay.png").convert("RGBA")
+
+    # 5a. 2005 Blades & Guide Backdrop (380x700 -> 1x/2x) composited from real upstream assets
     w1, h1 = 380, 700
     w2, h2 = w1 * 2, h1 * 2
-    yy, xx = np.mgrid[0:h2, 0:w2].astype(np.float32)
-    u = xx / w2
-    v = yy / h2
+    bg_name = "carbon_guideline_background.png" if dark else "guideline_background.png"
+    src_bg = Image.open(VENDOR_XBOX / bg_name).convert("RGBA")
+    # Center-crop aspect ratio to 380:700 then resize smoothly to 760x1400
+    sw, sh = src_bg.size
+    target_ratio = w2 / h2
+    crop_w = min(sw, int(round(sh * target_ratio)))
+    x_off = (sw - crop_w) // 2
+    canvas = src_bg.crop((x_off, 0, x_off + crop_w, sh)).resize((w2, h2), Image.Resampling.LANCZOS)
 
-    rad_center = np.sqrt(((u - 0.50) / 0.56) ** 2 + ((v - 0.44) / 0.50) ** 2)
-    pearl = np.clip(1.0 - 0.72 * (rad_center ** 1.45), 0.0, 1.0)
-    rng = np.random.default_rng(361 if dark else 360)
-    streak = rng.normal(0.0, 1.0 if dark else 1.1, (h2, 1)).astype(np.float32)
+    # Subtle brushed aluminum micro-grain from real guide/glass.png
+    tiled_glass = _tile_texture(glass_tile, w2, h2)
+    arr_c = np.array(canvas, dtype=np.float32)
+    arr_g = np.array(tiled_glass, dtype=np.float32)
+    grain_mix = 0.07 if dark else 0.10
+    arr_c[..., :3] = np.clip(arr_c[..., :3] * (1.0 - grain_mix) + arr_g[..., :3] * grain_mix, 0, 255)
+    canvas = Image.fromarray(arr_c.astype(np.uint8), "RGBA")
 
+    # Composite real Xbox 360 concentric energy rings (background_energy_spin.svg) softly
+    spin_svg = (VENDOR_XBOX / "background_energy_spin.svg").read_text(encoding="utf-8")
+    spin_img = render_svg_bytes(spin_svg, 680, 680)
+    spin_arr = np.array(spin_img, dtype=np.float32)
+    spin_arr[..., 3] *= (0.14 if dark else 0.11)
+    spin_soft = Image.fromarray(np.clip(spin_arr, 0, 255).astype(np.uint8), "RGBA")
+    canvas.alpha_composite(spin_soft, (40, 220))
+
+    # Subtle Guide curved header/footer framing wash
+    hdr_svg = (VENDOR_XBOX / "guide" / "header.svg").read_text(encoding="utf-8")
+    ftr_svg = (VENDOR_XBOX / "guide" / "footer.svg").read_text(encoding="utf-8")
+    hdr_img = render_svg_bytes(hdr_svg, w2, 84)
+    ftr_img = render_svg_bytes(ftr_svg, w2, 64)
+    hdr_arr = np.array(hdr_img, dtype=np.float32)
+    hdr_arr[..., 3] *= (0.28 if dark else 0.16)
+    ftr_arr = np.array(ftr_img, dtype=np.float32)
+    ftr_arr[..., 3] *= (0.30 if dark else 0.18)
+    canvas.alpha_composite(Image.fromarray(hdr_arr.astype(np.uint8), "RGBA"), (0, 0))
+    canvas.alpha_composite(Image.fromarray(ftr_arr.astype(np.uint8), "RGBA"), (0, h2 - 64))
+
+    # Real stacked side blade slivers strictly along the outer 6-8px (12-16px @2x) edges
+    j_orange = render_svg_bytes((VENDOR_XBOX / "blades" / "blade_1_jewel.svg").read_text(encoding="utf-8"), 64, h2)
+    j_blue = render_svg_bytes((VENDOR_XBOX / "blades" / "blade_3_jewel.svg").read_text(encoding="utf-8"), 64, h2 // 2 + 120)
+    j_violet = render_svg_bytes((VENDOR_XBOX / "blades" / "blade_4_jewel.svg").read_text(encoding="utf-8"), 64, h2 // 2 + 120)
+    rim_img = render_svg_bytes((VENDOR_XBOX / "blades" / "wing-rim.svg").read_text(encoding="utf-8"), 28, h2)
+    rim_arr = np.array(rim_img, dtype=np.float32)
+    rim_arr[..., 3] *= (0.78 if dark else 0.85)
+    rim_img = Image.fromarray(rim_arr.astype(np.uint8), "RGBA")
+
+    edge_strip = Image.new("RGBA", (w2, h2), (0, 0, 0, 0))
+    # Left Xbox Live Orange blade sliver
+    left_sliver = j_orange.crop((48, 0, 62, h2))
     if dark:
-        base_r = 16 + 18 * pearl + streak
-        base_g = 20 + 21 * pearl + streak
-        base_b = 25 + 24 * pearl + streak
-    else:
-        base_r = 204 + 44 * pearl + streak
-        base_g = 211 + 41 * pearl + streak
-        base_b = 219 + 34 * pearl + streak
+        left_sliver = ImageEnhance.Brightness(left_sliver).enhance(0.76)
+    edge_strip.alpha_composite(left_sliver, (-4, 0))
+    edge_strip.alpha_composite(rim_img.crop((14, 0, 28, h2)), (-2, 0))
 
-    halo = np.exp(-(((u - 0.52) / 0.58) ** 2 + ((v - 0.06) / 0.24) ** 2))
-    ring_dist = np.sqrt((u - 0.52) ** 2 + ((v - 0.42) * 1.45) ** 2)
-    rings = (
-        np.exp(-((ring_dist - 0.24) / 0.008) ** 2)
-        + 0.7 * np.exp(-((ring_dist - 0.42) / 0.009) ** 2)
-        + 0.45 * np.exp(-((ring_dist - 0.60) / 0.011) ** 2)
-    )
-
+    # Right Media Blue + System Violet blade slivers
+    right_top = j_blue.transpose(Image.Transpose.FLIP_LEFT_RIGHT).crop((2, 0, 16, h2 // 2 + 120))
+    right_bot = j_violet.transpose(Image.Transpose.FLIP_LEFT_RIGHT).crop((2, 0, 16, h2 // 2 + 120))
     if dark:
-        r = np.clip(base_r + 14 * halo + 10 * rings, 0, 255)
-        g = np.clip(base_g + 42 * halo + 14 * rings, 0, 255)
-        b = np.clip(base_b + 8 * halo + 12 * rings, 0, 255)
-    else:
-        r = np.clip(base_r - 18 * halo + 10 * rings, 0, 255)
-        g = np.clip(base_g + 22 * halo + 12 * rings, 0, 255)
-        b = np.clip(base_b - 26 * halo + 14 * rings, 0, 255)
+        right_top = ImageEnhance.Brightness(right_top).enhance(0.82)
+        right_bot = ImageEnhance.Brightness(right_bot).enhance(0.82)
+    edge_strip.alpha_composite(right_bot, (w2 - 10, h2 // 2 - 120))
+    edge_strip.alpha_composite(right_top, (w2 - 10, 0))
+    rim_r = rim_img.transpose(Image.Transpose.FLIP_LEFT_RIGHT).crop((0, 0, 14, h2))
+    edge_strip.alpha_composite(rim_r, (w2 - 12, 0))
 
-    # Stacked 2005 Blade edge slivers along the left (Xbox Live Orange) & right (Media Blue / System Violet)
-    s_arc = np.clip(np.sin(np.pi * np.clip(v, 0.0, 1.0)), 0.0, 1.0)
-    curve_x_l = 4.0 + 7.5 * (1.0 - s_arc ** 1.15)
-    in_left_blade = xx < curve_x_l
-    left_rim = (xx >= curve_x_l - 1.5) & (xx <= curve_x_l + 2.0)
+    canvas.alpha_composite(edge_strip)
+    canvas.save(out / "xbox_backdrop@2x.png", optimize=True)
+    canvas.resize((w1, h1), Image.Resampling.LANCZOS).save(out / "xbox_backdrop.png", optimize=True)
 
-    curve_x_r = (w2 - 1.0) - curve_x_l
-    in_right_blade = xx > curve_x_r
-    right_rim = (xx >= curve_x_r - 2.0) & (xx <= curve_x_r + 1.5)
+    # 5b. Real Xenon Guide Sphere + 4-Quadrant Ring of Light Housing (56x56 -> 1x/2x/3x)
+    # Drawn at 168x168 (3x) from real notify_bg.png (107x109) + real xenonLogo.png (108x108).
+    notify_bg = Image.open(VENDOR_XBOX / "notifications" / "notify_bg.png").convert("RGBA")
+    xenon_logo = Image.open(VENDOR_XBOX / "notifications" / "xenonLogo.png").convert("RGBA")
 
-    l_scale = 0.78 if dark else 1.0
-    r = np.where(in_left_blade, np.clip((236 - 36 * v) * l_scale, 0, 255), r)
-    g = np.where(in_left_blade, np.clip((144 - 30 * v) * l_scale, 0, 255), g)
-    b = np.where(in_left_blade, np.clip((40 + 12 * v) * l_scale, 0, 255), b)
+    # Extract tight sphere from xenonLogo.png (opaque bbox 28,29..82,81)
+    x_crop = xenon_logo.crop((27, 27, 83, 83))
+    orb_3x = Image.new("RGBA", (168, 168), (0, 0, 0, 0))
+    # Subtle drop shadow
+    sh_draw = ImageDraw.Draw(orb_3x)
+    sh_draw.ellipse((14, 17, 154, 157), fill=(0, 0, 0, 68))
+    orb_3x = orb_3x.filter(ImageFilter.GaussianBlur(2.5))
+    # Recessed dark core behind the transparent center of notify_bg
+    core_draw = ImageDraw.Draw(orb_3x)
+    core_fill = (11, 14, 18, 255) if dark else (26, 34, 42, 255)
+    core_draw.ellipse((24, 24, 144, 144), fill=core_fill)
 
-    rb_r = (48 if dark else 56) + 78 * np.clip((v - 0.45) / 0.45, 0, 1)
-    rb_g = (118 if dark else 132) - 52 * np.clip((v - 0.45) / 0.45, 0, 1)
-    rb_b = (188 if dark else 208) - 16 * np.clip((v - 0.45) / 0.45, 0, 1)
-    r = np.where(in_right_blade, rb_r, r)
-    g = np.where(in_right_blade, rb_g, g)
-    b = np.where(in_right_blade, rb_b, b)
-
-    rail = (84, 94, 106) if dark else (168, 176, 186)
-    r = np.where(left_rim | right_rim, rail[0], r)
-    g = np.where(left_rim | right_rim, rail[1], g)
-    b = np.where(left_rim | right_rim, rail[2], b)
-
-    bg = np.stack([r, g, b, np.full_like(r, 255)], axis=-1).astype(np.uint8)
-    img2x = Image.fromarray(bg, "RGBA")
-    img2x.save(out / "xbox_backdrop@2x.png", optimize=True)
-    img2x.resize((w1, h1), Image.Resampling.LANCZOS).save(out / "xbox_backdrop.png", optimize=True)
-
-    # 5b. 2005 Xenon Chrome vs Smoked-Gunmetal Guide Sphere (56x56)
+    bg_scaled = notify_bg.resize((152, 154), Image.Resampling.LANCZOS)
     if dark:
-        ring_stops = ('#7a8896', '#3c4550', '#161b21', '#5c6874')
-        ring_stroke = '#2b343e'
-        recess_fill = '#090c0f'
-        sphere_stops = ('#5c6672', '#2f3740', '#181e24', '#0d1115')
-        sphere_stroke = '#4e5965'
-        gloss_op = '0.36'
-    else:
-        ring_stops = ('#ffffff', '#d2dae2', '#76828e', '#e5ebf0')
-        ring_stroke = '#5b6672'
-        recess_fill = '#1e262e'
-        sphere_stops = ('#ffffff', '#dde4eb', '#9ca6b2', '#5d6874')
-        sphere_stroke = '#4c5763'
-        gloss_op = '0.78'
+        bg_scaled = ImageEnhance.Brightness(bg_scaled).enhance(0.72)
+    orb_3x.alpha_composite(bg_scaled, (8, 7))
 
-    guide_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">
-      <defs>
-        <linearGradient id="chromeRing" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="{ring_stops[0]}"/>
-          <stop offset="0.35" stop-color="{ring_stops[1]}"/>
-          <stop offset="0.68" stop-color="{ring_stops[2]}"/>
-          <stop offset="1" stop-color="{ring_stops[3]}"/>
-        </linearGradient>
-        <radialGradient id="silverSphere" cx="0.48" cy="0.34" r="0.68">
-          <stop offset="0" stop-color="{sphere_stops[0]}"/>
-          <stop offset="0.46" stop-color="{sphere_stops[1]}"/>
-          <stop offset="0.82" stop-color="{sphere_stops[2]}"/>
-          <stop offset="1" stop-color="{sphere_stops[3]}"/>
-        </radialGradient>
-        <linearGradient id="xGreen" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#a2f852"/>
-          <stop offset="0.5" stop-color="#5ec228"/>
-          <stop offset="1" stop-color="#2e7b12"/>
-        </linearGradient>
-        <linearGradient id="domeGloss" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#ffffff" stop-opacity="{gloss_op}"/>
-          <stop offset="1" stop-color="#ffffff" stop-opacity="0.0"/>
-        </linearGradient>
-      </defs>
-      <circle cx="28" cy="29.2" r="25.5" fill="#000000" fill-opacity="0.28"/>
-      <circle cx="28" cy="28" r="25.2" fill="url(#chromeRing)" stroke="{ring_stroke}" stroke-width="0.9"/>
-      <circle cx="28" cy="28" r="22.8" fill="{recess_fill}" stroke="#343e48" stroke-width="0.7"/>
-      <circle cx="28" cy="28" r="18.6" fill="url(#silverSphere)" stroke="{sphere_stroke}" stroke-width="0.9"/>
-      <mask id="xSphereMask">
-        <circle cx="28" cy="28" r="18.2" fill="white"/>
-      </mask>
-      <g mask="url(#xSphereMask)">
-        <path d="M13,12 C21,18 24,23 28,27.5 C32,23 35,18 43,12 L46,15 C38,22 35,26 31,29.5 C36,36 40,42 45,48 L39,49 C34,42 31,37 28,32.5 C25,37 22,42 17,49 L11,48 C16,42 20,36 25,29.5 C21,26 18,22 10,15 Z"
-              fill="#193a0b" fill-opacity="0.55" transform="translate(0, 0.8)"/>
-        <path d="M13,12 C21,18 24,23 28,27.5 C32,23 35,18 43,12 L46,15 C38,22 35,26 31,29.5 C36,36 40,42 45,48 L39,49 C34,42 31,37 28,32.5 C25,37 22,42 17,49 L11,48 C16,42 20,36 25,29.5 C21,26 18,22 10,15 Z"
-              fill="url(#xGreen)" stroke="#e6ffc2" stroke-opacity="0.65" stroke-width="0.55"/>
-        <ellipse cx="28" cy="17.5" rx="12.5" ry="6.2" fill="url(#domeGloss)"/>
-      </g>
-    </svg>'''
-    render_svg(guide_svg, out / "xbox_guide_orb", 56, 56)
+    # Place real 3D Xenon sphere cleanly inside the Ring of Light inner cutout
+    sphere_sz = 100
+    sphere_scaled = x_crop.resize((sphere_sz, sphere_sz), Image.Resampling.LANCZOS)
+    if dark:
+        sphere_scaled = ImageEnhance.Contrast(ImageEnhance.Brightness(sphere_scaled).enhance(0.92)).enhance(1.08)
+    orb_3x.alpha_composite(sphere_scaled, ((168 - sphere_sz) // 2, (168 - sphere_sz) // 2))
+    save_scaled_png(orb_3x, out / "xbox_guide_orb", 56, 56)
 
-    # 5c. Xbox 360 Ring of Light LED Quadrant overlays (56x56)
-    quad_paths = {
-        1: "M 7.8 26.2 A 20.6 20.6 0 0 1 26.2 7.8",
-        2: "M 29.8 7.8 A 20.6 20.6 0 0 1 48.2 26.2",
-        3: "M 48.2 29.8 A 20.6 20.6 0 0 1 29.8 48.2",
-        4: "M 26.2 48.2 A 20.6 20.6 0 0 1 7.8 29.8",
+    # 5c. Real Ring of Light LED Quadrant overlays (56x56 -> 1x/2x/3x) using notify_Indicator1.png
+    ind_base = Image.open(VENDOR_XBOX / "notifications" / "notify_Indicator1.png").convert("RGBA")
+    ind_amber = _hue_shift_rgba(ind_base, 36.0, 1.05)
+    ind_red = _hue_shift_rgba(ind_base, 2.0, 1.08)
+
+    # Quadrant placement inside notify_bg (107x109) scaled to 152x154 at (8,7)
+    # In 107x109 space, Q1 (47x47) sits at (5, 6); mapped to 168x168 canvas:
+    sx, sy = 152.0 / 107.0, 154.0 / 109.0
+    qw, qh = int(round(47 * sx)), int(round(47 * sy))
+    ox, oy = 8 + int(round(5 * sx)), 7 + int(round(6 * sy))
+    q_poses = {
+        1: (ox, oy, Image.Transpose.ROTATE_90),  # placeholder, overwritten below
     }
+    def make_quad(src: Image.Image, q: int) -> Image.Image:
+        q_img = src
+        if q == 2:
+            q_img = src.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        elif q == 3:
+            q_img = src.transpose(Image.Transpose.ROTATE_180)
+        elif q == 4:
+            q_img = src.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        return q_img.resize((qw, qh), Image.Resampling.LANCZOS)
+
     rol_specs = {
-        "xbox_rol_live": ([1], "#7ef038"),
-        "xbox_rol_manual": ([1, 2], "#7ef038"),
-        "xbox_rol_paused": ([1, 2, 3, 4], "#f59d1a"),
-        "xbox_rol_offline": ([1, 3, 4], "#e53935"),
+        "xbox_rol_live": ([1], ind_base),
+        "xbox_rol_manual": ([1, 2], ind_base),
+        "xbox_rol_paused": ([1, 2, 3, 4], ind_amber),
+        "xbox_rol_offline": ([1, 3, 4], ind_red),
     }
-    rol_off = "#1f2730" if dark else "#36404a"
-    for name, (qs, col) in rol_specs.items():
-        arcs = []
-        for q in range(1, 5):
-            if q in qs:
-                arcs.append(f'<path d="{quad_paths[q]}" fill="none" stroke="{col}" stroke-width="3.0" stroke-linecap="round" filter="url(#rolBlur)"/>')
-                arcs.append(f'<path d="{quad_paths[q]}" fill="none" stroke="#ffffff" stroke-opacity="0.82" stroke-width="1.05" stroke-linecap="round"/>')
-            else:
-                arcs.append(f'<path d="{quad_paths[q]}" fill="none" stroke="{rol_off}" stroke-opacity="0.88" stroke-width="2.0" stroke-linecap="round"/>')
-        rol_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">
-          <defs><filter id="rolBlur" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-          {''.join(arcs)}
-        </svg>'''
-        render_svg(rol_svg, out / name, 56, 56)
+    coords = {
+        1: (ox, oy),
+        2: (168 - ox - qw, oy),
+        3: (168 - ox - qw, 168 - oy - qh),
+        4: (ox, 168 - oy - qh),
+    }
+    for name, (qs, src_led) in rol_specs.items():
+        rol_3x = Image.new("RGBA", (168, 168), (0, 0, 0, 0))
+        for q in qs:
+            rol_3x.alpha_composite(make_quad(src_led, q), coords[q])
+        save_scaled_png(rol_3x, out / name, 56, 56)
 
-    # 5d. Authentic 2005 Blades Tabs (Pearl-Silver Light vs Obsidian Carbon Dark) (104x36)
-    blade_table = (
-        [
-            ("xbox_blade_active", "#36414d", "#212830", "#161b22", "#74d834", "#9ef652", "#47a31d", "0.24"),
-            ("xbox_blade_idle", "#272f38", "#1c2229", "#13181d", "#485462", "#596674", "#36404a", "0.14"),
-        ]
-        if dark
-        else [
-            ("xbox_blade_active", "#ffffff", "#eef3f7", "#d9e1e9", "#4ba822", "#8cf04a", "#3c9418", "0.72"),
-            ("xbox_blade_idle", "#e7ecf1", "#cfd7e0", "#b6c0cb", "#85919e", "#aeb8c4", "#75808d", "0.72"),
-        ]
-    )
-    for name, body_top, body_mid, body_bot, rim, spine_top, spine_bot, gloss_alpha in blade_table:
-        blade_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="104" height="36" viewBox="0 0 104 36">
+    # 5d. Authentic 2005 Blades Tabs (104x36 -> 1x/2x/3x) with real curved jewel spines
+    # Brightness active uses Games Green (blade_2_jewel.svg); Weather active uses Media Blue (blade_3_jewel.svg);
+    # Idle uses brushed silver (blade_grey_left.svg).
+    jewel_assets = {
+        "xbox_blade_active": ("blade_2_jewel.svg", "blade_2_bgcolor.svg", True, "#5a9612" if not dark else "#74d834", "#98e848"),
+        "xbox_blade_weather_active": ("blade_3_jewel.svg", "blade_3_bgcolor.svg", True, "#347fc3" if not dark else "#67b8fa", "#88c8ff"),
+        "xbox_blade_idle": ("blade_grey_left.svg", None, False, "#7c8894" if not dark else "#46525e", "#c8d0d8"),
+    }
+    w_b, h_b = 104 * 3, 36 * 3
+    for name, (svg_file, bg_svg_file, is_active, rim_col, inner_hi) in jewel_assets.items():
+        if dark:
+            b0, b1, b2 = ("#323c46", "#232a32", "#161b22") if is_active else ("#252d36", "#1b2128", "#13181e")
+            gloss_op = "0.22" if is_active else "0.12"
+        else:
+            b0, b1, b2 = ("#ffffff", "#f1f5f8", "#d7e0e8") if is_active else ("#e9eef2", "#d0d8e0", "#b6c0ca")
+            gloss_op = "0.78" if is_active else "0.62"
+
+        base_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="104" height="36" viewBox="0 0 104 36">
           <defs>
             <linearGradient id="bl" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="{body_top}"/>
-              <stop offset="0.52" stop-color="{body_mid}"/>
-              <stop offset="1" stop-color="{body_bot}"/>
-            </linearGradient>
-            <linearGradient id="sp" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="{spine_top}"/>
-              <stop offset="1" stop-color="{spine_bot}"/>
+              <stop offset="0" stop-color="{b0}"/>
+              <stop offset="0.52" stop-color="{b1}"/>
+              <stop offset="1" stop-color="{b2}"/>
             </linearGradient>
             <linearGradient id="blGloss" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="{gloss_alpha}"/>
+              <stop offset="0" stop-color="#ffffff" stop-opacity="{gloss_op}"/>
               <stop offset="1" stop-color="#ffffff" stop-opacity="0.0"/>
             </linearGradient>
           </defs>
-          <path d="M12,4 L92,4 Q98,4 102,19 Q98,34 92,34 L12,34 Q6,34 2,19 Q6,4 12,4 Z"
-                fill="#000000" fill-opacity="0.22"/>
-          <path d="M12,3 L92,3 Q98,3 102,18 Q98,33 92,33 L12,33 Q6,33 2,18 Q6,3 12,3 Z"
-                fill="url(#bl)" stroke="{rim}" stroke-width="1.6"/>
-          <path d="M12,3.5 L18,3.5 Q12,18 18,32.5 L12,32.5 Q6.5,32.5 2.6,18 Q6.5,3.5 12,3.5 Z"
-                fill="url(#sp)"/>
-          <path d="M13,5 L91,5 Q95,5 98,15 L6,15 Q9,5 13,5 Z"
-                fill="url(#blGloss)"/>
+          <path d="M12,4 L92,4 Q98,4 102,19 Q98,34 92,34 L12,34 Q6,34 2,19 Q6,4 12,4 Z" fill="#000000" fill-opacity="0.24"/>
+          <path d="M12,3 L92,3 Q98,3 102,18 Q98,33 92,33 L12,33 Q6,33 2,18 Q6,3 12,3 Z" fill="url(#bl)"/>
+          <path d="M13,4.5 L91,4.5 Q95,4.5 98,14.5 L6,14.5 Q9,4.5 13,4.5 Z" fill="url(#blGloss)"/>
         </svg>'''
-        render_svg(blade_svg, out / name, 104, 36)
+        tab_img = render_svg_bytes(base_svg, w_b, h_b)
 
-    # 5e. Brushed Metallic Blade Card (88x64)
+        # Clip mask for the curved left jewel spine inside the blade silhouette
+        clip_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="104" height="36" viewBox="0 0 104 36">
+          <path d="M12,3 L19,3 Q13,18 19,33 L12,33 Q6,33 2,18 Q6,3 12,3 Z" fill="#ffffff"/>
+        </svg>'''
+        spine_mask = render_svg_bytes(clip_svg, w_b, h_b).getchannel("A")
+
+        jewel_raw = render_svg_bytes((VENDOR_XBOX / "blades" / svg_file).read_text(encoding="utf-8"), 136, 480)
+        if bg_svg_file:
+            # Composite translucent real jewel gloss over its matching real Xbox 360 blade gradient
+            bg_raw = render_svg_bytes((VENDOR_XBOX / "blades" / bg_svg_file).read_text(encoding="utf-8"), 64, h_b)
+            jewel_band = jewel_raw.crop((50, 175, 90, 305)).resize((62, h_b), Image.Resampling.LANCZOS)
+            spine_fill = bg_raw.crop((0, 0, 62, h_b))
+            spine_fill.alpha_composite(jewel_band)
+        else:
+            # Crop strictly inside the brushed silver body of blade_grey_left.svg (no outer black shadow)
+            spine_fill = jewel_raw.crop((46, 175, 76, 305)).resize((62, h_b), Image.Resampling.LANCZOS)
+
+        spine_layer = Image.new("RGBA", (w_b, h_b), (0, 0, 0, 0))
+        spine_layer.paste(spine_fill, (0, 0))
+        spine_layer.putalpha(spine_mask)
+        tab_img.alpha_composite(spine_layer)
+
+        # Blend faint brushed metal grain on the tab face & draw crisp outer bezel rim
+        mask_body = render_svg_bytes(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="104" height="36" viewBox="0 0 104 36">'
+            '<path d="M12,3 L92,3 Q98,3 102,18 Q98,33 92,33 L12,33 Q6,33 2,18 Q6,3 12,3 Z" fill="#fff"/></svg>',
+            w_b, h_b,
+        ).getchannel("A")
+        grain_b = _tile_texture(glass_tile, w_b, h_b)
+        arr_t = np.array(tab_img, dtype=np.float32)
+        arr_gb = np.array(grain_b, dtype=np.float32)
+        arr_mb = np.array(mask_body, dtype=np.float32) / 255.0
+        arr_t[..., :3] = np.clip(arr_t[..., :3] * (1.0 - 0.06 * arr_mb[..., None]) + arr_gb[..., :3] * (0.06 * arr_mb[..., None]), 0, 255)
+        tab_img = Image.fromarray(arr_t.astype(np.uint8), "RGBA")
+
+        rim_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="104" height="36" viewBox="0 0 104 36">
+          <path d="M12,3 L92,3 Q98,3 102,18 Q98,33 92,33 L12,33 Q6,33 2,18 Q6,3 12,3 Z" fill="none" stroke="{rim_col}" stroke-width="1.5"/>
+          <path d="M13,4.2 L91,4.2" fill="none" stroke="{inner_hi}" stroke-opacity="{0.45 if is_active else 0.55}" stroke-width="0.8"/>
+        </svg>'''
+        tab_img.alpha_composite(render_svg_bytes(rim_svg, w_b, h_b))
+        save_scaled_png(tab_img, out / name, 104, 36)
+
+    # 5e. Brushed Metallic Guide Card (88x64 -> 1x/2x/3x) backed by mirror-tiled guide/glass.png
     if dark:
-        card_stops = ('#2c343e', '#232a33', '#1c2229', '#161b21')
-        edge_stops = ('#52606e', '#323c46')
-        card_shine = '0.16'
-        card_shadow = '0.28'
+        card_stops = ("#2c353e", "#222931", "#1b2128", "#151a20")
+        edge_stops = ("#566472", "#343e48")
+        card_shine = "0.18"
+        card_shadow = "0.32"
+        glass_mix = 0.05
     else:
-        card_stops = ('#ffffff', '#f3f6f9', '#e5ebf1', '#d7dfe8')
-        edge_stops = ('#a5b0bc', '#7c8896')
-        card_shine = '0.85'
-        card_shadow = '0.12'
+        card_stops = ("#ffffff", "#f2f5f8", "#e4eaf0", "#d4dde6")
+        edge_stops = ("#9aa6b2", "#75828f")
+        card_shine = "0.88"
+        card_shadow = "0.14"
+        glass_mix = 0.06
+
     card_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="88" height="64" viewBox="0 0 88 64">
       <defs>
         <linearGradient id="cbg" x1="0" y1="0" x2="0" y2="1">
@@ -1222,23 +1325,40 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
       <rect x="1" y="1" width="86" height="60.5" rx="9" fill="url(#cbg)" stroke="url(#cEdge)" stroke-width="1.2"/>
       <line x1="9" y1="2.4" x2="79" y2="2.4" stroke="#ffffff" stroke-opacity="{card_shine}" stroke-width="1.0"/>
     </svg>'''
-    render_svg(card_svg, out / "xbox_card", 88, 64)
+    cw3, ch3 = 88 * 3, 64 * 3
+    card_3x = render_svg_bytes(card_svg, cw3, ch3)
+    card_mask = render_svg_bytes(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="88" height="64" viewBox="0 0 88 64">'
+        '<rect x="2" y="2" width="84" height="58.5" rx="8" fill="#ffffff"/></svg>',
+        cw3, ch3,
+    ).getchannel("A")
+    # Blend subtle seamless brushed aluminum texture from guide/glass.png (zero horizontal banding when 9-sliced)
+    grain_c = _tile_texture(glass_tile, cw3, ch3)
+    arr_card = np.array(card_3x, dtype=np.float32)
+    arr_gc = np.array(grain_c, dtype=np.float32)
+    arr_mc = np.array(card_mask, dtype=np.float32) / 255.0
+    arr_card[..., :3] = np.clip(
+        arr_card[..., :3] * (1.0 - glass_mix * arr_mc[..., None])
+        + arr_gc[..., :3] * (glass_mix * arr_mc[..., None]),
+        0, 255,
+    )
+    save_scaled_png(Image.fromarray(arr_card.astype(np.uint8), "RGBA"), out / "xbox_card", 88, 64)
 
-    # 5f. Blades Selector Pill Buttons (72x30)
+    # 5f. Blades Selector Pill Buttons (72x30 -> 1x/2x/3x) matching guide_menu_button.png & blades.css
     pill_table = (
         [
-            ("xbox_pill_idle", "#353f4a", "#252c35", "#1b2128", "#505d6b", "1.3", "0.14"),
-            ("xbox_pill_called", "#283f22", "#1e3219", "#152412", "#6ec836", "1.6", "0.16"),
-            ("xbox_pill_active", "#6ed434", "#4ba81c", "#2d7810", "#8cf04a", "1.4", "0.34"),
+            ("xbox_pill_idle", "#35404b", "#242c35", "#181e25", "#52606e", "1.3", "0.18", "#7c8b99"),
+            ("xbox_pill_called", "#2b4523", "#1f3419", "#152512", "#74d438", "1.6", "0.20", "#a6ec68"),
+            ("xbox_pill_active", "#a9d43c", "#6cb822", "#5a9612", "#c8f278", "1.4", "0.42", "#e8ffc0"),
         ]
         if dark
         else [
-            ("xbox_pill_idle", "#fbfcfd", "#e4e9ef", "#cfd7e0", "#86929f", "1.3", "0.75"),
-            ("xbox_pill_called", "#edf8e4", "#d2edc0", "#b8df9e", "#52b324", "1.6", "0.68"),
-            ("xbox_pill_active", "#58be28", "#3e9b18", "#2d7810", "#296910", "1.4", "0.42"),
+            ("xbox_pill_idle", "#f8faf8", "#dfe6ea", "#b4bfc3", "#7e8b96", "1.3", "0.80", "#ffffff"),
+            ("xbox_pill_called", "#eef8e4", "#d2edc0", "#b6de9a", "#5a9612", "1.6", "0.72", "#ffffff"),
+            ("xbox_pill_active", "#a9d43c", "#6fb824", "#5a9612", "#3b680a", "1.4", "0.52", "#d9f59a"),
         ]
     )
-    for name, c0, c1, c2, rim, rw, hi in pill_table:
+    for name, c0, c1, c2, rim, rw, hi, inset_hi in pill_table:
         pill_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="72" height="30" viewBox="0 0 72 30">
           <defs>
             <linearGradient id="xp" x1="0" y1="0" x2="0" y2="1">
@@ -1247,20 +1367,21 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
               <stop offset="1" stop-color="{c2}"/>
             </linearGradient>
           </defs>
-          <rect x="1.5" y="2.2" width="69" height="26.5" rx="13.2" fill="#000000" fill-opacity="0.18"/>
+          <rect x="1.5" y="2.2" width="69" height="26.5" rx="13.2" fill="#000000" fill-opacity="0.20"/>
           <rect x="1.5" y="1.2" width="69" height="27" rx="13.5" fill="url(#xp)" stroke="{rim}" stroke-width="{rw}"/>
+          <path d="M14,2.3 L58,2.3" stroke="{inset_hi}" stroke-opacity="0.85" stroke-width="0.9" stroke-linecap="round"/>
           <rect x="4" y="2.5" width="64" height="10" rx="5" fill="#ffffff" fill-opacity="{hi}"/>
         </svg>'''
         render_svg(pill_svg, out / name, 72, 30)
 
-    # 5f2. Action Sphere Button (40x40) for RefreshControl
+    # 5f2. Action Sphere Button (40x40 -> 1x/2x/3x) for RefreshControl
     for name, active in [("xbox_orb_btn", False), ("xbox_orb_btn_active", True)]:
         if active:
-            c0, c1, rim, hi, inner_col, inner_op = ("#74dc38", "#2d7810", "#8ef250" if dark else "#25610d", "0.38" if dark else "0.48", "#a9f272", 0.78)
+            c0, c1, rim, hi, inner_col, inner_op = ("#a9d43c", "#5a9612", "#c8f278" if dark else "#366008", "0.42" if dark else "0.52", "#e8ffc0", 0.85)
         elif dark:
-            c0, c1, rim, hi, inner_col, inner_op = ("#3c4652", "#1c2229", "#556372", "0.18", "#80c342", 0.55)
+            c0, c1, rim, hi, inner_col, inner_op = ("#3e4956", "#1c222a", "#586776", "0.20", "#83c52b", 0.60)
         else:
-            c0, c1, rim, hi, inner_col, inner_op = ("#ffffff", "#ced7e0", "#7e8a98", "0.78", "#52b324", 0.45)
+            c0, c1, rim, hi, inner_col, inner_op = ("#ffffff", "#c4cfd6", "#7a8692", "0.82", "#5a9612", 0.50)
         xorb_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
           <defs>
             <linearGradient id="xo" x1="0" y1="0" x2="0" y2="1">
@@ -1268,20 +1389,20 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
               <stop offset="1" stop-color="{c1}"/>
             </linearGradient>
           </defs>
-          <circle cx="20" cy="21" r="16.5" fill="#000000" fill-opacity="0.22"/>
+          <circle cx="20" cy="21" r="16.5" fill="#000000" fill-opacity="0.24"/>
           <circle cx="20" cy="20" r="16.5" fill="url(#xo)" stroke="{rim}" stroke-width="1.4"/>
           <circle cx="20" cy="20" r="14.2" fill="none" stroke="{inner_col}" stroke-opacity="{inner_op}" stroke-width="1"/>
           <ellipse cx="20" cy="12" rx="10" ry="4.5" fill="#ffffff" fill-opacity="{hi}"/>
         </svg>'''
         render_svg(xorb_svg, out / name, 40, 40)
 
-    # 5g. Chrome vs Dark-Gunmetal & Emerald Slider Thumb (24x24)
+    # 5g. Chrome vs Dark-Gunmetal & Emerald Slider Thumb (24x24 -> 1x/2x/3x)
     if dark:
-        t_stops = ("#566270", "#2d353e", "#161b21")
-        t_rim, t_core = "#7ce842", "#90f452"
+        t_stops = ("#5c6876", "#2f3842", "#161b22")
+        t_rim, t_core = "#83c52b", "#a9d43c"
     else:
-        t_stops = ("#ffffff", "#cfd8e2", "#7c8896")
-        t_rim, t_core = "#3e9418", "#46a21e"
+        t_stops = ("#ffffff", "#d0dae2", "#7c8896")
+        t_rim, t_core = "#4b8a10", "#6cc020"
     x_thumb = f'''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
       <defs>
         <radialGradient id="xt" cx="0.45" cy="0.32" r="0.65">
@@ -1290,37 +1411,57 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
           <stop offset="1" stop-color="{t_stops[2]}"/>
         </radialGradient>
       </defs>
-      <circle cx="12" cy="12.6" r="9.0" fill="#000000" fill-opacity="0.26"/>
+      <circle cx="12" cy="12.6" r="9.0" fill="#000000" fill-opacity="0.28"/>
       <circle cx="12" cy="12" r="8.4" fill="url(#xt)" stroke="{t_rim}" stroke-width="1.8"/>
       <circle cx="12" cy="12" r="3.4" fill="{t_core}"/>
     </svg>'''
     render_svg(x_thumb, out / "xbox_slider_thumb", 24, 24)
 
-    # 5h. Glossy Xbox 360 Jelly Weather Icons (Light vs Dark Card Contrast) (64x64 -> 1x/2x/3x)
-    cloud_stops = ("#f6f9fc", "#cdd8e4", "#8b9bb0") if dark else ("#ffffff", "#d8e1eb", "#96a4b4")
-    cloud_stroke = "#3d4854" if dark else "#52606e"
-    mist_stroke = "#9bb0c4" if dark else "#5e7082"
-    q_fill = "#88f048" if dark else "#2d7810"
-    star_fill = "#88f048" if dark else "#52b324"
-    flake_stroke = "#72b8f5" if dark else "#4478a8"
+    # 5h. Glossy 2005 Xenon / Frutiger-Aero Weather Icons (64x64 -> 1x/2x/3x)
+    cloud_stops = ("#ffffff", "#dbe4ee", "#9aa9ba") if dark else ("#ffffff", "#e2eaf2", "#a2b0c0")
+    cloud_stroke = "#414e5c" if dark else "#566575"
+    mist_stroke = "#a5bad0" if dark else "#5a6d80"
+    q_fill = "#a9d43c" if dark else "#3f7d0c"
+    star_fill = "#a9d43c" if dark else "#5a9612"
+    flake_stroke = "#7ec4ff" if dark else "#3d7ab8"
 
     x_defs = f'''<defs>
-      <radialGradient id="xSunCore" cx="0.4" cy="0.35" r="0.65"><stop offset="0" stop-color="#fff4a3"/><stop offset="0.55" stop-color="#f5a81c"/><stop offset="1" stop-color="#c45c04"/></radialGradient>
-      <radialGradient id="xSunHalo"><stop offset="0.35" stop-color="#f5a81c" stop-opacity="0.34"/><stop offset="1" stop-color="#f5a81c" stop-opacity="0"/></radialGradient>
-      <linearGradient id="xCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{cloud_stops[0]}"/><stop offset="0.58" stop-color="{cloud_stops[1]}"/><stop offset="1" stop-color="{cloud_stops[2]}"/></linearGradient>
-      <linearGradient id="xDrop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ef244"/><stop offset="1" stop-color="#358e18"/></linearGradient>
-      <linearGradient id="xMoon" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff099"/><stop offset="0.55" stop-color="#ecc030"/><stop offset="1" stop-color="#b87e12"/></linearGradient>
+      <radialGradient id="xSunCore" cx="0.38" cy="0.34" r="0.66">
+        <stop offset="0" stop-color="#fff8bf"/>
+        <stop offset="0.52" stop-color="#ffb828"/>
+        <stop offset="1" stop-color="#d46308"/>
+      </radialGradient>
+      <radialGradient id="xSunHalo">
+        <stop offset="0.32" stop-color="#ffbe33" stop-opacity="0.42"/>
+        <stop offset="1" stop-color="#ffbe33" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="xCloud" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{cloud_stops[0]}"/>
+        <stop offset="0.55" stop-color="{cloud_stops[1]}"/>
+        <stop offset="1" stop-color="{cloud_stops[2]}"/>
+      </linearGradient>
+      <linearGradient id="xDrop" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6ee2ff"/>
+        <stop offset="0.55" stop-color="#229ee6"/>
+        <stop offset="1" stop-color="#0a5fa3"/>
+      </linearGradient>
+      <linearGradient id="xMoon" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff4ad"/>
+        <stop offset="0.55" stop-color="#f0c438"/>
+        <stop offset="1" stop-color="#b87e12"/>
+      </linearGradient>
     </defs>'''
 
     def x_sun(cx: float, cy: float, r: float, faint: bool = False) -> str:
-        op = 'opacity="0.62"' if faint else ""
+        op = 'opacity="0.64"' if faint else ""
         rays = "".join(
             f'<line x1="{cx + r * 1.32 * math.cos(a):.2f}" y1="{cy + r * 1.32 * math.sin(a):.2f}" '
             f'x2="{cx + r * 1.84 * math.cos(a):.2f}" y2="{cy + r * 1.84 * math.sin(a):.2f}" '
-            f'stroke="#f09218" stroke-width="2.6" stroke-linecap="round"/>'
+            f'stroke="#f59818" stroke-width="2.6" stroke-linecap="round"/>'
             for a in [k * math.pi / 4 for k in range(8)]
         )
-        return f'<g {op}><circle cx="{cx}" cy="{cy}" r="{r * 1.95}" fill="url(#xSunHalo)"/>{rays}<circle cx="{cx}" cy="{cy}" r="{r}" fill="url(#xSunCore)" stroke="#a65206" stroke-width="1.0"/></g>'
+        gloss = f'<ellipse cx="{cx - r * 0.24:.2f}" cy="{cy - r * 0.34:.2f}" rx="{r * 0.45:.2f}" ry="{r * 0.24:.2f}" fill="#ffffff" fill-opacity="0.52" transform="rotate(-24 {cx - r * 0.24:.2f} {cy - r * 0.34:.2f})"/>'
+        return f'<g {op}><circle cx="{cx}" cy="{cy}" r="{r * 1.98}" fill="url(#xSunHalo)"/>{rays}<circle cx="{cx}" cy="{cy}" r="{r}" fill="url(#xSunCore)" stroke="#a85006" stroke-width="1.0"/>{gloss}</g>'
 
     def x_moon(cx: float, cy: float, r: float) -> str:
         return f'''<mask id="xm_{int(cx)}">
@@ -1332,7 +1473,7 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
 
     def x_cloud(cx: float, cy: float, s: float) -> str:
         return f'''<g transform="translate({cx},{cy}) scale({s})">
-          <g fill="#000000" fill-opacity="0.22" transform="translate(0, 1.5)">
+          <g fill="#000000" fill-opacity="0.22" transform="translate(0, 1.8)">
             <circle cx="-9.5" cy="3" r="8"/><circle cx="0.5" cy="-3.5" r="10.2"/><circle cx="10.5" cy="2.5" r="7.8"/><rect x="-11" y="1" width="22" height="10" rx="5"/>
           </g>
           <g fill="url(#xCloud)" stroke="{cloud_stroke}" stroke-width="1.3">
@@ -1347,18 +1488,26 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
             <circle cx="10.5" cy="2.5" r="7.8"/>
             <rect x="-11" y="1" width="22" height="10" rx="5"/>
           </g>
-          <path d="M-7,-6 A9,9 0 0,1 8,-7" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M-7,-6 A9,9 0 0,1 8,-7" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
         </g>'''
 
-    def x_drop(x: float, y: float) -> str:
-        return f'<line x1="{x}" y1="{y}" x2="{x - 2}" y2="{y + 8}" stroke="url(#xDrop)" stroke-width="2.6" stroke-linecap="round"/>'
+    def x_drop(x: float, top: float, w: float = 4.6, h: float = 9.5) -> str:
+        r = w / 2.0
+        yc = top + h - r
+        return (
+            f'<path d="M{x},{top} C{x + 0.6 * r},{top + 0.42 * h} {x + r},{yc - 0.5 * r} {x + r},{yc} '
+            f'A{r},{r} 0 1,1 {x - r},{yc} C{x - r},{yc - 0.5 * r} {x - 0.6 * r},{top + 0.42 * h} {x},{top} Z" '
+            f'fill="url(#xDrop)" stroke="#084c82" stroke-width="0.65"/>'
+            f'<line x1="{x - 0.35 * r:.2f}" y1="{yc - 0.1 * r:.2f}" x2="{x - 0.32 * r:.2f}" y2="{yc - 0.65 * r:.2f}" '
+            f'stroke="#ffffff" stroke-opacity="0.82" stroke-width="{0.35 * r:.2f}" stroke-linecap="round"/>'
+        )
 
     def x_flake(cx: float, cy: float, r: float) -> str:
         lines = "".join(
             f'<line x1="{cx}" y1="{cy}" x2="{cx + r * math.cos(a):.2f}" y2="{cy + r * math.sin(a):.2f}"/>'
             for a in [k * math.pi / 3 - math.pi / 2 for k in range(6)]
         )
-        return f'<g stroke="{flake_stroke}" stroke-width="2" stroke-linecap="round">{lines}</g>'
+        return f'<g stroke="{flake_stroke}" stroke-width="2.1" stroke-linecap="round">{lines}</g><g stroke="#ffffff" stroke-width="0.9" stroke-linecap="round">{lines}</g>'
 
     x_cases = {
         "clear_day": x_sun(32, 32, 12.5),
@@ -1366,10 +1515,10 @@ def _render_xbox_variant(out: Path, dark: bool) -> None:
         "partly_cloudy_day": x_sun(22, 22, 9.8) + x_cloud(34, 38, 0.94),
         "partly_cloudy_night": x_moon(21, 22, 9.8) + f'<circle cx="49" cy="14" r="2.2" fill="{star_fill}"/>' + x_cloud(34, 38, 0.94),
         "cloudy": x_cloud(38, 25, 0.72) + x_cloud(29, 38, 0.98),
-        "drizzle": x_cloud(32, 25, 0.95) + x_drop(22, 42) + x_drop(33, 45) + x_drop(44, 42),
-        "rain": x_cloud(32, 23, 0.96) + x_drop(20, 41) + x_drop(30, 44) + x_drop(40, 41) + x_drop(48, 44),
-        "heavy_rain": x_cloud(32, 22, 0.98) + x_drop(16, 40) + x_drop(25, 43) + x_drop(34, 40) + x_drop(43, 43) + x_drop(51, 40),
-        "thunderstorm": x_cloud(32, 22, 0.98) + '<polygon points="35,34 44,34 36,44 43,44 29,59 33,47 27,47" fill="#f5a81c" stroke="#965004" stroke-width="0.9"/>' + x_drop(18, 43) + x_drop(50, 43),
+        "drizzle": x_cloud(32, 25, 0.95) + x_drop(22, 41, 4.2, 8.8) + x_drop(33, 45, 4.2, 8.8) + x_drop(44, 41, 4.2, 8.8),
+        "rain": x_cloud(32, 23, 0.96) + x_drop(20, 40, 4.6, 10.2) + x_drop(30, 44, 4.6, 10.2) + x_drop(40, 40, 4.6, 10.2) + x_drop(49, 44, 4.6, 10.2),
+        "heavy_rain": x_cloud(32, 22, 0.98) + x_drop(16, 40, 4.4, 9.8) + x_drop(25, 44, 4.4, 9.8) + x_drop(34, 40, 4.4, 9.8) + x_drop(43, 44, 4.4, 9.8) + x_drop(51, 40, 4.4, 9.8),
+        "thunderstorm": x_cloud(32, 22, 0.98) + '<polygon points="35,34 44,34 36,44 43,44 29,59 33,47 27,47" fill="#ffb828" stroke="#965004" stroke-width="0.9"/>' + x_drop(18, 42, 4.2, 9.2) + x_drop(50, 42, 4.2, 9.2),
         "snow": x_cloud(32, 23, 0.95) + x_flake(19, 47, 5) + x_flake(33, 52, 4.5) + x_flake(46, 47, 4.8),
         "mist": f'<g stroke="{mist_stroke}" stroke-width="3.6" stroke-linecap="round"><line x1="10" y1="24" x2="54" y2="24"/><line x1="16" y1="33" x2="48" y2="33"/><line x1="9" y1="42" x2="44" y2="42"/><line x1="20" y1="51" x2="54" y2="51"/></g>',
         "atmospheric": x_sun(32, 24, 11, faint=True) + f'<g stroke="{mist_stroke}" stroke-width="3.8" stroke-linecap="round"><line x1="11" y1="42" x2="53" y2="42"/><line x1="18" y1="51" x2="46" y2="51"/></g>',

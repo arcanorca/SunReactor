@@ -73,16 +73,6 @@ RowLayout {
     Accessible.name: (showState ? stateWord + " " : "") + clock
 
     Image {
-        visible: root.onAccentBar
-        Layout.alignment: Qt.AlignVCenter
-        Layout.preferredWidth: 28
-        Layout.preferredHeight: 10
-        source: Qt.resolvedUrl(root.useDarkBarSprites ? "assets/ds_ntr_badge_dark.png" : "assets/ds_ntr_badge.png")
-        fillMode: Image.PreserveAspectFit
-        smooth: false
-    }
-
-    Image {
         Layout.alignment: Qt.AlignVCenter
         Layout.preferredWidth: 16
         Layout.preferredHeight: 12

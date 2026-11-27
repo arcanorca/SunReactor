@@ -99,7 +99,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: channel.name
                 textFormat: Text.PlainText
-                font: root.style.label
+                font: root.style.body
                 color: channel.controllable ? root.style.ink : root.style.muted
                 elide: Text.ElideMiddle
             }

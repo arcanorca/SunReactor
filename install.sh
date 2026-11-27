@@ -37,8 +37,15 @@ readonly AUTOSTART_FILE="$AUTOSTART_DIR/sunreactord.desktop"
 readonly CFG_DIR="$CONFIG_HOME/sunreactor"
 readonly STATE_DIR="$STATE_HOME/sunreactor"
 readonly CACHE_DIR="$CACHE_HOME/sunreactor"
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly SCRIPT_DIR
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+if [[ -n "$SCRIPT_SOURCE" && -f "$SCRIPT_SOURCE" ]]; then
+    SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_SOURCE")" && pwd)"
+    HAS_LOCAL_SCRIPT_DIR=1
+else
+    SCRIPT_DIR=""
+    HAS_LOCAL_SCRIPT_DIR=0
+fi
+readonly SCRIPT_DIR HAS_LOCAL_SCRIPT_DIR
 TMP_DIR="$(mktemp -d)"
 readonly TMP_DIR
 readonly BACKUP_DIR="$TMP_DIR/backup"
@@ -930,7 +937,7 @@ launch_dashboard() {
 # installation: a skipped or failed widget is reported and the install goes on.
 readonly PLASMA_ID="org.sunreactor.plasma"
 readonly PLASMA_PREFIX="$HOME/.local"
-readonly PLASMA_SRC_DIR="$SCRIPT_DIR/plasma/$PLASMA_ID"
+readonly PLASMA_SRC_DIR="${SCRIPT_DIR:+$SCRIPT_DIR/plasma/$PLASMA_ID}"
 readonly DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 readonly PLASMA_PKG_DIR="$DATA_HOME/plasma/plasmoids/$PLASMA_ID"
 readonly PLASMA_BACKUP_ROOT="$DATA_HOME/sunreactor-backups"
@@ -938,15 +945,19 @@ readonly PLASMA_QMLCACHE_DIR="$CACHE_HOME/plasmashell/qmlcache"
 readonly PLASMA_RESTART_CMD="systemctl --user restart plasma-plasmashell.service"
 readonly PLASMA_REPLACE_CMD="plasmashell --replace"
 
+has_local_plasma_source() {
+    [[ $HAS_LOCAL_SCRIPT_DIR -eq 1 && -n "$PLASMA_SRC_DIR" && -f "$PLASMA_SRC_DIR/CMakeLists.txt" && -f "$PLASMA_SRC_DIR/package/metadata.json" ]]
+}
+
 # Sets PLASMA_DECISION to "install" or "skip: <reason>". Returns 0 to install.
 plasma_widget_decision() {
     PLASMA_DECISION="install"
     if [[ "$PLASMA_MODE" == off ]]; then
         PLASMA_DECISION="skip: disabled by --no-plasma"
-    elif [[ ! -f "$PLASMA_SRC_DIR/CMakeLists.txt" || ! -f "$PLASMA_SRC_DIR/package/metadata.json" ]]; then
-        PLASMA_DECISION="skip: no plasma/$PLASMA_ID source tree next to install.sh"
     elif ! command -v cmake >/dev/null 2>&1; then
         PLASMA_DECISION="skip: cmake is needed to build the plugin"
+    elif ! has_local_plasma_source && ! command -v curl >/dev/null 2>&1; then
+        PLASMA_DECISION="skip: curl is needed to fetch plasma/$PLASMA_ID source"
     elif [[ "$PLASMA_MODE" == auto ]] &&
         ! { command -v plasmashell >/dev/null 2>&1 && command -v kpackagetool6 >/dev/null 2>&1; }; then
         PLASMA_DECISION="skip: plasmashell or kpackagetool6 not found (--with-plasma tries anyway)"
@@ -966,7 +977,11 @@ print_plasma_widget_plan() {
     printf 'Plasma widget plan (dry run: nothing is built, copied or restarted)\n'
     printf '  decision: %s\n' "$PLASMA_DECISION"
     printf '  tools:    %s\n' "${tools% }"
-    printf '  source:   %s\n' "$PLASMA_SRC_DIR"
+    if has_local_plasma_source; then
+        printf '  source:   %s\n' "$PLASMA_SRC_DIR"
+    else
+        printf '  source:   GitHub release archive (https://github.com/%s/archive/refs/tags/<version>.tar.gz -> plasma/%s)\n' "$REPO" "$PLASMA_ID"
+    fi
     printf '  plugin:   CMake install layout under %s (lib/, %s/org/sunreactor/plasma/)\n' "$PLASMA_PREFIX" "$qml_relative_dir"
     printf '  qml-dir:  %s (system Qt path: %s)\n' "$PLASMA_PREFIX/$qml_relative_dir" "$qml_system_dir"
     printf '  package:  %s\n' "$PLASMA_PKG_DIR"
@@ -1137,13 +1152,60 @@ plasmashell_is_running() {
     fi
 }
 
+download_plasma_source() {
+    local version="$1" work_dir="$2"
+    local normalized_version archive url member members plasma_src
+    if [[ -z "$version" ]]; then
+        log_error "Release version is required to download Plasma widget source."
+        return 1
+    fi
+    normalized_version=$(normalize_release_version "$version") || return 1
+    url="https://github.com/$REPO/archive/refs/tags/${version}.tar.gz"
+    archive="$work_dir/plasma-source.tar.gz"
+
+    log_info "Downloading Plasma widget source for ${normalized_version}..."
+    if ! curl -fsSL "$url" -o "$archive"; then
+        log_error "Could not download Plasma widget source archive: $url"
+        return 1
+    fi
+    if ! members=$(tar tzf "$archive"); then
+        log_error "Could not inspect downloaded Plasma widget source archive."
+        return 1
+    fi
+    while IFS= read -r member; do
+        [[ -n "$member" ]] || continue
+        if [[ "$member" == /* ]] || [[ "/$member/" == */../* ]]; then
+            log_error "Unexpected or unsafe source archive member: $member"
+            return 1
+        fi
+    done <<< "$members"
+
+    mkdir -p "$work_dir/source" || return 1
+    if ! tar xzf "$archive" -C "$work_dir/source"; then
+        log_error "Could not extract Plasma widget source archive."
+        return 1
+    fi
+    plasma_src=$(find "$work_dir/source" -mindepth 2 -maxdepth 3 -type d -path "*/plasma/$PLASMA_ID" -print -quit 2>/dev/null || true)
+    if [[ -z "$plasma_src" || ! -f "$plasma_src/CMakeLists.txt" || ! -f "$plasma_src/package/metadata.json" ]]; then
+        log_error "Downloaded source archive does not contain plasma/$PLASMA_ID."
+        return 1
+    fi
+    printf '%s\n' "$plasma_src"
+}
+
 # Builds, stages and installs the widget. Every step before the first change
 # to the user's files is a check, so a failure leaves the previous widget alone.
 install_plasma_widget() {
-    local work="" build stage staged_root qmldir jobs log rel src dest pkg_new backup_dir
+    local version="${1:-}"
+    local work="" plasma_src build stage staged_root qmldir jobs log rel src dest pkg_new backup_dir
     local qml_system_dir qml_relative_dir qml_dir qml2_environment qml_environment
 
     work=$(mktemp -d "$TMP_DIR/plasma.XXXXXX") || return 1
+    if has_local_plasma_source; then
+        plasma_src="$PLASMA_SRC_DIR"
+    else
+        plasma_src=$(download_plasma_source "$version" "$work") || return 1
+    fi
     build="$work/build"
     stage="$work/stage"
     staged_root="$stage$PLASMA_PREFIX"
@@ -1155,7 +1217,7 @@ install_plasma_widget() {
     qml_dir="$PLASMA_PREFIX/$qml_relative_dir"
     log_info "Building the Plasma widget plugin (usually under a minute)..."
     log_info "Using Qt QML layout: $qml_system_dir -> $qml_relative_dir"
-    if ! cmake -S "$PLASMA_SRC_DIR" -B "$build" -DCMAKE_BUILD_TYPE=Release \
+    if ! cmake -S "$plasma_src" -B "$build" -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PLASMA_PREFIX" -DKDE_INSTALL_QMLDIR="$qml_relative_dir" >"$log" 2>&1 ||
         ! cmake --build "$build" --target sunreactorplugin sunreactorpluginplugin -j"$jobs" >>"$log" 2>&1 ||
         ! DESTDIR="$stage" cmake --install "$build" >>"$log" 2>&1; then
@@ -1172,7 +1234,7 @@ install_plasma_widget() {
     if command -v kpackagetool6 >/dev/null 2>&1; then
         mkdir -p "$work/validate"
         if ! kpackagetool6 --type Plasma/Applet --packageroot "$work/validate" \
-                --install "$PLASMA_SRC_DIR/package" >>"$log" 2>&1; then
+                --install "$plasma_src/package" >>"$log" 2>&1; then
             plasma_widget_failure_tail "$log"
             log_error "kpackagetool6 rejected the widget package."
             return 1
@@ -1185,7 +1247,7 @@ install_plasma_widget() {
     # never leaves the widget half-written.
     mkdir -p "$(dirname "$PLASMA_PKG_DIR")" || return 1
     pkg_new="$PLASMA_PKG_DIR.new-$$"
-    if ! cp -a "$PLASMA_SRC_DIR/package" "$pkg_new"; then
+    if ! cp -a "$plasma_src/package" "$pkg_new"; then
         rm -rf "$pkg_new"
         return 1
     fi
@@ -1258,9 +1320,10 @@ install_plasma_widget() {
 # Runs after the daemon is committed. A widget problem is reported and the
 # installation still succeeds, so it can never trigger the rollback.
 run_plasma_widget_step() {
+    local version="${1:-}"
     [[ -z "${DESTDIR:-}" ]] || return 0
     if plasma_widget_decision; then
-        if ! install_plasma_widget; then
+        if ! install_plasma_widget "$version"; then
             log_error "Plasma widget not installed. The daemon and CLI are unaffected; fix the error above and rerun with --with-plasma."
         fi
     else
@@ -1409,7 +1472,7 @@ main() {
     fi
     INSTALL_COMMITTED=1
     print_dependency_hints
-    run_plasma_widget_step
+    run_plasma_widget_step "$version"
     launch_dashboard
 }
 

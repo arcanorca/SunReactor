@@ -28,11 +28,24 @@ Item {
     Rectangle {
         visible: root.lit
         anchors.fill: parent
-        radius: 10
+        radius: 9
+        clip: true
         color: "transparent"
         border.width: root.style.line2
         border.color: root.style.green
         antialiasing: true
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            anchors.topMargin: 1
+            height: 2
+            color: root.style.cardFocusTop
+            opacity: 0.75
+        }
     }
 
     Item {

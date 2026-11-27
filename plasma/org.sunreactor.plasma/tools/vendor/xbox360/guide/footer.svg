@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" width="1033.4998"
+    height="162.6111" viewBox="0 0 1033.5 162.611">
+    <defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#424a3e"/><stop offset=".035" stop-color="#565f50"/><stop offset=".16" stop-color="#777f71"/><stop offset=".45" stop-color="#8b9384"/><stop offset="1" stop-color="#626d5b"/></linearGradient></defs>
+    <path
+        d="M0,161.611 C0,161.611 6.7e-05,0 6.7e-05,0 C20.1112,-0.083572 957.942,-0.195141 978.722,0 C1011.28,0.305725 1020.44,41.8332 1020.44,41.8332 C1020.44,41.8332 1033.5,162.611 1033.5,162.611 C1033.5,162.611 1033.5,161.611 0,161.611 Z"
+        fill="url(#fill)" opacity="1" />
+</svg>

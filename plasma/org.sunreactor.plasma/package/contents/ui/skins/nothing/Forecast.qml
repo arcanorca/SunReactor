@@ -22,7 +22,7 @@ import "../../modules"
 import "../../Format.js" as Format
 import "../../modules/ForecastRules.js" as ForecastRules
 
-Item {
+Rectangle {
     id: root
 
     required property Theme theme
@@ -34,13 +34,18 @@ Item {
     }
 
     /*! Intervals across: five, or six once each column has room for it. */
-    readonly property int slots: Math.max(5, Math.min(6, Math.floor(root.width / (root.style.unit * 4))))
+    readonly property int slots: Math.max(5, Math.min(6, Math.floor((root.width - 2 * style.pad) / (root.style.unit * 3.8))))
 
     readonly property var points: ForecastRules.upcoming(root.client.forecast, root.client.nowEpochS, root.slots)
 
     readonly property bool available: (client.isConnected || client.statusStale) && client.weatherEnabled && points.length > 0
 
-    implicitHeight: row.implicitHeight
+    implicitHeight: row.implicitHeight + 2 * style.pad
+    radius: style.radius
+    antialiasing: true
+    color: style.surface
+    border.width: style.hairline
+    border.color: style.outline
 
     Accessible.role: Accessible.Grouping
     Accessible.name: i18nd(root.settings.domain, "Forecast")
@@ -48,7 +53,9 @@ Item {
     RowLayout {
         id: row
 
-        width: root.width
+        x: root.style.pad
+        y: root.style.pad
+        width: root.width - 2 * root.style.pad
         spacing: 0
 
         Repeater {
@@ -92,14 +99,14 @@ Item {
                     ThemedWeatherIcon {
                         Layout.alignment: Qt.AlignHCenter
                         theme: root.theme
-                        size: root.style.snap(root.style.unit * 1.75)
+                        size: root.style.snap(root.style.unit * 1.9)
                         condition: slot.modelData.condition
                         night: slot.modelData.isNight
 
                         NothingIcon {
                             anchors.centerIn: parent
                             theme: root.theme
-                            size: root.style.snap(root.style.unit * 1.75)
+                            size: root.style.snap(root.style.unit * 1.9)
                             condition: slot.modelData.condition
                             night: slot.modelData.isNight
                         }
