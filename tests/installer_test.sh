@@ -1112,6 +1112,7 @@ test_plasma_remote_source_fallback_when_piped_or_standalone() {
     archive="$work/v0.14.1.tar.gz"
     tar czf "$archive" -C "$work/src" SunReactor-0.14.1
 
+    # shellcheck disable=SC2016
     printf '#!/usr/bin/env bash\ncp %q "$4"\n' "$archive" >"$fakebin/curl"
     chmod +x "$fakebin/curl"
 
@@ -1147,6 +1148,7 @@ with tarfile.open(sys.argv[1], 'w:gz') as tar:
     info.size = 3
     tar.addfile(info, io.BytesIO(b'bad'))
 PY
+        # shellcheck disable=SC2016
         printf '#!/usr/bin/env bash\ncp %q "$4"\n' "$work/unsafe-src.tar.gz" >"$fakebin/curl"
         chmod +x "$fakebin/curl"
         if HOME="$home" PATH="$fakebin:/usr/bin:/bin" SUNREACTOR_INSTALLER_LIBRARY=1 bash -c '
