@@ -961,7 +961,7 @@
   }
  },
  "nds": {
-  "name": "NDS",
+  "name": "Nintendo DS",
   "accent": "#2f6fdb",
   "secondary_accent": "#f08a24",
   "bg": "#eef1f5",
@@ -1777,7 +1777,7 @@
   }
  },
  "wii": {
-  "name": "Nii",
+  "name": "Nintendo Wii",
   "accent": "#00a9e0",
   "secondary_accent": "#8bd1ec",
   "bg": "#f3f6f9",

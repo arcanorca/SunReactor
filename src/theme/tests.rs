@@ -823,9 +823,15 @@ fn resolution_is_case_and_separator_tolerant() {
     );
     assert_eq!(registry.canonical_id("Tokyo Night"), Some("tokyonight"));
     assert_eq!(registry.canonical_id("Nii"), Some("wii"));
+    assert_eq!(registry.canonical_id("Nintendo Wii"), Some("wii"));
     assert_eq!(
         registry.get("wii").map(|theme| theme.name.as_str()),
-        Some("Nii")
+        Some("Nintendo Wii")
+    );
+    assert_eq!(registry.canonical_id("NDS"), Some("nds"));
+    assert_eq!(
+        registry.get("nds").map(|theme| theme.name.as_str()),
+        Some("Nintendo DS")
     );
     assert!(registry.resolve("").is_err());
 }

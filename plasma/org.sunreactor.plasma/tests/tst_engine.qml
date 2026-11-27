@@ -329,5 +329,41 @@ Item {
             overridden.overrides = {};
             verify(overridden.scaleFactor > 0);
         }
+
+        function test_skinIdentityUpdatesAtomicallyAcrossRenderers() {
+            overridden.spec = ({});
+            compare(overridden.skinIdentity.available, false);
+            compare(overridden.skinIdentity.id, "");
+
+            const wii = ({
+                id: "wii", name: "Nintendo Wii", family: "instrument", glyphStyle: "rounded", legacy: false,
+                palette: top.braun.palette,
+                widget: { renderer: "vector", font: "sans", pixelScale: 0, density: "comfortable",
+                          border: "line", radius: 18, dither: "none", glow: 0, shades: [],
+                          modules: top.braun.widget.modules }
+            });
+            const dracula = ({
+                id: "dracula", name: "Dracula", family: "terminal", glyphStyle: "rounded", legacy: false,
+                palette: top.braun.palette,
+                widget: { renderer: "terminal", font: "mono", pixelScale: 0, density: "compact",
+                          border: "line", radius: 0, dither: "none", glow: 0, shades: [],
+                          modules: top.braun.widget.modules }
+            });
+
+            overridden.spec = top.handheld;
+            compare(overridden.skinIdentity.available, true);
+            compare(overridden.skinIdentity.id, "handheld");
+            compare(overridden.skinIdentity.renderer, "pixel");
+
+            overridden.spec = wii;
+            compare(overridden.skinIdentity.id, "wii");
+            compare(overridden.skinIdentity.renderer, "vector");
+
+            overridden.spec = dracula;
+            compare(overridden.skinIdentity.id, "dracula");
+            compare(overridden.skinIdentity.renderer, "terminal");
+
+            overridden.spec = top.braun;
+        }
     }
 }

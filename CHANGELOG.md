@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plasma widget**:
   - Split `SunReactorClient` by responsibility (`commands`, `queue`, `transport`, `status`) with bounded request queues and read retries, 5 s stale-status grace on reconnect, typed offline/error notices with a copyable start command, and `BUILD_TESTING=OFF` release builds without `Qt6::Test` or harness code.
   - Deduplicated skin helpers (`Modules.js`, `DayCurve.js`, `ForecastRules.js`, `Monitors.js`), added per-display `min_pct`/`max_pct` range drawers across all 15 skins, fixed non-interactive cursor shapes, and polished all 15 skins.
-  - Updated the `nds` skin with NTR Home Menu square analog clock, NTR top bar/battery/signal assets, luminance-aware IPL accent contrast, and renamed the built-in display names for `nds` and `wii` to `NDS` and `Nii`.
+  - Updated the `nds` skin with NTR Home Menu square analog clock, NTR top bar/battery/signal/clock-digit assets, luminance-aware IPL accent contrast, and eliminated cross-renderer/startup theme switching flashes; theme display names remain `Nintendo DS` and `Nintendo Wii`.
 
 ### Fixed
 - **Installer**: clears `${XDG_CACHE_HOME:-~/.cache}/plasmashell/qmlcache`, moves stale `org/sunreactor/plasma` plugin copies out of other user QML import roots, warns when `plasmashell` is running, compares glibc versions portably across `awk` implementations, and handles `--help`/`-h` and unknown options before side effects.

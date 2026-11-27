@@ -1,5 +1,5 @@
 id = "wii"
-name = "Nii"
+name = "Nintendo Wii"
 aliases = ["nintendowii", "wiimenu", "nii"]
 family = "instrument"
 

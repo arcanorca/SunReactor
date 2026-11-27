@@ -209,7 +209,7 @@ PlasmaExtras.Representation {
     ThemeSlot {
         id: backdropSlot
 
-        wanted: Modules.backdropSource(root.theme.available ? root.theme.themeId : "")
+        wanted: Modules.backdropSource(root.theme.skinIdentity.available ? root.theme.skinIdentity.id : "")
     }
 
     background: Frame {
@@ -226,7 +226,7 @@ PlasmaExtras.Representation {
             id: overlaySlot
 
             anchors.fill: parent
-            wanted: Modules.overlaySource(root.theme.available ? root.theme.themeId : "")
+            wanted: Modules.overlaySource(root.theme.skinIdentity.available ? root.theme.skinIdentity.id : "")
         }
     }
 
@@ -462,10 +462,10 @@ PlasmaExtras.Representation {
                 Loader {
                     id: tabSlot
 
-                    // Skin by theme and renderer; no daemon theme means the plain bar.
+                    // Skin by atomic theme identity; no daemon theme means the plain bar.
                     readonly property string tabSource: Modules.tabBarSource(
-                        root.theme.available ? root.theme.themeId : "",
-                        root.theme.available ? root.theme.renderer : "")
+                        root.theme.skinIdentity.available ? root.theme.skinIdentity.id : "",
+                        root.theme.skinIdentity.available ? root.theme.skinIdentity.renderer : "")
 
                     function load() {
                         setSource(Qt.resolvedUrl(tabSource), { theme: root.theme });
@@ -620,10 +620,11 @@ PlasmaExtras.Representation {
         required property string modelData
         property bool pageSlot: false
         property bool pageCurrent: true
-        // The file depends on the theme (skins per renderer / id),
-        // so a theme change can swap it after creation.
-        readonly property string moduleSource: Modules.file(modelData).length > 0
-            ? Modules.source(modelData, root.theme.themeId, root.theme.renderer) : ""
+        // The file depends on the atomic skinIdentity (id + renderer together),
+        // so a theme change never sees a torn (oldId, newRenderer) pair and never
+        // speculatively loads skins/instrument while a theme is pending.
+        readonly property string moduleSource: (root.theme.skinIdentity.available && Modules.file(modelData).length > 0)
+            ? Modules.source(modelData, root.theme.skinIdentity.id, root.theme.skinIdentity.renderer) : ""
 
         function load() {
             if (active && moduleSource.length > 0) {

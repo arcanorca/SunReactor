@@ -31,6 +31,22 @@ RowLayout {
     property bool showState: false
 
     readonly property string clock: Format.timeText(client.nowEpochS)
+    readonly property string clockDigitsPart: {
+        const m = root.clock.match(/[0-9:]+/);
+        return m ? m[0] : "";
+    }
+    readonly property string clockSuffixPart: {
+        const suffix = root.clock.replace(/[0-9:]+/, "").trim();
+        return suffix;
+    }
+    readonly property var clockGlyphList: {
+        const list = [];
+        for (let i = 0; i < root.clockDigitsPart.length; ++i) {
+            list.push(root.clockDigitsPart[i]);
+        }
+        return list;
+    }
+    readonly property bool useDarkBarSprites: !root.onAccentBar || root.lightAccentBar
     readonly property int signalLevel: StatusRules.signalBars(
         client.isConnected || client.statusStale, client.monitors, client.globalPercent)
     readonly property int batteryLevel: StatusRules.solarBatteryLevel(
@@ -55,6 +71,16 @@ RowLayout {
 
     Accessible.role: Accessible.StaticText
     Accessible.name: (showState ? stateWord + " " : "") + clock
+
+    Image {
+        visible: root.onAccentBar
+        Layout.alignment: Qt.AlignVCenter
+        Layout.preferredWidth: 28
+        Layout.preferredHeight: 10
+        source: Qt.resolvedUrl(root.useDarkBarSprites ? "assets/ds_ntr_badge_dark.png" : "assets/ds_ntr_badge.png")
+        fillMode: Image.PreserveAspectFit
+        smooth: false
+    }
 
     Image {
         Layout.alignment: Qt.AlignVCenter
@@ -90,12 +116,35 @@ RowLayout {
         smooth: false
     }
 
-    Text {
+    Row {
+        visible: root.clockGlyphList.length > 0
         Layout.alignment: Qt.AlignVCenter
-        text: root.clock
+        spacing: 2
+
+        Repeater {
+            model: root.clockGlyphList
+
+            delegate: Image {
+                required property string modelData
+                readonly property string glyphKey: modelData === ":" ? "colon" : modelData
+
+                width: 8
+                height: 10
+                anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                source: Qt.resolvedUrl("assets/ds_cal_" + glyphKey + (root.useDarkBarSprites ? "_dark.png" : ".png"))
+                fillMode: Image.PreserveAspectFit
+                smooth: false
+            }
+        }
+    }
+
+    Text {
+        visible: root.clockSuffixPart.length > 0 || root.clockGlyphList.length === 0
+        Layout.alignment: Qt.AlignVCenter
+        text: root.clockGlyphList.length > 0 ? root.clockSuffixPart : root.clock
         font.family: root.style.family
         font.weight: Font.Bold
-        font.pixelSize: Math.round(root.style.gu * 0.78)
+        font.pixelSize: Math.round(root.style.gu * 0.64)
         color: root.ink
     }
 }

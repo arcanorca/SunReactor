@@ -46,6 +46,10 @@ Item {
     readonly property bool pinning: mode === "pinned" && pinnedId.length > 0
     readonly property bool usingPinned: pinning && client.pinnedTheme
         && client.pinnedTheme.palette !== undefined
+    /*! Initial connected pinned fetch: hold off loading client.theme so opening
+        a pinned widget does not flash the daemon's theme (e.g. nixie/amber). */
+    readonly property bool initialPinPending: pinning && !usingPinned && client.isConnected
+        && (client.pinnedThemeError === "" || client.pinnedThemeError === "pending")
     /*! Why a pin is not in effect: "", "pending", "unsupported", "not_found", "offline". */
     readonly property string notice: pinning && !usingPinned ? (client.pinnedThemeError || "pending") : ""
 
@@ -62,8 +66,10 @@ Item {
     Theme {
         id: resolved
 
-        spec: root.usingPinned ? root.client.pinnedTheme : root.client.theme
-        source: root.usingPinned ? "pinned" : (root.client.theme && root.client.theme.palette ? "follow" : "plasma")
+        spec: root.usingPinned ? root.client.pinnedTheme
+            : (root.initialPinPending ? ({}) : root.client.theme)
+        source: root.usingPinned ? "pinned"
+            : (!root.initialPinPending && root.client.theme && root.client.theme.palette ? "follow" : "plasma")
         overrides: ({
             accent: root.accentOverride,
             density: root.densityOverride,

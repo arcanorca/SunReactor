@@ -327,7 +327,7 @@ The registry contains 41 built-in themes:
 | `macos` | macOS | instrument | vector | flagship skin |
 | `materialocean` | Material Ocean | terminal | terminal | family default |
 | `monokai` | Monokai | terminal | terminal | family default |
-| `nds` | NDS | instrument | vector | flagship skin |
+| `nds` | Nintendo DS | instrument | vector | flagship skin |
 | `nightowl` | Night Owl | terminal | terminal | family default |
 | `nixie` | Nixie | instrument | vector | instrument skin, own flavour |
 | `nord` | Nord | terminal | terminal | family default |
@@ -344,13 +344,13 @@ The registry contains 41 built-in themes:
 | `tokyonight` | Tokyo Night | terminal | terminal | family default |
 | `unixworkstation` | UNIX Workstation | instrument | vector | family default |
 | `vfd_hifi` | VFD Hi-Fi | instrument | vector | instrument skin, own flavour |
-| `wii` | Nii | instrument | vector | flagship skin |
+| `wii` | Nintendo Wii | instrument | vector | flagship skin |
 | `winxp` | Windows XP | instrument | vector | flagship skin |
 | `xbox360` | Xbox 360 | instrument | vector | flagship skin |
 | `zenburn` | Zenburn | terminal | terminal | family default |
 
 Summary: 13 flagship skins (Amiga, Casio Digital, Commodore 64, Cyberpunk, Hacker
-Green, macOS, NDS, Nothing, PlayStation 3, Synthwave '84, Nii,
+Green, macOS, Nintendo DS, Nothing, PlayStation 3, Synthwave '84, Nintendo Wii,
 Windows XP, Xbox 360), 5 instrument flavours (Braun, Nixie, Oscilloscope, ThinkPad, VFD
 Hi-Fi), and 23 family defaults.
 

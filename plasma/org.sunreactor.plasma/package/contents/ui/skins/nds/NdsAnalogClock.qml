@@ -34,38 +34,18 @@ Item {
     readonly property real cy: height / 2
     readonly property real unitScale: width / 388
 
-    // Exact orthogonal rects in 388x388 canonical space from nds_home_clock_dial.svg
-    readonly property var numeralRects: [
-        // 1
-        [162, 16, 16, 80],
-        // 2
-        [182, 16, 44, 16], [210, 32, 16, 16], [182, 48, 44, 16], [182, 64, 16, 16], [182, 80, 44, 16],
-        // 3
-        [326, 154, 48, 16], [358, 170, 16, 16], [326, 186, 48, 16], [358, 202, 16, 16], [326, 218, 48, 16],
-        // 6
-        [170, 292, 48, 16], [170, 308, 16, 64], [186, 324, 32, 16], [202, 340, 16, 16], [186, 356, 32, 16],
-        // 9
-        [14, 154, 48, 16], [14, 170, 16, 16], [46, 170, 16, 64], [14, 186, 32, 16], [14, 218, 32, 16]
-    ]
-    readonly property var markerRects: [
-        [98, 34, 16, 16], [274, 34, 16, 16],
-        [34, 98, 16, 16], [338, 98, 16, 16],
-        [34, 274, 16, 16], [338, 274, 16, 16],
-        [98, 338, 16, 16], [274, 338, 16, 16]
-    ]
-
     implicitWidth: size
     implicitHeight: size
     width: size
     height: size
 
-    // Face + crisp 1px #000000 outer frame matching the chart card
-    Rectangle {
+    // Extracted NTR Home Menu square analog dial (1px #000000 outer frame,
+    // 6x6 #D0D0D0 grid, 12/3/6/9 numerals, and 8 hour markers)
+    Image {
         anchors.fill: parent
-        radius: 0
-        color: root.style.cardSurface
-        border.width: 1
-        border.color: root.style.frameBlack
+        source: Qt.resolvedUrl("assets/ds_clock_dial.png")
+        fillMode: Image.Stretch
+        smooth: false
     }
 
     // Subtle 2px-pitch LCD scanlines (#EFEFEF) inside the frame
@@ -80,72 +60,7 @@ Item {
             width: Math.max(0, root.width - 2)
             height: 1
             color: root.style.cardScanline
-        }
-    }
-
-    // 6x6 internal grid lines (#D0D0D0, 1px crisp)
-    Repeater {
-        model: [1, 2, 3, 4, 5]
-
-        delegate: Item {
-            required property int modelData
-
-            readonly property int pos: Math.round(1 + (root.width - 2) * modelData / 6)
-
-            Rectangle {
-                x: parent.pos
-                y: 1
-                width: 1
-                height: Math.max(0, root.height - 2)
-                color: root.style.gridInner
-            }
-            Rectangle {
-                x: 1
-                y: parent.pos
-                width: Math.max(0, root.width - 2)
-                height: 1
-                color: root.style.gridInner
-            }
-        }
-    }
-
-    // 12 / 3 / 6 / 9 numerals (#B0B0B0)
-    Repeater {
-        model: root.numeralRects
-
-        delegate: Rectangle {
-            required property var modelData
-
-            readonly property int x0: Math.round(modelData[0] * root.unitScale)
-            readonly property int y0: Math.round(modelData[1] * root.unitScale)
-            readonly property int x1: Math.round((modelData[0] + modelData[2]) * root.unitScale)
-            readonly property int y1: Math.round((modelData[1] + modelData[3]) * root.unitScale)
-
-            x: x0
-            y: y0
-            width: Math.max(1, x1 - x0)
-            height: Math.max(1, y1 - y0)
-            color: root.style.clockNumerals
-        }
-    }
-
-    // 8 square hour markers (#787878)
-    Repeater {
-        model: root.markerRects
-
-        delegate: Rectangle {
-            required property var modelData
-
-            readonly property int x0: Math.round(modelData[0] * root.unitScale)
-            readonly property int y0: Math.round(modelData[1] * root.unitScale)
-            readonly property int x1: Math.round((modelData[0] + modelData[2]) * root.unitScale)
-            readonly property int y1: Math.round((modelData[1] + modelData[3]) * root.unitScale)
-
-            x: x0
-            y: y0
-            width: Math.max(2, x1 - x0)
-            height: Math.max(2, y1 - y0)
-            color: root.style.clockHands
+            opacity: 0.35
         }
     }
 

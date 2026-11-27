@@ -55,8 +55,8 @@ Item {
     readonly property real pad: Math.round(gu * 0.75)
     readonly property real glassW: root.width - 2 * style.bezel
     readonly property real topBarH: Math.round(gu * 1.4)
-    readonly property real clockSize: Math.round(gu * 3.1)
-    readonly property real cardTop: Math.round(gu * 5.05)
+    readonly property real clockSize: Math.round(gu * 3.55)
+    readonly property real cardTop: Math.round(gu * 5.4)
     readonly property real cardH: Math.round(gu * 3.5)
     readonly property real glassH: Math.round(cardTop + cardH + gu * 0.4)
     // The plot inside the card: an inset, and a row of hour labels at its foot.

@@ -58,6 +58,21 @@ Item {
         }
         return available ? (widget.renderer || "vector") : "vector";
     }
+    /*! Atomic `{ available, id, renderer }` tuple derived directly from `spec`
+        and `overrides.renderer`, preventing torn `(oldId, newRenderer)` slot
+        evaluations while a theme switch propagates. */
+    readonly property var skinIdentity: {
+        const s = root.spec;
+        const ok = !!(s && s.palette);
+        if (!ok) {
+            return ({ available: false, id: "", renderer: "" });
+        }
+        const w = s.widget || ({});
+        const wanted = root.overrides && root.overrides.renderer ? root.overrides.renderer : "";
+        const r = ["pixel", "vector", "terminal"].indexOf(wanted) >= 0
+            ? wanted : (w.renderer || "vector");
+        return ({ available: true, id: s.id || "", renderer: r });
+    }
     readonly property bool isPixel: renderer === "pixel"
     readonly property bool isTerminal: renderer === "terminal"
     readonly property bool isVector: renderer === "vector"

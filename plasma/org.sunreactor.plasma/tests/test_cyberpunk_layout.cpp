@@ -1803,8 +1803,8 @@ void TestCyberpunkLayout::themeEngineSwitchingPinsNeverFlashesFollowedTheme()
                     resp[QStringLiteral("version")] = 1;
                     resp[QStringLiteral("response")] = QStringLiteral("theme");
                     resp[QStringLiteral("theme")] = id == QLatin1String("wii")
-                        ? makeThemePayload(QStringLiteral("wii"), QStringLiteral("Nii"), QStringLiteral("#f3f6f9"))
-                        : makeThemePayload(QStringLiteral("nds"), QStringLiteral("NDS"), QStringLiteral("#eef1f5"));
+                        ? makeThemePayload(QStringLiteral("wii"), QStringLiteral("Nintendo Wii"), QStringLiteral("#f3f6f9"))
+                        : makeThemePayload(QStringLiteral("nds"), QStringLiteral("Nintendo DS"), QStringLiteral("#eef1f5"));
                     QTimer::singleShot(150, sock, [reply, resp]() { reply(resp); });
                 } else if (name == QStringLiteral("day_curve")) {
                     QJsonObject resp;
@@ -1838,6 +1838,7 @@ void TestCyberpunkLayout::themeEngineSwitchingPinsNeverFlashesFollowedTheme()
         import QtQuick
         import org.sunreactor.plasma
         import "engine" as Engine
+        import "modules/Modules.js" as Modules
 
         Item {
             id: root
@@ -1845,6 +1846,7 @@ void TestCyberpunkLayout::themeEngineSwitchingPinsNeverFlashesFollowedTheme()
             property alias engine: engine
             property var seenIds: []
             property var seenUsingPinned: []
+            property var seenSources: []
             property bool recording: false
 
             SunReactorClient {
@@ -1863,6 +1865,14 @@ void TestCyberpunkLayout::themeEngineSwitchingPinsNeverFlashesFollowedTheme()
                         root.seenUsingPinned = list;
                     }
                 }
+            }
+            readonly property string probeSource: engine.theme.skinIdentity.available
+                ? Modules.source("curve", engine.theme.skinIdentity.id, engine.theme.skinIdentity.renderer)
+                : ""
+            onProbeSourceChanged: {
+                const list = seenSources.slice();
+                list.push(probeSource);
+                seenSources = list;
             }
             Connections {
                 target: engine.theme
@@ -1900,13 +1910,18 @@ void TestCyberpunkLayout::themeEngineSwitchingPinsNeverFlashesFollowedTheme()
     engine->setProperty("pinnedId", QStringLiteral("wii"));
 
     QTRY_COMPARE_WITH_TIMEOUT(themeObj->property("themeId").toString(), QStringLiteral("wii"), 3000);
-    QCOMPARE(themeObj->property("name").toString(), QStringLiteral("Nii"));
+    QCOMPARE(themeObj->property("name").toString(), QStringLiteral("Nintendo Wii"));
     QCOMPARE(engine->property("usingPinned").toBool(), true);
     QCOMPARE(engine->property("notice").toString(), QString());
 
     const QStringList seenIds = rootObj->property("seenIds").toStringList();
     QCOMPARE(seenIds, QStringList{QStringLiteral("wii")});
     QVERIFY(rootObj->property("seenUsingPinned").toList().isEmpty());
+    const QStringList seenSources = rootObj->property("seenSources").toStringList();
+    for (const QString &src : seenSources) {
+        QVERIFY2(!src.contains(QLatin1String("skins/instrument/")), qPrintable(src));
+    }
+    QCOMPARE(seenSources, (QStringList{QStringLiteral("skins/nds/LightCycle.qml"), QStringLiteral("skins/wii/LightCycle.qml")}));
 }
 
 QTEST_MAIN(TestCyberpunkLayout)
