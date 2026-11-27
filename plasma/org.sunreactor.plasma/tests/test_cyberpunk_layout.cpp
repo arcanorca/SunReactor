@@ -15,6 +15,7 @@
 #include <QQuickItem>
 #include <QQuickView>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -259,6 +260,7 @@ private Q_SLOTS:
     void zeroPercentLeftEdgeReachableOnPixelSliders();
     void instrumentPausedArrowOpensMenuAndTracksActivePopupMenus();
     void tabBarsStepWithLeftRightKeys();
+    void themeEngineSwitchingPinsNeverFlashesFollowedTheme();
 };
 
 void TestCyberpunkLayout::cyberpunkLightCycleSettlesOnResize()
@@ -1743,6 +1745,168 @@ void TestCyberpunkLayout::tabBarsStepWithLeftRightKeys()
         QTRY_COMPARE_WITH_TIMEOUT(pickedSpy.count(), 2, 1000);
         QCOMPARE(pickedSpy.at(1).at(0).toString(), QStringLiteral("brightness"));
     }
+}
+
+void TestCyberpunkLayout::themeEngineSwitchingPinsNeverFlashesFollowedTheme()
+{
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QString sockPath = tmpDir.filePath(QStringLiteral("control.sock"));
+    QLocalServer::removeServer(sockPath);
+
+    const auto makeThemePayload = [](const QString &id, const QString &name, const QString &bg) {
+        QJsonObject palette;
+        palette[QStringLiteral("bg")] = bg;
+        palette[QStringLiteral("fg")] = QStringLiteral("#ffffff");
+        palette[QStringLiteral("accent")] = QStringLiteral("#00a9e0");
+        palette[QStringLiteral("secondary_accent")] = QStringLiteral("#8bd1ec");
+        palette[QStringLiteral("border_active")] = QStringLiteral("#00a9e0");
+        palette[QStringLiteral("border_inactive")] = QStringLiteral("#404040");
+        palette[QStringLiteral("text_muted")] = QStringLiteral("#888888");
+        palette[QStringLiteral("success")] = QStringLiteral("#248a3d");
+        palette[QStringLiteral("warning")] = QStringLiteral("#d97706");
+        palette[QStringLiteral("error")] = QStringLiteral("#dc2626");
+
+        QJsonObject widget;
+        widget[QStringLiteral("renderer")] = QStringLiteral("vector");
+        widget[QStringLiteral("font")] = QStringLiteral("sans");
+        widget[QStringLiteral("density")] = QStringLiteral("comfortable");
+        widget[QStringLiteral("border")] = QStringLiteral("line");
+        widget[QStringLiteral("radius")] = 4;
+        widget[QStringLiteral("glow")] = 0.0;
+        widget[QStringLiteral("modules")] = QJsonArray{
+            QStringLiteral("telemetry"), QStringLiteral("curve"), QStringLiteral("displays")};
+
+        QJsonObject theme;
+        theme[QStringLiteral("id")] = id;
+        theme[QStringLiteral("name")] = name;
+        theme[QStringLiteral("family")] = QStringLiteral("instrument");
+        theme[QStringLiteral("palette")] = palette;
+        theme[QStringLiteral("widget")] = widget;
+        return theme;
+    };
+
+    QLocalServer server;
+    QVERIFY(server.listen(sockPath));
+    QObject::connect(&server, &QLocalServer::newConnection, &server, [&]() {
+        while (QLocalSocket *sock = server.nextPendingConnection()) {
+            QObject::connect(sock, &QLocalSocket::readyRead, sock, [&, sock]() {
+                const QJsonObject req = QJsonDocument::fromJson(sock->readAll()).object();
+                const QString name = req.value(QStringLiteral("request")).toString();
+                const auto reply = [sock](const QJsonObject &resp) {
+                    sock->write(QJsonDocument(resp).toJson(QJsonDocument::Compact) + '\n');
+                    sock->flush();
+                };
+                if (name == QStringLiteral("get_theme")) {
+                    const QString id = req.value(QStringLiteral("id")).toString();
+                    QJsonObject resp;
+                    resp[QStringLiteral("version")] = 1;
+                    resp[QStringLiteral("response")] = QStringLiteral("theme");
+                    resp[QStringLiteral("theme")] = id == QLatin1String("wii")
+                        ? makeThemePayload(QStringLiteral("wii"), QStringLiteral("Nii"), QStringLiteral("#f3f6f9"))
+                        : makeThemePayload(QStringLiteral("nds"), QStringLiteral("NDS"), QStringLiteral("#eef1f5"));
+                    QTimer::singleShot(150, sock, [reply, resp]() { reply(resp); });
+                } else if (name == QStringLiteral("day_curve")) {
+                    QJsonObject resp;
+                    resp[QStringLiteral("version")] = 1;
+                    resp[QStringLiteral("response")] = QStringLiteral("day_curve");
+                    resp[QStringLiteral("day_curve")] = QJsonObject{};
+                    reply(resp);
+                } else {
+                    QJsonObject status;
+                    status[QStringLiteral("now_epoch_s")] = 1700046000;
+                    status[QStringLiteral("theme")] = makeThemePayload(
+                        QStringLiteral("nixie"), QStringLiteral("Nixie"), QStringLiteral("#0b0a09"));
+                    QJsonObject resp;
+                    resp[QStringLiteral("version")] = 1;
+                    resp[QStringLiteral("response")] = QStringLiteral("status");
+                    resp[QStringLiteral("status")] = status;
+                    reply(resp);
+                }
+            });
+            QObject::connect(sock, &QLocalSocket::disconnected, sock, &QObject::deleteLater);
+        }
+    });
+
+    I18nStub i18nStub;
+    QQuickView view;
+    view.engine()->addImportPath(QStringLiteral(QML_IMPORT_DIR));
+    view.rootContext()->setContextObject(&i18nStub);
+    view.rootContext()->setContextProperty(QStringLiteral("testSocketPath"), sockPath);
+
+    const QByteArray qml = R"(
+        import QtQuick
+        import org.sunreactor.plasma
+        import "engine" as Engine
+
+        Item {
+            id: root
+            property alias client: client
+            property alias engine: engine
+            property var seenIds: []
+            property var seenUsingPinned: []
+            property bool recording: false
+
+            SunReactorClient {
+                id: client
+                socketPath: testSocketPath
+            }
+            Engine.ThemeEngine {
+                id: engine
+                client: client
+                mode: "pinned"
+                pinnedId: "nds"
+                onUsingPinnedChanged: {
+                    if (root.recording) {
+                        const list = root.seenUsingPinned.slice();
+                        list.push(usingPinned);
+                        root.seenUsingPinned = list;
+                    }
+                }
+            }
+            Connections {
+                target: engine.theme
+                function onThemeIdChanged() {
+                    if (root.recording) {
+                        const list = root.seenIds.slice();
+                        list.push(engine.theme.themeId);
+                        root.seenIds = list;
+                    }
+                }
+            }
+        }
+    )";
+    QQmlComponent comp(view.engine());
+    comp.setData(qml, QUrl::fromLocalFile(QStringLiteral(PLASMA_UI_DIR) + QStringLiteral("/TestEngineSwitch.qml")));
+    QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+    QObject *rootObj = comp.create();
+    QVERIFY(rootObj != nullptr);
+    view.setContent(QUrl(), &comp, rootObj);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QObject *client = rootObj->property("client").value<QObject *>();
+    QObject *engine = rootObj->property("engine").value<QObject *>();
+    QVERIFY(client != nullptr);
+    QVERIFY(engine != nullptr);
+
+    QTRY_COMPARE_WITH_TIMEOUT(client->property("isConnected").toBool(), true, 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(engine->property("usingPinned").toBool(), true, 3000);
+    QObject *themeObj = engine->property("theme").value<QObject *>();
+    QVERIFY(themeObj != nullptr);
+    QCOMPARE(themeObj->property("themeId").toString(), QStringLiteral("nds"));
+
+    rootObj->setProperty("recording", true);
+    engine->setProperty("pinnedId", QStringLiteral("wii"));
+
+    QTRY_COMPARE_WITH_TIMEOUT(themeObj->property("themeId").toString(), QStringLiteral("wii"), 3000);
+    QCOMPARE(themeObj->property("name").toString(), QStringLiteral("Nii"));
+    QCOMPARE(engine->property("usingPinned").toBool(), true);
+    QCOMPARE(engine->property("notice").toString(), QString());
+
+    const QStringList seenIds = rootObj->property("seenIds").toStringList();
+    QCOMPARE(seenIds, QStringList{QStringLiteral("wii")});
+    QVERIFY(rootObj->property("seenUsingPinned").toList().isEmpty());
 }
 
 QTEST_MAIN(TestCyberpunkLayout)

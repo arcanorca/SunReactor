@@ -122,9 +122,10 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
             refreshDayCurve();
         }
     }
-    if (!m_pinnedThemeId.isEmpty() && m_pinnedTheme.isEmpty()
-        && (m_pinnedThemeError.isEmpty() || m_pinnedThemeError == QLatin1String("pending")
-            || m_pinnedThemeError == QLatin1String("offline"))
+    const bool needsPinnedFetch = (m_pinnedTheme.isEmpty() && m_pinnedThemeError.isEmpty())
+        || m_pinnedThemeError == QLatin1String("pending")
+        || m_pinnedThemeError == QLatin1String("offline");
+    if (!m_pinnedThemeId.isEmpty() && needsPinnedFetch
         && !isQueued(kGetTheme, m_pinnedThemeId)) {
         requestPinnedTheme();
     }
@@ -143,6 +144,9 @@ void SunReactorClient::parseTheme(const QJsonObject &statusObj)
     if (hasRegistry && m_themeRegistry == CapabilityUnsupported) {
         // The daemon was upgraded underneath us: ask again for everything new.
         setDayCurveSupport(CapabilityUnknown);
+        if (!m_pinnedThemeId.isEmpty() && m_pinnedThemeError == QLatin1String("unsupported")) {
+            setPinned(m_pinnedTheme, QStringLiteral("pending"));
+        }
     }
     setThemeRegistry(hasRegistry ? CapabilitySupported : CapabilityUnsupported);
     if (!hasRegistry && !m_pinnedThemeId.isEmpty()) {

@@ -100,7 +100,7 @@ Item {
                             font.family: root.style.family
                             font.weight: Font.Bold
                             font.pixelSize: Math.round(root.style.gu * 0.76)
-                            color: column.isNext ? root.style.blue : root.style.ink
+                            color: column.isNext ? root.style.accentInk : root.style.ink
                         }
                     }
                 }

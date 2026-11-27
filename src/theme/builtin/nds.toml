@@ -1,5 +1,5 @@
 id = "nds"
-name = "Nintendo DS"
+name = "NDS"
 aliases = ["nintendods", "ds"]
 family = "instrument"
 

@@ -98,7 +98,7 @@ def build_nds() -> None:
     </svg>'''
     render_svg(bot_bezel_svg, out / "ds_bottom_bezel", 80, 64)
 
-    # 1c. DS Hinge barrel (9-slice horizontal: left=36, right=36, top=0, bottom=0; logical 160x18)
+    # 1c. Plain Nintendo DS (NTR-001 / USG-001) Hinge barrel (9-slice horizontal: left=36, right=36, top=0, bottom=0; logical 160x18)
     hinge_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="160" height="18" viewBox="0 0 160 18">
       <defs>
         <linearGradient id="cyl" x1="0" y1="0" x2="0" y2="1">
@@ -122,41 +122,37 @@ def build_nds() -> None:
       <line x1="29" y1="2" x2="29" y2="16" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1"/>
       <line x1="132" y1="2" x2="132" y2="16" stroke="#8590a0" stroke-width="1"/>
       <line x1="133" y1="2" x2="133" y2="16" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1"/>
+      <rect x="78" y="7" width="4" height="4" rx="1" fill="#2b313c" stroke="#ffffff" stroke-opacity="0.65" stroke-width="0.6"/>
       <rect x="138" y="6" width="5" height="6" fill="#212630" stroke="#7d8796" stroke-width="0.8"/>
       <rect x="145" y="6" width="5" height="6" fill="#212630" stroke="#7d8796" stroke-width="0.8"/>
     </svg>'''
     render_svg(hinge_svg, out / "ds_hinge", 160, 18)
 
-    cam_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="32" height="14" viewBox="0 0 32 14">
-      <rect x="1" y="2" width="30" height="10" rx="3" fill="#232832" stroke="#7c8798" stroke-width="1"/>
-      <circle cx="16" cy="7" r="3.4" fill="#0c0f15" stroke="#475163" stroke-width="0.8"/>
-      <rect x="14" y="5" width="1.5" height="1.5" fill="#7aa0d4"/>
-      <rect x="23" y="6" width="2" height="2" fill="#101318"/>
-    </svg>'''
-    render_svg(cam_svg, out / "ds_hinge_camera", 32, 14)
-
-    # 1d. Crisp DS LCD Pixel Grid + Scanline tiles (16x16 logical, nearest-neighbor)
-    sky_grid = Image.new("RGBA", (16, 16), (235, 244, 255, 255))
+    # 1d. Authentic NTR Home Menu LCD Grid + 2px Scanline tiles (16x16 logical, nearest-neighbor)
+    # From NDS-Clock-SVG-Kit nds_theme_catalog.json:
+    #   wallpaper_base=#F9F9F9, wallpaper_scanline=#DEDEDE, grid_outer_line=#BEBEBE
+    #   card_surface=#FFFFFF, card_surface_scanline=#EFEFEF, grid_inner_line=#D0D0D0
+    sky_grid = Image.new("RGBA", (16, 16), (249, 249, 249, 255))
     px_sky = sky_grid.load()
     for y in range(16):
         for x in range(16):
             if y == 0 or x == 0:
-                px_sky[x, y] = (212, 227, 247, 255)
+                px_sky[x, y] = (190, 190, 190, 255)
             elif y % 2 == 1:
-                px_sky[x, y] = (228, 239, 253, 255)
+                px_sky[x, y] = (222, 222, 222, 255)
     save_pixel_png(sky_grid, out / "ds_sky_grid")
 
-    picto_grid = Image.new("RGBA", (16, 16), (247, 250, 254, 255))
+    picto_grid = Image.new("RGBA", (16, 16), (255, 255, 255, 255))
     px_picto = picto_grid.load()
     for y in range(16):
         for x in range(16):
             if y == 0 or x == 0:
-                px_picto[x, y] = (214, 222, 234, 255)
+                px_picto[x, y] = (208, 208, 208, 255)
             elif y % 2 == 1:
-                px_picto[x, y] = (238, 243, 249, 255)
+                px_picto[x, y] = (239, 239, 239, 255)
     save_pixel_png(picto_grid, out / "ds_picto_grid")
 
-    # 1e. Pixelated DS System Menu 9-slice buttons/panels (32x32 logical, border=4)
+    # 1e. Pixelated NTR Home Menu 9-slice buttons/panels (32x32 logical, border=4)
     def make_ds_pixel_panel(
         name: str,
         outer: tuple[int, int, int, int],
@@ -189,29 +185,30 @@ def build_nds() -> None:
 
     make_ds_pixel_panel(
         "ds_btn_panel",
-        outer=(44, 54, 72, 255),
+        outer=(0, 0, 0, 255),
         hi=(255, 255, 255, 255),
-        shade=(196, 208, 224, 255),
-        fill_a=(250, 252, 255, 255),
-        fill_b=(239, 245, 253, 255),
+        shade=(168, 168, 168, 255),
+        fill_a=(255, 255, 255, 255),
+        fill_b=(239, 239, 239, 255),
         checker=False,
     )
+    # Translucent bevel/scanline overlay so NdsPanel can tint active buttons with theme.accent
     make_ds_pixel_panel(
         "ds_btn_active",
-        outer=(20, 42, 92, 255),
-        hi=(132, 184, 255, 255),
-        shade=(22, 62, 146, 255),
-        fill_a=(44, 106, 222, 255),
-        fill_b=(34, 92, 204, 255),
+        outer=(0, 0, 0, 255),
+        hi=(255, 255, 255, 115),
+        shade=(0, 0, 0, 82),
+        fill_a=(255, 255, 255, 18),
+        fill_b=(0, 0, 0, 22),
         checker=True,
     )
     make_ds_pixel_panel(
         "ds_btn_quiet",
-        outer=(124, 136, 154, 255),
+        outer=(120, 120, 120, 255),
         hi=(255, 255, 255, 255),
-        shade=(198, 206, 218, 255),
-        fill_a=(236, 240, 246, 255),
-        fill_b=(224, 230, 238, 255),
+        shade=(190, 190, 190, 255),
+        fill_a=(234, 234, 234, 255),
+        fill_b=(222, 222, 222, 255),
         checker=True,
     )
     make_ds_pixel_panel(
@@ -224,7 +221,7 @@ def build_nds() -> None:
         checker=False,
     )
 
-    # 1g. Pixel-art ascending signal bars (16x12: 4 bars indicating proximity to max brightness)
+    # 1f. Pixel-art ascending signal bars (16x12: 4 bars indicating proximity to max brightness)
     #     and DS solar-synced battery icon (20x10: off + 0..3 bars)
     def draw_bitmap(rows: list[str], palette: dict[str, tuple[int, int, int, int]]) -> Image.Image:
         h = len(rows)
@@ -327,6 +324,73 @@ def build_nds() -> None:
         ),
         out / "ds_battery_off",
     )
+
+    # 1g. Authentic NTR Top-Bar icons (from NDS-Clock-SVG-Kit top_status_bar_colon_on.svg)
+    #     battery_ok_hex=#38B848, battery_low_hex=#D84848, white=#FFFFFF frame;
+    #     signal bars carry a 1px dark frame so green bars stay legible on any IPL accent (including Green/Yellow).
+    bar_bat_rows = [
+        "WWWWWWWWWWWWWWWWWW..",
+        "W................W..",
+        "W.11112222333344.WW.",
+        "W.11112222333344.WW.",
+        "W.11112222333344.WW.",
+        "W.11112222333344.WW.",
+        "W.11112222333344.WW.",
+        "W.11112222333344.WW.",
+        "W................W..",
+        "WWWWWWWWWWWWWWWWWW..",
+    ]
+    for lvl in (0, 1, 2, 3):
+        fill_col = (56, 184, 72, 255) if lvl >= 2 else ((242, 172, 28, 255) if lvl == 1 else (216, 72, 72, 255))
+        empty_bar_slot = (0, 0, 0, 64)
+        bar_pal = {
+            "W": (255, 255, 255, 255),
+            "1": fill_col if lvl >= 1 else (216, 72, 72, 255),
+            "2": fill_col if lvl >= 2 else empty_bar_slot,
+            "3": fill_col if lvl >= 3 else empty_bar_slot,
+            "4": fill_col if lvl >= 3 else empty_bar_slot,
+        }
+        save_pixel_png(draw_bitmap(bar_bat_rows, bar_pal), out / f"ds_bar_battery_{lvl}")
+
+    save_pixel_png(
+        draw_bitmap(
+            bar_bat_rows,
+            {
+                "W": (255, 255, 255, 160),
+                "1": (255, 255, 255, 45),
+                "2": (255, 255, 255, 45),
+                "3": (255, 255, 255, 45),
+                "4": (255, 255, 255, 45),
+            },
+        ),
+        out / "ds_bar_battery_off",
+    )
+
+    def make_bar_signal(lvl: int) -> Image.Image:
+        sig_img = Image.new("RGBA", (16, 12), (0, 0, 0, 0))
+        px = sig_img.load()
+        bars = [(1, 7, 1), (5, 5, 2), (9, 3, 3), (13, 1, 4)]
+        outline_col = (20, 24, 30, 255) if lvl >= 0 else (20, 24, 30, 170)
+        for bx, top_y, bar_idx in bars:
+            # 1px dark border around each ascending bar for contrast on green/yellow/blue IPL bars
+            for y in range(top_y - 1, 11):
+                for x in range(bx - 1, bx + 3):
+                    px[x, y] = outline_col
+            active = lvl >= bar_idx
+            if lvl < 0:
+                c_hi = (176, 186, 198, 220)
+                c_lo = (140, 150, 164, 220)
+            else:
+                c_hi = (108, 240, 128, 255) if active else (235, 242, 248, 210)
+                c_lo = (56, 184, 72, 255) if active else (190, 200, 212, 210)
+            for y in range(top_y, 10):
+                px[bx, y] = c_hi
+                px[bx + 1, y] = c_lo
+        return sig_img
+
+    save_pixel_png(make_bar_signal(-1), out / "ds_bar_signal_off")
+    for lvl in (0, 1, 2, 3, 4):
+        save_pixel_png(make_bar_signal(lvl), out / f"ds_bar_signal_{lvl}")
 
 
 

@@ -72,7 +72,7 @@ FocusScope {
                         font.family: root.style.family
                         font.weight: Font.Bold
                         font.pixelSize: Math.round(root.style.gu * 0.92)
-                        color: tab.checked ? root.style.white : root.style.blue
+                        color: tab.checked ? root.style.barInk : root.style.accentInk
                     }
                     Text {
                         visible: (tab.modelData.hint || "").length > 0
@@ -81,7 +81,7 @@ FocusScope {
                         font.family: root.style.family
                         font.weight: Font.Bold
                         font.pixelSize: Math.round(root.style.gu * 0.72)
-                        color: tab.checked ? root.style.white : root.style.muted
+                        color: tab.checked ? root.style.barInk : root.style.muted
                     }
                 }
 

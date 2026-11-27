@@ -822,6 +822,11 @@ fn resolution_is_case_and_separator_tolerant() {
         Some("catppuccinmocha")
     );
     assert_eq!(registry.canonical_id("Tokyo Night"), Some("tokyonight"));
+    assert_eq!(registry.canonical_id("Nii"), Some("wii"));
+    assert_eq!(
+        registry.get("wii").map(|theme| theme.name.as_str()),
+        Some("Nii")
+    );
     assert!(registry.resolve("").is_err());
 }
 

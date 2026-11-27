@@ -390,7 +390,7 @@ void SunReactorClient::handleError(const QJsonObject &responseObj)
             reason = QStringLiteral("offline");
         }
         if (!m_pinnedThemeId.isEmpty() && id == m_pinnedThemeId) {
-            setPinned({}, reason);
+            setPinned(reason == QLatin1String("offline") ? m_pinnedTheme : QVariantMap{}, reason);
         }
         Q_EMIT themeFetchFailed(id, reason);
         return;

@@ -98,6 +98,7 @@ private Q_SLOTS:
     void testErrorKindClassificationAndVersionMismatchBackoff();
     void testUnknownResponseTypeIgnoredWithoutDisconnect();
     void testDisconnectGracePeriodPreservesAndClearsStaleStatus();
+    void testSwitchingPinnedThemePreservesPreviousUntilResolved();
 
 private:
     using Handler = std::function<QJsonObject(const QJsonObject &request)>;
@@ -2668,6 +2669,125 @@ void TestSunReactorClient::testDisconnectGracePeriodPreservesAndClearsStaleStatu
     QVERIFY(client.monitors().isEmpty());
     QCOMPARE(client.mode(), SunReactorClient::Offline);
     QCOMPARE(client.globalPercent(), SunReactor::UNKNOWN_PERCENT);
+}
+
+void TestSunReactorClient::testSwitchingPinnedThemePreservesPreviousUntilResolved()
+{
+    QJsonObject status;
+    status[QStringLiteral("now_epoch_s")] = 1773998400;
+    status[QStringLiteral("theme")] = fullTheme(QStringLiteral("nixie"));
+
+    const auto handler = [status](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("get_theme")) {
+            const QString id = request.value(QStringLiteral("id")).toString();
+            if (id == QStringLiteral("nds") || id == QStringLiteral("wii")) {
+                return envelope(QStringLiteral("theme"), {{QStringLiteral("theme"), fullTheme(id)}});
+            }
+            return errorResponse(QStringLiteral("invalid_request"), QStringLiteral("unknown theme `%1`").arg(id));
+        }
+        if (name == QStringLiteral("day_curve")) {
+            return envelope(QStringLiteral("day_curve"), {{QStringLiteral("day_curve"), dayCurveBody()}});
+        }
+        if (name == QStringLiteral("status")) {
+            return statusResponse(status);
+        }
+        return envelope(QStringLiteral("ack"), {{QStringLiteral("message"), QStringLiteral("ok")}});
+    };
+
+    serveWithDelay(handler, QStringLiteral("get_theme"), 150);
+
+    SunReactorClient client(m_socketPath);
+    client.setPinnedThemeId(QStringLiteral("nds"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"), 3000);
+    QCOMPARE(client.pinnedThemeError(), QString());
+    QCOMPARE(client.theme().value(QStringLiteral("id")).toString(), QStringLiteral("nixie"));
+
+    // Switching from nds -> wii must keep nds in pinnedTheme while wii is pending
+    // so the UI never flashes the daemon's followed theme (nixie) in between.
+    bool clearedDuringSwitch = false;
+    QObject::connect(&client, &SunReactorClient::pinnedThemeChanged, &client, [&]() {
+        if (client.pinnedThemeId() == QLatin1String("wii") && client.pinnedTheme().isEmpty()) {
+            clearedDuringSwitch = true;
+        }
+    });
+
+    client.setPinnedThemeId(QStringLiteral("wii"));
+    QCOMPARE(client.pinnedThemeError(), QStringLiteral("pending"));
+    QCOMPARE(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("wii"), 3000);
+    QCOMPARE(client.pinnedThemeError(), QString());
+    QVERIFY(!clearedDuringSwitch);
+
+    // If a pending switch lost its queued request, the next status poll still
+    // re-fetches the new pinned id even though the previous theme is preserved.
+    m_server->close();
+    QLocalServer::removeServer(m_socketPath);
+    client.setPinnedThemeId(QStringLiteral("nds"));
+    QCOMPARE(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("wii"));
+    QCOMPARE(client.pinnedThemeError(), QStringLiteral("pending"));
+    client.m_requestQueue.clear();
+    client.m_inFlightRequest = QJsonObject{};
+    client.m_responseHandled = true;
+    client.setBusy(false);
+    client.m_reconnectTimer->stop();
+    delete m_server;
+    m_server = new QLocalServer(this);
+    QVERIFY(m_server->listen(m_socketPath));
+    serveWith(handler);
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"), 3000);
+    QCOMPARE(client.pinnedThemeError(), QString());
+
+    // Failing a switch (not_found) clears the stale previous pin and exposes the error.
+    client.setPinnedThemeId(QStringLiteral("gone"));
+    QCOMPARE(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedThemeError(), QStringLiteral("not_found"), 3000);
+    QVERIFY(client.pinnedTheme().isEmpty());
+
+    // Rapid switch nds -> wii -> nds before wii settles: stale wii reply must
+    // not clobber nds or clear pinnedTheme.
+    disconnect(m_server, &QLocalServer::newConnection, this, nullptr);
+    serveWithDelay(handler, QStringLiteral("get_theme"), 150);
+    client.setPinnedThemeId(QStringLiteral("nds"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"), 3000);
+    clearedDuringSwitch = false;
+    client.setPinnedThemeId(QStringLiteral("wii"));
+    QCOMPARE(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"));
+    client.setPinnedThemeId(QStringLiteral("nds"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedThemeError(), QString(), 3000);
+    QCOMPARE(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("nds"));
+    QVERIFY(!clearedDuringSwitch);
+
+    // A transient non-invalid_request error ("offline") keeps the previous
+    // pinned theme instead of falling back to nixie, and recovers on retry.
+    bool failNextWii = true;
+    bool sawOffline = false;
+    clearedDuringSwitch = false;
+    QObject::connect(&client, &SunReactorClient::pinnedThemeChanged, &client, [&]() {
+        if (client.pinnedThemeError() == QLatin1String("offline")) {
+            sawOffline = true;
+        }
+    });
+    disconnect(m_server, &QLocalServer::newConnection, this, nullptr);
+    serveWith([&](const QJsonObject &request) {
+        const QString name = request.value(QStringLiteral("request")).toString();
+        if (name == QStringLiteral("get_theme")) {
+            const QString id = request.value(QStringLiteral("id")).toString();
+            if (id == QStringLiteral("wii") && failNextWii) {
+                failNextWii = false;
+                return errorResponse(QStringLiteral("daemon_busy"), QStringLiteral("try again"));
+            }
+            return handler(request);
+        }
+        return handler(request);
+    });
+    client.setPinnedThemeId(QStringLiteral("wii"));
+    QTRY_VERIFY_WITH_TIMEOUT(sawOffline, 3000);
+    QVERIFY(!clearedDuringSwitch);
+    client.queryStatus();
+    QTRY_COMPARE_WITH_TIMEOUT(client.pinnedTheme().value(QStringLiteral("id")).toString(), QStringLiteral("wii"), 3000);
+    QCOMPARE(client.pinnedThemeError(), QString());
 }
 
 QTEST_MAIN(TestSunReactorClient)

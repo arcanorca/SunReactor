@@ -97,7 +97,7 @@ Item {
         }
     }
 
-    // The cylindrical barrel hinge with camera lens & crisp pixel LED indicators
+    // The cylindrical barrel hinge with center mic slot & crisp pixel LED indicators
     Item {
         visible: root.hinge
         x: 0
@@ -111,16 +111,6 @@ Item {
             border { left: 36; right: 36; top: 0; bottom: 0 }
             horizontalTileMode: BorderImage.Stretch
             verticalTileMode: BorderImage.Stretch
-            smooth: false
-        }
-
-        // Centered DSi camera / mic module (unstretched)
-        Image {
-            anchors.centerIn: parent
-            width: Math.round(parent.height * 2.2)
-            height: Math.round(parent.height * 0.78)
-            source: Qt.resolvedUrl("assets/ds_hinge_camera.png")
-            fillMode: Image.PreserveAspectFit
             smooth: false
         }
 

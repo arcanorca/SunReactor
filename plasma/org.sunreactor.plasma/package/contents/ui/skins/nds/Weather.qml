@@ -38,8 +38,9 @@ Item {
     readonly property real gu: style.gu
     readonly property real pad: Math.round(gu * 0.75)
     readonly property real glassW: root.width - 2 * style.bezel
+    readonly property real topBarH: Math.round(gu * 1.4)
     readonly property real badge: Math.round(gu * 3.4)
-    readonly property real glassH: Math.round(gu * 5.8)
+    readonly property real glassH: Math.round(gu * 6.0)
 
     WeatherText {
         id: weatherText
@@ -61,13 +62,30 @@ Item {
         daemonMode: root.client.mode
         glassHeight: root.glassH
 
-        NdsStatusBar {
-            x: root.pad
-            y: Math.round(root.gu * 0.35)
-            width: root.glassW - 2 * root.pad
-            theme: root.theme
-            style: root.style
-            client: root.client
+        Rectangle {
+            x: 0
+            y: 0
+            width: root.glassW
+            height: root.topBarH
+            color: root.style.blue
+
+            NdsStatusBar {
+                x: root.pad
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.glassW - 2 * root.pad
+                theme: root.theme
+                style: root.style
+                client: root.client
+                onAccentBar: true
+            }
+
+            Rectangle {
+                x: 0
+                y: parent.height - 1
+                width: parent.width
+                height: 1
+                color: root.style.frameBlack
+            }
         }
 
         // The sky: the DS cartoon icon in the slot the badge used to fill.
@@ -75,7 +93,7 @@ Item {
             id: badgeBox
 
             x: root.pad
-            y: Math.round(root.gu * 1.8)
+            y: root.topBarH + Math.round(root.gu * 0.55)
             width: root.badge
             height: root.badge
         }
@@ -100,7 +118,7 @@ Item {
             id: temperature
 
             x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
-            y: Math.round(root.gu * 1.6)
+            y: root.topBarH + Math.round(root.gu * 0.35)
             text: root.client.hasTemperature ? String(Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit)) : "--"
             textFormat: Text.PlainText
             font.family: root.style.family
@@ -110,18 +128,18 @@ Item {
         }
         Text {
             x: temperature.x + temperature.implicitWidth + Math.round(root.gu * 0.2)
-            y: Math.round(root.gu * 2.0)
+            y: root.topBarH + Math.round(root.gu * 0.75)
             text: Format.tempUnit(root.client.isFahrenheit)
             textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 1.0)
-            color: root.style.blue
+            color: root.style.accentInk
         }
 
         Text {
             x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
-            y: Math.round(root.gu * 4.35)
+            y: root.topBarH + Math.round(root.gu * 3.05)
             width: root.glassW - x - root.pad
             elide: Text.ElideRight
             text: root.condition

@@ -961,7 +961,7 @@
   }
  },
  "nds": {
-  "name": "Nintendo DS",
+  "name": "NDS",
   "accent": "#2f6fdb",
   "secondary_accent": "#f08a24",
   "bg": "#eef1f5",
@@ -1777,7 +1777,7 @@
   }
  },
  "wii": {
-  "name": "Nintendo Wii",
+  "name": "Nii",
   "accent": "#00a9e0",
   "secondary_accent": "#8bd1ec",
   "bg": "#f3f6f9",
@@ -1899,10 +1899,10 @@
    "font": "sans",
    "pixel_scale": 0,
    "shades": [
-    "#dfe4ea",
-    "#929da8",
+    "#161d24",
     "#525e6a",
-    "#161d24"
+    "#929da8",
+    "#dfe4ea"
    ],
    "density": "comfortable",
    "border": "bevel",

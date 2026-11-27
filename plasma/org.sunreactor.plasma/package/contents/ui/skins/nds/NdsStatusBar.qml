@@ -22,7 +22,11 @@ RowLayout {
     required property NdsStyle style
     required property SunReactorClient client
     /*! Ink for the clock and status text. */
-    property color ink: style.ink
+    property color ink: onAccentBar ? style.barInk : style.ink
+    /*! True when sitting inside the colored IPL top status bar. */
+    property bool onAccentBar: false
+    /*! Bright IPL top bars (e.g. Yellow, Lime, Orange, Pink) need dark-framed battery contrast. */
+    readonly property bool lightAccentBar: onAccentBar && style.lightBar
     /*! Show the daemon's state word between the signal bars and the battery. */
     property bool showState: false
 
@@ -57,8 +61,8 @@ RowLayout {
         Layout.preferredWidth: 16
         Layout.preferredHeight: 12
         source: Qt.resolvedUrl(root.signalLevel < 0
-            ? "assets/ds_signal_off.png"
-            : ("assets/ds_signal_" + root.signalLevel + ".png"))
+            ? (root.onAccentBar ? "assets/ds_bar_signal_off.png" : "assets/ds_signal_off.png")
+            : ((root.onAccentBar ? "assets/ds_bar_signal_" : "assets/ds_signal_") + root.signalLevel + ".png"))
         fillMode: Image.PreserveAspectFit
         smooth: false
     }
@@ -70,7 +74,7 @@ RowLayout {
         font.family: root.style.family
         font.weight: Font.Bold
         font.pixelSize: Math.round(root.style.gu * 0.62)
-        color: root.theme.stateColor(root.client.mode)
+        color: root.onAccentBar ? root.ink : root.theme.stateColor(root.client.mode)
     }
 
     Item { Layout.fillWidth: true }
@@ -80,8 +84,8 @@ RowLayout {
         Layout.preferredWidth: 20
         Layout.preferredHeight: 10
         source: Qt.resolvedUrl(root.batteryLevel < 0
-            ? "assets/ds_battery_off.png"
-            : ("assets/ds_battery_" + root.batteryLevel + ".png"))
+            ? (root.onAccentBar && !root.lightAccentBar ? "assets/ds_bar_battery_off.png" : "assets/ds_battery_off.png")
+            : ((root.onAccentBar && !root.lightAccentBar ? "assets/ds_bar_battery_" : "assets/ds_battery_") + root.batteryLevel + ".png"))
         fillMode: Image.PreserveAspectFit
         smooth: false
     }

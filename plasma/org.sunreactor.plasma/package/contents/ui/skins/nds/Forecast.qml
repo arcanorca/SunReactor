@@ -53,7 +53,7 @@ Item {
     readonly property real pad: Math.round(gu * 0.35)
     readonly property real inset: Math.round(gu * 0.6)
     readonly property real tileGap: Math.round(gu * 0.25)
-    readonly property real tileH: Math.round(gu * 3.3)
+    readonly property real tileH: Math.round(gu * 3.55)
     readonly property real detailsTop: pad + tileH + Math.round(gu * 0.4)
     readonly property real detailRowH: Math.round(gu * 1.15)
     readonly property real detailsH: details.length * detailRowH + Math.round(gu * 0.4)
@@ -148,9 +148,9 @@ Item {
 
         style: root.style
         kind: "panel"
-        outlineColor: root.style.line
+        outlineColor: root.style.frameBlack
         outlineWidth: 1
-        radius: Math.round(root.style.radius * 0.85)
+        radius: 0
         width: Math.floor((screen.glassWidth - 2 * root.inset - (count - 1) * root.tileGap) / count)
         height: root.tileH
         x: root.inset + index * (width + root.tileGap)
@@ -159,6 +159,25 @@ Item {
         Accessible.role: Accessible.ListItem
         Accessible.name: Format.timeText(modelData.epochS) + " " + Format.tempRounded(modelData.temperatureC, root.client.isFahrenheit) + "°"
 
+        // NTR calendar-style neutral header strip (#EAEAEA) with #D0D0D0 divider
+        Rectangle {
+            id: tileHeader
+
+            x: 2
+            y: 2
+            width: tile.width - 4
+            height: Math.round(root.gu * 0.95)
+            color: root.style.headerNeutral
+
+            Rectangle {
+                x: 0
+                y: parent.height - 1
+                width: parent.width
+                height: 1
+                color: root.style.gridInner
+            }
+        }
+
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             y: Math.round(root.gu * 0.2)
@@ -166,19 +185,19 @@ Item {
             textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
-            font.pixelSize: Math.round(root.gu * 0.6)
-            color: root.style.muted
+            font.pixelSize: Math.round(root.gu * 0.58)
+            color: root.style.ink
         }
         ThemedWeatherIcon {
             theme: root.theme
-            size: Math.max(18, Math.round(Math.min(tile.width * 0.7, root.gu * 1.4)))
+            size: Math.max(18, Math.round(Math.min(tile.width * 0.68, root.gu * 1.38)))
             condition: tile.modelData.condition || ""
             night: tile.modelData.isNight === true
             anchors.horizontalCenter: parent.horizontalCenter
-            y: Math.round(root.gu * 0.8)
+            y: tileHeader.y + tileHeader.height + Math.round(root.gu * 0.14)
             NdsWeatherIcon {
                 anchors.centerIn: parent
-                size: Math.max(18, Math.round(Math.min(tile.width * 0.7, root.gu * 1.4)))
+                size: Math.max(18, Math.round(Math.min(tile.width * 0.68, root.gu * 1.38)))
                 theme: root.theme
                 condition: tile.modelData.condition || ""
                 night: tile.modelData.isNight === true
@@ -186,13 +205,13 @@ Item {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            y: tile.height - Math.round(root.gu * 1.1)
+            y: tile.height - Math.round(root.gu * 1.05)
             text: i18ndc(root.settings.domain, "Temperature in degrees, compact", "%1°",
                          Format.tempRounded(tile.modelData.temperatureC, root.client.isFahrenheit))
             textFormat: Text.PlainText
             font.family: root.style.family
             font.weight: Font.Bold
-            font.pixelSize: Math.round(root.gu * 0.85)
+            font.pixelSize: Math.round(root.gu * 0.82)
             color: root.style.ink
         }
     }

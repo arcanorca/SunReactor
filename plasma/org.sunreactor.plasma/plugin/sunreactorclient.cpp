@@ -231,7 +231,11 @@ void SunReactorClient::setPinnedThemeId(const QString &id)
     }
     m_pinnedThemeId = trimmed;
     Q_EMIT pinnedThemeIdChanged();
-    setPinned({}, trimmed.isEmpty() ? QString() : QStringLiteral("pending"));
+    // Keep the previously resolved pinned theme while fetching a new one so
+    // switching between two pinned themes does not briefly fall back to the
+    // daemon's followed theme.
+    setPinned(trimmed.isEmpty() ? QVariantMap{} : m_pinnedTheme,
+              trimmed.isEmpty() ? QString() : QStringLiteral("pending"));
     requestPinnedTheme();
 }
 

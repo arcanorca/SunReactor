@@ -18,6 +18,14 @@ Item {
 
     default property alias content: stage.data
 
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 1
+        visible: root.kind === "ds"
+        color: root.outlineColor
+        radius: 0
+    }
+
     BorderImage {
         anchors.fill: parent
         source: Qt.resolvedUrl(root.kind === "ds" ? "assets/ds_btn_active.png"

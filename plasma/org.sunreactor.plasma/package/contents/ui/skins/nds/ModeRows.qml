@@ -10,7 +10,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import org.sunreactor.plasma
 
@@ -122,7 +121,7 @@ Item {
                 textFormat: Text.PlainText
                 font.family: root.style.family
                 font.pixelSize: Math.round(root.gu * 0.56)
-                color: root.control.hinting ? root.style.blue : root.style.ink
+                color: root.control.hinting ? root.style.accentInk : root.style.ink
                 elide: Text.ElideRight
             }
 
@@ -183,7 +182,7 @@ Item {
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 1.0)
-            color: cell.lit ? root.style.white : root.style.blue
+            color: cell.lit ? root.style.barInk : root.style.accentInk
         }
 
         // Crisp pixel selection indicator on the lit DS button
@@ -194,7 +193,7 @@ Item {
             width: 4
             height: 4
             radius: 0
-            color: root.style.white
+            color: root.style.barInk
         }
 
         // The whole button is the touch target; the chevron below takes its own clicks.
@@ -221,7 +220,7 @@ Item {
                 height: width
                 source: "arrow-down"
                 isMask: true
-                color: cell.lit ? root.style.white : root.style.blue
+                color: cell.lit ? root.style.barInk : root.style.accentInk
             }
             MouseArea {
                 anchors.fill: parent

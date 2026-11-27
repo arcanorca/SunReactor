@@ -327,7 +327,7 @@ The registry contains 41 built-in themes:
 | `macos` | macOS | instrument | vector | flagship skin |
 | `materialocean` | Material Ocean | terminal | terminal | family default |
 | `monokai` | Monokai | terminal | terminal | family default |
-| `nds` | Nintendo DS | instrument | vector | flagship skin |
+| `nds` | NDS | instrument | vector | flagship skin |
 | `nightowl` | Night Owl | terminal | terminal | family default |
 | `nixie` | Nixie | instrument | vector | instrument skin, own flavour |
 | `nord` | Nord | terminal | terminal | family default |
@@ -344,13 +344,13 @@ The registry contains 41 built-in themes:
 | `tokyonight` | Tokyo Night | terminal | terminal | family default |
 | `unixworkstation` | UNIX Workstation | instrument | vector | family default |
 | `vfd_hifi` | VFD Hi-Fi | instrument | vector | instrument skin, own flavour |
-| `wii` | Nintendo Wii | instrument | vector | flagship skin |
+| `wii` | Nii | instrument | vector | flagship skin |
 | `winxp` | Windows XP | instrument | vector | flagship skin |
 | `xbox360` | Xbox 360 | instrument | vector | flagship skin |
 | `zenburn` | Zenburn | terminal | terminal | family default |
 
 Summary: 13 flagship skins (Amiga, Casio Digital, Commodore 64, Cyberpunk, Hacker
-Green, macOS, Nintendo DS, Nothing, PlayStation 3, Synthwave '84, Nintendo Wii,
+Green, macOS, NDS, Nothing, PlayStation 3, Synthwave '84, Nii,
 Windows XP, Xbox 360), 5 instrument flavours (Braun, Nixie, Oscilloscope, ThinkPad, VFD
 Hi-Fi), and 23 family defaults.
 
@@ -361,7 +361,7 @@ widget's QA harness (`plasma/org.sunreactor.plasma/tools/shot.sh`):
 
 | Image | What it shows |
 |---|---|
-| ![Eight flagship themes on the brightness page](images/widget-themes.png) | The popup's brightness page for Amiga, Casio Digital, Cyberpunk, Hacker Green, Nintendo DS, Nothing, Synthwave '84 and Windows XP |
+| ![Eight flagship themes on the brightness page](images/widget-themes.png) | The popup's brightness page for Amiga, Casio Digital, Cyberpunk, Hacker Green, NDS, Nothing, Synthwave '84 and Windows XP |
 | ![The same themes on the weather page](images/widget-weather.png) | The weather page of the same eight themes, each with its own weather art |
 
 ## 8. Troubleshooting

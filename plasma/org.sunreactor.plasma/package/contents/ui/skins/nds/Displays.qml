@@ -157,9 +157,9 @@ Item {
             width: rangeLabel.implicitWidth + Math.round(root.gu * 0.6)
             height: Math.round(root.gu * 1.05)
             radius: 0
-            color: panel.expanded ? root.style.blue : root.style.track
+            color: panel.expanded ? root.style.blue : root.style.headerNeutral
             border.width: 1
-            border.color: "#2c3648"
+            border.color: root.style.frameBlack
 
             Text {
                 id: rangeLabel
@@ -169,7 +169,7 @@ Item {
                 font.family: root.style.family
                 font.weight: Font.Bold
                 font.pixelSize: Math.round(root.gu * 0.65)
-                color: panel.expanded ? root.style.white : root.style.ink
+                color: panel.expanded ? root.style.barInk : root.style.ink
             }
             MouseArea {
                 anchors.fill: parent
@@ -187,9 +187,9 @@ Item {
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * (panel.hint.length > 0 ? 0.85 : 1.2))
-            color: panel.tagNotice.length > 0 ? root.style.blue
+            color: panel.tagNotice.length > 0 ? root.style.accentInk
                 : (panel.hint.length > 0 ? root.style.muted
-                : (panel.overridden ? root.style.blue : root.style.ink))
+                : (panel.overridden ? root.style.accentInk : root.style.ink))
 
             HoverHandler {
                 id: valueHover
@@ -379,7 +379,7 @@ Item {
             radius: 0
             color: slider.editable ? root.style.track : root.style.quietBottom
             border.width: 1
-            border.color: "#2c3648"
+            border.color: root.style.frameBlack
         }
         Rectangle {
             x: slider.travelX0 + 1
@@ -396,7 +396,7 @@ Item {
             y: Math.round(slider.height / 2 - height / 2)
             width: 2
             height: Math.round(root.gu * 0.8)
-            color: "#2c3648"
+            color: root.style.frameBlack
         }
         Rectangle {
             visible: slider.maxMark >= 0
@@ -404,7 +404,7 @@ Item {
             y: Math.round(slider.height / 2 - height / 2)
             width: 2
             height: Math.round(root.gu * 0.8)
-            color: "#2c3648"
+            color: root.style.frameBlack
         }
         // Crisp DS slider handle: clean beveled tab, no oversized sprite.
         Rectangle {
@@ -416,7 +416,7 @@ Item {
             height: slider.knobH
             radius: 2
             border.width: root.style.outline
-            border.color: slider.activeFocus ? root.style.ink : (slider.editable ? root.style.blue : root.style.line)
+            border.color: slider.activeFocus ? root.style.ink : (slider.editable ? root.style.accentInk : root.style.line)
             gradient: Gradient {
                 GradientStop { position: 0; color: root.style.white }
                 GradientStop { position: 1; color: root.style.panelBottom }

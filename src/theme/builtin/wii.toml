@@ -1,6 +1,6 @@
 id = "wii"
-name = "Nintendo Wii"
-aliases = ["nintendowii", "wiimenu"]
+name = "Nii"
+aliases = ["nintendowii", "wiimenu", "nii"]
 family = "instrument"
 
 [palette]

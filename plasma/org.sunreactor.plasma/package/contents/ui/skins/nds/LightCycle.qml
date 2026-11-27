@@ -54,7 +54,9 @@ Item {
     readonly property real gu: style.gu
     readonly property real pad: Math.round(gu * 0.75)
     readonly property real glassW: root.width - 2 * style.bezel
-    readonly property real cardTop: Math.round(gu * 4.75)
+    readonly property real topBarH: Math.round(gu * 1.4)
+    readonly property real clockSize: Math.round(gu * 3.1)
+    readonly property real cardTop: Math.round(gu * 5.05)
     readonly property real cardH: Math.round(gu * 3.5)
     readonly property real glassH: Math.round(cardTop + cardH + gu * 0.4)
     // The plot inside the card: an inset, and a row of hour labels at its foot.
@@ -129,11 +131,42 @@ Item {
         daemonMode: root.client.mode
         glassHeight: root.glassH
 
-        NdsStatusBar {
-            x: root.pad
-            y: Math.round(root.gu * 0.3)
-            width: root.glassW - 2 * root.pad
-            theme: root.theme
+        // Authentic NTR IPL-colored top bar with crisp 1px black bottom rule
+        Rectangle {
+            id: topBar
+
+            x: 0
+            y: 0
+            width: root.glassW
+            height: root.topBarH
+            color: root.style.blue
+
+            NdsStatusBar {
+                x: root.pad
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.glassW - 2 * root.pad
+                theme: root.theme
+                style: root.style
+                client: root.client
+                onAccentBar: true
+            }
+
+            Rectangle {
+                x: 0
+                y: parent.height - 1
+                width: parent.width
+                height: 1
+                color: root.style.frameBlack
+            }
+        }
+
+        // Authentic NTR Home Menu square analog clock on the right
+        NdsAnalogClock {
+            id: analogClock
+
+            x: root.glassW - root.pad - width
+            y: root.topBarH + Math.round(root.gu * 0.25)
+            size: root.clockSize
             style: root.style
             client: root.client
         }
@@ -143,8 +176,8 @@ Item {
             id: titleText
 
             x: root.pad
-            y: Math.round(root.gu * 1.5)
-            width: root.glassW - 2 * root.pad
+            y: root.topBarH + Math.round(root.gu * 0.28)
+            width: Math.max(1, analogClock.x - x - Math.round(root.gu * 0.5))
             elide: Text.ElideRight
             text: root.title
             font.family: root.style.family
@@ -154,8 +187,8 @@ Item {
         }
         MouseArea {
             x: root.pad
-            y: Math.round(root.gu * 1.45)
-            width: root.glassW - 2 * root.pad
+            y: root.topBarH + Math.round(root.gu * 0.2)
+            width: Math.max(1, analogClock.x - x - Math.round(root.gu * 0.4))
             height: Math.round(root.gu * 1.15)
             cursorShape: root.curves.length > 1 ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.cycle()
@@ -166,7 +199,7 @@ Item {
             id: hero
 
             x: root.pad
-            y: Math.round(root.gu * 2.68)
+            y: root.topBarH + Math.round(root.gu * 1.45)
             text: root.showAll ? "--%" : root.heroText
             font.family: root.style.family
             font.weight: Font.Bold
@@ -174,8 +207,10 @@ Item {
             color: root.style.ink
         }
         Text {
-            x: hero.x + hero.implicitWidth + Math.round(root.gu * 0.6)
-            y: Math.round(root.gu * 2.75)
+            x: hero.x + hero.implicitWidth + Math.round(root.gu * 0.55)
+            y: root.topBarH + Math.round(root.gu * 1.52)
+            width: Math.max(0, analogClock.x - x - Math.round(root.gu * 0.35))
+            elide: Text.ElideRight
             text: root.scrubbing ? Format.timeText(root.scrubTime)
                 : i18ndc(root.domain, "The curve's brightness right now", "Now")
             font.family: root.style.family
@@ -183,17 +218,19 @@ Item {
             color: root.style.muted
         }
         Text {
-            x: hero.x + hero.implicitWidth + Math.round(root.gu * 0.6)
-            y: Math.round(root.gu * 3.68)
+            x: hero.x + hero.implicitWidth + Math.round(root.gu * 0.55)
+            y: root.topBarH + Math.round(root.gu * 2.42)
+            width: Math.max(0, analogClock.x - x - Math.round(root.gu * 0.35))
+            elide: Text.ElideRight
             visible: !root.scrubbing && root.applied >= 0
             text: i18ndc(root.domain, "Brightness the display has right now", "Set %1%", root.applied)
             font.family: root.style.family
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 0.72)
-            color: root.style.blue
+            color: root.style.accentInk
         }
 
-        // The chart card: crisp DS pixel card with the curve, the night and the hour axis.
+        // The chart card: crisp NTR #000000-framed card with inner grid ticks and hour axis.
         Rectangle {
             id: card
 
@@ -202,9 +239,25 @@ Item {
             width: root.glassW - 2 * root.pad
             height: root.cardH
             radius: 0
-            color: root.style.white
+            color: root.style.cardSurface
             border.width: 1
-            border.color: "#2c3648"
+            border.color: root.style.frameBlack
+        }
+        Repeater {
+            model: [6, 12, 18]
+
+            delegate: Rectangle {
+                required property int modelData
+
+                readonly property real at: root.hourTime(modelData)
+
+                visible: root.samples.length > 1 && at >= root.t0 && at <= root.t1
+                x: Math.round(root.xAt(at))
+                y: root.plotY0
+                width: 1
+                height: root.plotY1 - root.plotY0
+                color: root.style.gridInner
+            }
         }
         Rectangle {
             visible: root.samples.length > 1 && root.sun.sunrise > 0
@@ -245,7 +298,7 @@ Item {
                 PathPolyline { path: root.clearPath }
             }
             ShapePath {
-                strokeColor: root.style.blue
+                strokeColor: root.style.accentInk
                 strokeWidth: 2.5
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
@@ -272,7 +325,7 @@ Item {
             radius: 0
             color: root.style.white
             border.width: 2
-            border.color: root.style.blue
+            border.color: root.style.accentInk
         }
 
         Repeater {

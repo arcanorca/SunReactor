@@ -1,7 +1,7 @@
 /*
  * The Nintendo DS skin's design system, derived from one Theme: the console's
- * type (Nunito, bundled and OFL), its colours and the metrics its screens and
- * touch buttons share. Colours come from the theme: accent is the DS blue,
+ * type (unscii-16, bundled), its colours and the metrics its screens and
+ * touch buttons share. Colours come from the theme: accent is the DS IPL accent,
  * secondary accent the orange, bg the pearl shell. Screen, bezel and hinge greys
  * are the hardware's own and are fixed here.
  *
@@ -60,22 +60,43 @@ QtObject {
     readonly property color danger: theme.error
 
     readonly property color white: "#ffffff"
+    readonly property color frameBlack: "#000000"
+    readonly property color cardSurface: "#ffffff"
+    readonly property color cardScanline: "#efefef"
+    readonly property color headerNeutral: "#eaeaea"
+    readonly property color gridOuter: "#bebebe"
+    readonly property color gridInner: "#d0d0d0"
+    readonly property color bevelHighlight: "#ffffff"
+    readonly property color bevelShadow: "#a8a8a8"
+    readonly property color clockNumerals: "#b0b0b0"
+    readonly property color clockHands: "#787878"
+    readonly property color clockPivot: "#47484a"
+    readonly property color clockSecondRef: "#8da0ae"
+    readonly property color batteryOk: "#38b848"
+    readonly property color batteryLow: "#d84848"
+    /*! True when the active IPL accent is bright enough to require dark ink/frames. */
+    readonly property bool lightBar: theme.luminance(blue) > 0.32
+    /*! Contrast text colour over the active IPL accent bar / active button. */
+    readonly property color barInk: lightBar ? "#111111" : "#ffffff"
+    /*! Accent ink readable on white/light card surfaces even for bright IPL overrides (e.g. Yellow, Orange, Green). */
+    readonly property color accentInk: theme.luminance(blue) > 0.30 ? theme.mix(blue, frameBlack, 0.50) : blue
+
     readonly property color panelTop: "#ffffff"
-    readonly property color panelBottom: "#e3eefc"
-    readonly property color quietTop: "#f7f8fa"
-    readonly property color quietBottom: "#e5e9ef"
+    readonly property color panelBottom: "#efefef"
+    readonly property color quietTop: "#eaeaea"
+    readonly property color quietBottom: "#dedede"
     readonly property color bezelTop: "#3b414c"
     readonly property color bezelBottom: "#111318"
-    readonly property color skyTop: "#b7dbff"
-    readonly property color skyMid: "#dcefff"
-    readonly property color skyBottom: "#f6fbff"
-    readonly property color touchTop: "#fafcff"
-    readonly property color touchMid: "#f0f5fb"
-    readonly property color touchBottom: "#e5edf7"
+    readonly property color skyTop: "#f9f9f9"
+    readonly property color skyMid: "#f4f6f9"
+    readonly property color skyBottom: "#f9f9f9"
+    readonly property color touchTop: "#ffffff"
+    readonly property color touchMid: "#fafbfd"
+    readonly property color touchBottom: "#f3f6fa"
     readonly property color hingeTop: "#f1f4f8"
     readonly property color hingeBottom: "#aab5c4"
     readonly property color hingeSlot: "#4b5563"
-    readonly property color track: "#cfe0f7"
+    readonly property color track: "#dce4ee"
     /*! The speech bubble of the automation sentence, and its edge. */
     readonly property color cream: "#fff6d8"
     readonly property color creamEdge: "#e2cb8c"
