@@ -96,7 +96,8 @@ Item {
     readonly property bool twoColumns: textCells >= 2 * (labelCells + 7)
     readonly property int half: Math.floor(textCells / 2)
     readonly property int readingRows: twoColumns ? Math.ceil(readings.length / 2) : readings.length
-    readonly property int textRows: 2 + readingRows
+    readonly property int cityRows: client.locationCity.length > 0 ? 1 : 0
+    readonly property int textRows: 2 + cityRows + readingRows
 
     implicitHeight: section.implicitHeight
 
@@ -169,11 +170,22 @@ Item {
             }
         }
 
+        // City name, when configured; collapses cleanly when empty.
+        TermText {
+            visible: root.cityRows > 0
+            tm: term
+            x: term.cx(root.textX)
+            y: term.cy(1)
+            value: root.client.locationCity
+            cells: root.textCells
+            color: root.theme.textMuted
+        }
+
         // The effect on the targets: the sentence says what it is, so it has no label.
         TermText {
             tm: term
             x: term.cx(root.textX)
-            y: term.cy(1)
+            y: term.cy(1 + root.cityRows)
             value: root.effect
             cells: Math.max(0, root.textCells)
             color: root.client.hasWeatherReading ? root.theme.fg : root.theme.textMuted
@@ -188,7 +200,7 @@ Item {
 
                 tm: term
                 x: term.cx(root.textX + (root.twoColumns && index % 2 === 1 ? root.half : 0))
-                y: term.cy(2 + (root.twoColumns ? Math.floor(index / 2) : index))
+                y: term.cy(2 + root.cityRows + (root.twoColumns ? Math.floor(index / 2) : index))
                 cells: root.twoColumns ? (index % 2 === 1 ? root.textCells - root.half : root.half - 1) : root.textCells
                 runs: [{ t: Term.padEnd(modelData[0], root.labelCells), c: root.theme.textMuted },
                        { t: modelData[1], c: root.theme.fg }]

@@ -27,10 +27,4 @@ Plasma conventions).
 | Document | What it covers |
 |---|---|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Toolchain, local workflow, lint policy and CI parity |
-| [REFACTOR_BRIEF.md](REFACTOR_BRIEF.md) | Guidance for a behaviour-preserving refactor |
-| [CLEANUP_NOTES.md](CLEANUP_NOTES.md) | Handoff notes from the TUI redesign: cleanup left for a dedicated pass |
-| `phase8-*`, `phase9-*`, `phase10-*` | Owner briefs and engineering records for earlier phases |
-| `aegis/work/` | Dated work folders: intent, checkpoints, evidence and reflections |
-
-The repository's [AGENTS.md](../AGENTS.md) lists the module boundaries and the
-verification steps every change must pass.
+| [`archive/`](archive/) | Historical phase records (`phase8-*`–`phase10-*`), owner briefs, and TUI refactor notes |

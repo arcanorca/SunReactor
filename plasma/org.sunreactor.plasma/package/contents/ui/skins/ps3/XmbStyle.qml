@@ -40,6 +40,10 @@ QtObject {
 
     /*! Primary white: labels, values, the selected item. */
     readonly property color ink: theme.fg
+    /*! Crisp dark sapphire shadow behind white XMB typography over bright caustics. */
+    readonly property color textShadow: Qt.rgba(0.01, 0.03, 0.09, 0.72)
+    /*! Smooth micro-transitions on interactive XMB selection when desktop animation is enabled. */
+    readonly property bool animateUi: Kirigami.Units.longDuration > 1
     /*! Sub-text: 60 % white. */
     readonly property color inkSoft: theme.alpha(theme.fg, 0.6)
     /*! Items the pointer and focus are not on: the XMB dims them. */

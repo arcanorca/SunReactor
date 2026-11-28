@@ -1,15 +1,14 @@
 #version 440
 
 /*
- * The XMB wave of the PlayStation 3 skin: a full-screen procedural background
- * drawn by skins/ps3/Waves.qml. Built into xmb.frag.qsb by tools/build_shaders.sh
- * (Qt's qsb); the .qsb is committed, so the widget needs no build tools.
+ * The XMB Silk & Glitter background of the PlayStation 3 skin (Firmware 3.00+):
+ * a translucent 3D parametric silk curtain integrated across depth slices with
+ * Fresnel caustic fold creases, a secondary deeper veil, and smoothly gliding
+ * glitter sparkles + soft bokeh orbs drifting diagonally along the wave.
  *
- * Time is a loop of PERIOD seconds (Waves.qml's period must match). Every
- * harmonic completes a whole number of cycles across the width (m) and of loops
- * in time (n), so the loop closes without a seam; a harmonic with m cycles and
- * n loops travels right at n / m widths per loop. The ribbons are summed
- * additively, so where two cross they brighten, as silk does.
+ * Time is a seamless loop of PERIOD seconds (Waves.qml's period must match):
+ * wave harmonics complete integer cycles across PERIOD, and glitter/bokeh grids
+ * shift by exact integer multiples of their wrap period.
  */
 
 layout(location = 0) in vec2 qt_TexCoord0;
@@ -20,16 +19,15 @@ layout(std140, binding = 0) uniform buf {
     float qt_Opacity;
     float time;         // seconds into the loop, 0 to PERIOD
     vec2 resolution;    // the item's size in logical px
-    vec4 colour;        // the ribbons' tint (palette accent, or the month's)
-    vec4 sheen;         // the white-blue highlight at the cores
-    vec4 deep;          // the backdrop's top colour
-    float nightFactor;  // 0 by day, 1 at night: the whole picture dims
+    vec4 colour;        // the silk's tint (palette accent, or the month's)
+    vec4 sheen;         // the icy-white/cyan specular caustic tint
+    vec4 deep;          // the backdrop's luminous upper royal-sapphire colour
+    float nightFactor;  // 0 by day, 1 at night: deepens mood without muddying contrast
 };
 
-const float PERIOD = 40.0;
+const float PERIOD = 24.0;
 const float TAU = 6.283185307;
-/* The bottom of the backdrop: near-black navy. */
-const vec3 NAVY = vec3(0.008, 0.016, 0.046);
+const vec3 NAVY = vec3(0.006, 0.015, 0.048);
 
 float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -43,90 +41,152 @@ vec2 hash22(vec2 p) {
     return fract((p3.xx + p3.yz) * p3.zy);
 }
 
-/* The offset of a ribbon's centre line at x (0 to 1 across the popup), in units
-   of its amplitude. Each harmonic is h = (m, n, phase, weight). */
-float wave(float x, float tau, vec4 h1, vec4 h2, vec4 h3) {
-    return h1.w * sin(TAU * (h1.x * x - h1.y * tau) + h1.z)
-         + h2.w * sin(TAU * (h2.x * x - h2.y * tau) + h2.z)
-         + h3.w * sin(TAU * (h3.x * x - h3.y * tau) + h3.z);
+/* Parametric 3D height of one silk curtain at screen x and depth z in [0, 1].
+   Notice the gentle diagonal PS3 XMB tilt (+upward left->right) and counter-
+   travelling harmonics across depth so fold creases split, cross, and roll. */
+float silkY(float x, float z, float tau, float yCenter, float tilt, float amp, float seed) {
+    float ph = TAU * tau;
+    float xRot = x + z * 0.32;
+    float swell = 0.62 * sin(TAU * (1.15 * x - 1.0 * tau) + z * 3.1 + seed)
+                + 0.34 * sin(TAU * (2.10 * x + 1.0 * tau) - z * 4.4 + seed * 1.7)
+                + 0.18 * sin(TAU * (3.20 * xRot - 2.0 * tau) + z * 6.2 + seed * 2.3)
+                + 0.14 * cos(ph + z * 4.8 + seed * 0.7);
+    return yCenter + tilt * (0.5 - x) + amp * swell;
 }
 
-/* One ribbon, added to col: a bright core of half-width thick, inside a wider
-   translucent halo (2.6 times as wide, a third as bright), about its centre line.
-   The crest (its phase) runs along it: brighter where it passes, fading in the
-   tails between crests. Multiplies, not pow(): this runs for every pixel. */
-void ribbon(vec2 uv, float tau, float y0, float amp, float thick, float strength,
-            vec4 h1, vec4 h2, vec4 h3, float crest, inout vec3 col) {
-    float yc = y0 + amp * wave(uv.x, tau, h1, h2, h3);
-    float d = uv.y - yc;
-    float c1 = d / thick;
-    float c2 = d / (thick * 2.6);
-    float core = exp(-2.5 * c1 * c1);
-    float halo = exp(-1.4 * c2 * c2);
-    float u = 0.5 + 0.5 * cos(TAU * (uv.x - tau) + crest);
-    float along = 0.12 + 0.88 * u * u * u;
-    col += colour.rgb * (core + 0.55 * halo) * along * strength;
-    float core2 = core * core;
-    col += sheen.rgb * (core2 * core2 * core2) * along * strength * 0.6;
+/* Integrate N constant depth slices through a 3D silk sheet.
+   Where neighbouring slices converge (foldSlope -> 0), grazing incidence
+   produces crisp luminous Fresnel caustics along the fold creases. */
+void accumulateSilk(vec2 uv, float tau, float yCenter, float tilt, float amp,
+                    float thick, float seed, float baseStrength, float causticStrength,
+                    out vec3 silkCol) {
+    silkCol = vec3(0.0);
+    const int SLICES = 22;
+    float dz = 1.0 / float(SLICES - 1);
+    float yPrev = silkY(uv.x, 0.0, tau, yCenter, tilt, amp, seed);
+
+    for (int i = 0; i < SLICES; ++i) {
+        float z = float(i) * dz;
+        float yc = (i == 0) ? yPrev : silkY(uv.x, z, tau, yCenter, tilt, amp, seed);
+        float foldSlope = abs(yc - yPrev) / dz;
+        yPrev = yc;
+
+        float d = uv.y - yc;
+        float cBody = d / thick;
+        float cCore = d / (thick * 0.38);
+
+        float veil = exp(-1.35 * cBody * cBody);
+        float crease = exp(-2.8 * cCore * cCore);
+
+        // Grazing-angle caustic spike where the folded sheet goes tangent to view rays
+        float caustic = clamp(0.11 / (0.045 + foldSlope * foldSlope * 1.8), 0.0, 2.2);
+        // Subtle front/back hem accent
+        float hem = (i == 0 || i == SLICES - 1) ? 1.55 : 1.0;
+        // Fade gracefully toward rear depth slices
+        float depthFade = 0.55 + 0.45 * (1.0 - z);
+
+        float along = 0.58 + 0.42 * cos(TAU * (0.85 * uv.x - tau) + z * 2.4 + seed);
+        float w = along * depthFade * dz;
+
+        silkCol += colour.rgb * veil * baseStrength * w;
+        silkCol += mix(colour.rgb, sheen.rgb, 0.78) * crease * caustic * causticStrength * hem * w;
+    }
 }
 
-/* A triangle wave, 0 to 1 with period 1: the cheap stand-in for a sine in the loop. */
-float tri(float x) {
-    return abs(fract(x) * 2.0 - 1.0);
+/* Lighter background veil pass (12 slices) for layered silk depth. */
+void accumulateVeil(vec2 uv, float tau, float yCenter, float tilt, float amp,
+                    float thick, float seed, float baseStrength, float causticStrength,
+                    inout vec3 silkCol) {
+    const int VEIL_SLICES = 12;
+    float dz = 1.0 / float(VEIL_SLICES - 1);
+    float yPrev = silkY(uv.x, 0.0, tau, yCenter, tilt, amp, seed);
+
+    for (int i = 0; i < VEIL_SLICES; ++i) {
+        float z = float(i) * dz;
+        float yc = (i == 0) ? yPrev : silkY(uv.x, z, tau, yCenter, tilt, amp, seed);
+        float foldSlope = abs(yc - yPrev) / dz;
+        yPrev = yc;
+
+        float d = uv.y - yc;
+        float cBody = d / thick;
+        float cCore = d / (thick * 0.44);
+        float veil = exp(-1.2 * cBody * cBody);
+        float crease = exp(-2.4 * cCore * cCore);
+        float caustic = clamp(0.09 / (0.055 + foldSlope * foldSlope * 2.1), 0.0, 1.7);
+        float depthFade = 0.45 + 0.55 * (1.0 - z);
+
+        float w = depthFade * dz;
+        silkCol += colour.rgb * veil * baseStrength * w;
+        silkCol += sheen.rgb * crease * caustic * causticStrength * w;
+    }
 }
 
-/* Faint drifting specks: one candidate per cell, lit for about half of them.
-   Each drifts in a small loop within its cell (kept clear of the edges, so a
-   pixel needs only its own cell) and twinkles; both are whole loops in time. */
-float motes(vec2 px, float cell, float seed, float tau) {
-    vec2 c = floor(px / cell);
-    if (hash12(c + seed) > 0.55) {
+/* Seamless diagonally drifting glitter sparkles (exact periodic wrap). */
+float glitterField(vec2 px, float cell, vec2 wrapCells, vec2 driftCells, float seed, float tau, float orbMode) {
+    vec2 shifted = px - driftCells * cell * tau;
+    vec2 cellIdx = floor(shifted / cell);
+    vec2 wrapped = mod(cellIdx, wrapCells);
+
+    if (hash12(wrapped + seed) > (orbMode > 0.5 ? 0.36 : 0.48)) {
         return 0.0;
     }
-    vec2 h = hash22(c + seed);
-    vec2 drift = vec2(tri(tau + h.x), tri(tau + h.y)) - 0.5;
-    vec2 at = (c + 0.3 + 0.4 * h + 0.3 * drift) * cell;
-    float d = length(px - at);
-    float twinkle = 0.45 + 0.55 * tri(3.0 * tau + 5.0 * h.y);
-    return exp(-d * d / 1.6) * twinkle;
+
+    vec2 h = hash22(wrapped + seed + 7.13);
+    vec2 localPos = (cellIdx + 0.22 + 0.56 * h) * cell;
+    vec2 delta = shifted - localPos;
+    float r = length(delta);
+
+    float shimmer = 0.25 + 0.75 * pow(0.5 + 0.5 * sin(TAU * (2.0 * tau + h.x) + h.y * TAU), 2.5);
+    if (orbMode > 0.5) {
+        // Soft defocused PS3 bokeh orb
+        float rad = mix(2.2, 4.4, h.y);
+        return smoothstep(rad, rad * 0.25, r) * 0.38 * shimmer;
+    }
+
+    // Sharp pinpoint sparkle + subtle 4-point cross flare on brighter motes
+    float core = exp(-r * r / 1.15);
+    float starH = exp(-abs(delta.y) * 2.2) * exp(-abs(delta.x) * 0.38);
+    float starV = exp(-abs(delta.x) * 2.2) * exp(-abs(delta.y) * 0.38);
+    float crossFlare = (h.x > 0.65) ? 0.45 * (starH + starV) : 0.0;
+    return (core + crossFlare) * shimmer;
 }
 
 void main() {
-    vec2 uv = qt_TexCoord0;         // (0, 0) at the top left
+    vec2 uv = qt_TexCoord0; // (0, 0) top-left
     float tau = time / PERIOD;
     float asp = resolution.x / max(resolution.y, 1.0);
 
-    // The backdrop: deep blue at the top, near-black navy at the bottom, with a
-    // faint lift through the middle where the content sits.
-    vec3 col = mix(deep.rgb, NAVY, smoothstep(0.0, 1.0, uv.y));
-    float horizon = (uv.y - 0.6) / 0.3;
-    col += colour.rgb * 0.035 * exp(-horizon * horizon);
+    // Rich PS3 XMB sapphire gradient: bright royal band mid-upper, midnight navy bottom
+    vec3 skyTop = mix(deep.rgb, NAVY, 0.28);
+    vec3 skyMid = mix(colour.rgb * 0.52, deep.rgb, 0.45);
+    vec3 col = mix(skyTop, skyMid, smoothstep(0.0, 0.44, uv.y));
+    col = mix(col, NAVY, smoothstep(0.42, 1.0, uv.y));
 
-    // Three strong ribbons, widest tails first; each has a main drift (m = 1,
-    // n = 1) and two slower harmonics that undulate it.
-    ribbon(uv, tau, 0.34, 0.095, 0.026, 0.25,
-           vec4(1.0, 1.0, 0.0, 0.66), vec4(2.0, 1.0, 1.9, 0.20), vec4(3.0, 2.0, 0.7, 0.07), 0.0, col);
-    ribbon(uv, tau, 0.56, 0.110, 0.024, 0.27,
-           vec4(1.0, 1.0, 2.4, 0.66), vec4(2.0, 3.0, 0.5, 0.20), vec4(3.0, 1.0, 3.6, 0.06), 2.0, col);
-    ribbon(uv, tau, 0.76, 0.085, 0.025, 0.23,
-           vec4(1.0, 1.0, 4.2, 0.66), vec4(2.0, 2.0, 1.1, 0.20), vec4(3.0, 3.0, 0.2, 0.06), 4.0, col);
+    // Soft atmospheric studio bloom behind the silk sheet
+    float bandDiff = (uv.y - (0.54 + 0.08 * (0.5 - uv.x))) / 0.30;
+    col += colour.rgb * 0.14 * exp(-bandDiff * bandDiff);
 
-    // Three faint, broad ribbons between them.
-    ribbon(uv, tau, 0.16, 0.060, 0.050, 0.080,
-           vec4(1.0, 1.0, 1.0, 0.70), vec4(2.0, 2.0, 3.0, 0.30), vec4(3.0, 1.0, 0.5, 0.0), 1.0, col);
-    ribbon(uv, tau, 0.46, 0.070, 0.055, 0.080,
-           vec4(1.0, 1.0, 5.1, 0.70), vec4(2.0, 1.0, 0.8, 0.30), vec4(3.0, 2.0, 2.2, 0.0), 3.0, col);
-    ribbon(uv, tau, 0.90, 0.060, 0.050, 0.080,
-           vec4(1.0, 1.0, 2.9, 0.70), vec4(2.0, 3.0, 4.4, 0.30), vec4(3.0, 1.0, 1.7, 0.0), 5.0, col);
+    // Background counter-rolling chiffon veil + primary caustic silk curtain
+    vec3 silk = vec3(0.0);
+    accumulateSilk(uv, tau, 0.57, 0.095, 0.095, 0.042, 0.40, 0.92, 0.78, silk);
+    accumulateVeil(uv, tau, 0.44, -0.055, 0.075, 0.058, 2.70, 0.42, 0.34, silk);
 
-    // Dust: two layers, the larger ones fainter and slower to read.
+    // Softly roll off overbright caustic overlaps so white XMB text stays crisp
+    silk = silk / (vec3(1.0) + silk * 0.55);
+    col += silk;
+
+    // Firmware 3.00+ floating glitter sparkles + soft bokeh confined mainly to the wave band
+    float waveBand = 0.20 + 0.80 * exp(-bandDiff * bandDiff * 0.85);
     vec2 px = uv * resolution;
-    col += sheen.rgb * (0.22 * motes(px, 46.0, 11.0, tau) + 0.10 * motes(px, 17.0, 29.0, tau));
+    float sparkles = glitterField(px, 34.0, vec2(12.0, 6.0), vec2(12.0, -6.0), 13.0, tau, 0.0);
+    float bokeh = glitterField(px, 68.0, vec2(8.0, 4.0), vec2(8.0, -4.0), 41.0, tau, 1.0);
+    vec3 glitterTint = mix(sheen.rgb, vec3(1.0), 0.45);
+    col += glitterTint * (0.58 * sparkles + 0.34 * bokeh) * waveBand;
 
-    // A subtle vignette, and the night dims everything by about a third.
-    vec2 q = (uv - vec2(0.5, 0.4)) * vec2(asp, 1.0);
-    col *= 1.0 - 0.32 * smoothstep(0.4, 1.0, length(q));
-    col *= 1.0 - 0.32 * nightFactor;
+    // Gentle edge vignette + subtle night mood (keeps XMB silk luminous at night)
+    vec2 q = (uv - vec2(0.5, 0.44)) * vec2(asp, 1.0);
+    col *= 1.0 - 0.24 * smoothstep(0.45, 1.05, length(q));
+    col = mix(col, col * vec3(0.76, 0.82, 0.94), 0.75 * nightFactor);
 
     fragColor = vec4(clamp(col, 0.0, 1.0) * qt_Opacity, qt_Opacity);
 }

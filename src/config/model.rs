@@ -142,7 +142,7 @@ impl Default for MonitorConfig {
             enabled: true,
             allow_topology_retargeting: false,
             min_pct: 15,
-            max_pct: 60,
+            max_pct: 50,
             gain: 1.0,
             transition_gamma: 0.5,
             milestone_adjustments: Vec::new(),

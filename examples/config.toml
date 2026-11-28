@@ -44,7 +44,7 @@ min_write_delta_pct = 1
 # backend = "ddc"
 # enabled = true
 # min_pct = 15
-# max_pct = 60
+# max_pct = 50
 # gain = 1.0
 # connector = "DP-1"
 # ddc_bus = 6
@@ -62,7 +62,7 @@ min_write_delta_pct = 1
 # backend = "backlight"
 # enabled = true
 # min_pct = 15
-# max_pct = 100
+# max_pct = 50
 # gain = 1.0
 # sysfs_path = "/sys/class/backlight/intel_backlight"
 # [[monitors.milestone_adjustments]]

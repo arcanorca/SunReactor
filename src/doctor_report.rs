@@ -28,7 +28,7 @@ const SECRET_KEY_PARTS: &[&str] = &[
 ];
 const COORDINATE_KEYS: &[&str] = &["latitude", "longitude", "lat", "lon", "lng"];
 /// Keys whose value reveals where the user lives or who they are.
-const IDENTIFYING_KEYS: &[&str] = &["city", "user", "username"];
+const IDENTIFYING_KEYS: &[&str] = &["city", "location_city", "user", "username"];
 /// URL query parameter names whose value is dropped.
 const SECRET_QUERY_KEYS: &[&str] = &[
     "key",
@@ -84,7 +84,14 @@ pub fn redact_text(text: &str, ctx: &RedactionContext) -> String {
 /// [`redact_text`] to the result.
 #[must_use]
 pub fn redact_config(text: &str, ctx: &RedactionContext) -> String {
-    let lines: Vec<String> = text.lines().map(redact_key_value_line).collect();
+    let normalized = text
+        .trim_start()
+        .starts_with('{')
+        .then(|| serde_json::from_str::<serde_json::Value>(text).ok())
+        .flatten()
+        .and_then(|val| serde_json::to_string_pretty(&val).ok());
+    let source = normalized.as_deref().unwrap_or(text);
+    let lines: Vec<String> = source.lines().map(redact_key_value_line).collect();
     redact_text(&lines.join("\n"), ctx)
 }
 
@@ -771,5 +778,31 @@ mod tests {
         assert!(report.contains("Could not read config"));
         assert!(report.contains("Reachable. Status"));
         assert!(!report.contains("alice"));
+    }
+
+    #[test]
+    fn daemon_status_location_city_is_redacted() {
+        let inputs = ReportInputs {
+            version: String::from("0.14.2"),
+            git_hash: None,
+            os_release: None,
+            kernel: None,
+            session_type: None,
+            desktop: None,
+            wayland_display: false,
+            doctor_lines: Vec::new(),
+            doctor_healthy: None,
+            discovery_summary: None,
+            discovery_json: None,
+            daemon: DaemonProbe::Status(String::from(
+                "{\"daemon_alive\": true, \"location_city\": \"Istanbul\"}",
+            )),
+            config_path: None,
+            config_text: Err(String::from("none")),
+        };
+        let report = render_report(&inputs, &ctx());
+        assert!(!report.contains("Istanbul"));
+        assert!(report.contains("location_city"));
+        assert!(report.contains(REDACTED));
     }
 }

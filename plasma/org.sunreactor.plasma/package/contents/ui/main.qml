@@ -2,16 +2,19 @@
  * Sun- and weather-adaptive display brightness, as a Plasma widget.
  *
  * The daemon owns the policy; this widget shows what it is doing, lets the
- * user override it, and stays out of the way otherwise.
+ * user override it, and stays out of the way otherwise. Loads the native C++
+ * plugin through DaemonBridge.qml so a KDE Store install without the native
+ * daemon/plugin displays an aesthetic single-shot setup card instead of failing.
  */
 
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
+import org.kde.plasma.extras as PlasmaExtras
 import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
-import org.sunreactor.plasma
 
 import "components"
 import "Icons.js" as Icons
@@ -20,9 +23,17 @@ PlasmoidItem {
     id: root
 
     readonly property string domain: "plasma_applet_org.sunreactor.plasma"
+
+    function tr(msg: string): string {
+        return i18nd(root.domain, msg); // qmllint disable unqualified
+    }
+
+    readonly property bool pluginReady: daemonLoader.status === Loader.Ready && daemonLoader.item !== null
+    readonly property var daemon: pluginReady ? daemonLoader.item.client : null // qmllint disable missing-property
     readonly property bool isDesktop: (Plasmoid.formFactor === PlasmaCore.Types.Planar
                                        || Plasmoid.location === PlasmaCore.Types.Floating)
-        && (!daemon.harnessMode || root.harness.desktopMode === true || root.harness.desktopMode === "true")
+        && (!pluginReady || !daemon.harnessMode // qmllint disable missing-property
+            || root.harness.desktopMode === true || root.harness.desktopMode === "true")
 
     preferredRepresentation: root.isDesktop ? fullRepresentation : null
     Plasmoid.backgroundHints: root.isDesktop
@@ -103,13 +114,31 @@ PlasmoidItem {
         }
     }
 
-    SunReactorClient {
-        id: daemon
+    Loader {
+        id: daemonLoader
 
+        source: Qt.resolvedUrl("DaemonBridge.qml")
+        onStatusChanged: {
+            if (status === Loader.Error) {
+                console.info("SunReactor native C++ plugin not found; showing SetupGuide.");
+            }
+        }
+    }
+
+    Binding {
+        when: root.pluginReady
+        target: root.daemon
+        property: "socketPath"
         // Plasma adds the main.xml configuration key dynamically.
-        socketPath: Plasmoid.configuration.socketPath // qmllint disable missing-property
+        value: Plasmoid.configuration.socketPath // qmllint disable missing-property
+    }
+
+    Binding {
+        when: root.pluginReady
+        target: root.daemon
+        property: "popupOpen"
         // Poll faster while the popup is on screen, or continuously when live on desktop.
-        popupOpen: root.expanded || root.isDesktop
+        value: root.expanded || root.isDesktop
     }
 
     WeatherText {
@@ -121,38 +150,46 @@ PlasmoidItem {
     // sky itself (panel/Sky.qml). Only a paused daemon replaces it, because
     // then the sky is not driving anything.
     Plasmoid.icon: {
-        if (!daemon.isConnected) {
+        if (!root.pluginReady) {
+            return "org.sunreactor.plasma";
+        }
+        if (!root.daemon.isConnected) { // qmllint disable missing-property
             return Icons.themeIcon("", false);
         }
-        if (daemon.isSuspended) {
+        if (root.daemon.isSuspended) { // qmllint disable missing-property
             return "media-playback-pause";
         }
-        if (daemon.hasWeatherReading) {
-            return Icons.themeIcon(daemon.weatherCondition, daemon.weatherIsNight);
+        if (root.daemon.hasWeatherReading) { // qmllint disable missing-property
+            return Icons.themeIcon(root.daemon.weatherCondition, root.daemon.weatherIsNight); // qmllint disable missing-property
         }
-        return Icons.themeIcon("clear", !daemon.isDaylight);
+        return Icons.themeIcon("clear", !root.daemon.isDaylight); // qmllint disable missing-property
     }
 
     // Passive when there is nothing to control: a missing daemon is not an
     // emergency worth pulling the icon out of the system tray for.
-    Plasmoid.status: daemon.isConnected ? PlasmaCore.Types.ActiveStatus : PlasmaCore.Types.PassiveStatus
+    Plasmoid.status: root.pluginReady && root.daemon.isConnected // qmllint disable missing-property
+        ? PlasmaCore.Types.ActiveStatus
+        : PlasmaCore.Types.PassiveStatus
 
     switchWidth: root.isDesktop ? 0 : Kirigami.Units.gridUnit * 12
     switchHeight: root.isDesktop ? 0 : Kirigami.Units.gridUnit * 12
     toolTipTextFormat: Text.PlainText
 
     toolTipMainText: {
-        if (!daemon.isConnected) {
-            return i18nd(root.domain, "Not connected");
+        if (!root.pluginReady) {
+            return root.tr("SunReactor setup needed");
+        }
+        if (!root.daemon.isConnected) { // qmllint disable missing-property
+            return root.tr("Not connected");
         }
 
-        const monitors = daemon.monitors;
+        const monitors = root.daemon.monitors; // qmllint disable missing-property
         if (monitors.length === 1) {
             const only = monitors[0];
             return only.percent >= 0
                 ? i18ndc(root.domain, "Placeholder is a percentage",
                          "Screen brightness at %1%", only.percent)
-                : i18nd(root.domain, "Screen brightness is not known yet");
+                : root.tr("Screen brightness is not known yet");
         }
 
         const lines = [];
@@ -163,95 +200,103 @@ PlasmoidItem {
                 : i18ndc(root.domain, "Placeholder is a display name",
                          "%1 is not known yet", monitor.logicalId));
         }
-        return lines.length > 0 ? lines.join("\n") : i18nd(root.domain, "No displays are configured");
+        return lines.length > 0 ? lines.join("\n") : root.tr("No displays are configured");
     }
 
     toolTipSubText: {
-        if (!daemon.isConnected) {
-            return i18nd(root.domain, "The background service is not answering");
+        if (!root.pluginReady) {
+            return root.tr("Open the widget to copy the one-command installer");
+        }
+        if (!root.daemon.isConnected) { // qmllint disable missing-property
+            return root.tr("The background service is not answering");
         }
 
         const lines = [];
-        switch (daemon.mode) {
-        case SunReactorClient.Paused:
-            lines.push(i18nd(root.domain, "Paused"));
+        switch (root.daemon.mode) { // qmllint disable missing-property
+        case 1: // SunReactorClient.Paused
+            lines.push(root.tr("Paused"));
             break;
-        case SunReactorClient.Manual:
-            lines.push(i18nd(root.domain, "Set by hand"));
+        case 2: // SunReactorClient.Manual
+            lines.push(root.tr("Set by hand"));
             break;
-        case SunReactorClient.IdleDimmed:
-            lines.push(i18nd(root.domain, "Dimmed while idle"));
+        case 3: // SunReactorClient.IdleDimmed
+            lines.push(root.tr("Dimmed while idle"));
             break;
         default:
-            lines.push(i18nd(root.domain, "Following the sun"));
+            lines.push(root.tr("Following the sun"));
             break;
         }
 
-        if (daemon.hasWeatherReading) {
-            lines.push(weatherText.summary(daemon));
+        if (root.daemon.hasWeatherReading) { // qmllint disable missing-property
+            lines.push(weatherText.summary(root.daemon));
         }
 
-        lines.push(daemon.isSuspended
-            ? i18nd(root.domain, "Middle-click to resume")
-            : i18nd(root.domain, "Middle-click to pause"));
+        lines.push(root.daemon.isSuspended // qmllint disable missing-property
+            ? root.tr("Middle-click to resume")
+            : root.tr("Middle-click to pause"));
 
         return lines.join("\n");
     }
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
-            text: daemon.isSuspended
+            text: root.pluginReady && root.daemon.isSuspended // qmllint disable missing-property
                 ? i18ndc(root.domain, "@action:inmenu", "Resume Automatic Brightness")
                 : i18ndc(root.domain, "@action:inmenu", "Pause Automatic Brightness")
-            icon.name: daemon.isSuspended ? "media-playback-start" : "media-playback-pause"
-            enabled: daemon.isConnected
+            icon.name: root.pluginReady && root.daemon.isSuspended ? "media-playback-start" : "media-playback-pause" // qmllint disable missing-property
+            enabled: root.pluginReady && root.daemon.isConnected // qmllint disable missing-property
             onTriggered: {
-                if (daemon.isSuspended) {
-                    daemon.resume();
+                if (!root.pluginReady) {
+                    return;
+                }
+                if (root.daemon.isSuspended) { // qmllint disable missing-property
+                    root.daemon.resume(); // qmllint disable missing-property
                     return;
                 }
                 // Plasma adds the main.xml configuration key dynamically.
                 const minutes = Plasmoid.configuration.defaultSuspendMinutes; // qmllint disable missing-property
-                daemon.suspend(minutes > 0 ? minutes : 60);
+                root.daemon.suspend(minutes > 0 ? minutes : 60); // qmllint disable missing-property
             }
         },
         PlasmaCore.Action {
             text: i18ndc(root.domain, "@action:inmenu", "Switch Back to Automatic")
             icon.name: "edit-undo"
-            visible: daemon.isOverrideActive
-            onTriggered: daemon.clearAllOverrides()
+            visible: root.pluginReady && root.daemon.isOverrideActive // qmllint disable missing-property
+            onTriggered: if (root.pluginReady) root.daemon.clearAllOverrides() // qmllint disable missing-property
         },
         PlasmaCore.Action {
             text: i18ndc(root.domain, "@action:inmenu", "Update Now")
             icon.name: "view-refresh"
-            enabled: daemon.isConnected
-            onTriggered: daemon.runOnce(true)
+            enabled: root.pluginReady && root.daemon.isConnected // qmllint disable missing-property
+            onTriggered: if (root.pluginReady) root.daemon.runOnce(true) // qmllint disable missing-property
         },
         PlasmaCore.Action {
             text: i18ndc(root.domain, "@action:inmenu", "Fetch Weather Again")
             icon.name: "weather-many-clouds"
-            visible: daemon.weatherEnabled
-            onTriggered: daemon.refreshWeather()
+            visible: root.pluginReady && root.daemon.weatherEnabled // qmllint disable missing-property
+            onTriggered: if (root.pluginReady) root.daemon.refreshWeather() // qmllint disable missing-property
         },
         PlasmaCore.Action {
             text: i18ndc(root.domain, "@action:inmenu", "Reload Service Configuration")
             icon.name: "document-revert"
-            enabled: daemon.isConnected
+            enabled: root.pluginReady && root.daemon.isConnected // qmllint disable missing-property
             priority: PlasmaCore.Action.LowPriority
-            onTriggered: daemon.reloadConfig()
+            onTriggered: if (root.pluginReady) root.daemon.reloadConfig() // qmllint disable missing-property
         },
         PlasmaCore.Action {
             text: i18ndc(root.domain, "@action:inmenu", "Open in Terminal…")
             icon.name: "utilities-terminal"
+            visible: root.pluginReady
             priority: PlasmaCore.Action.LowPriority
-            onTriggered: daemon.openTerminal()
+            onTriggered: if (root.pluginReady) root.daemon.openTerminal() // qmllint disable missing-property
         }
     ]
 
-    // Screenshot harness only (tools/shot.sh --config): empty unless
-    // SUNREACTOR_HARNESS is set.
-    Component.onCompleted: {
-        const overrides = daemon.harnessConfig();
+    function applyHarnessOverrides(): void {
+        if (!root.pluginReady || !root.daemon) {
+            return;
+        }
+        const overrides = root.daemon.harnessConfig(); // qmllint disable missing-property
         for (const key of Object.keys(overrides)) {
             if (Plasmoid.configuration[key] !== undefined) {
                 Plasmoid.configuration[key] = overrides[key];
@@ -259,12 +304,11 @@ PlasmoidItem {
         }
     }
 
-    // Nest harness only (tools/nest/run.sh): empty unless SUNREACTOR_HARNESS is
-    // set, and then only the steps the config asks for. The script starts at
-    // load: open=1 expands the popup openDelay ms after load (default 1200);
-    // tabs=weather,brightness switches its page every 1500 ms after that;
-    // reopen=1 then collapses and expands it again, 1500 ms apart.
-    readonly property var harness: daemon.harnessConfig()
+    onPluginReadyChanged: applyHarnessOverrides()
+    Component.onCompleted: applyHarnessOverrides()
+
+    // Screenshot / Nest harness config (empty unless SUNREACTOR_HARNESS is set).
+    readonly property var harness: root.pluginReady && root.daemon ? root.daemon.harnessConfig() : ({}) // qmllint disable missing-property
     readonly property var harnessScript: {
         const steps = [];
         if (!root.harness.open) {
@@ -282,8 +326,6 @@ PlasmoidItem {
         return steps;
     }
 
-    // The popup's window geometry, logged on every change. KWin does not list a
-    // Plasma popup (it is a Wayland popup surface), so the nest reads it here.
     property string harnessLast: ""
 
     Timer {
@@ -305,7 +347,6 @@ PlasmoidItem {
 
     function harnessShowPage(page: string): void {
         const item = root.fullRepresentationItem;
-        // Plasma exposes the FullRepresentation as a generic QQuickItem.
         if (item && typeof item.showPage === "function") { // qmllint disable missing-property
             item.showPage(page); // qmllint disable missing-property
         }
@@ -328,26 +369,192 @@ PlasmoidItem {
         }
     }
 
-    compactRepresentation: CompactRepresentation {
-        plasmoidItem: root
-        client: daemon
+    compactRepresentation: Item {
+        id: compactShell
+
+        readonly property Item loadedCompact: compactLoader.item as Item
+
+        Layout.minimumWidth: loadedCompact ? loadedCompact.Layout.minimumWidth : Kirigami.Units.iconSizes.medium
+        Layout.preferredWidth: loadedCompact ? loadedCompact.Layout.preferredWidth : Kirigami.Units.iconSizes.medium
+        Layout.maximumWidth: loadedCompact ? loadedCompact.Layout.maximumWidth : Number.POSITIVE_INFINITY
+        Layout.minimumHeight: loadedCompact ? loadedCompact.Layout.minimumHeight : Kirigami.Units.iconSizes.medium
+        Layout.preferredHeight: loadedCompact ? loadedCompact.Layout.preferredHeight : Kirigami.Units.iconSizes.medium
+        Layout.maximumHeight: loadedCompact ? loadedCompact.Layout.maximumHeight : Number.POSITIVE_INFINITY
+
+        Loader {
+            id: compactLoader
+
+            anchors.fill: parent
+            active: root.pluginReady
+
+            function loadCompact(): void {
+                if (active && root.daemon) {
+                    setSource(Qt.resolvedUrl("CompactRepresentation.qml"), {
+                        plasmoidItem: root,
+                        client: root.daemon,
+                    });
+                } else {
+                    source = "";
+                }
+            }
+
+            onActiveChanged: loadCompact()
+            Component.onCompleted: loadCompact()
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            visible: !root.pluginReady
+            acceptedButtons: Qt.LeftButton
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.expanded = !root.expanded
+
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                width: Math.min(parent.width, parent.height, Kirigami.Units.iconSizes.medium)
+                height: width
+                source: "org.sunreactor.plasma"
+            }
+        }
     }
 
     Component {
         id: popupRep
 
-        FullRepresentation {
-            client: daemon
+        Item {
+            id: popupShell
+
+            readonly property bool collapseMarginsHint: true
+            readonly property Item loadedPopup: popupLoader.item as Item
+            readonly property var client: loadedPopup ? loadedPopup.client : root.daemon // qmllint disable missing-property
+            readonly property var theme: loadedPopup ? loadedPopup.theme : null // qmllint disable missing-property
+            readonly property var harness: loadedPopup ? loadedPopup.harness : root.harness // qmllint disable missing-property
+            readonly property Item contentItem: loadedPopup ? loadedPopup.contentItem : null // qmllint disable missing-property
+            readonly property Item footer: loadedPopup ? loadedPopup.footer : null // qmllint disable missing-property
+            readonly property string shownPage: loadedPopup ? loadedPopup.shownPage : "" // qmllint disable missing-property
+            readonly property string currentPage: loadedPopup ? loadedPopup.currentPage : "" // qmllint disable missing-property
+            readonly property bool tabsShown: loadedPopup ? loadedPopup.tabsShown : false // qmllint disable missing-property
+            readonly property real popupHeight: loadedPopup ? loadedPopup.popupHeight : height // qmllint disable missing-property
+            readonly property real popupMaxHeight: loadedPopup ? loadedPopup.popupMaxHeight : height // qmllint disable missing-property
+            readonly property bool popupHovered: loadedPopup ? loadedPopup.popupHovered : false // qmllint disable missing-property
+            readonly property int activePopupMenus: loadedPopup ? loadedPopup.activePopupMenus : 0 // qmllint disable missing-property
+            readonly property var harnessWindow: loadedPopup ? loadedPopup.harnessWindow : null // qmllint disable missing-property
+
+            function showPage(page: string): void {
+                if (popupLoader.item && typeof popupLoader.item.showPage === "function") { // qmllint disable missing-property
+                    popupLoader.item.showPage(page); // qmllint disable missing-property
+                }
+            }
+
+            function closePopups(): void {
+                if (popupLoader.item && typeof popupLoader.item.closePopups === "function") { // qmllint disable missing-property
+                    popupLoader.item.closePopups(); // qmllint disable missing-property
+                }
+            }
+
+            Layout.minimumWidth: loadedPopup ? loadedPopup.Layout.minimumWidth : Kirigami.Units.gridUnit * 16
+            Layout.preferredWidth: loadedPopup ? loadedPopup.Layout.preferredWidth : Kirigami.Units.gridUnit * 19
+            Layout.maximumWidth: loadedPopup ? loadedPopup.Layout.maximumWidth : Kirigami.Units.gridUnit * 40
+            Layout.minimumHeight: loadedPopup ? loadedPopup.Layout.minimumHeight : Kirigami.Units.gridUnit * 14
+            Layout.preferredHeight: loadedPopup ? loadedPopup.Layout.preferredHeight : Kirigami.Units.gridUnit * 20
+            Layout.maximumHeight: loadedPopup ? loadedPopup.Layout.maximumHeight : Kirigami.Units.gridUnit * 34
+
+            Loader {
+                id: popupLoader
+
+                anchors.fill: parent
+                active: root.pluginReady
+
+                function loadPopup(): void {
+                    if (active && root.daemon) {
+                        setSource(Qt.resolvedUrl("FullRepresentation.qml"), {
+                            client: root.daemon,
+                        });
+                    } else {
+                        source = "";
+                    }
+                }
+
+                onActiveChanged: loadPopup()
+                Component.onCompleted: loadPopup()
+            }
         }
     }
 
     Component {
         id: desktopRep
 
-        DesktopRepresentation {
-            client: daemon
+        Item {
+            id: desktopShell
+
+            readonly property Item loadedDesktop: desktopLoader.item as Item
+            readonly property var client: loadedDesktop ? loadedDesktop.client : root.daemon // qmllint disable missing-property
+            readonly property var theme: loadedDesktop ? loadedDesktop.theme : null // qmllint disable missing-property
+            readonly property var harness: loadedDesktop ? loadedDesktop.harness : root.harness // qmllint disable missing-property
+            readonly property bool popupHovered: loadedDesktop ? loadedDesktop.popupHovered : false // qmllint disable missing-property
+            readonly property int activePopupMenus: loadedDesktop ? loadedDesktop.activePopupMenus : 0 // qmllint disable missing-property
+            readonly property var harnessWindow: loadedDesktop ? loadedDesktop.harnessWindow : null // qmllint disable missing-property
+
+            function showPage(page: string): void {
+                if (desktopLoader.item && typeof desktopLoader.item.showPage === "function") { // qmllint disable missing-property
+                    desktopLoader.item.showPage(page); // qmllint disable missing-property
+                }
+            }
+
+            function closePopups(): void {
+                if (desktopLoader.item && typeof desktopLoader.item.closePopups === "function") { // qmllint disable missing-property
+                    desktopLoader.item.closePopups(); // qmllint disable missing-property
+                }
+            }
+
+            Layout.minimumWidth: loadedDesktop ? loadedDesktop.Layout.minimumWidth : Kirigami.Units.gridUnit * 10
+            Layout.preferredWidth: loadedDesktop ? loadedDesktop.Layout.preferredWidth : Kirigami.Units.gridUnit * 19
+            Layout.maximumWidth: Number.POSITIVE_INFINITY
+            Layout.minimumHeight: loadedDesktop ? loadedDesktop.Layout.minimumHeight : Kirigami.Units.gridUnit * 10
+            Layout.preferredHeight: loadedDesktop ? loadedDesktop.Layout.preferredHeight : Kirigami.Units.gridUnit * 20
+            Layout.maximumHeight: Number.POSITIVE_INFINITY
+
+            Loader {
+                id: desktopLoader
+
+                anchors.fill: parent
+                active: root.pluginReady
+
+                function loadDesktop(): void {
+                    if (active && root.daemon) {
+                        setSource(Qt.resolvedUrl("DesktopRepresentation.qml"), {
+                            client: root.daemon,
+                        });
+                    } else {
+                        source = "";
+                    }
+                }
+
+                onActiveChanged: loadDesktop()
+                Component.onCompleted: loadDesktop()
+            }
         }
     }
 
-    fullRepresentation: root.isDesktop ? desktopRep : popupRep
+    Component {
+        id: missingPluginRep
+
+        PlasmaExtras.Representation {
+            Layout.minimumWidth: Kirigami.Units.gridUnit * 18
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 21
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 28
+            Layout.minimumHeight: guide.implicitHeight + 2 * Kirigami.Units.largeSpacing
+            Layout.preferredHeight: guide.implicitHeight + 2 * Kirigami.Units.largeSpacing
+
+            contentItem: SetupGuide {
+                id: guide
+
+                anchors.margins: Kirigami.Units.largeSpacing
+                pluginMissing: true
+                domain: root.domain
+            }
+        }
+    }
+
+    fullRepresentation: !root.pluginReady ? missingPluginRep : (root.isDesktop ? desktopRep : popupRep)
 }

@@ -116,10 +116,24 @@ Item {
                 maximumArtWidth: Math.max(8, panel.contentWidth - x)
             }
             PixelLabel {
+                id: cityText
+                visible: root.client.locationCity.length > 0 && panel.contentWidth > 0
+                theme: root.theme
+                x: 0
+                y: Math.max(sprite.height, temp.y + temp.height, conditionText.y + conditionText.artHeight) + 1
+                text: root.client.locationCity
+                face: pstyle.bodyFace
+                color: pstyle.ink
+                maximumArtWidth: Math.max(1, panel.contentWidth)
+                maximumLines: 1
+            }
+            PixelLabel {
                 id: effectText
                 theme: root.theme
                 x: 0
-                y: Math.max(sprite.height, temp.height) + 1
+                y: cityText.visible
+                    ? cityText.y + cityText.artHeight + 1
+                    : Math.max(sprite.height, temp.height) + 1
                 text: root.effect
                 face: pstyle.bodyFace
                 color: pstyle.dim

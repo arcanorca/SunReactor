@@ -42,7 +42,7 @@ Item {
     clip: true
 
     /*! Seconds for one loop. shaders/xmb.frag has the same PERIOD. */
-    readonly property real period: 40
+    readonly property real period: 24
     /*! The desktop's animation speed. Kirigami reports 1 ms, not 0, when it is
         "instant": that keeps the frame still. */
     readonly property bool motion: Kirigami.Units.longDuration > 1
@@ -51,31 +51,23 @@ Item {
         const v = Number(root.harness ? root.harness.motion_t : undefined);
         return Number.isFinite(v) && v >= 0 && v < 1 ? v : -1;
     }
-    /*! The popup is on screen: shown, and not hidden or minimised. */
+    /*! The popup is on screen: shown, and not hidden or minimised.
+        Wayland PopupPlasmaWindow may leave Window.visibility as Hidden while
+        Window.window.visible is true, so gate on Window.window.visible. */
     readonly property bool shown: visible && Window.window !== null
-        && Window.visibility !== Window.Hidden && Window.visibility !== Window.Minimized
+        && Window.window.visible && Window.visibility !== Window.Minimized
     readonly property bool playing: motion && frozenPhase < 0 && shown
 
-    /*! Seconds into the loop: advanced by the frame timer while playing. */
+    /*! Seconds into the loop: advanced by FrameAnimation at monitor refresh rate while playing. */
     property real clockTime: 0
     readonly property real time: frozenPhase >= 0 ? frozenPhase * period : clockTime
 
-    Timer {
+    FrameAnimation {
         id: frames
 
-        /*! 30 frames a second. */
-        interval: 33
-        repeat: true
         running: root.playing
-
-        property double last: 0
-
-        onRunningChanged: last = Date.now()
         onTriggered: {
-            const now = Date.now();
-            // A late tick moves the picture by the time it really took, at most 0.1 s.
-            const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
-            last = now;
+            const dt = Math.min(0.05, Math.max(0, frameTime));
             root.clockTime = (root.clockTime + dt) % root.period;
         }
     }
@@ -175,9 +167,6 @@ Item {
     ShaderEffect {
         id: wave
 
-        /*! The device pixel ratio of the window this is in (1 when it has none). */
-        readonly property real dpr: Window.window ? Window.window.devicePixelRatio : 1
-
         anchors.fill: parent
         // Drawn only once compiled: until then, or where it cannot compile, the backdrop shows.
         visible: status === ShaderEffect.Compiled
@@ -189,10 +178,5 @@ Item {
         property color sheen: root.sheenTint
         property color deep: root.deepTint
         property real nightFactor: root.nightFactor
-
-        layer.enabled: true
-        layer.smooth: true
-        layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr / 2)),
-                                   Math.max(1, Math.round(height * dpr / 2)))
     }
 }

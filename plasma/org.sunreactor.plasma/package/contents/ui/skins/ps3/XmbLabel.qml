@@ -47,11 +47,14 @@ FocusScope {
         textFormat: Text.PlainText
         font: root.textFont
         color: root.selected || root.activeFocus || hover.containsMouse ? root.style.ink : root.style.inkDim
+        style: Text.Raised
+        styleColor: root.style.textShadow
     }
 
     // The underline: a soft glow with a bright hairline on top, under the selected word.
     Rectangle {
-        visible: root.selected
+        visible: opacity > 0.01
+        opacity: root.selected ? 1.0 : 0.0
         anchors.left: label.left
         anchors.right: label.right
         anchors.top: label.bottom
@@ -59,6 +62,11 @@ FocusScope {
         height: root.style.snap(root.style.line2 * 3)
         radius: height / 2
         color: root.style.alpha(root.style.ink, 0.18)
+
+        Behavior on opacity {
+            enabled: root.style.animateUi
+            NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+        }
     }
     Rectangle {
         visible: root.selected || root.activeFocus

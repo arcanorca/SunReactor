@@ -103,6 +103,8 @@ ColumnLayout {
                     textFormat: Text.PlainText
                     font: root.style.heroFont
                     color: root.style.ink
+                    style: Text.Raised
+                    styleColor: root.style.textShadow
                 }
 
                 Text {
@@ -138,6 +140,8 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 font: root.style.valueFont
                 color: root.style.ink
+                style: Text.Raised
+                styleColor: root.style.textShadow
             }
 
             // The displays: a short name each, the plotted one bright.

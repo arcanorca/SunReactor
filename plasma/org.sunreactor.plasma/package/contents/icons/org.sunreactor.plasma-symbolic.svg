@@ -5,35 +5,14 @@
     <style type="text/css" id="current-color-scheme">
       .ColorScheme-Text { color: #232629; }
     </style>
-    <clipPath id="symL"><polygon points="0,0 12.6,0 9.4,22 0,22"/></clipPath>
-    <clipPath id="symR"><polygon points="12.6,0 22,0 22,22 9.4,22"/></clipPath>
-    <mask id="symMask">
-      <rect width="22" height="22" fill="#ffffff"/>
-      <!-- Shades & smile cut cleanly on the sunlit half -->
-      <path d="M4.6 8.2H11.5V9.8H10.2V11.8H6V9.8H4.6Z" fill="#000000" clip-path="url(#symL)"/>
-      <path d="M8.3 14.3Q11 15.9 13.7 14.3" fill="none" stroke="#000000" stroke-width="1.2" stroke-linecap="round" clip-path="url(#symL)"/>
-    </mask>
-    <g id="symGear" transform="rotate(8.28 11 11)">
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(22.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(67.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(112.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(157.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(202.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(247.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(292.5 11 11)"/>
-      <rect x="9.7" y="1.8" width="2.6" height="3.4" rx="0.8" transform="rotate(337.5 11 11)"/>
-      <circle cx="11" cy="11" r="6.7"/>
-    </g>
   </defs>
   <g class="ColorScheme-Text" fill="currentColor">
-    <!-- Left angled half: solid sunlit gear with shades & smile -->
-    <use href="#symGear" clip-path="url(#symL)" mask="url(#symMask)"/>
-    <!-- Right angled half: clean outlined crescent-rim night half + star -->
-    <g clip-path="url(#symR)">
-      <use href="#symGear" fill="none" stroke="currentColor" stroke-width="1.35"/>
-      <path d="M12.6 10.6Q14.1 11.8 15.6 10.6" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round"/>
-      <path d="M11 15.1Q12.6 15.1 13.7 14.3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-    </g>
+    <!-- Left angled half: solid sunlit gear with shades & smile cut out via evenodd (no clipPath/mask) -->
+    <path fill-rule="evenodd" d="M10.04 17.63A6.70 6.70 0 0 1 8.75 17.31L7.82 18.88A0.80 0.80 0 0 1 6.72 19.16L5.86 18.65A0.80 0.80 0 0 1 5.58 17.55L6.52 15.98A6.70 6.70 0 0 1 4.95 13.88L3.18 14.32A0.80 0.80 0 0 1 2.20 13.75L1.96 12.78A0.80 0.80 0 0 1 2.54 11.80L4.31 11.35A6.70 6.70 0 0 1 4.69 8.75L3.12 7.82A0.80 0.80 0 0 1 2.84 6.72L3.35 5.86A0.80 0.80 0 0 1 4.45 5.58L6.02 6.52A6.70 6.70 0 0 1 8.12 4.95L7.68 3.18A0.80 0.80 0 0 1 8.25 2.20L9.22 1.96A0.80 0.80 0 0 1 10.20 2.54L10.65 4.31A6.70 6.70 0 0 1 11.96 4.37ZM4.6 8.2H11.20L10.98 9.8H10.2V11.8H6V9.8H4.6ZM8.61 13.78A0.60 0.60 0 0 0 7.99 14.82L8.18 14.93L8.38 15.03L8.57 15.12L8.76 15.21L8.96 15.29L9.15 15.37L9.35 15.43L9.54 15.49L9.74 15.55L9.94 15.59L10.13 15.63L10.17 15.66L10.35 14.47L10.33 14.44L10.18 14.41L10.02 14.38L9.87 14.34L9.71 14.29L9.56 14.24L9.40 14.18L9.24 14.11L9.09 14.04L8.93 13.96L8.77 13.88Z"/>
+    <!-- Right angled half: clean outlined crescent-rim night half + eye + smile + star -->
+    <path d="M11.96 4.37A6.70 6.70 0 0 1 13.25 4.69L14.18 3.12A0.80 0.80 0 0 1 15.28 2.84L16.14 3.35A0.80 0.80 0 0 1 16.42 4.45L15.48 6.02A6.70 6.70 0 0 1 17.05 8.12L18.82 7.68A0.80 0.80 0 0 1 19.80 8.25L20.04 9.22A0.80 0.80 0 0 1 19.46 10.20L17.69 10.65A6.70 6.70 0 0 1 17.31 13.25L18.88 14.18A0.80 0.80 0 0 1 19.16 15.28L18.65 16.14A0.80 0.80 0 0 1 17.55 16.42L15.98 15.48A6.70 6.70 0 0 1 13.88 17.05L14.32 18.82A0.80 0.80 0 0 1 13.75 19.80L12.78 20.04A0.80 0.80 0 0 1 11.80 19.46L11.35 17.69A6.70 6.70 0 0 1 10.04 17.63" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12.6 10.6Q14.1 11.8 15.6 10.6" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round"/>
+    <path d="M10.41 15.06Q12.55 15.05 13.7 14.3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
     <path d="M18.6 2.2L19.1 3.4L20.3 3.9L19.1 4.4L18.6 5.6L18.1 4.4L16.9 3.9L18.1 3.4Z"/>
   </g>
 </svg>

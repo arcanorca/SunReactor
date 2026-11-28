@@ -71,8 +71,11 @@ Item {
 
             C64Text {
                 ink: style.ink
-                text: "LOAD \"WEATHER\",8,1"
+                text: root.client.locationCity.length > 0
+                    ? "LOAD \"" + root.client.locationCity.toUpperCase() + "\",8,1"
+                    : "LOAD \"WEATHER\",8,1"
                 maximumArtWidth: body.width
+                maximumLines: 1
             }
 
             Row {

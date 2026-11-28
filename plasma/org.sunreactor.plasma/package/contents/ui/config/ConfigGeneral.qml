@@ -41,6 +41,9 @@ KCM.SimpleKCM {
     property var cfg_moduleOrder: []
     property var cfg_hiddenModules: []
     property bool cfg_xboxDarkMode: false
+    property bool cfg_nothingLightMode: false
+    property bool cfg_macosLightMode: false
+    property bool cfg_braunLightMode: false
     property string cfg_panelMode: "sky"
     property string cfg_panelDisplay: ""
 
@@ -62,6 +65,9 @@ KCM.SimpleKCM {
     property var cfg_moduleOrderDefault: []
     property var cfg_hiddenModulesDefault: ["telemetry"]
     property bool cfg_xboxDarkModeDefault: false
+    property bool cfg_nothingLightModeDefault: false
+    property bool cfg_macosLightModeDefault: false
+    property bool cfg_braunLightModeDefault: false
     property string cfg_panelModeDefault: "sky"
     property string cfg_panelDisplayDefault: ""
 

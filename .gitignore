@@ -1,6 +1,7 @@
 # Build artifacts
 /target/
 /releases/
+/dist/
 # CMake and other out-of-tree build trees (any depth)
 build/
 

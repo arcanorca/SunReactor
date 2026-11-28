@@ -123,6 +123,7 @@ impl DaemonRuntime {
             theme: Some(ipc::ThemeStatus::from_theme(&self.config.tui_theme)),
             theme_warning: self.config.tui_theme_warning.clone(),
             temperature_unit: Some(self.config.tui_temperature_unit),
+            location_city: self.config.location_city.clone(),
         }
     }
 

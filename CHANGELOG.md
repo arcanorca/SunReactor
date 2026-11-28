@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.3] - 2026-11-28
+
+### Added
+- **In-skin Light / Dark mode toggles**: Added Ceramic Light / OLED Dark switch + 48 light-surface weather/solar sprites to `nothing`, Sonoma/Sequoia Light Control Center switch to `macos`, and Warm Cream / Matte Black micro-switch to `braun`.
+- **Weather city display (`location_city`)**: Exposed configured city over IPC (`StatusResponse.location_city`, `SunReactorClient.locationCity`) and rendered it across all 17 KDE Plasma Weather views in each skin's native typography.
+- **KDE Store `.plasmoid` packager & embedded onboarding**: Added [scripts/package-kdestore.sh](scripts/package-kdestore.sh) (`dist/org.sunreactor.plasma-v*.plasmoid` + `KDE_STORE_DESCRIPTION.md`), `SetupGuide.qml` 1-click Copy installation cards inside the widget, and `DaemonBridge.qml` dynamic plugin loading so installs without `libsunreactorplugin.so` degrade gracefully instead of erroring.
+
+### Changed & Fixed
+- **PlayStation 3 XMB (`ps3`)**: Rewrote `xmb.frag` with a 2-layer 3D Fresnel-caustic silk curtain and smoothly wrapping glitter/bokeh particles (`PERIOD = 24.0`), fixed Wayland `PopupPlasmaWindow` visibility gating with Qt 6 `FrameAnimation` at native DPR, and added soft category glows + raised text legibility shadows.
+- **KDE widget icons**: Rewrote `org.sunreactor.plasma.svg` and `-symbolic.svg` with pure SVG Tiny 1.2 contours (no `<clipPath>`, `<mask>`, or `<use>`) so `QtSvg` (`KIconLoader` / `Kirigami.Icon`) renders the sun yellow and night indigo halves identically to `librsvg`.
+- **Layout & defaults**: Added bottom breathing spacing on the Plasma Weather tab, aligned the `nothing` panel preview size with other themes, and raised safe first-run monitor brightness defaults to `min_pct = 15`, `max_pct = 50`.
+- **Security & installer hardening**: Redacted `location_city` and minified JSON objects in `sunreactorctl doctor --report`, rejected tar symlinks/hardlinks when `install.sh` fetches Plasma source archives, refreshed KDE icon caches on install, and cleaned up repository docs (`docs/archive/`).
+
 ## [0.14.2] - 2026-11-27
 
 ### Added

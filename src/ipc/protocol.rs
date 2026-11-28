@@ -327,6 +327,10 @@ pub struct StatusResponse {
     /// `None` only when an older daemon predates this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature_unit: Option<TemperatureUnit>,
+    /// Optional configured city display name (`location.city`).
+    /// Omitted when empty or not configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_city: Option<String>,
 }
 
 /// A resolved theme as sent in `status.theme` and the `theme` response.
@@ -799,6 +803,7 @@ mod tests {
             theme: None,
             theme_warning: Some(String::from("fallback")),
             temperature_unit: Some(TemperatureUnit::Fahrenheit),
+            location_city: Some(String::from("Istanbul")),
         }
     }
 
@@ -940,7 +945,7 @@ mod tests {
         let expected = [
             r#"{"version":1,"response":"pong","message":"pong"}"#,
             r#"{"version":1,"response":"ack","message":"done"}"#,
-            r#"{"version":1,"response":"status","status":{"daemon_alive":true,"config_path":"/c.toml","tick_seconds":60,"dry_run":false,"suspended":true,"desktop_idle_dimmed":false,"suspend_until_epoch_s":7,"manual_override_active":false,"per_monitor_override_until_epoch_s":null,"global_override_percent":30,"global_override_until_epoch_s":null,"configured_monitors":1,"stateful_monitors":1,"weather":{"enabled":false,"cloud_dimming_percent":0,"state":"disabled","active":false,"stale":false,"provider":null,"fetched_at_epoch_s":null,"valid_at_epoch_s":null,"source_kind":null,"last_refresh_attempt_epoch_s":null,"next_refresh_at_epoch_s":null,"consecutive_failures":0,"last_error":null,"cloud_cover_percent":null,"temperature":null,"condition":"unknown","condition_description":null,"day_phase":null,"forecast":[],"multiplier":null,"details":{"feels_like":null,"humidity_percent":null,"pressure_hpa":null,"wind_speed_mps":null,"wind_direction_deg":null,"visibility_m":null,"precipitation_percent":null,"air_quality":null}},"monitors":[{"logical_id":"desk","backend":"ddc","enabled":true,"override_percent":null,"last_applied_percent":50,"last_applied_at_epoch_s":3,"backoff_until_epoch_s":null,"topology":"ddc","min_pct":1,"max_pct":99,"external_hold":{"remaining_s":60,"observed_percent":22},"writes":{"writes_total":17,"window_used":3,"window_max":12,"window_seconds":600,"deferred":false}}],"solar_elevation":12.5,"now_epoch_s":100,"sunrise_epoch_s":1,"sunset_epoch_s":null,"lunar_phase":"full_moon","theme_warning":"fallback","temperature_unit":"fahrenheit"}}"#,
+            r#"{"version":1,"response":"status","status":{"daemon_alive":true,"config_path":"/c.toml","tick_seconds":60,"dry_run":false,"suspended":true,"desktop_idle_dimmed":false,"suspend_until_epoch_s":7,"manual_override_active":false,"per_monitor_override_until_epoch_s":null,"global_override_percent":30,"global_override_until_epoch_s":null,"configured_monitors":1,"stateful_monitors":1,"weather":{"enabled":false,"cloud_dimming_percent":0,"state":"disabled","active":false,"stale":false,"provider":null,"fetched_at_epoch_s":null,"valid_at_epoch_s":null,"source_kind":null,"last_refresh_attempt_epoch_s":null,"next_refresh_at_epoch_s":null,"consecutive_failures":0,"last_error":null,"cloud_cover_percent":null,"temperature":null,"condition":"unknown","condition_description":null,"day_phase":null,"forecast":[],"multiplier":null,"details":{"feels_like":null,"humidity_percent":null,"pressure_hpa":null,"wind_speed_mps":null,"wind_direction_deg":null,"visibility_m":null,"precipitation_percent":null,"air_quality":null}},"monitors":[{"logical_id":"desk","backend":"ddc","enabled":true,"override_percent":null,"last_applied_percent":50,"last_applied_at_epoch_s":3,"backoff_until_epoch_s":null,"topology":"ddc","min_pct":1,"max_pct":99,"external_hold":{"remaining_s":60,"observed_percent":22},"writes":{"writes_total":17,"window_used":3,"window_max":12,"window_seconds":600,"deferred":false}}],"solar_elevation":12.5,"now_epoch_s":100,"sunrise_epoch_s":1,"sunset_epoch_s":null,"lunar_phase":"full_moon","theme_warning":"fallback","temperature_unit":"fahrenheit","location_city":"Istanbul"}}"#,
             r#"{"version":1,"response":"run_once","run_once":{"tick_duration_ms":0,"monitors_evaluated":0,"writes_attempted":0,"writes_skipped":0,"writes_succeeded":0,"writes_failed":0,"queued":true},"message":"daemon tick queued"}"#,
             r##"{"version":1,"response":"themes","themes":[{"id":"nord","name":"Nord","family":"terminal","bg":"#000000","fg":"#ffffff","accent":"#111111","secondary_accent":"#222222"}]}"##,
             r##"{"version":1,"response":"theme","theme":{"name":"Amber","accent":"#ffb000","secondary_accent":"#dc8c00","bg":"#0f0a05","fg":"#ffd296","text_muted":"#b47832","id":"amber","palette":{"bg":"","fg":"","accent":"","secondary_accent":"","border_active":"","border_inactive":"","text_muted":"","success":"","warning":"","error":""},"widget":{"renderer":"","font":"","pixel_scale":0,"shades":[],"density":"","border":"","radius":0,"dither":"","glow":0.0,"modules":[]}}}"##,
@@ -1118,6 +1123,7 @@ mod tests {
             panic!("status expected");
         };
         assert!(status.temperature_unit.is_none());
+        assert!(status.location_city.is_none());
         let theme = status.theme.unwrap();
         assert_eq!(theme.name, "Amber");
         assert!(theme.id.is_none() && theme.palette.is_none() && theme.widget.is_none());

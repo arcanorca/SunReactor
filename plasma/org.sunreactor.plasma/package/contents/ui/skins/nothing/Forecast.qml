@@ -106,6 +106,8 @@ Rectangle {
                         NothingIcon {
                             anchors.centerIn: parent
                             theme: root.theme
+                            surface: root.style.surface
+                            ink: root.style.ink
                             size: root.style.snap(root.style.unit * 1.9)
                             condition: slot.modelData.condition
                             night: slot.modelData.isNight

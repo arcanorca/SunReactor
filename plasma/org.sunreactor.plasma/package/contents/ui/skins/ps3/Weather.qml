@@ -89,6 +89,8 @@ ColumnLayout {
                         textFormat: Text.PlainText
                         font: root.style.heroFont
                         color: root.style.ink
+                        style: Text.Raised
+                        styleColor: root.style.textShadow
                         lineHeightMode: Text.FixedHeight
                         lineHeight: root.style.sizeHero
                     }
@@ -129,6 +131,20 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 font: root.style.labelFont
                 color: root.client.hasWeatherReading ? root.style.ink : root.style.inkSoft
+                style: Text.Raised
+                styleColor: root.style.textShadow
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: root.client.locationCity.length > 0
+                text: root.client.locationCity
+                textFormat: Text.PlainText
+                font: root.style.legendFont
+                color: root.style.inkSoft
+                style: Text.Raised
+                styleColor: root.style.textShadow
                 elide: Text.ElideRight
             }
         }

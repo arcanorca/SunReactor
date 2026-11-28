@@ -129,7 +129,9 @@ Item {
         theme: root.theme
         width: root.width
         regionName: "weather"
-        title: i18nd(root.domain, "Current conditions")
+        title: root.client.locationCity.length > 0
+            ? i18ndc(root.domain, "City weather section title", "Weather · %1", root.client.locationCity)
+            : i18nd(root.domain, "Current conditions")
         rightRuns: {
             const t = root.theme;
             if (!root.client.hasWeatherReading) {

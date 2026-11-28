@@ -122,23 +122,38 @@ ColumnLayout {
                 }
             }
 
-            Text {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                text: {
-                    if (!root.client.hasWeatherReading) {
-                        return root.stateNote;
-                    }
-                    const condition = weatherText.conditionLabel(root.client.weatherCondition)
-                        || i18nd(root.domain, "No weather reading");
-                    return root.effectText.length > 0 ? condition + " · " + root.effectText : condition;
+                spacing: 1
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.client.locationCity.length > 0
+                    text: root.client.locationCity
+                    textFormat: Text.PlainText
+                    font: root.style.captionBoldFont
+                    color: root.style.weatherBlue
+                    elide: Text.ElideRight
                 }
-                textFormat: Text.PlainText
-                wrapMode: Text.WordWrap
-                maximumLineCount: 2
-                font: root.style.bodyBoldFont
-                color: root.client.hasWeatherReading ? root.style.ink : root.style.muted
-                elide: Text.ElideRight
+
+                Text {
+                    Layout.fillWidth: true
+                    text: {
+                        if (!root.client.hasWeatherReading) {
+                            return root.stateNote;
+                        }
+                        const condition = weatherText.conditionLabel(root.client.weatherCondition)
+                            || i18nd(root.domain, "No weather reading");
+                        return root.effectText.length > 0 ? condition + " · " + root.effectText : condition;
+                    }
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    font: root.style.bodyBoldFont
+                    color: root.client.hasWeatherReading ? root.style.ink : root.style.muted
+                    elide: Text.ElideRight
+                }
             }
         }
     }

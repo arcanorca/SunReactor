@@ -113,6 +113,8 @@ private:
     Q_PROPERTY(QVariantList forecast READ forecast NOTIFY forecastChanged)
     /*! Secondary readings; keys are absent when the provider did not send them. */
     Q_PROPERTY(QVariantMap weatherDetails READ weatherDetails NOTIFY detailsChanged)
+    /*! Configured `location.city` from daemon status; empty when unset. */
+    Q_PROPERTY(QString locationCity READ locationCity NOTIFY statusChanged)
 
     /*! Theme information and colors from the active daemon config. */
     Q_PROPERTY(QString themeName READ themeName NOTIFY statusChanged)
@@ -193,6 +195,7 @@ public:
     [[nodiscard]] double weatherMultiplier() const { return m_weatherMultiplier; }
     [[nodiscard]] QVariantList forecast() const { return m_forecast; }
     [[nodiscard]] QVariantMap weatherDetails() const { return m_weatherDetails; }
+    [[nodiscard]] QString locationCity() const { return m_locationCity; }
 
     [[nodiscard]] QString themeName() const { return m_themeName; }
     [[nodiscard]] QString themeAccent() const { return m_themeAccent; }
@@ -412,6 +415,7 @@ private:
     double m_weatherMultiplier = 1.0;
     QVariantList m_forecast;
     QVariantMap m_weatherDetails;
+    QString m_locationCity;
 
     QString m_themeName;
     QString m_themeAccent;

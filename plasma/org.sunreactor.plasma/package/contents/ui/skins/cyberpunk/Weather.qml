@@ -60,6 +60,16 @@ ColumnLayout {
         title: i18ndc(root.domain, "Panel title: the weather reading", "Weather")
         contentSpacing: root.style.gap * 0.5
 
+        Text {
+            Layout.fillWidth: true
+            visible: root.client.locationCity.length > 0
+            text: "LOC // " + root.client.locationCity.toUpperCase()
+            textFormat: Text.PlainText
+            font: root.style.labelFont
+            color: root.style.cyan
+            elide: Text.ElideRight
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: root.style.gap

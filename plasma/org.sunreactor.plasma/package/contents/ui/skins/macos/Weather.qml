@@ -108,6 +108,16 @@ ColumnLayout {
 
             Text {
                 Layout.fillWidth: true
+                visible: root.client.locationCity.length > 0
+                text: root.client.locationCity
+                textFormat: Text.PlainText
+                font: root.style.body
+                color: root.style.ink
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
                 text: root.client.hasTemperature ? i18ndc(root.domain, "Temperature in degrees, compact",
                                                           "%1°", Format.tempRounded(root.client.temperatureC, root.client.isFahrenheit)) : "—"
                 textFormat: Text.PlainText

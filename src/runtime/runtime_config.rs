@@ -22,6 +22,8 @@ pub(super) struct RuntimeConfig {
     pub tui_theme_warning: Option<String>,
     /// Configured `tui.temperature_unit`, surfaced in `status.temperature_unit`.
     pub tui_temperature_unit: TemperatureUnit,
+    /// Optional configured `location.city`, surfaced in `status.location_city`.
+    pub location_city: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -75,6 +77,10 @@ impl RuntimeConfig {
                 "tui_theme_fallback"
             );
         }
+        let location_city = {
+            let trimmed = report.config.location.city.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_owned())
+        };
         Ok(Self {
             path: report.path,
             source: report.source,
@@ -97,6 +103,7 @@ impl RuntimeConfig {
             tui_theme,
             tui_theme_warning,
             tui_temperature_unit: report.config.tui.temperature_unit,
+            location_city,
             location,
         })
     }

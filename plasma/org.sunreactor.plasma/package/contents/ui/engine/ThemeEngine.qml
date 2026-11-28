@@ -39,6 +39,9 @@ Item {
     /*! Module ids to leave out (plasmoid config hiddenModules). */
     property var hiddenModules: []
     property bool xboxDarkModeOverride: false
+    property bool nothingLightModeOverride: false
+    property bool macosLightModeOverride: false
+    property bool braunLightModeOverride: false
 
     /*! The resolved tokens every module reads. */
     readonly property Theme theme: resolved
@@ -80,6 +83,9 @@ Item {
             modules: root.modulesOverride,
             hidden: root.hiddenModules,
             xboxDarkMode: root.xboxDarkModeOverride,
+            nothingLightMode: root.nothingLightModeOverride,
+            macosLightMode: root.macosLightModeOverride,
+            braunLightMode: root.braunLightModeOverride,
         })
     }
 }

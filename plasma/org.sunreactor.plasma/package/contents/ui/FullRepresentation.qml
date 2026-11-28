@@ -45,11 +45,26 @@ PlasmaExtras.Representation {
 
         client: root.client
         xboxDarkModeOverride: Plasmoid.configuration.xboxDarkMode || root.harnessXboxDark // qmllint disable missing-property
+        nothingLightModeOverride: Plasmoid.configuration.nothingLightMode || root.harnessNothingLight // qmllint disable missing-property
+        macosLightModeOverride: Plasmoid.configuration.macosLightMode || root.harnessMacosLight // qmllint disable missing-property
+        braunLightModeOverride: Plasmoid.configuration.braunLightMode || root.harnessBraunLight // qmllint disable missing-property
     }
 
     readonly property bool harnessXboxDark: {
         const cfg = client.harnessConfig();
-        return cfg && (cfg.xboxDark === true || cfg.xboxDark === "true");
+        return !!(cfg && (cfg.xboxDark === true || cfg.xboxDark === "true"));
+    }
+    readonly property bool harnessNothingLight: {
+        const cfg = client.harnessConfig();
+        return !!(cfg && (cfg.nothingLight === true || cfg.nothingLight === "true"));
+    }
+    readonly property bool harnessMacosLight: {
+        const cfg = client.harnessConfig();
+        return !!(cfg && (cfg.macosLight === true || cfg.macosLight === "true"));
+    }
+    readonly property bool harnessBraunLight: {
+        const cfg = client.harnessConfig();
+        return !!(cfg && (cfg.braunLight === true || cfg.braunLight === "true"));
     }
 
     ModuleSettings {
@@ -444,22 +459,18 @@ PlasmaExtras.Representation {
             Layout.rightMargin: root.edgeInset
             spacing: 0
 
-            PlasmaExtras.PlaceholderMessage {
+            SetupGuide {
                 Layout.fillWidth: true
-                Layout.topMargin: root.theme.gridUnit
-                Layout.bottomMargin: root.theme.gridUnit
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
                 visible: !root.hasLiveOrStale
+                pluginMissing: false
                 iconName: root.offlineIcon
-                text: root.offlineTitle
+                title: root.offlineTitle
                 explanation: root.offlineExplanation
-
-                CopyCommand {
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: root.showStartCommand
-                    domain: root.domain
-                    command: "systemctl --user start sunreactord"
-                }
+                showStartCommand: root.showStartCommand
+                showInstallCommand: root.showStartCommand
+                domain: root.domain
             }
 
             Repeater {
@@ -517,6 +528,15 @@ PlasmaExtras.Representation {
                         }
                         function onDarkModeToggled(dark: bool): void {
                             Plasmoid.configuration.xboxDarkMode = dark; // qmllint disable missing-property
+                        }
+                        function onLightModeToggled(light: bool): void {
+                            if (root.theme.themeId === "nothing") {
+                                Plasmoid.configuration.nothingLightMode = light; // qmllint disable missing-property
+                            } else if (root.theme.themeId === "macos") {
+                                Plasmoid.configuration.macosLightMode = light; // qmllint disable missing-property
+                            } else if (root.theme.themeId === "braun") {
+                                Plasmoid.configuration.braunLightMode = light; // qmllint disable missing-property
+                            }
                         }
                     }
                 }
@@ -634,6 +654,14 @@ PlasmaExtras.Representation {
                     pageSlot: true
                     pageCurrent: panel.modelData === root.shownPage
                 }
+            }
+
+            // Comfortable bottom breathing room on the Weather page so cards
+            // never sit flush against the popup bottom edge.
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: Math.round(root.theme.gridUnit * 0.55)
+                visible: panel.modelData === "weather"
             }
         }
     }

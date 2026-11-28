@@ -40,7 +40,7 @@ Item {
     readonly property real glassW: root.width - 2 * style.bezel
     readonly property real topBarH: Math.round(gu * 1.4)
     readonly property real badge: Math.round(gu * 3.4)
-    readonly property real glassH: Math.round(gu * 6.0)
+    readonly property real glassH: Math.round(gu * (root.client.locationCity.length > 0 ? 6.9 : 6.0))
 
     WeatherText {
         id: weatherText
@@ -138,6 +138,8 @@ Item {
         }
 
         Text {
+            id: conditionText
+
             x: badgeBox.x + root.badge + Math.round(root.gu * 0.8)
             y: root.topBarH + Math.round(root.gu * 3.05)
             width: root.glassW - x - root.pad
@@ -148,6 +150,20 @@ Item {
             font.weight: Font.Bold
             font.pixelSize: Math.round(root.gu * 1.0)
             color: root.style.ink
+        }
+
+        Text {
+            visible: root.client.locationCity.length > 0
+            x: conditionText.x
+            y: conditionText.y + conditionText.implicitHeight + Math.round(root.gu * 0.12)
+            width: root.glassW - x - root.pad
+            elide: Text.ElideRight
+            text: root.client.locationCity
+            textFormat: Text.PlainText
+            font.family: root.style.family
+            font.weight: Font.DemiBold
+            font.pixelSize: Math.round(root.gu * 0.80)
+            color: root.style.muted
         }
     }
 }

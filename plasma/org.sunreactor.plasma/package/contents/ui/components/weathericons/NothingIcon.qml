@@ -25,6 +25,7 @@ Item {
     implicitHeight: size
 
     readonly property bool iconMode: size >= 16
+    readonly property bool lightSurface: root.theme.luminance(root.surface) > 0.5
     readonly property string assetName: {
         switch (condition) {
         case "clear": return night ? "clear_night" : "clear_day";
@@ -45,7 +46,8 @@ Item {
     Image {
         visible: root.iconMode
         anchors.fill: parent
-        source: Qt.resolvedUrl("../../skins/nothing/assets/weather/" + root.assetName + ".png")
+        anchors.margins: root.size <= 36 ? Math.round(root.size * 0.08) : 0
+        source: Qt.resolvedUrl("../../skins/nothing/assets/weather/" + root.assetName + (root.lightSurface ? "_light.png" : ".png"))
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true

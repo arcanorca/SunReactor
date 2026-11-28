@@ -1,6 +1,6 @@
 [package]
 name = "sunreactor"
-version = "0.14.2"
+version = "0.14.3"
 edition = "2021"
 build = "build.rs"
 description = "sunreactor daemon and CLI for adaptive brightness control"

@@ -236,6 +236,8 @@ class FakeDaemon:
         extra = {}
         if self.args.theme_warning and not self.args.old:
             extra["theme_warning"] = self.args.theme_warning
+        if not self.args.old:
+            extra["location_city"] = "San Francisco, California" if self.args.scenario == "longnames" else "Istanbul"
         temp_unit = self.args.temperature_unit or os.environ.get("SHOT_TEMPERATURE_UNIT", "")
         if temp_unit and not self.args.old:
             extra["temperature_unit"] = temp_unit

@@ -38,10 +38,15 @@ ColumnLayout {
                                                     "%1°", client.solarElevation.toFixed(1))
     readonly property bool bitmap: theme.isPixel
         && Math.max(bitmapTemperature.implicitWidth, elevationShown ? bitmapElevation.implicitWidth : 0) <= available
-    /*! Nothing: the figures in the dot face at the graphic's pitch; small across, tiny down a vertical panel. */
+    /*! Nothing: compact 3x5 dot face at panel pitch so Nothing matches other themes' panel footprint. */
     readonly property bool dotted: theme.themeId === "nothing"
     property real dotPitch: 3 / theme.grid.devicePixelRatio
-    readonly property string dotFace: vertical ? "tiny" : "small"
+    readonly property real compactDotPitch: {
+        const dpr = Math.max(1, theme.grid.devicePixelRatio);
+        const capPx = Math.max(2, Math.round(theme.fontSizeBody * dpr / 5.5)) / dpr;
+        return Math.min(dotPitch, capPx);
+    }
+    readonly property string dotFace: "tiny"
 
     spacing: 0
 
@@ -69,7 +74,7 @@ ColumnLayout {
         text: root.temperatureText
         face: root.dotFace
         size: 1
-        pitch: root.dotPitch
+        pitch: root.compactDotPitch
         litColor: root.color
         dimColor: "transparent"
     }
@@ -80,7 +85,7 @@ ColumnLayout {
         text: root.elevationText
         face: root.dotFace
         size: 1
-        pitch: root.dotPitch
+        pitch: root.compactDotPitch
         litColor: root.color
         dimColor: "transparent"
     }

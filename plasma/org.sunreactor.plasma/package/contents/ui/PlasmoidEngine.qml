@@ -22,4 +22,7 @@ ThemeEngine {
     hiddenModules: Plasmoid.configuration.hiddenModules // qmllint disable missing-property
     uiScaleOverride: Plasmoid.configuration.uiScale // qmllint disable missing-property
     xboxDarkModeOverride: Plasmoid.configuration.xboxDarkMode // qmllint disable missing-property
+    nothingLightModeOverride: Plasmoid.configuration.nothingLightMode // qmllint disable missing-property
+    macosLightModeOverride: Plasmoid.configuration.macosLightMode // qmllint disable missing-property
+    braunLightModeOverride: Plasmoid.configuration.braunLightMode // qmllint disable missing-property
 }

@@ -96,7 +96,9 @@ Item {
             theme: root.theme
             style: tokens
             width: surface.artWidth
-            title: i18ndc(root.domain, "Title of the weather window", "Weather")
+            title: root.client.locationCity.length > 0
+                ? i18ndc(root.domain, "City weather window title", "Weather · %1", root.client.locationCity)
+                : i18ndc(root.domain, "Title of the weather window", "Weather")
             contentHeight: effectText.y + effectText.height
 
             // The atlas sprite, or the chosen Weather icons style in its place.

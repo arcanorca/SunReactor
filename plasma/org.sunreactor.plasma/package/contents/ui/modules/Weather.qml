@@ -89,6 +89,18 @@ PlasmaComponents3.ItemDelegate {
 
             PlasmaComponents3.Label {
                 Layout.fillWidth: true
+                visible: root.client.locationCity.length > 0
+                text: root.client.locationCity
+                textFormat: Text.PlainText
+                font.family: root.theme.bodyFont
+                font.pixelSize: root.theme.fontSizeSmall
+                font.weight: Font.DemiBold
+                color: root.theme.textMuted
+                elide: Text.ElideRight
+            }
+
+            PlasmaComponents3.Label {
+                Layout.fillWidth: true
                 text: root.summary
                 textFormat: Text.PlainText
                 font.family: root.theme.bodyFont

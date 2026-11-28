@@ -88,6 +88,8 @@ T.Slider {
             radius: height / 2
             antialiasing: true
             color: control.style.trackFill
+            border.width: control.style.isLight ? control.style.hairline : 0
+            border.color: control.style.theme.alpha(control.style.ink, 0.12)
         }
 
         SunGlyph {
@@ -97,7 +99,7 @@ T.Slider {
             x: control.style.snap(control.trackHeight * 0.32)
             anchors.verticalCenter: parent.verticalCenter
             size: control.style.snap(control.trackHeight * 0.5)
-            color: control.hasValue && fill.width > x + size ? control.style.panel : control.style.sunOff
+            color: control.hasValue && fill.width > x + size ? control.style.sunOnFill : control.style.sunOff
         }
 
         // Keyboard focus: an accent ring round the pill.

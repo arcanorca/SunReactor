@@ -76,6 +76,16 @@ ColumnLayout {
         style: root.style
         neon: root.style.cyan
 
+        Text {
+            Layout.fillWidth: true
+            visible: root.client.locationCity.length > 0
+            text: root.client.locationCity.toUpperCase()
+            textFormat: Text.PlainText
+            font: root.style.labelFont
+            color: root.style.cyan
+            elide: Text.ElideRight
+        }
+
         // The reading: the glyph, the temperature and the condition in one row.
         RowLayout {
             Layout.fillWidth: true

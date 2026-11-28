@@ -132,6 +132,8 @@ Rectangle {
                 NothingIcon {
                     anchors.centerIn: parent
                     theme: root.theme
+                    surface: root.style.surface
+                    ink: root.style.ink
                     size: root.style.snap(root.style.unit * 3.0)
                     condition: root.reading ? root.client.weatherCondition : ""
                     night: root.reading && root.client.weatherIsNight
@@ -142,6 +144,16 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
                 spacing: root.style.gap * 0.5
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.client.locationCity.length > 0
+                    text: root.client.locationCity.toUpperCase()
+                    textFormat: Text.PlainText
+                    font: root.style.label
+                    color: root.style.muted
+                    elide: Text.ElideRight
+                }
 
                 Text {
                     visible: root.reading && root.client.hasTemperature

@@ -80,6 +80,16 @@ Item {
                 Layout.minimumWidth: 0
                 spacing: 0
 
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.client.locationCity.length > 0
+                    text: root.client.locationCity.toUpperCase()
+                    textFormat: Text.PlainText
+                    font: root.style.cap(root.style.sizeCap)
+                    color: root.style.inkMuted
+                    elide: Text.ElideRight
+                }
+
                 RowLayout {
                     spacing: root.style.gap
 

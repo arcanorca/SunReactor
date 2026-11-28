@@ -15,6 +15,7 @@ RowLayout {
 
     property string command: ""
     property string domain: ""
+    property bool expand: false
     readonly property alias copied: feedback.running
     readonly property alias field: commandField
 
@@ -32,12 +33,13 @@ RowLayout {
         id: commandField
 
         Layout.fillWidth: true
-        Layout.maximumWidth: implicitWidth
+        Layout.maximumWidth: root.expand ? Number.POSITIVE_INFINITY : implicitWidth
         Layout.minimumWidth: 0
         text: root.command
         readOnly: true
         selectByMouse: true
-        horizontalAlignment: TextInput.AlignHCenter
+        horizontalAlignment: root.expand ? TextInput.AlignLeft : TextInput.AlignHCenter
+        onTextChanged: cursorPosition = 0
         leftPadding: Kirigami.Units.largeSpacing
         rightPadding: Kirigami.Units.largeSpacing
         topPadding: Kirigami.Units.smallSpacing

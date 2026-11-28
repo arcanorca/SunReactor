@@ -522,6 +522,7 @@ mod tests {
             theme: None,
             theme_warning: None,
             temperature_unit: None,
+            location_city: None,
         };
 
         let rendered = render_status(&status);
@@ -590,6 +591,7 @@ mod tests {
             theme: None,
             theme_warning: None,
             temperature_unit: None,
+            location_city: None,
         };
         let rendered = render_status(&status);
         assert!(rendered.contains("contested(until=22600)"), "{rendered}");

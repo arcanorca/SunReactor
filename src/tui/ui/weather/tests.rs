@@ -87,6 +87,7 @@
             theme: None,
             theme_warning: None,
             temperature_unit: None,
+            location_city: None,
         });
         model
     }

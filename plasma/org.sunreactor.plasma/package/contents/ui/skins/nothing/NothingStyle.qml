@@ -25,22 +25,27 @@ QtObject {
 
     // --- colour -------------------------------------------------------------------
 
-    /*! Card fill: matte Nothing charcoal (#161618 on OLED black), authentic Nothing OS 2.5/3.0 squircle. */
-    readonly property color surface: theme.mix(theme.bg, theme.fg, 0.085)
-    /*! Recessed OLED dial well on OLED black. */
-    readonly property color dialSurface: theme.mix(theme.bg, theme.fg, 0.04)
-    /*! Recessed track / elevated matte charcoal (#252528 on OLED black). */
-    readonly property color surfaceElevated: theme.mix(theme.bg, theme.fg, 0.145)
+    readonly property bool isLight: theme.nothingLightMode || theme.luminance(theme.bg) > 0.5
+    /*! Card fill: matte Nothing charcoal on OLED black, crisp ceramic white in Light mode. */
+    readonly property color surface: isLight ? Qt.color("#ffffff") : theme.mix(theme.bg, theme.fg, 0.085)
+    /*! Recessed OLED dial well (or warm ceramic dial well in Light mode). */
+    readonly property color dialSurface: isLight
+        ? theme.mix(theme.bg, Qt.color("#ffffff"), 0.55)
+        : theme.mix(theme.bg, theme.fg, 0.04)
+    /*! Recessed track / elevated surface. */
+    readonly property color surfaceElevated: isLight
+        ? theme.mix(theme.bg, theme.fg, 0.08)
+        : theme.mix(theme.bg, theme.fg, 0.145)
     readonly property color ink: theme.fg
     readonly property color muted: theme.textMuted
     /*! Subtle hairline outlines of cards and pills. */
-    readonly property color outline: theme.alpha(theme.fg, 0.12)
+    readonly property color outline: isLight ? theme.alpha(theme.fg, 0.11) : theme.alpha(theme.fg, 0.12)
     /*! The one signal colour: live lamp, now dot, ring head, slider thumb, call to action. */
     readonly property color accent: theme.accent
     /*! Unlit cells of dot numerals: none drawn, so only the glyphs show. */
     readonly property color textGhost: "transparent"
     /*! Unlit cells of bars, rings and rows: the LED-matrix grid. */
-    readonly property color dotGhost: theme.alpha(theme.fg, 0.12)
+    readonly property color dotGhost: isLight ? theme.alpha(theme.fg, 0.14) : theme.alpha(theme.fg, 0.12)
 
     readonly property real hairline: theme.hairline
     readonly property real dpr: theme.grid.devicePixelRatio

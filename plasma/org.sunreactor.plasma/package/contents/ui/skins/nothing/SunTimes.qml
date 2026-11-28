@@ -33,10 +33,11 @@ Rectangle {
     }
     readonly property string domain: settings.domain
     readonly property bool available: (client.isConnected || client.statusStale) && client.sunriseEpochS > 0 && client.sunsetEpochS > 0
+    readonly property string iconSuffix: style.isLight ? "_light.png" : ".png"
     readonly property var entries: [
-        { label: i18ndc(root.domain, "Short legend: sunrise", "RISE"), epoch: client.sunriseEpochS, icon: "assets/nothing_sunrise.png" },
+        { label: i18ndc(root.domain, "Short legend: sunrise", "RISE"), epoch: client.sunriseEpochS, icon: "assets/nothing_sunrise" + iconSuffix },
         { label: i18ndc(root.domain, "Short legend: solar noon", "NOON"), epoch: client.solarNoonEpochS, icon: "" },
-        { label: i18ndc(root.domain, "Short legend: sunset", "SET"), epoch: client.sunsetEpochS, icon: "assets/nothing_sunset.png" },
+        { label: i18ndc(root.domain, "Short legend: sunset", "SET"), epoch: client.sunsetEpochS, icon: "assets/nothing_sunset" + iconSuffix },
     ]
     /*! Epoch of the next event still ahead today, or 0 once the day is done. */
     readonly property real nextEpoch: {

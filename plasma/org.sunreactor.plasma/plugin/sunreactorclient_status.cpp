@@ -34,6 +34,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     const bool previousHasTemperature = m_hasTemperature;
     const double previousTemperature = m_temperatureC;
     const QString previousTemperatureUnit = m_temperatureUnit;
+    const QString previousLocationCity = m_locationCity;
     const double previousWeatherMultiplier = m_weatherMultiplier;
     const QString previousThemeName = m_themeName;
     const QString previousThemeAccent = m_themeAccent;
@@ -73,6 +74,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
     m_temperatureUnit = (rawTempUnit == QLatin1String("fahrenheit"))
         ? QStringLiteral("fahrenheit")
         : QStringLiteral("celsius");
+    m_locationCity = displayString(statusObj.value(QStringLiteral("location_city")));
 
     parseWeather(statusObj);
     parseMonitors(statusObj);
@@ -93,6 +95,7 @@ void SunReactorClient::parseStatus(const QJsonObject &statusObj)
         || previousCloudDimming != m_cloudDimmingPercent
         || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
         || previousTemperatureUnit != m_temperatureUnit
+        || previousLocationCity != m_locationCity
         || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
         || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg
@@ -511,6 +514,7 @@ void SunReactorClient::clearStatus()
     const bool previousHasTemperature = m_hasTemperature;
     const double previousTemperature = m_temperatureC;
     const QString previousTemperatureUnit = m_temperatureUnit;
+    const QString previousLocationCity = m_locationCity;
     const double previousWeatherMultiplier = m_weatherMultiplier;
     const QVariantList previousForecast = m_forecast;
     const QVariantMap previousDetails = m_weatherDetails;
@@ -550,6 +554,7 @@ void SunReactorClient::clearStatus()
     m_hasTemperature = false;
     m_temperatureC = 0.0;
     m_temperatureUnit = QStringLiteral("celsius");
+    m_locationCity.clear();
     m_weatherMultiplier = 1.0;
     m_forecast.clear();
     m_weatherDetails.clear();
@@ -586,6 +591,7 @@ void SunReactorClient::clearStatus()
         || previousWeatherDayPhase != m_weatherDayPhase || previousCloudCover != m_cloudCoverPercent
         || previousHasTemperature != m_hasTemperature || previousTemperature != m_temperatureC
         || previousTemperatureUnit != m_temperatureUnit
+        || previousLocationCity != m_locationCity
         || previousWeatherMultiplier != m_weatherMultiplier || previousThemeName != m_themeName
         || previousThemeAccent != m_themeAccent || previousThemeSecondaryAccent != m_themeSecondaryAccent
         || previousThemeBg != m_themeBg || previousThemeFg != m_themeFg

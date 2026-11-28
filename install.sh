@@ -1168,12 +1168,19 @@ download_plasma_source() {
         log_error "Could not download Plasma widget source archive: $url"
         return 1
     fi
-    if ! members=$(tar tzf "$archive"); then
+    if ! members=$(tar tvzf "$archive"); then
         log_error "Could not inspect downloaded Plasma widget source archive."
         return 1
     fi
-    while IFS= read -r member; do
-        [[ -n "$member" ]] || continue
+    local perms member
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        perms="${line%% *}"
+        member="${line##* }"
+        if [[ "$perms" == l* ]] || [[ "$perms" == h* ]]; then
+            log_error "Unexpected link entry in Plasma widget source archive: $member"
+            return 1
+        fi
         if [[ "$member" == /* ]] || [[ "/$member/" == */../* ]]; then
             log_error "Unexpected or unsafe source archive member: $member"
             return 1
@@ -1303,6 +1310,14 @@ install_plasma_widget() {
     fi
 
     clear_plasma_qmlcache
+
+    if command -v gtk-update-icon-cache >/dev/null 2>&1 && [[ -d "$DATA_HOME/icons/hicolor" ]]; then
+        gtk-update-icon-cache -f -t "$DATA_HOME/icons/hicolor" >/dev/null 2>&1 || true
+    fi
+    rm -f "$CACHE_HOME"/icon-cache.kcache*
+    if command -v kbuildsycoca6 >/dev/null 2>&1; then
+        kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+    fi
 
     if plasmashell_is_running; then
         log_warning "plasmashell is currently running with the previous QML/plugin in memory."

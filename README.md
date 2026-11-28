@@ -29,9 +29,10 @@ SunReactor features an immediate-style, terminal UI built with `ratatui` with 41
 
 ---
 
-## // KDE PLASMA WIDGET (OPTIONAL)
+<a id="-kde-plasma-widget"></a>
+## <img src="plasma/org.sunreactor.plasma/package/contents/icons/org.sunreactor.plasma.svg" alt="SunReactor Plasma Icon" width="28" height="28" align="absmiddle" /> // KDE PLASMA WIDGET (OPTIONAL)
 
-A KDE Plasma 6 panel and desktop widget (both as a panel popup and a freely resizable live desktop widget): day curve, a slider per display, automation mode and weather. It follows the terminal UI's theme or a pinned one. It is a QML package with a small C++ plugin that talks to the daemon's socket, and it does no brightness logic of its own.
+A KDE Plasma 6 panel and desktop widget (both as a panel popup and a freely resizable live desktop widget): day curve, a slider per display, automation mode, in-skin Light/Dark toggles (Xbox 360, Nothing, macOS, Braun), an animated PlayStation 3 XMB Silk & Glitter background, and weather with location city display. It follows the terminal UI's theme or a pinned one, and ships both as a built plugin package and as a standalone KDE Store `.plasmoid` archive with an embedded 1-click Copy onboarding card (`SetupGuide`) when the background daemon or native plugin is not yet installed. It does no brightness logic of its own.
 
 <div align="center">
   <img src="docs/images/widget-themes.png" alt="KDE Plasma widget, brightness page: Cyberpunk, PS3, Nothing, Synthwave 84, Hacker Green, Windows XP" width="95%" />
@@ -66,6 +67,11 @@ Wrong popup size, QML import errors and an old daemon are covered in [docs/PLASM
 ## // RECENT CHANGES
 
 Details are in [CHANGELOG.md](CHANGELOG.md). The main points:
+
+**0.14.3**
+- Upgraded PlayStation 3 (`ps3`) skin with a live 3D Fresnel-caustic silk & gliding glitter XMB shader (`FrameAnimation` + Wayland visibility fix).
+- Added in-skin Light/Dark toggles and light palettes for `nothing`, `macos`, and `braun`; added city names (`location_city`) across all Plasma weather views, Weather bottom spacing, and compact `nothing` panel sizing.
+- Safe first-run brightness bounds (`15%`–`50%`), KDE Store `.plasmoid` packager with embedded 1-click Copy `SetupGuide`, `QtSvg`-compatible widget icons, and `doctor --report` privacy hardening.
 
 **0.14.2**
 - Scalable live KDE Plasma desktop widget mode and auto-closing theme picker when the panel popup collapses.

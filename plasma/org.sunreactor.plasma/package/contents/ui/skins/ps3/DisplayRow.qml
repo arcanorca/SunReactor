@@ -108,13 +108,19 @@ Item {
 
     // XMB horizontal spotlight beam behind the emphasised item.
     Image {
-        visible: row.emphasised
         property bool auditIgnore: true
         anchors.fill: parent
         anchors.margins: -row.style.gap
         source: Qt.resolvedUrl("assets/ps3_spotlight.png")
         fillMode: Image.Stretch
         smooth: true
+        opacity: row.emphasised ? 1.0 : 0.0
+        visible: opacity > 0.01
+
+        Behavior on opacity {
+            enabled: row.style.animateUi
+            NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+        }
     }
 
     // The faint separator.
@@ -141,6 +147,15 @@ Item {
             origin.y: content.height / 2
             xScale: row.emphasised ? 1.03 : 1
             yScale: row.emphasised ? 1.03 : 1
+
+            Behavior on xScale {
+                enabled: row.style.animateUi
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+            Behavior on yScale {
+                enabled: row.style.animateUi
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
         }
 
         RowLayout {
@@ -153,6 +168,8 @@ Item {
                 textFormat: Text.PlainText
                 font: row.style.labelFont
                 color: row.emphasised ? row.style.ink : row.style.inkSoft
+                style: Text.Raised
+                styleColor: row.style.textShadow
                 elide: Text.ElideRight
             }
 
@@ -172,6 +189,8 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 font: row.style.valueFont
                 color: row.controllable ? row.style.ink : row.style.inkSoft
+                style: Text.Raised
+                styleColor: row.style.textShadow
             }
         }
 

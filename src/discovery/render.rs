@@ -388,8 +388,6 @@ fn append_ddc_candidates(
             backend: crate::backends::BackendKind::Ddc,
             enabled,
             allow_topology_retargeting: false,
-            min_pct: 0,
-            max_pct: 100,
             gain: 1.0,
             // Reuse the exact selector considered during ambiguity analysis.
             // Adding a bus alongside model/serial changes `ddcutil` selector
@@ -414,8 +412,6 @@ fn append_backlight_candidates(
             logical_id: allocate_logical_id(backlight_logical_id_base(device), used_ids),
             backend: crate::backends::BackendKind::Backlight,
             enabled: true,
-            min_pct: 0,
-            max_pct: 100,
             gain: 1.0,
             selector: MonitorSelector {
                 sysfs_path: Some(device.sysfs_path.clone()),

@@ -6,6 +6,7 @@
                 "Email": "noreply@sunreactor.org"
             }
         ],
+        "BugReportUrl": "https://github.com/arcanorca/SunReactor/issues",
         "Category": "System Information",
         "Description": "Screen brightness that follows the sun and the weather",
         "EnabledByDefault": true,
@@ -16,7 +17,7 @@
         "Id": "org.sunreactor.plasma",
         "License": "GPL-3.0-or-later",
         "Name": "SunReactor",
-        "Version": "0.14.2",
+        "Version": "0.14.3",
         "Website": "https://github.com/arcanorca/SunReactor"
     },
     "KPackageStructure": "Plasma/Applet",

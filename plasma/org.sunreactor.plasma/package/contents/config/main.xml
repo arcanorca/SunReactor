@@ -73,6 +73,16 @@
         <entry name="xboxDarkMode" type="Bool">
             <default>false</default>
         </entry>
+        <!-- Toggle light variants inside the Nothing, macOS, and Braun skins. -->
+        <entry name="nothingLightMode" type="Bool">
+            <default>false</default>
+        </entry>
+        <entry name="macosLightMode" type="Bool">
+            <default>false</default>
+        </entry>
+        <entry name="braunLightMode" type="Bool">
+            <default>false</default>
+        </entry>
     </group>
     <group name="Panel">
         <!-- What the panel item draws: "sky" (weather sprite), "readout"

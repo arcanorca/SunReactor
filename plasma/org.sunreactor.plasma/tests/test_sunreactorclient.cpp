@@ -425,6 +425,7 @@ void TestSunReactorClient::testConnectAndParseStatus()
     status[QStringLiteral("sunrise_epoch_s")] = 1773977880;
     status[QStringLiteral("sunset_epoch_s")] = 1774026120;
     status[QStringLiteral("global_override_until_epoch_s")] = 1774002000;
+    status[QStringLiteral("location_city")] = QStringLiteral("Istanbul");
     status[QStringLiteral("weather")] = weather;
     status[QStringLiteral("monitors")] = QJsonArray{external, internal};
 
@@ -464,6 +465,7 @@ void TestSunReactorClient::testConnectAndParseStatus()
     QCOMPARE(client.cloudCoverPercent(), 40);
     QVERIFY(client.hasTemperature());
     QCOMPARE(qRound(client.temperatureC()), 21);
+    QCOMPARE(client.locationCity(), QStringLiteral("Istanbul"));
 
     QCOMPARE(client.monitors().size(), 2);
     const QVariantMap first = client.monitors().at(0).toMap();
@@ -2265,11 +2267,13 @@ void TestSunReactorClient::testClearStatusResetsSolarAndWeatherFieldsOnDisconnec
     status[QStringLiteral("sunrise_epoch_s")] = 1700000000;
     status[QStringLiteral("sunset_epoch_s")] = 1700040000;
     status[QStringLiteral("solar_elevation")] = 24.5;
+    status[QStringLiteral("location_city")] = QStringLiteral("Ankara");
     status[QStringLiteral("weather")] = weather;
     serveStatus(status);
 
     SunReactorClient client(m_socketPath);
     QTRY_VERIFY_WITH_TIMEOUT(client.isConnected() && client.hasTemperature(), 3000);
+    QCOMPARE(client.locationCity(), QStringLiteral("Ankara"));
     QVERIFY(client.hasSolarElevation());
     QVERIFY(client.weatherEnabled());
     QCOMPARE(client.sunriseEpochS(), qint64(1700000000));
@@ -2290,6 +2294,7 @@ void TestSunReactorClient::testClearStatusResetsSolarAndWeatherFieldsOnDisconnec
     QCOMPARE(client.sunriseEpochS(), qint64(0));
     QCOMPARE(client.sunsetEpochS(), qint64(0));
     QCOMPARE(client.nowEpochS(), qint64(0));
+    QCOMPARE(client.locationCity(), QString());
     QCOMPARE(client.weatherMultiplier(), 1.0);
     QVERIFY(nowSpy.count() >= 1);
     QVERIFY(statusSpy.count() >= 1);

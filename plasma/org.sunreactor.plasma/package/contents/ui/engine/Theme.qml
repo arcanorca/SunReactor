@@ -80,8 +80,17 @@ Item {
     // --- palette ---------------------------------------------------------------
 
     property bool xboxDarkModeLocal: false
+    property bool nothingLightModeLocal: false
+    property bool macosLightModeLocal: false
+    property bool braunLightModeLocal: false
     readonly property bool xboxDarkMode: themeId === "xbox360"
         && ((overrides && overrides.xboxDarkMode === true) || xboxDarkModeLocal)
+    readonly property bool nothingLightMode: themeId === "nothing"
+        && ((overrides && overrides.nothingLightMode === true) || nothingLightModeLocal)
+    readonly property bool macosLightMode: themeId === "macos"
+        && ((overrides && overrides.macosLightMode === true) || macosLightModeLocal)
+    readonly property bool braunLightMode: themeId === "braun"
+        && ((overrides && overrides.braunLightMode === true) || braunLightModeLocal)
     readonly property var xboxDarkPalette: ({
         bg: "#14181c",
         fg: "#eef3f7",
@@ -94,10 +103,55 @@ Item {
         warning: "#f5a623",
         error: "#e5483b",
     })
+    readonly property var nothingLightPalette: ({
+        bg: "#f2f2f0",
+        fg: "#111111",
+        accent: "#d71921",
+        secondaryAccent: "#4d4d4d",
+        borderActive: "#111111",
+        borderInactive: "#d2d2ce",
+        textMuted: "#686868",
+        success: "#1a7f37",
+        warning: "#b8860b",
+        error: "#d71921",
+    })
+    readonly property var macosLightPalette: ({
+        bg: "#ececef",
+        fg: "#1d1d1f",
+        accent: "#007aff",
+        secondaryAccent: "#af52de",
+        borderActive: "#007aff",
+        borderInactive: "#d1d1d6",
+        textMuted: "#636366",
+        success: "#28cd41",
+        warning: "#e08600",
+        error: "#ff3b30",
+    })
+    readonly property var braunLightPalette: ({
+        bg: "#eae7df",
+        fg: "#1a1a18",
+        accent: "#e84a00",
+        secondaryAccent: "#c28800",
+        borderActive: "#e84a00",
+        borderInactive: "#c6c2b8",
+        textMuted: "#5e5b54",
+        success: "#1c7a33",
+        warning: "#b86400",
+        error: "#c42424",
+    })
 
     function pick(key, fallback) {
         if (xboxDarkMode && xboxDarkPalette[key]) {
             return xboxDarkPalette[key];
+        }
+        if (nothingLightMode && nothingLightPalette[key]) {
+            return nothingLightPalette[key];
+        }
+        if (macosLightMode && macosLightPalette[key]) {
+            return macosLightPalette[key];
+        }
+        if (braunLightMode && braunLightPalette[key]) {
+            return braunLightPalette[key];
         }
         return available && paletteMap[key] ? paletteMap[key] : fallback;
     }

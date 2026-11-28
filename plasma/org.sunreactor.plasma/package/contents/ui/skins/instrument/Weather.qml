@@ -45,12 +45,41 @@ ColumnLayout {
         id: weatherText
     }
 
+    TextMetrics {
+        id: cityMetrics
+
+        font: root.style.legendFont
+        text: root.client.locationCity
+    }
+
     Legend {
+        id: weatherLegend
+
         Layout.fillWidth: true
+        Layout.minimumWidth: 0
         style: root.style
         text: i18ndc(root.domain, "Instrument legend over the weather reading", "Weather")
 
+        Text {
+            id: cityLabel
+
+            readonly property real maxW: Math.max(0, Math.min(weatherLegend.width * 0.55,
+                weatherLegend.width - root.style.unit * 7)
+                - (staleTag.visible ? staleTag.width + root.style.gap : 0))
+
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            visible: root.client.locationCity.length > 0 && maxW > 0
+            width: visible ? Math.min(Math.ceil(cityMetrics.advanceWidth) + 2, root.style.floorSnap(maxW)) : 0
+            text: root.client.locationCity
+            textFormat: Text.PlainText
+            font: root.style.legendFont
+            color: root.style.inkMuted
+            elide: Text.ElideRight
+        }
+
         Tag {
+            id: staleTag
+
             anchors.verticalCenter: parent ? parent.verticalCenter : undefined
             visible: root.client.hasWeatherReading && root.client.weatherStale
             style: root.style

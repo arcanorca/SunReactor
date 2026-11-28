@@ -37,9 +37,10 @@ QtObject {
 
     // --- colour --------------------------------------------------------------
 
+    readonly property bool isLight: theme.macosLightMode || theme.luminance(theme.bg) > 0.5
     readonly property color panel: theme.bg
     readonly property color ink: theme.fg
-    /*! Secondary labels (#98989d in the theme). */
+    /*! Secondary labels (#98989d dark, #636366 light). */
     readonly property color inkSecondary: theme.textMuted
     /*! Sun glyph and sun arc, the palette's warning yellow. */
     readonly property color sun: theme.warning
@@ -48,30 +49,32 @@ QtObject {
     readonly property color ok: theme.success
     readonly property color danger: theme.error
 
-    /*! Vibrancy material: white at 7% over the background. */
-    readonly property color material: theme.alpha(ink, 0.07)
-    /*! Inner highlight along the top edge: one device pixel, white at 12%. */
-    readonly property color materialTop: theme.alpha(ink, 0.12)
-    /*! Outer hairline of a panel: white at 8%. */
-    readonly property color materialEdge: theme.alpha(ink, 0.08)
+    /*! Vibrancy material: frosted light fill or translucent dark overlay. */
+    readonly property color material: isLight ? Qt.rgba(1, 1, 1, 0.78) : theme.alpha(ink, 0.07)
+    /*! Inner highlight along the top edge: one device pixel. */
+    readonly property color materialTop: isLight ? Qt.rgba(1, 1, 1, 0.95) : theme.alpha(ink, 0.12)
+    /*! Outer hairline of a panel. */
+    readonly property color materialEdge: isLight ? theme.alpha(ink, 0.10) : theme.alpha(ink, 0.08)
     /*! Separators between the rows of an inset list. */
     readonly property color separator: theme.alpha(ink, 0.10)
-    /*! Slider fill: near-white at 90%. */
-    readonly property color trackFill: theme.alpha(ink, 0.90)
+    /*! Slider fill: near-white in dark mode, pure white capsule in light mode. */
+    readonly property color trackFill: isLight ? Qt.color("#ffffff") : theme.alpha(ink, 0.90)
     /*! Slider track behind the fill. */
-    readonly property color trackRest: theme.alpha(ink, 0.10)
-    /*! The sun glyph where the track is still empty. */
+    readonly property color trackRest: isLight ? theme.alpha(ink, 0.12) : theme.alpha(ink, 0.10)
+    /*! The sun glyph where the track is empty. */
     readonly property color sunOff: theme.alpha(ink, 0.55)
+    /*! The sun glyph where the track is filled. */
+    readonly property color sunOnFill: isLight ? theme.alpha(ink, 0.58) : panel
     /*! Small gray controls (Auto, Range). */
-    readonly property color chip: theme.alpha(ink, 0.12)
+    readonly property color chip: isLight ? theme.alpha(ink, 0.08) : theme.alpha(ink, 0.12)
     /*! Capsule behind a segmented control. */
-    readonly property color segmentTrack: theme.alpha(ink, 0.10)
+    readonly property color segmentTrack: isLight ? theme.alpha(ink, 0.08) : theme.alpha(ink, 0.10)
     /*! The selected segment: a lighter rounded rect. */
-    readonly property color segmentOn: theme.mix(panel, ink, 0.30)
-    /*! Under the selected segment: the panel colour, so it darkens the edge below it. */
-    readonly property color segmentShadow: theme.alpha(panel, 0.85)
+    readonly property color segmentOn: isLight ? Qt.color("#ffffff") : theme.mix(panel, ink, 0.30)
+    /*! Under the selected segment: soft drop shadow. */
+    readonly property color segmentShadow: isLight ? theme.alpha(ink, 0.14) : theme.alpha(panel, 0.85)
     readonly property color gridline: theme.alpha(ink, 0.07)
-    readonly property color tooltip: theme.mix(panel, ink, 0.14)
+    readonly property color tooltip: isLight ? Qt.color("#ffffff") : theme.mix(panel, ink, 0.14)
     readonly property color tooltipEdge: theme.alpha(ink, 0.12)
 
     // --- type ----------------------------------------------------------------

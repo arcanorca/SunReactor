@@ -55,6 +55,16 @@ WinWindow {
         style: root.ui
         caption: i18nd(root.domain, "Current conditions")
 
+        Text {
+            Layout.fillWidth: true
+            visible: root.client.locationCity.length > 0
+            text: root.client.locationCity
+            textFormat: Text.PlainText
+            font: root.ui.smallBoldFont
+            color: root.ui.inkMuted
+            elide: Text.ElideRight
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: root.ui.gap

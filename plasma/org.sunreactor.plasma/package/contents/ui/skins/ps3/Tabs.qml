@@ -61,6 +61,22 @@ FocusScope {
                 Accessible.checked: selected
                 Accessible.onPressAction: root.picked(tab.modelData.id)
 
+                Rectangle {
+                    property bool auditIgnore: true
+                    visible: opacity > 0.01
+                    opacity: tab.lit ? 1.0 : 0.0
+                    anchors.centerIn: glyph
+                    width: tab.iconSize * 1.55
+                    height: width
+                    radius: width / 2
+                    color: root.style.alpha(root.style.accentSoft, tab.selected ? 0.16 : 0.08)
+
+                    Behavior on opacity {
+                        enabled: root.style.animateUi
+                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                    }
+                }
+
                 XmbIcon {
                     id: glyph
 
@@ -69,6 +85,11 @@ FocusScope {
                     size: tab.iconSize
                     lit: tab.lit
                     color: tab.lit ? root.style.ink : root.style.inkDim
+
+                    Behavior on size {
+                        enabled: root.style.animateUi
+                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                    }
                 }
 
                 Text {
@@ -81,6 +102,8 @@ FocusScope {
                     textFormat: Text.PlainText
                     font: tab.selected ? root.style.tabFont : root.style.legendFont
                     color: tab.lit ? root.style.ink : root.style.inkDim
+                    style: Text.Raised
+                    styleColor: root.style.textShadow
                     lineHeightMode: Text.FixedHeight
                     lineHeight: (tab.selected ? root.style.sizeTab : root.style.sizeLegend)
                     Accessible.ignored: true
